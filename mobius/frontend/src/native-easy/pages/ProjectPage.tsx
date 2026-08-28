@@ -1,0 +1,1071 @@
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
+import { useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
+import { useStore, api } from '../store'
+import { TopNav } from '../components/shell'
+import {
+  NewIssueModal, RenameIssueModal, ConfirmModal,
+  NewProjectModal, DeleteProjectModal, PathPickerModal,
+  NewResearchModal, RenameResearchModal,
+} from '../components/modals'
+import {
+  Boxes,
+  Brain,
+  ClipboardList,
+  FlaskConical,
+  GitBranch,
+  ListTodo,
+  Package,
+  Settings,
+  Users,
+} from 'lucide-react'
+import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
+import { ProjectSettingsPanel, type SettingsPane } from '../components/project-page/ProjectSettingsPanel'
+import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
+import { AdvancedPageChrome } from '../components/advanced-page-chrome'
+import type { OverflowTab } from '../components/project-page/ProjectOverflowTabs'
+import { ResizablePanel, useMobileNavBreakpoint, useIsMobile } from '../components/resizable-panel'
+import type { GitRepoDraft, IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectListSection } from '../components/project-page/types'
+import {
+  EMPTY_PROJECT_SESSION_SEARCH,
+  textMatchesProjectSearch,
+  type ProjectSessionSearchResponse,
+} from '../services/project-session-search'
+import { projectItemOrder } from '../services/project-session-order'
+import { pollRecursive } from '../services/polling'
+import {
+  focusWorkbenchTarget,
+  homePath,
+  issueNavigation,
+  navigateToWorkbench,
+  projectPath,
+  projectNavigation,
+  readWorkbenchFocusTarget,
+  readWorkbenchReturnTo,
+  researchNavigation,
+  sessionNavigation,
+  workbenchLocationPath,
+} from '../services/workbench-navigation'
+import {
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE,
+  intervalInputValue,
+  numberInputValue,
+  parseBackoffInput,
+  parseIntervalInput,
+  parsePatienceInput,
+} from '../components/project-page/utils'
+
+const DETAILED_PAGE_SIZE = 6
+const LIST_PAGE_SIZE = 12
+const SIDEBAR_INITIAL_PAGE_SIZE = 10
+const PROJECT_CARD_DENSITY_KEY = 'mobius:project:card-density'
+const PROJECT_META_AUTO_SAVE_DELAY_MS = 700
+
+function parseAccessIdLines(value: string) {
+  return Array.from(new Set(
+    value.split(/[,\n]/).map(id => id.trim()).filter(Boolean)
+  ))
+}
+
+function stringArraysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false
+  const left = [...a].sort()
+  const right = [...b].sort()
+  for (let i = 0; i < a.length; i++) {
+    if (left[i] !== right[i]) return false
+  }
+  return true
+}
+
+function reposEqual(a: any[], b: any[]) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i]?.url || '') !== (b[i]?.url || '')) return false
+    if ((a[i]?.name || '') !== (b[i]?.name || '')) return false
+  }
+  return true
+}
+
+function normalizeProjectVisibility(value: any): 'private' | 'team' | 'public' | 'allowlist' {
+  return value === 'team' || value === 'public' || value === 'allowlist' ? value : 'private'
+}
+
+function forgottenFlagMessageMatches(project: any, draft: string) {
+  const saved = typeof project?.forgotten_flag_message === 'string' ? project.forgotten_flag_message : ''
+  if (saved.trim()) return draft === saved
+  const effective = project?.forgotten_flag_message_effective ?? saved
+  return draft === '' || draft === effective
+}
+
+function numberDraftMatchesSaved(value: string, saved: any, fallback: number) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return false
+  return n === Number(numberInputValue(saved, fallback))
+}
+
+function intervalDraftMatchesSaved(value: string, saved: any, fallback: number) {
+  const n = Number(value)
+  if (!Number.isInteger(n)) return false
+  return n === Number(intervalInputValue(saved, fallback))
+}
+
+// =====================================================================
+// Issue 汇总页 /u/:user/p/:project
+// 左侧 sidebar：当前 project 的 issue 列表
+// 右侧顶部：可编辑 project 元数据
+// 右侧主体：issue 卡片（每张卡片：metadata + sessions 清单）
+// =====================================================================
+export default function ProjectPage() {
+  const params = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { projects, setProjects, currentProject, setCurrentProject,
+          issues, issuesMap, setIssues, setIssuesMap, setCurrentIssue,
+          researches, researchesMap, setResearches, setResearchesMap, setCurrentResearch,
+          sessionsMap, setSessionsMap, setSessionsMapBatch, setCurrentSession, setCurrentTask } = useStore()
+  const userParam = params.user || ''
+  const projectId = params.project || ''
+  const projectFallback = homePath(userParam)
+  const returnTo = readWorkbenchReturnTo(location.search, projectFallback)
+  const projectSourcePath = workbenchLocationPath(
+    location,
+    projectPath(userParam, projectId, { returnTo }),
+  )
+
+  useEffect(() => {
+    if (readWorkbenchFocusTarget(location.state) !== 'main-heading') return
+    const frame = window.requestAnimationFrame(() => focusWorkbenchTarget('main-heading'))
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.key, currentProject?.id])
+
+  // 项目详情页内容密集 (左栏 + 多面板主区), 把移动端断点提到 1024px,
+  // 让平板宽度也进入抽屉式侧栏 + 主区纵向堆叠, 排版更宽松美观.
+  // 项目页改用「左侧导航边栏 + 右侧单栏」后不再内容密集, 窄屏阈值从 1024 下调到 768:
+  // 平板/窄窗口也能用新布局, 只有手机(<768) 才回落到抽屉模式.
+  useMobileNavBreakpoint(768)
+  const isMobile = useIsMobile()
+  // 移动端: 项目设置收进右侧抽屉, 主区以「新建 Issue / 列表」为主.
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const [showNewProject, setShowNewProject] = useState(false)
+  const [showNewIssue, setShowNewIssue] = useState(false)
+  const [showNewResearch, setShowNewResearch] = useState(false)
+  const [editingIssue, setEditingIssue] = useState<any>(null)
+  const [editingResearch, setEditingResearch] = useState<any>(null)
+  const [confirmAction, setConfirmAction] = useState<IssueConfirmAction | null>(null)
+  const [showDelete, setShowDelete] = useState(false)
+  const [search, setSearch] = useState('')
+  const [sessionSearch, setSessionSearch] = useState<ProjectSessionSearchResponse>(EMPTY_PROJECT_SESSION_SEARCH)
+  const [sessionSearchLoading, setSessionSearchLoading] = useState(false)
+  const [sessionSearchError, setSessionSearchError] = useState('')
+  const [filter, setFilter] = useState<ProjectFilter>('active')
+  const SectionKey = `mobius:project:section:${projectId}`
+  const sectionInit = (): ProjectListSection => {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(SectionKey) : null
+    return v === 'researches' || v === 'issues' ? v as ProjectListSection : 'issues'
+  }
+  const [section, setSection] = useState<ProjectListSection>(sectionInit)
+  useEffect(() => { try { localStorage.setItem(SectionKey, section) } catch {} }, [SectionKey, section])
+
+  // 设计师之眼布局: 「项目设置」tab 条 (元素2) 与 Issue/Research tab 条 (元素1) 外移到本页左侧边栏,
+  // 这里接管 settingsPane (受控). 键名与 ProjectSettingsPanel 内部 localStorage 完全一致, 保持兼容.
+  const SettingsPaneKey = `mobius:project:pane:${projectId || ''}`
+  const settingsPaneInit = (): SettingsPane => {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(SettingsPaneKey) : null
+    return v && (['settings', 'context', 'versions', 'architecture', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
+      ? v as SettingsPane
+      : 'settings'
+  }
+  const [settingsPane, setSettingsPane] = useState<SettingsPane>(settingsPaneInit)
+  // 切换项目时按该项目上次记忆的 settings tab 重新初始化 (原面板按 project.id 持久化).
+  useEffect(() => { setSettingsPane(settingsPaneInit()) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId])
+  // ProjectSettingsPanel 把内部 settingsTabs 上抛, 供左侧边栏渲染.
+  const [exposedSettingsTabs, setExposedSettingsTabs] = useState<OverflowTab[]>([])
+  // 右侧不再并排展示「项目设置」与「任务列表」, 改由左侧边栏选中项决定右侧显示哪一个面板.
+  const [rightView, setRightView] = useState<'items' | 'settings'>('items')
+
+  // 左侧导航按钮样式与用户主页统一 (图标 + 文案). settings tab 在此追加图标并改用更短的文案.
+  const navCls = (active: boolean) =>
+    `flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${active ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--surface-control-hover)]'}`
+  const SETTINGS_NAV_META: Record<string, { label: string; icon: ReactNode }> = {
+    settings: { label: '项目设置', icon: <Settings className="w-4 h-4" strokeWidth={1.8} /> },
+    context: { label: '记忆技能', icon: <Brain className="w-4 h-4" strokeWidth={1.8} /> },
+    members: { label: '项目成员', icon: <Users className="w-4 h-4" strokeWidth={1.8} /> },
+    versions: { label: '版本追踪', icon: <GitBranch className="w-4 h-4" strokeWidth={1.8} /> },
+    architecture: { label: '系统剖析', icon: <Boxes className="w-4 h-4" strokeWidth={1.8} /> },
+    todos: { label: '项目待办', icon: <ClipboardList className="w-4 h-4" strokeWidth={1.8} /> },
+    package: { label: '打包下载', icon: <Package className="w-4 h-4" strokeWidth={1.8} /> },
+  }
+  const densityInit = (): ProjectCardDensity => {
+    // 显示密度: 详情卡片 / 详情列表. 旧「精简」密度已删除, 存量 compact 存量值一律回落 detailed.
+    try { return localStorage.getItem(PROJECT_CARD_DENSITY_KEY) === 'list' ? 'list' : 'detailed' } catch { return 'detailed' }
+  }
+  const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
+  useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
+  const pageSize = cardDensity === 'list' ? LIST_PAGE_SIZE : DETAILED_PAGE_SIZE
+  // 左栏是独立的纵向列表，页容量按实际可用高度动态计算；右侧卡片继续使用密度页容量。
+  const [sidebarPageSize, setSidebarPageSize] = useState(SIDEBAR_INITIAL_PAGE_SIZE)
+  const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
+  const [mainIssuePage, setMainIssuePage] = useState(1)
+  const [researchPage, setResearchPage] = useState(1)
+  // 按项目的 issue / research 列表加载态: 切换到未缓存项目时, 列表先显示 loading,
+  // 不再回落渲染上个项目的 issue (旧 issuesMap[projectId] || issues 是闪现旧数据的元凶).
+  const [issuesLoading, setIssuesLoading] = useState(false)
+  const [researchesLoading, setResearchesLoading] = useState(false)
+
+  // 编辑右侧 project 元数据（inline）
+  const [editName, setEditName] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editBindPath, setEditBindPath] = useState('')
+  const [editBindPathManual, setEditBindPathManual] = useState(false)
+  const [editGitRepos, setEditGitRepos] = useState<GitRepoDraft[]>([])
+  const [editDefaultUseWorktree, setEditDefaultUseWorktree] = useState(true)
+  const [editResearchEnabled, setEditResearchEnabled] = useState(false)
+  const [editVisibility, setEditVisibility] = useState<'private' | 'team' | 'public' | 'allowlist'>('private')
+  const [editAllowUserIds, setEditAllowUserIds] = useState<string[]>([])
+  const [editCanPostIssue, setEditCanPostIssue] = useState<boolean>(false)
+  const [editCanRunSession, setEditCanRunSession] = useState<boolean>(false)
+  const [editDefaultModel, setEditDefaultModel] = useState<string>('')
+  const [editForgottenFlagMessage, setEditForgottenFlagMessage] = useState('')
+  const [editForgottenFlagIssueInit, setEditForgottenFlagIssueInit] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
+  const [editForgottenFlagIssueBackoff, setEditForgottenFlagIssueBackoff] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
+  const [editForgottenFlagIssuePatience, setEditForgottenFlagIssuePatience] = useState(String(DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE))
+  const [editForgottenFlagResearchInit, setEditForgottenFlagResearchInit] = useState(String(DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES))
+  const [editForgottenFlagResearchBackoff, setEditForgottenFlagResearchBackoff] = useState(String(DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF))
+  const [editForgottenFlagResearchPatience, setEditForgottenFlagResearchPatience] = useState(String(DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE))
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [savingMeta, setSavingMeta] = useState(false)
+  const [metaErr, setMetaErr] = useState('')
+
+  const project = currentProject?.id === projectId ? currentProject : projects.find((p: any) => p.id === projectId)
+  // 注意: 故意不再 `|| issues` 回落到全局 store —— 那会是上个项目的 issue 列表,
+  // 切换项目瞬间会闪现旧数据. 未拉到时返回 [], 由 issuesLoading 控制列表显示 loading.
+  const projectIssues = (issuesMap[projectId] || []) as any[]
+  const projectResearches = (researchesMap[projectId] || []) as any[]
+  const canCreateIssue = project?.can_create_issue !== false
+  const canCreateResearch = !!project?.research_enabled && project?.can_create_research !== false
+
+  // 进入页面：清除会话残留 + 拉数据
+  useEffect(() => {
+    // alive 防竞态: 快速切换项目时, 旧请求的 .finally 不再翻转新项目的 loading 态.
+    let alive = true
+    setCurrentIssue(null)
+    setCurrentResearch(null)
+    setCurrentSession(null)
+    setCurrentTask(null)
+    if (!projects.length) api('/api/projects').then(setProjects).catch(() => {})
+
+    // Issue 列表: 命中缓存 → 立即展示(秒开) + 后台静默刷新; 未缓存 → 显示 loading 直到拉到.
+    const issuesCached = !!issuesMap[projectId]
+    setIssuesLoading(!issuesCached)
+    api(`/api/projects/${projectId}/issues`).then((arr: any) => {
+      setIssues(arr); setIssuesMap(projectId, arr)
+    }).catch(() => {}).finally(() => { if (alive) setIssuesLoading(false) })
+
+    // Research 列表: 与 Issue 同款逻辑, 行为保持一致.
+    const researchesCached = !!researchesMap[projectId]
+    setResearchesLoading(!researchesCached)
+    api(`/api/projects/${projectId}/researches`).then((arr: any) => {
+      setResearches(arr); setResearchesMap(projectId, arr)
+    }).catch(() => {}).finally(() => { if (alive) setResearchesLoading(false) })
+
+    return () => { alive = false }
+    // 故意不把 issuesMap/researchesMap 放进 deps: 它们仅作"是否命中缓存"的一次性判断,
+    // 成功路径会写入它们, 放进 deps 会触发本 effect 自身重跑(反复拉取).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  // 同步 currentProject
+  useEffect(() => {
+    if (project && currentProject?.id !== project.id) setCurrentProject(project)
+  }, [project?.id])
+
+  // 若关闭 Research 系统时当前停留在 Research tab, 自动回到 Issue tab.
+  useEffect(() => {
+    if (!project) return
+    if (!project.research_enabled && section === 'researches') setSection('issues')
+  }, [project?.research_enabled, section])
+
+  // 父任务列表已在本地，内部会话元数据按关键词请求后端。每次输入都先清掉旧词
+  // 的结果，并取消尚未完成的请求，避免响应乱序导致列表回跳。
+  useEffect(() => {
+    const query = search.trim().slice(0, 200)
+    if (!query) {
+      setSessionSearch(EMPTY_PROJECT_SESSION_SEARCH)
+      setSessionSearchLoading(false)
+      setSessionSearchError('')
+      return
+    }
+
+    const controller = new AbortController()
+    setSessionSearch({ ...EMPTY_PROJECT_SESSION_SEARCH, query })
+    setSessionSearchLoading(true)
+    setSessionSearchError('')
+    const timer = window.setTimeout(() => {
+      const qs = new URLSearchParams({ q: query })
+      api(`/api/projects/${projectId}/session-matches?${qs.toString()}`, { signal: controller.signal })
+        .then((payload: ProjectSessionSearchResponse) => {
+          if (controller.signal.aborted) return
+          setSessionSearch(payload)
+          setSessionSearchLoading(false)
+        })
+        .catch((error: any) => {
+          if (controller.signal.aborted || error?.name === 'AbortError') return
+          setSessionSearch({ ...EMPTY_PROJECT_SESSION_SEARCH, query })
+          setSessionSearchLoading(false)
+          setSessionSearchError('会话搜索暂时不可用')
+        })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [projectId, search])
+
+  const normalizedSearch = search.trim().slice(0, 200)
+  const activeSessionSearch = sessionSearch.query === normalizedSearch
+    ? sessionSearch
+    : { ...EMPTY_PROJECT_SESSION_SEARCH, query: normalizedSearch }
+
+  // 同步 inline 编辑表单
+  useEffect(() => {
+    if (project) {
+      setEditName(project.name || '')
+      setEditDesc(project.description || '')
+      setEditBindPath(project.bind_path || '')
+      // 还原持久化的手动标记: 手动设定过的路径再次保存时不再走严格校验, 防止回撤
+      setEditBindPathManual(!!project.bind_path_manual)
+      setMetaErr('')
+      const repos = Array.isArray(project.git_repos) ? project.git_repos : []
+      setEditGitRepos(repos.map((r: any) => ({ url: r?.url || '', name: r?.name || '' })))
+      setEditDefaultUseWorktree(!!project.default_use_worktree)
+      setEditResearchEnabled(!!project.research_enabled)
+      setEditVisibility(normalizeProjectVisibility(project.visibility))
+      setEditAllowUserIds(Array.isArray(project.access?.allow_user_ids) ? [...project.access.allow_user_ids] : [])
+      setEditCanPostIssue(!!project.can_post_issue)
+      setEditCanRunSession(!!project.can_run_session)
+      setEditDefaultModel(typeof project.default_model === 'string' ? project.default_model : '')
+      setEditForgottenFlagMessage(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
+      setEditForgottenFlagIssueInit(intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES))
+      setEditForgottenFlagIssueBackoff(numberInputValue(project.forgotten_flag_issue_backoff, DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF))
+      setEditForgottenFlagIssuePatience(intervalInputValue(project.forgotten_flag_issue_patience, DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE))
+      setEditForgottenFlagResearchInit(intervalInputValue(project.forgotten_flag_research_init_minutes ?? project.forgotten_flag_research_interval_minutes, DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES))
+      setEditForgottenFlagResearchBackoff(numberInputValue(project.forgotten_flag_research_backoff, DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF))
+      setEditForgottenFlagResearchPatience(intervalInputValue(project.forgotten_flag_research_patience, DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE))
+    }
+  }, [project?.id])
+
+  const filteredIssues = useMemo(() => {
+    let arr = projectIssues
+    if (filter === 'active') arr = arr.filter((i: any) => i.status !== 'completed')
+    else if (filter === 'completed') arr = arr.filter((i: any) => i.status === 'completed')
+    if (search.trim()) {
+      arr = arr.filter((i: any) => (
+        textMatchesProjectSearch(i.title, search)
+        || textMatchesProjectSearch(i.description, search)
+        || (activeSessionSearch.issues[i.id]?.length || 0) > 0
+      ))
+    }
+    return [...arr].sort(projectItemOrder)
+  }, [projectIssues, filter, search, activeSessionSearch.issues])
+
+  const filteredResearches = useMemo(() => {
+    let arr = projectResearches
+    if (filter === 'active') arr = arr.filter((r: any) => r.status !== 'completed')
+    else if (filter === 'completed') arr = arr.filter((r: any) => r.status === 'completed')
+    if (search.trim()) {
+      arr = arr.filter((r: any) => (
+        textMatchesProjectSearch(r.title, search)
+        || textMatchesProjectSearch(r.description, search)
+        || (activeSessionSearch.researches[r.id]?.length || 0) > 0
+      ))
+    }
+    return [...arr].sort(projectItemOrder)
+  }, [projectResearches, filter, search, activeSessionSearch.researches])
+
+  const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / pageSize))
+  const sidebarIssueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / sidebarPageSize))
+  const currentSidebarIssuePage = Math.min(sidebarIssuePage, sidebarIssueTotalPages)
+  const sidebarPagedIssues = useMemo(() => {
+    const start = (currentSidebarIssuePage - 1) * sidebarPageSize
+    return filteredIssues.slice(start, start + sidebarPageSize)
+  }, [filteredIssues, currentSidebarIssuePage, sidebarPageSize])
+  const currentMainIssuePage = Math.min(mainIssuePage, issueTotalPages)
+  const mainPagedIssues = useMemo(() => {
+    const start = (currentMainIssuePage - 1) * pageSize
+    return filteredIssues.slice(start, start + pageSize)
+  }, [filteredIssues, currentMainIssuePage, pageSize])
+  const researchTotalPages = Math.max(1, Math.ceil(filteredResearches.length / pageSize))
+  const currentResearchPage = Math.min(researchPage, researchTotalPages)
+  const pagedResearches = useMemo(() => {
+    const start = (currentResearchPage - 1) * pageSize
+    return filteredResearches.slice(start, start + pageSize)
+  }, [filteredResearches, currentResearchPage, pageSize])
+  const pagedIssueIdsKey = useMemo(() => (
+    mainPagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
+  ), [mainPagedIssues])
+  const visibleResearchIdsKey = useMemo(() => (
+    section === 'researches'
+      ? pagedResearches.map((research: any) => String(research?.id || '').trim()).filter(Boolean).join(',')
+      : ''
+  ), [section, pagedResearches])
+
+  useEffect(() => {
+    setSidebarIssuePage(1)
+    setMainIssuePage(1)
+    setResearchPage(1)
+  }, [projectId, filter, search, cardDensity])
+
+  useEffect(() => {
+    if (sidebarIssuePage > sidebarIssueTotalPages) setSidebarIssuePage(sidebarIssueTotalPages)
+  }, [sidebarIssuePage, sidebarIssueTotalPages])
+
+  useEffect(() => {
+    if (mainIssuePage > issueTotalPages) setMainIssuePage(issueTotalPages)
+  }, [mainIssuePage, issueTotalPages])
+
+  useEffect(() => {
+    if (researchPage > researchTotalPages) setResearchPage(researchTotalPages)
+  }, [researchPage, researchTotalPages])
+
+  useEffect(() => {
+    const issueIds = section === 'issues' ? pagedIssueIdsKey : ''
+    const researchIds = section === 'researches' ? visibleResearchIdsKey : ''
+    if (!issueIds && !researchIds) return
+    const load = (signal: AbortSignal) => {
+      const qs = new URLSearchParams()
+      if (issueIds) qs.set('issue_ids', issueIds)
+      if (researchIds) qs.set('research_ids', researchIds)
+      return api(`/api/projects/${projectId}/sessions-overview?${qs.toString()}`, { signal }).then((payload: any) => {
+        setSessionsMapBatch({
+          ...(payload?.issues || {}),
+          ...(payload?.researches || {}),
+        })
+      })
+    }
+    return pollRecursive(load, 10_000, 10_000)
+  }, [projectId, section, pagedIssueIdsKey, visibleResearchIdsKey, setSessionsMapBatch])
+
+  const refreshIssues = (signal?: AbortSignal) => api(`/api/projects/${projectId}/issues`, signal ? { signal } : undefined).then((arr: any) => { setIssues(arr); setIssuesMap(projectId, arr) }).catch(() => {})
+  const refreshResearches = (signal?: AbortSignal) => api(`/api/projects/${projectId}/researches`, signal ? { signal } : undefined).then((arr: any) => { setResearches(arr); setResearchesMap(projectId, arr) }).catch(() => {})
+
+  useEffect(() => {
+    const stop = pollRecursive(async (signal) => {
+      await Promise.all([refreshIssues(signal), refreshResearches(signal)])
+    }, 10_000, 10_000, { startImmediately: false })
+    return stop
+  }, [projectId])
+
+  // F9: 规划编辑器右键菜单创建执行 Issue 后, 刷新 Issue 列表以便立即显示新条目.
+  useEffect(() => {
+    function onIssueCreated(e: Event) {
+      const detail = (e as CustomEvent).detail || {}
+      if (detail.projectId && detail.projectId !== projectId) return
+      refreshIssues()
+    }
+    window.addEventListener('mobius:planning-issue-created', onIssueCreated as EventListener)
+    return () => window.removeEventListener('mobius:planning-issue-created', onIssueCreated as EventListener)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
+  const handleArchitectureSessionCreated = (issue: any, _session: any) => {
+    refreshIssues()
+    if (issue?.id) {
+      api(`/api/issues/${issue.id}/sessions`).then((ss: any) => setSessionsMap(issue.id, ss)).catch(() => {})
+    }
+  }
+
+  const openNewIssue = () => {
+    if (!canCreateIssue) return
+    setShowNewIssue(true)
+  }
+
+  const [newIssueForcePlanning, setNewIssueForcePlanning] = useState(false)
+  const openNewPlanningIssue = () => {
+    if (!canCreateIssue) return
+    setNewIssueForcePlanning(true)
+    setShowNewIssue(true)
+  }
+
+  const openNewResearch = () => {
+    if (!canCreateResearch) return
+    setShowNewResearch(true)
+  }
+
+  const cleanedGitRepos = useMemo(() =>
+    editGitRepos
+      .map(r => ({ url: (r.url || '').trim(), name: (r.name || '').trim() }))
+      .filter(r => r.url)
+      .map(r => r.name ? r : { url: r.url }),
+    [editGitRepos]
+  )
+
+  const editAllowUserIdList = useMemo(() => Array.from(new Set(editAllowUserIds.filter(Boolean))), [editAllowUserIds])
+  const savedGitRepos = useMemo(() => Array.isArray(project?.git_repos) ? project.git_repos : [], [project?.git_repos])
+  const savedAllowUserIds = useMemo(() =>
+    Array.isArray(project?.access?.allow_user_ids) ? project.access.allow_user_ids : [],
+    [project?.access?.allow_user_ids]
+  )
+  const savedVisibility = normalizeProjectVisibility(project?.visibility)
+  const isExtensionProject = project?.kind === 'extension'
+  const effectiveEditDefaultUseWorktree = editResearchEnabled ? false : editDefaultUseWorktree
+
+  const nameDirty = !!project && editName !== project.name
+  const descDirty = !!project && editDesc !== (project.description || '')
+  const bindPathDirty = !!project && editBindPath !== (project.bind_path || '')
+  const gitReposDirty = !!project && !reposEqual(cleanedGitRepos, savedGitRepos)
+  const defaultUseWorktreeDirty = !!project && effectiveEditDefaultUseWorktree !== !!project.default_use_worktree
+  const researchEnabledDirty = !!project && editResearchEnabled !== !!project.research_enabled
+  const visibilityDirty = !!project && editVisibility !== savedVisibility
+  const allowUserIdsDirty = !!project && !stringArraysEqual(editAllowUserIdList, savedAllowUserIds)
+  const canPostIssueDirty = !!project && editCanPostIssue !== !!project.can_post_issue
+  const canRunSessionDirty = !!project && editCanRunSession !== !!project.can_run_session
+  const forgottenFlagMessageDirty = !!project && !forgottenFlagMessageMatches(project, editForgottenFlagMessage)
+  const savedDefaultModel = typeof project?.default_model === 'string' ? project.default_model : ''
+  const defaultModelDirty = !!project && editDefaultModel !== savedDefaultModel
+  const issuePolicyDirty = !!project && (
+    !intervalDraftMatchesSaved(
+      editForgottenFlagIssueInit,
+      project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes,
+      DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES
+    ) ||
+    !numberDraftMatchesSaved(
+      editForgottenFlagIssueBackoff,
+      project.forgotten_flag_issue_backoff,
+      DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF
+    ) ||
+    !intervalDraftMatchesSaved(
+      editForgottenFlagIssuePatience,
+      project.forgotten_flag_issue_patience,
+      DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE
+    )
+  )
+  const researchPolicyDirty = !!project && (
+    !intervalDraftMatchesSaved(
+      editForgottenFlagResearchInit,
+      project.forgotten_flag_research_init_minutes ?? project.forgotten_flag_research_interval_minutes,
+      DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES
+    ) ||
+    !numberDraftMatchesSaved(
+      editForgottenFlagResearchBackoff,
+      project.forgotten_flag_research_backoff,
+      DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF
+    ) ||
+    !intervalDraftMatchesSaved(
+      editForgottenFlagResearchPatience,
+      project.forgotten_flag_research_patience,
+      DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE
+    )
+  )
+  const normalProjectSettingsDirty = !!project && !isExtensionProject && (
+    nameDirty ||
+    descDirty ||
+    bindPathDirty ||
+    gitReposDirty ||
+    defaultUseWorktreeDirty ||
+    researchEnabledDirty ||
+    visibilityDirty ||
+    allowUserIdsDirty ||
+    canPostIssueDirty ||
+    canRunSessionDirty
+  )
+  const metaDirty = !!project && (
+    normalProjectSettingsDirty ||
+    forgottenFlagMessageDirty ||
+    issuePolicyDirty ||
+    researchPolicyDirty ||
+    defaultModelDirty
+  )
+
+  const saveMeta = useCallback(async () => {
+    if (!project) return
+    if (project.can_manage === false) {
+      setMetaErr('只有项目 owner/admin 可以修改项目设置')
+      return
+    }
+    if (!isExtensionProject && !editName.trim()) {
+      setMetaErr('项目名称不能为空')
+      return
+    }
+    const body: any = {}
+    if (!isExtensionProject) {
+      if (nameDirty) body.name = editName
+      if (descDirty) body.description = editDesc
+      if (gitReposDirty) body.gitRepos = cleanedGitRepos
+      if (visibilityDirty) body.visibility = editVisibility
+      if (allowUserIdsDirty) body.allow_user_ids = editAllowUserIdList
+      // v3 写权限: 总是把当前勾选状态写回, 即便和旧值一致也写, 避免极端边界下脏值漏写.
+      body.can_post_issue = editCanPostIssue
+      body.can_run_session = editCanRunSession
+      if (defaultUseWorktreeDirty) body.defaultUseWorktree = effectiveEditDefaultUseWorktree
+      if (researchEnabledDirty) body.researchEnabled = editResearchEnabled
+      // 仅在路径实际变化时提交，避免重新对已存在的(可能是手动设定/work_dir 外)路径做严格校验
+      if (bindPathDirty) {
+        body.bindPath = editBindPath
+        body.bindPathManual = editBindPathManual
+      }
+      if (defaultModelDirty) body.defaultModel = editDefaultModel || null
+    }
+    if (forgottenFlagMessageDirty) body.forgottenFlagMessage = editForgottenFlagMessage
+    try {
+      if (issuePolicyDirty) {
+        body.forgottenFlagIssueInitMinutes = parseIntervalInput(editForgottenFlagIssueInit, '任务会话 Init', 1)
+        body.forgottenFlagIssueBackoff = parseBackoffInput(editForgottenFlagIssueBackoff, '任务会话 Backoff')
+        body.forgottenFlagIssuePatience = parsePatienceInput(editForgottenFlagIssuePatience, '任务会话 Patience')
+      }
+      if (researchPolicyDirty) {
+        body.forgottenFlagResearchInitMinutes = parseIntervalInput(editForgottenFlagResearchInit, '研究智能体 Init', 30)
+        body.forgottenFlagResearchBackoff = parseBackoffInput(editForgottenFlagResearchBackoff, '研究智能体 Backoff')
+        body.forgottenFlagResearchPatience = parsePatienceInput(editForgottenFlagResearchPatience, '研究智能体 Patience')
+      }
+    } catch (e: any) {
+      setMetaErr(e?.message || '提醒策略格式错误')
+      return
+    }
+    if (!Object.keys(body).length) {
+      setMetaErr('')
+      return
+    }
+    setSavingMeta(true)
+    setMetaErr('')
+    try {
+      const updated = await api(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      })
+      setProjects(projects.map((p: any) => p.id === updated.id ? { ...p, ...updated } : p))
+      setCurrentProject({ ...project, ...updated })
+    } catch (e: any) { setMetaErr(e?.message || '保存失败') }
+    finally { setSavingMeta(false) }
+  }, [
+    project,
+    projects,
+    isExtensionProject,
+    editName,
+    editDesc,
+    editBindPath,
+    editBindPathManual,
+    cleanedGitRepos,
+    effectiveEditDefaultUseWorktree,
+    editResearchEnabled,
+    editVisibility,
+    editAllowUserIdList,
+    editCanPostIssue,
+    editCanRunSession,
+    editForgottenFlagMessage,
+    editForgottenFlagIssueInit,
+    editForgottenFlagIssueBackoff,
+    editForgottenFlagIssuePatience,
+    editForgottenFlagResearchInit,
+    editForgottenFlagResearchBackoff,
+    editForgottenFlagResearchPatience,
+    editDefaultModel,
+    nameDirty,
+    descDirty,
+    bindPathDirty,
+    gitReposDirty,
+    defaultUseWorktreeDirty,
+    researchEnabledDirty,
+    visibilityDirty,
+    allowUserIdsDirty,
+    canPostIssueDirty,
+    canRunSessionDirty,
+    forgottenFlagMessageDirty,
+    issuePolicyDirty,
+    researchPolicyDirty,
+    defaultModelDirty,
+    setProjects,
+    setCurrentProject,
+  ])
+
+  useEffect(() => {
+    if (!project || project.can_manage === false || !metaDirty || savingMeta) return
+    const timer = window.setTimeout(() => {
+      void saveMeta()
+    }, PROJECT_META_AUTO_SAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [project?.id, project?.can_manage, metaDirty, savingMeta, saveMeta])
+
+  useEffect(() => {
+    if (!metaDirty && metaErr) setMetaErr('')
+  }, [metaDirty, metaErr])
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return
+    const { kind, issue } = confirmAction
+    try {
+      if (kind === 'complete') await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'completed' }) })
+      else if (kind === 'reopen') await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'active' }) })
+      else if (kind === 'pin') await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ pinned: 1 }) })
+      else if (kind === 'unpin') await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ pinned: 0 }) })
+      else if (kind === 'delete') await api(`/api/issues/${issue.id}`, { method: 'DELETE' })
+    } catch {}
+    setConfirmAction(null)
+    refreshIssues()
+  }
+
+  const toggleIssueStar = (issue: any) => {
+    const next = !issue.starred
+    // 乐观更新 issuesMap, 让 UI 立即响应
+    const updated = (issuesMap[projectId] || []).map((i: any) => i.id === issue.id ? { ...i, starred: next ? 1 : 0 } : i)
+    setIssuesMap(projectId, updated)
+    if (!issuesMap[projectId]) setIssues(updated)
+    api(`/api/issues/${issue.id}/star`, { method: 'PATCH', body: JSON.stringify({ starred: next }) })
+      .then(() => refreshIssues())
+      .catch(() => { refreshIssues() })
+  }
+
+  const toggleResearchStatus = (research: any, status: 'active' | 'completed') => {
+    api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+      .then(refreshResearches)
+      .catch(() => {})
+  }
+
+  if (!projectId) return <Navigate to={homePath(userParam)} replace />
+  if (!project) return (
+    <div className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)' }}>
+      <TopNav />
+      <AdvancedPageChrome
+        eyebrow="Project"
+        title="正在加载项目"
+        returnTo={returnTo}
+        fallback={projectFallback}
+      />
+      <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[13px]">加载项目中...</div>
+      </div>
+    </div>
+  )
+
+  // 设计师之眼: 暂时隐藏原项目 issue 列表侧边栏 (元素3), 改由元素1+元素2 组成新侧边栏. 置 false 可还原.
+  const PROJECT_SIDEBAR_HIDDEN = true
+
+  return (
+    <div className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)' }}>
+      <TopNav />
+      <AdvancedPageChrome
+        eyebrow="Project"
+        title={project.name}
+        meta={rightView === 'items' ? (section === 'issues' ? '任务列表' : '研究列表') : '项目设置'}
+        returnTo={returnTo}
+        fallback={projectFallback}
+      />
+      <div className="flex flex-1 min-h-0">
+        {/* 元素3 (原项目 issue 列表侧边栏) 暂时隐藏 (仅桌面端; 移动端仍保留抽屉). */}
+        {(!PROJECT_SIDEBAR_HIDDEN || isMobile) && (
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:project-issues"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+          <ProjectSidebar
+            userParam={userParam}
+            projectId={projectId}
+            returnTo={projectSourcePath}
+            issues={sidebarPagedIssues}
+            search={search}
+            filter={filter}
+            issuesLoading={issuesLoading}
+            sessionMatchesByIssue={activeSessionSearch.issues}
+            sessionSearchLoading={sessionSearchLoading}
+            sessionSearchError={sessionSearchError}
+            sessionSearchTruncated={activeSessionSearch.truncated}
+            pagination={{
+              page: currentSidebarIssuePage,
+              pageSize: sidebarPageSize,
+              totalItems: filteredIssues.length,
+              totalPages: sidebarIssueTotalPages,
+              onPageChange: setSidebarIssuePage,
+            }}
+            onPageSizeChange={setSidebarPageSize}
+            onSearchChange={setSearch}
+            onFilterChange={setFilter}
+            canCreateIssue={canCreateIssue}
+            onCreateIssue={openNewIssue}
+            onToggleStar={toggleIssueStar}
+          />
+        </ResizablePanel>
+        )}
+
+        {/* 设计师之眼: 元素2 (项目设置 tab) + 元素1 (Issue/Research tab) 组成新的可拖拽左侧边栏;
+            右侧不再并排两栏, 由左侧选中项决定右侧只显示哪一个面板. */}
+        {!isMobile && (
+          <ResizablePanel
+            storageKey="mobius:ui:sidebar:project-nav"
+            defaultWidth={184}
+            minWidth={160}
+            maxWidth={360}
+            side="left"
+            className="border-r flex flex-col"
+            style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+            <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto p-2">
+              <div className="mb-1 rounded-lg px-3 py-2" aria-label="项目详情">
+                <span className="block text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>项目详情</span>
+                <strong className="mt-0.5 block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{project.name}</strong>
+              </div>
+              <button type="button" onClick={() => { setRightView('items'); setSection('issues') }}
+                className={navCls(rightView === 'items' && section === 'issues')}
+                style={rightView === 'items' && section === 'issues' ? undefined : { color: 'var(--text-secondary)' }}
+                data-tour="project-issue-tab">
+                <ListTodo className="w-4 h-4" strokeWidth={1.8} /> 任务列表
+              </button>
+              <button type="button"
+                onClick={() => { setRightView('items'); setSection('researches') }}
+                disabled={!project.research_enabled}
+                className={`${navCls(rightView === 'items' && section === 'researches')} disabled:opacity-40 disabled:cursor-not-allowed`}
+                style={rightView === 'items' && section === 'researches' ? undefined : { color: 'var(--text-secondary)' }}>
+                <FlaskConical className="w-4 h-4" strokeWidth={1.8} /> 研究列表
+              </button>
+              <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--border-default)' }} />
+              {exposedSettingsTabs.map(t => {
+                const meta = SETTINGS_NAV_META[t.key] || { label: t.label, icon: null as ReactNode }
+                const active = rightView === 'settings' && !!t.active
+                return (
+                  <button key={t.key} type="button" disabled={t.disabled} title={t.title} data-tour={t.dataTour}
+                    onClick={() => { setRightView('settings'); setSettingsPane(t.key as SettingsPane) }}
+                    className={`${navCls(active)} disabled:opacity-40 disabled:cursor-not-allowed`}
+                    style={active ? undefined : { color: 'var(--text-secondary)' }}>
+                    {meta.icon}{meta.label}
+                  </button>
+                )
+              })}
+            </div>
+          </ResizablePanel>
+        )}
+
+        <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--surface-raised)' }}>
+          {/* 任务/研究列表是卡片网格, 在大屏放宽最大宽度让网格铺开更多列, 减少右侧留白;
+              项目设置表单仍保持 max-w-7xl 保证长表单可读性. */}
+          <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
+            {(() => {
+              const settingsPanel = (
+                <ProjectSettingsPanel
+                  project={project}
+                  desktopWorkspace={!isMobile}
+                  values={{
+                    editName,
+                    editDesc,
+                    editBindPath,
+                    editGitRepos,
+                    editDefaultUseWorktree,
+                    editResearchEnabled,
+                    editVisibility,
+                    editAllowUserIds,
+                    editCanPostIssue,
+                    editCanRunSession,
+                    editDefaultModel,
+                    editForgottenFlagMessage,
+                    editForgottenFlagIssueInit,
+                    editForgottenFlagIssueBackoff,
+                    editForgottenFlagIssuePatience,
+                    editForgottenFlagResearchInit,
+                    editForgottenFlagResearchBackoff,
+                    editForgottenFlagResearchPatience,
+                  }}
+                  setters={{
+                    setEditName,
+                    setEditDesc,
+                    setEditBindPath,
+                    setEditBindPathManual,
+                    setEditGitRepos,
+                    setEditDefaultUseWorktree,
+                    setEditResearchEnabled,
+                    setEditVisibility,
+                    setEditAllowUserIds,
+                    setEditCanPostIssue,
+                    setEditCanRunSession,
+                    setEditDefaultModel,
+                    setEditForgottenFlagMessage,
+                    setEditForgottenFlagIssueInit,
+                    setEditForgottenFlagIssueBackoff,
+                    setEditForgottenFlagIssuePatience,
+                    setEditForgottenFlagResearchInit,
+                    setEditForgottenFlagResearchBackoff,
+                    setEditForgottenFlagResearchPatience,
+                  }}
+                  metaErr={metaErr}
+                  savingMeta={savingMeta}
+                  metaDirty={metaDirty}
+                  onDeleteProject={() => setShowDelete(true)}
+                  onOpenPathPicker={() => setPickerOpen(true)}
+                  onArchitectureSessionCreated={handleArchitectureSessionCreated}
+                  controlledActivePane={settingsPane}
+                  onSelectPane={setSettingsPane}
+                  onExposeTabs={setExposedSettingsTabs}
+                  hideHeaderTabs={!isMobile}
+                />
+              )
+              const itemsPanel = (
+                <ProjectItemsPanel
+                  project={project}
+                  userParam={userParam}
+                  projectId={projectId}
+                  returnTo={projectSourcePath}
+                  section={section}
+                  filter={filter}
+                  search={search}
+                  issues={mainPagedIssues}
+                  researches={pagedResearches}
+                  sessionsMap={sessionsMap}
+                  sessionMatchesByIssue={activeSessionSearch.issues}
+                  sessionMatchesByResearch={activeSessionSearch.researches}
+                  sessionSearchLoading={sessionSearchLoading}
+                  issuesLoading={issuesLoading}
+                  researchesLoading={researchesLoading}
+                  issuePagination={{
+                    page: currentMainIssuePage,
+                    pageSize,
+                    totalItems: filteredIssues.length,
+                    totalPages: issueTotalPages,
+                    onPageChange: setMainIssuePage,
+                  }}
+                  researchPagination={{
+                    page: currentResearchPage,
+                    pageSize,
+                    totalItems: filteredResearches.length,
+                    totalPages: researchTotalPages,
+                    onPageChange: setResearchPage,
+                  }}
+                  density={cardDensity}
+                  desktopWorkspace={!isMobile}
+                  scrollResetKey={`${projectId}:${section}:${filter}:${search}:${cardDensity}:${currentMainIssuePage}:${currentResearchPage}`}
+                  onSectionChange={setSection}
+                  onDensityChange={setCardDensity}
+                  canCreateIssue={canCreateIssue}
+                  canCreateResearch={canCreateResearch}
+                  onCreateIssue={openNewIssue}
+                  onCreatePlanningIssue={openNewPlanningIssue}
+                  onCreateResearch={openNewResearch}
+                  onEditIssue={setEditingIssue}
+                  onEditResearch={setEditingResearch}
+                  onIssueConfirm={setConfirmAction}
+                  onToggleResearchStatus={toggleResearchStatus}
+                  onToggleIssueStar={toggleIssueStar}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              )
+              return isMobile ? (
+                <>
+                  {itemsPanel}
+                  <MobileSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+                    {settingsPanel}
+                  </MobileSettingsDrawer>
+                </>
+              ) : (
+                <div className="h-full min-h-0">
+                  {/* 右侧不再并排两栏: 左侧选中项决定只显示哪一个面板; 两者始终挂载以保留各自状态/滚动. */}
+                  <div className={rightView === 'items' ? 'h-full min-h-0' : 'hidden'}>{itemsPanel}</div>
+                  <div className={rightView === 'settings' ? 'h-full min-h-0' : 'hidden'}>{settingsPanel}</div>
+                </div>
+              )
+            })()}
+          </div>
+        </main>
+      </div>
+
+      {showNewProject && <NewProjectModal onClose={() => setShowNewProject(false)} onCreated={(p: any) => {
+        setShowNewProject(false)
+        if (p?.id && p?.created_by) navigateToWorkbench(navigate, projectNavigation(p.created_by, p.id))
+      }} />}
+      {showNewIssue && <NewIssueModal projectId={projectId} defaultUseWorktree={!!project?.default_use_worktree} forcePlanning={newIssueForcePlanning}
+        onClose={() => { setShowNewIssue(false); setNewIssueForcePlanning(false) }}
+        onCreated={(iss: any, options) => {
+          setShowNewIssue(false)
+          setNewIssueForcePlanning(false)
+          refreshIssues()
+          // 规划模式: 后端已自动创建 Session, 直接跳到 Session 页面.
+          if (options?.planningSessionId) {
+            navigateToWorkbench(navigate, sessionNavigation(userParam, options.planningSessionId))
+          } else {
+            navigateToWorkbench(navigate, issueNavigation(userParam, projectId, iss.id, {
+              newSession: !!options?.createFirstSession,
+              returnTo: projectSourcePath,
+            }))
+          }
+        }} />}
+      {showNewResearch && <NewResearchModal projectId={projectId} onClose={() => setShowNewResearch(false)}
+        onCreated={(research: any, options?: { createLeader?: boolean }) => {
+          setShowNewResearch(false); refreshResearches()
+          // 仿 Issue 的"立即创建第一个会话": 立即创建 Leader 时进入 Research 自动打开 Leader 配置.
+          navigateToWorkbench(navigate, researchNavigation(userParam, projectId, research.id, {
+            newLeader: !!options?.createLeader,
+            returnTo: projectSourcePath,
+          }))
+        }} />}
+      {editingIssue && <RenameIssueModal issue={editingIssue} onClose={() => setEditingIssue(null)}
+        onRenamed={() => { setEditingIssue(null); refreshIssues() }} />}
+      {editingResearch && <RenameResearchModal research={editingResearch} onClose={() => setEditingResearch(null)}
+        onRenamed={() => { setEditingResearch(null); refreshResearches() }} />}
+      {confirmAction && <ConfirmModal
+        title={
+          confirmAction.kind === 'complete' ? '完成任务' :
+          confirmAction.kind === 'reopen' ? '重新打开任务' :
+          confirmAction.kind === 'pin' ? '置顶任务' :
+          confirmAction.kind === 'unpin' ? '取消置顶' :
+          '删除任务'
+        }
+        message={
+          confirmAction.kind === 'delete'
+            ? `确定删除任务「${confirmAction.issue.title}」？此操作不可恢复。`
+            : `确定${confirmAction.kind === 'complete' ? '将此任务标记为完成' :
+                 confirmAction.kind === 'reopen' ? '重新打开此任务' :
+                 confirmAction.kind === 'pin' ? '置顶此任务' : '取消置顶此任务'}？`
+        }
+        onConfirm={handleConfirm}
+        onClose={() => setConfirmAction(null)}
+        confirmText={confirmAction.kind === 'delete' ? '删除' : '确认'}
+        confirmClass={confirmAction.kind === 'delete' ? 'bg-[var(--status-danger)] !text-[var(--status-danger-foreground)] hover:opacity-90' :
+          confirmAction.kind === 'complete' ? 'bg-[var(--status-success)] !text-[var(--surface-base)] hover:opacity-90' :
+          'bg-[var(--accent-primary)] !text-[var(--text-on-accent)] hover:opacity-90'} />}
+      {pickerOpen && <PathPickerModal initialPath={editBindPath} onClose={() => setPickerOpen(false)}
+        onPick={(abs, _rel, manual) => { setEditBindPath(abs); setEditBindPathManual(!!manual); setPickerOpen(false) }} />}
+      {showDelete && <DeleteProjectModal project={project} onClose={() => setShowDelete(false)}
+        onDeleted={() => { setShowDelete(false); navigate(homePath(userParam)) }} />}
+    </div>
+  )
+}
+
+// 移动端「项目设置」抽屉: 从右滑入, 全高 + 内部滚动, 容纳 settings 全部 tab/表单.
+// 复用 .mobius-drawer / .mobius-drawer-backdrop 视觉, --right 变体改为右侧滑入.
+function MobileSettingsDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [open, onClose])
+  if (!open) return null
+  return createPortal(
+    <>
+      <div className="mobius-drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <aside
+        className="mobius-drawer mobius-drawer--right mobius-drawer--open"
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目设置"
+      >
+        <button type="button" className="mobius-drawer-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+        {children}
+      </aside>
+    </>,
+    document.body
+  )
+}

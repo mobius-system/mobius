@@ -3,10 +3,12 @@ import { api } from '../store'
 import { buildVscodeUrl } from './project-files'
 
 // =====================================================================
-// Legacy VSCodeOpenContext remains for non-artifact consumers. Message file
-// references now default to the internal read-only preview. Its URL resolver
-// only promises to open a file: buildVscodeUrl deliberately removes line/range
-// suffixes because code-server payload positioning is not reliable.
+// VSCodeOpenContext — supplies projectId-aware "open this absolute path
+// in code-server" to whatever markdown is rendered underneath. Lets the
+// JSONL renderer reroute clicks on links like [foo](/home/.../file.pdf)
+// so they open in VSCode Web instead of 404-ing against the current host.
+// Outside the provider, openLocalPath returns null → renderer falls back
+// to the default anchor behavior.
 //
 // Lives in its own file (not next to JsonlCompactMarkdown) so chat.tsx
 // can import the provider without dragging react-markdown into the main

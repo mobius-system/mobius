@@ -1,0 +1,432 @@
+/**
+ * viewer/JsonlView.tsx — jsonl 视图顶层组件.
+ *
+ * 从 jsonl-view.tsx 拆出. props.entries 是 jsonl 全部已读 entries; 这里负责:
+ *  - 尾部窗口 (默认最近 JSONL_INITIAL_WINDOW_SIZE 条, 可"展开全部"/"加载全部"),
+ *  - tool_result 合并回发起方 (mergeBashToolResultItems),
+ *  - 对话轮次分组 (buildRounds),
+ *  - 把 preItem / round / continuation 三类 block 喂给虚拟列表 (VirtualizedBlockList).
+ */
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { VirtualizedBlockList } from '../jsonl-virtual-list'
+import type { AnyEntry, JsonlViewItem, JsonlRenderBlock } from './types'
+import { mergeBashToolResultItems } from './entry-extract'
+import { collectResolvedCallIds } from './tool-status'
+import { buildRounds } from './rounds'
+import { buildHeaderSummary } from './header-summary'
+import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
+import { isHiddenJsonlNoiseEntry } from './entry-classify'
+import { computeCollapsedByForgottenFlag } from './fold-rules'
+import {
+  ROUND_HEADER_PALETTES,
+  ROUND_HEADER_PALETTE_STORAGE_KEY,
+  normalizeRoundHeaderPaletteIndex,
+  readRoundHeaderPaletteIndex,
+  saveRoundHeaderPaletteIndex,
+} from './round-header-palette'
+
+const JSONL_INITIAL_WINDOW_SIZE = 200
+
+function JsonlInitialSkeleton() {
+  return (
+    <div className="jsonl-initial-skeleton" aria-live="polite" role="status">
+      <div className="mb-3 flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="relative inline-flex h-3.5 w-3.5 flex-shrink-0">
+          <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
+          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
+        </span>
+        <span className="mobius-status-marquee">正在加载会话数据...</span>
+      </div>
+      <div className="space-y-2" aria-hidden="true">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="jsonl-initial-skeleton__card">
+            <div className="jsonl-initial-skeleton__line w-1/3" />
+            <div className="jsonl-initial-skeleton__line w-5/6" />
+            <div className="jsonl-initial-skeleton__line w-2/3" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// 与 renderBlocks 里 round block 的 key 公式严格一致 (跳转按 data-block-key 查 DOM 必须同口径).
+function roundKeyOf(round: any): string {
+  const first = round?.items?.[0]
+  return `round:${first?.entry?.uuid || first?.lineNo || round?.roundNum}`
+}
+
+// 给定搜索命中的 (uuid, timestamp), 在已渲染的 rounds 里定位它所属的那一轮.
+// 1) uuid 精确: 跨所有 round 的所有 item 找 entry.uuid / entry.id (命中可能在轮中非首条).
+// 2) timestamp 区间兜底: 命中条目可能被 hideMinor 过滤 (如 thinking), 此时取 opener.ts <= 命中 ts 的最后一轮.
+// 找不到返回 null (调用方据此触发 "加载全部" 再试, 或放弃).
+function findItemForMatch(items: JsonlViewItem[], uuid: string | null | undefined, ts: string | null | undefined): JsonlViewItem | null {
+  if (uuid) {
+    const found = items.find((it) => it?.entry?.uuid === uuid || it?.entry?.id === uuid)
+    if (found) return found
+  }
+  if (ts) {
+    const exact = items.find((it) => {
+      const value = it?.entry?.timestamp || it?.entry?.created_at
+      return value === ts
+    })
+    if (exact) return exact
+    const targetTime = Date.parse(ts)
+    if (Number.isFinite(targetTime)) {
+      return items.find((it) => Date.parse(it?.entry?.timestamp || it?.entry?.created_at || '') === targetTime) || null
+    }
+  }
+  return null
+}
+
+function findRoundForMatch(rounds: any[], uuid: string | null | undefined, ts: string | null | undefined): any | null {
+  if (uuid) {
+    for (const r of rounds) {
+      for (const it of r?.items || []) {
+        const e = it?.entry
+        if (e?.uuid === uuid || e?.id === uuid) return r
+      }
+    }
+  }
+  if (ts) {
+    const mt = Date.parse(ts)
+    if (Number.isFinite(mt)) {
+      let best: any = null
+      for (const r of rounds) {
+        const opener = r?.items?.[0]?.entry
+        const ot = Date.parse(opener?.timestamp || opener?.created_at || '')
+        if (Number.isFinite(ot) && ot <= mt) best = r
+        else if (Number.isFinite(ot) && ot > mt) break // rounds 时序递增
+      }
+      return best
+    }
+  }
+  return null
+}
+
+function preItemKeyOf(item: JsonlViewItem): string {
+  const entry = item.entry
+  return `pre:${entry?.uuid || entry?.id || entry?.timestamp || item.lineNo}`
+}
+
+export function JsonlView({
+  entries,
+  title,
+  emptyLoadingText,
+  initialLoading,
+  total,
+  onLoadMore,
+  loadingMore,
+  showMeta = true,
+  cursorStyleTools = true,
+  scrollToEntryUuid,
+  scrollToMatchTs,
+  onScrollResolved,
+  onScrollUnresolved,
+}: {
+  entries: AnyEntry[]
+  title?: string
+  emptyLoadingText?: string
+  initialLoading?: boolean
+  // count-then-tail: 后端先发 cheap total (jsonl_meta), 然后只回灌末尾 JSONL_INITIAL_WINDOW_SIZE 条.
+  // 没传 total 时回退到 entries.length 旧行为, 老页面不破.
+  total?: number
+  // 点 "加载全部" 时调用; 上层负责 REST 拉剩余条目并 set entries.
+  onLoadMore?: () => void
+  loadingMore?: boolean
+  // false 时 jsonl 卡片标题里不再显示 "#序号" 和 "MM-DD HH:MM:SS" 时间戳前缀.
+  showMeta?: boolean
+  // Cursor 式工具调用展示开关: true 时工具卡显示状态图标 + 连续探索类聚合; false 回退原始展示.
+  cursorStyleTools?: boolean
+  // 搜索结果跳转: 把命中条目的 uuid / timestamp 传进来, 解析到所属轮次后滚动到该轮卡片.
+  // 命中条目可能不在当前尾部窗口 (旧消息) → onScrollUnresolved 触发上层 "加载全部" 后再解析.
+  scrollToEntryUuid?: string | null
+  scrollToMatchTs?: string | null
+  onScrollResolved?: () => void
+  onScrollUnresolved?: () => void
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const [roundHeaderPaletteIndex, setRoundHeaderPaletteIndex] = useState(readRoundHeaderPaletteIndex)
+  const [roundHeaderPaletteAnnouncement, setRoundHeaderPaletteAnnouncement] = useState('')
+  const roundHeaderPalette = ROUND_HEADER_PALETTES[roundHeaderPaletteIndex]
+  // 点 "加载全部" 后置 true: 把所有轮次组 / 上文续接组强制展开 (尊重用户已手动折叠的组).
+  // 同时把 showAll 一并打开, 让加载到的头部条目也进入视窗, 真正 "全部可见且展开".
+  const [forceExpandAll, setForceExpandAll] = useState(false)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.altKey || event.metaKey || !event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'k') return
+      event.preventDefault()
+      const next = (roundHeaderPaletteIndex + 1) % ROUND_HEADER_PALETTES.length
+      saveRoundHeaderPaletteIndex(next)
+      setRoundHeaderPaletteAnnouncement(`轮次背景已切换为${ROUND_HEADER_PALETTES[next].name}，第 ${next + 1} 种，共 ${ROUND_HEADER_PALETTES.length} 种`)
+      setRoundHeaderPaletteIndex(next)
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== ROUND_HEADER_PALETTE_STORAGE_KEY) return
+      setRoundHeaderPaletteIndex(normalizeRoundHeaderPaletteIndex(event.newValue))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [roundHeaderPaletteIndex])
+  const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
+  const windowOffset = entries.length - recent.length
+  // 工具调用状态集合: 哪些 tool_use_id 已有结果落地 (供卡片推导 running/success/error).
+  // 基于原始 recent 窗口扫描 (含被 merge/过滤隐藏的纯 tool_result entry), 引用随 recent 稳定.
+  // cursorStyleTools 关闭时不构建 (传 null → 卡片无状态图标, 回退原始展示).
+  const resolvedMap = useMemo(() => cursorStyleTools ? collectResolvedCallIds(recent) : null, [recent, cursorStyleTools])
+  const headerTitle = title === undefined ? 'JSONL' : title
+  const visibleItems = useMemo(
+    () => mergeBashToolResultItems(recent, windowOffset).filter(
+      (item) => !isHiddenJsonlNoiseEntry(item.entry),
+    ),
+    [recent, windowOffset],
+  )
+  const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
+  // forgotten-flag 收尾折叠规则: 含 "running.flag" 且往前 8 个条目有 forgotten-flag 用户卡的卡片,
+  // 默认折叠 (agent 被 forgotten-flag-scanner 系统提醒触发的机械删 flag 收尾链路, 对浏览对话价值低).
+  // 在 visibleItems (已合并/已过滤) 序列上扫描, 命中的 lineNo 集合透传给各卡片渲染入口.
+  const collapseLineNos = useMemo(() => computeCollapsedByForgottenFlag(visibleItems), [visibleItems])
+  // 总数显示: 优先用后端给的 total (服务器侧 count, 比前端 entries.length 准)
+  const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
+  const hasRemoteMore = typeof total === 'number' && total > entries.length
+  const hasOmittedHead = hasRemoteMore || windowOffset > 0
+  // 当整个 JSONL 视图处于"少组"场景时, 强制展开唯一的组且禁止折叠.
+  // 涵盖:
+  //   - 0 RoundGroup + 1 ContinuationGroup (无新轮, 只有上文接续, totalGroups=1)
+  //   - 1 RoundGroup + 0 ContinuationGroup (1 轮对话, totalGroups=1)
+  //   - 1 RoundGroup + 1 ContinuationGroup (1 轮对话 + 上下文接续, totalGroups=2 但 rounds=1)
+  // 0 轮且无截断, 或 2+ 轮时, 沿用原"上文折叠 / 最新轮展开"默认行为.
+  const hasContinuationGroup = preItems.length > 0 && hasOmittedHead
+  const totalGroups = rounds.length + (hasContinuationGroup ? 1 : 0)
+  const onlyGroup = totalGroups === 1 || rounds.length === 1
+  // 末轮用户摘要: 最后一组 RoundGroup 的用户问题一句话, 展示在 header 右侧, 让用户在
+  // "只显示尾部 / 加载全部" 时无需展开就能知道当前最末一轮在问什么. 与 RoundGroup 内
+  // buildHeaderSummary(userItem.entry).short 同源, 视觉一致.
+  const lastRoundUserSummary = useMemo(() => {
+    if (rounds.length === 0) return ''
+    const userItem = rounds[rounds.length - 1].items[0]
+    return userItem ? buildHeaderSummary(userItem.entry).shortTail : ''
+  }, [rounds])
+
+  // 点击 header "末轮" 摘要 -> 跳转到最后一个 RoundGroup. scrollToKey 必须与 renderBlocks 里
+  // round block 的 key 公式完全一致, 列表才能按 data-block-key 查到目标.
+  const headerRef = useRef<HTMLDivElement>(null)
+  // 末轮按钮触发的跳转 (内部).
+  const [internalTarget, setInternalTarget] = useState<{ key: string; offset: number } | null>(null)
+  const jumpToLastRound = () => {
+    if (rounds.length === 0) return
+    const lastRound = rounds[rounds.length - 1]
+    setInternalTarget({ key: roundKeyOf(lastRound), offset: headerRef.current?.offsetHeight ?? 0 })
+  }
+
+  // 搜索结果跳转 (外部): 把 scrollToEntryUuid/scrollToMatchTs 解析成具体 round 的 key.
+  // 命中条目不在当前已渲染 rounds (旧消息被尾部窗口截断, 或被 hideMinor 过滤且无 ts 兜底) 时,
+  // 若还有远端未加载条目 (hasRemoteMore), 调 onScrollUnresolved 让上层 "加载全部" 后再解析.
+  const [extTarget, setExtTarget] = useState<{ key: string; offset: number } | null>(null)
+  // 轮次定位之外的精确目标：供卡片展开、Explore 组展开和二次滚动使用。
+  const [extFocusLineNo, setExtFocusLineNo] = useState<number | null>(null)
+  const extActive = !!(scrollToEntryUuid || scrollToMatchTs)
+  const onResolvedRef = useRef(onScrollResolved)
+  onResolvedRef.current = onScrollResolved
+  const onUnresolvedRef = useRef(onScrollUnresolved)
+  onUnresolvedRef.current = onScrollUnresolved
+  const unresolvedFiredRef = useRef(false)
+  useEffect(() => {
+    if (!extActive) { setExtTarget(null); setExtFocusLineNo(null); unresolvedFiredRef.current = false; return }
+    // 首屏历史还在加载 (entries 空 / initialLoading) 时既不放弃也不触发 loadAll:
+    // 此时 hasRemoteMore 因 total 未知而为 false, 直接判 "找不到" 会误清 target, 让跳转失效.
+    if (initialLoading || entries.length === 0) { setExtTarget(null); return }
+    const matchItem = findItemForMatch(visibleItems, scrollToEntryUuid ?? null, scrollToMatchTs ?? null)
+    if (matchItem) {
+      const round = rounds.find((candidate) => candidate?.items?.some((it: JsonlViewItem) => it.lineNo === matchItem.lineNo))
+      const isPreItem = preItems.some((item) => item.lineNo === matchItem.lineNo)
+      // 尾部窗口里的“上文续接”并没有单独渲染每张卡片；先展开全部，才能精确定位并展开。
+      if (isPreItem && hasOmittedHead && !showAll) {
+        setExtTarget(null)
+        setExtFocusLineNo(null)
+        setShowAll(true)
+        return
+      }
+      setExtFocusLineNo(matchItem.lineNo)
+      setExtTarget({ key: round ? roundKeyOf(round) : preItemKeyOf(matchItem), offset: headerRef.current?.offsetHeight ?? 0 })
+    } else if (hasRemoteMore || (hasOmittedHead && !showAll)) {
+      // 命中尚未进入当前窗口：先显出完整历史；若远端还有头部，再触发一次真正的全量加载。
+      setExtTarget(null)
+      setExtFocusLineNo(null)
+      if (!showAll) setShowAll(true)
+      if (hasRemoteMore && !unresolvedFiredRef.current) {
+        unresolvedFiredRef.current = true
+        onUnresolvedRef.current?.()
+      }
+    } else {
+      // uuid 缺失时保留时间区间兜底，至少可进入正确轮次；有 uuid 的正常搜索结果不会走这里。
+      const fallbackRound = findRoundForMatch(rounds, null, scrollToMatchTs ?? null)
+      setExtFocusLineNo(null)
+      if (fallbackRound) {
+        setExtTarget({ key: roundKeyOf(fallbackRound), offset: headerRef.current?.offsetHeight ?? 0 })
+      } else {
+        setExtTarget(null)
+        onResolvedRef.current?.()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extActive, scrollToEntryUuid, scrollToMatchTs, visibleItems, preItems, rounds, hasRemoteMore, hasOmittedHead, showAll, initialLoading, entries.length])
+
+  // 外部跳转优先; 内部末轮跳转作 fallback. 两者都为 null 时不滚.
+  const activeTarget = extTarget ?? internalTarget
+
+  const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {
+    const blocks: JsonlRenderBlock[] = []
+    if (preItems.length > 0 && hasOmittedHead) {
+      blocks.push({ key: 'continuation', kind: 'continuation', items: preItems })
+    } else {
+      preItems.forEach((item) => {
+        blocks.push({
+          key: `pre:${item.entry?.uuid || item.entry?.id || item.entry?.timestamp || item.lineNo}`,
+          kind: 'preItem',
+          item,
+        })
+      })
+    }
+    rounds.forEach((round, index) => {
+      blocks.push({
+        key: `round:${round.items[0]?.entry?.uuid || round.items[0]?.lineNo || round.roundNum}`,
+        kind: 'round',
+        round,
+        index,
+      })
+    })
+    return blocks
+  }, [hasOmittedHead, preItems, rounds])
+
+  const renderBlock = (block: JsonlRenderBlock) => {
+    if (block.kind === 'continuation') {
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={extFocusLineNo} />
+    }
+    if (block.kind === 'preItem') {
+      const { entry, lineNo, bashResults, readResults } = block.item
+      return (
+        <EntryCardWithImages
+          entry={entry}
+          lineNo={lineNo}
+          bashResults={bashResults}
+          readResults={readResults}
+          showMeta={showMeta}
+          resolvedMap={resolvedMap}
+          forceOpen={lineNo === extFocusLineNo}
+          parentOrderedCollapse={collapseLineNos.has(lineNo)}
+        />
+      )
+    }
+    return (
+      <RoundGroup
+        round={block.round}
+        isLast={block.index === rounds.length - 1}
+        isSecondLast={block.index === rounds.length - 2}
+        onlyGroup={onlyGroup}
+        forceExpandAll={forceExpandAll}
+        forceOpen={block.key === extTarget?.key && extFocusLineNo !== null}
+        showMeta={showMeta}
+        resolvedMap={resolvedMap}
+        cursorStyleTools={cursorStyleTools}
+        collapseLineNos={collapseLineNos}
+        focusLineNo={extFocusLineNo}
+        headerPalette={roundHeaderPalette}
+      />
+    )
+  }
+
+
+  // 空
+  if (entries.length === 0) {
+    if (initialLoading) return <JsonlInitialSkeleton />
+    if (emptyLoadingText) {
+      return (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[12px] text-amber-200 card-enter" aria-live="polite">
+          <div className="flex items-center gap-3">
+            <span className="relative inline-flex w-4 h-4 flex-shrink-0">
+              <span className="absolute inset-0 rounded-full border-2 border-amber-300/20" />
+              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-amber-300 animate-spin" />
+            </span>
+            <span className="font-medium mobius-status-marquee">{emptyLoadingText}</span>
+          </div>
+        </div>
+      )
+    }
+    // 终态空 (加载完毕且非 pending/running): 不再用带 spinner 的"请稍等"承诺一个不会到来的"稍等就有数据",
+    // 改静态空提示. pending/running 的等待态由上层 emptyLoadingText 覆盖 (spinner 文案).
+    return (
+      <div className="text-[12px] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
+        暂无对话内容
+      </div>
+    )
+  }
+
+  // 非空
+  return (
+    <div className="text-[12px]">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">{roundHeaderPaletteAnnouncement}</span>
+      <div ref={headerRef} className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
+        {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
+        {rounds.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{rounds.length} 轮</span>}
+        {/* {hasOmittedHead && <span className="text-[var(--text-muted)] text-[11px]">· 已显示尾部</span>} */}
+        {hasRemoteMore && !!onLoadMore && (
+          <button
+            onClick={() => {
+              if (loadingMore) return
+              onLoadMore()
+              // 加载全部后: 打开整窗 (showAll 让头部条目进入视窗) + 强制展开所有组, 一步 "全部可见且展开".
+              setShowAll(true)
+              setForceExpandAll(true)
+            }}
+            disabled={!!loadingMore}
+            className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)] disabled:opacity-50"
+          >
+            {loadingMore ? '加载中…' : `加载全部 (共 ${displayTotal} 条)`}
+          </button>
+        )}
+        {!hasRemoteMore && entries.length > JSONL_INITIAL_WINDOW_SIZE && !showAll && (
+          <button onClick={() => setShowAll(true)} className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)]">
+            展开全部 ({entries.length})
+          </button>
+        )}
+        {lastRoundUserSummary && (
+          <button
+            type="button"
+            onClick={jumpToLastRound}
+            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border-0 p-0 cursor-pointer text-left transition-colors"
+            title={`点击跳转到末轮：${lastRoundUserSummary}`}
+          >
+            <span className="opacity-60">末轮 ·</span> {lastRoundUserSummary}
+          </button>
+        )}
+      </div>
+      <VirtualizedBlockList
+        blocks={renderBlocks}
+        renderBlock={renderBlock}
+        scrollToKey={activeTarget?.key ?? null}
+        scrollToEntryLineNo={extFocusLineNo}
+        scrollOffset={activeTarget?.offset ?? 0}
+        onScrollToKeyDone={() => {
+          // 搜索有精确条目目标时，不能仅因“轮次已到位”就清参数：目标卡片可能还在随轮次/Explore 组展开而挂载，必须等 onScrollToEntryDone 真的滚到卡片后再结束。
+          if (extTarget && extFocusLineNo !== null) return
+          // 到位 (或超时兜底) 后清除当前活跃跳转. 外部跳转还要通知上层清 URL 参数.
+          if (extTarget) onResolvedRef.current?.()
+          setExtTarget(null)
+          setInternalTarget(null)
+        }}
+        onScrollToEntryDone={() => {
+          if (!extTarget || extFocusLineNo === null) return
+          onResolvedRef.current?.()
+          setExtTarget(null)
+          setInternalTarget(null)
+        }}
+      />
+    </div>
+  )
+}

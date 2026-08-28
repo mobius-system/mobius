@@ -1,8 +1,19 @@
-import { useState, type ComponentPropsWithoutRef } from 'react'
+import { useContext, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { resolveMediaSrc } from './jsonl-vscode-link'
-import { CODE_MARKDOWN_COMPONENTS } from './code-artifacts/CodeMarkdownComponents'
+import { VSCodeOpenContext, isLikelyFilesystemPath, resolveMediaSrc } from './jsonl-vscode-link'
+
+function MarkdownAnchor({ href, children }: { href?: string; children?: ReactNode }) {
+  const ctx = useContext(VSCodeOpenContext)
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!href || !ctx || !isLikelyFilesystemPath(href)) return
+    const url = ctx.openLocalPath(href)
+    if (!url) return // meta not ready yet → let default happen this once
+    e.preventDefault()
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  return <a href={href} target="_blank" rel="noreferrer" onClick={onClick}>{children}</a>
+}
 
 function MarkdownTable({ children, node: _node, ...props }: ComponentPropsWithoutRef<'table'> & { node?: unknown }) {
   return (
@@ -51,7 +62,7 @@ export default function JsonlCompactMarkdown({ text }: { text: string }) {
         remarkPlugins={MARKDOWN_REMARK_PLUGINS as any}
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
         components={{
-          ...CODE_MARKDOWN_COMPONENTS,
+          a: MarkdownAnchor as any,
           table: MarkdownTable as any,
           img: MarkdownImage as any,
         }}>

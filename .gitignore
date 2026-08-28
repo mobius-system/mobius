@@ -61,6 +61,7 @@ logs/
 .env
 .trash
 mobius/public/index.html
+mobius/public/easy-native.html
 mobius/public/assets
 mobius/public/fonts
 mobius/public/designer-eye/

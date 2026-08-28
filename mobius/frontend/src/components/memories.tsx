@@ -197,7 +197,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
           <button onClick={() => setEditing({ mode: 'create' })}
             data-tour={newTour}
             title="直接编辑或粘贴文本创建 Memory"
-            className="text-[10.5px] px-1.5 py-1 rounded bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] border border-[var(--accent-border)] transition-colors whitespace-nowrap">
+            className="text-[10.5px] px-1.5 py-1 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors whitespace-nowrap">
             写入
           </button>
         </div>
@@ -226,7 +226,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                         {m.body_length} 字符
                       </span>
                     )}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
                       {visibilityLabel(m.visibility, m.scope)}
                     </span>
                     {managed && (
@@ -256,7 +256,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handleDelete(m)} title="删除"
-                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-[var(--status-danger-soft)] hover:text-[var(--status-danger)] transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -424,10 +424,10 @@ function writeAimuxRemoteCache(remotes: AimuxRemote[]) {
 }
 
 function statusStyle(status: string) {
-  if (status === 'connected') return { color: 'var(--status-success)', background: 'var(--status-success-soft)', borderColor: 'color-mix(in srgb, var(--status-success) 25%, transparent)' }
-  if (status === 'reachable') return { color: 'var(--accent-primary)', background: 'var(--accent-soft)', borderColor: 'var(--accent-border)' }
+  if (status === 'connected') return { color: '#22c55e', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.25)' }
+  if (status === 'reachable') return { color: '#60a5fa', background: 'rgba(96,165,250,0.10)', borderColor: 'rgba(96,165,250,0.25)' }
   if (status === 'auth-required') return { color: '#f59e0b', background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.25)' }
-  if (status === 'unreachable') return { color: 'var(--status-danger)', background: 'var(--status-danger-soft)', borderColor: 'var(--status-danger-border)' }
+  if (status === 'unreachable') return { color: '#f87171', background: 'rgba(248,113,113,0.10)', borderColor: 'rgba(248,113,113,0.25)' }
   return { color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)', borderColor: 'rgba(148,163,184,0.25)' }
 }
 
@@ -1095,7 +1095,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             </div>
 
             <div className="flex-1 overflow-auto p-5 space-y-2">
-              {err && <pre className="text-[11px] text-[var(--status-danger)] whitespace-pre-wrap break-all">{err}</pre>}
+              {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
               {info && <div className="text-[11px] text-emerald-400">{info}</div>}
               {loading && remotes.length === 0 ? (
                 <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
@@ -1151,7 +1151,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-host" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>主机 <span className="text-[var(--status-danger)]">*</span></span>
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>主机 <span className="text-red-400">*</span></span>
                   <input id="remote-compute-add-host" value={addForm.host} onChange={e => updateAddForm({ host: e.target.value })}
                     placeholder="192.168.1.10 或 host.com"
                     disabled={!!busyName || saving}
@@ -1159,7 +1159,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-user" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>用户名 <span className="text-[var(--status-danger)]">*</span></span>
+                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>用户名 <span className="text-red-400">*</span></span>
                   <input id="remote-compute-add-user" value={addForm.user} onChange={e => updateAddForm({ user: e.target.value })}
                     placeholder="root"
                     disabled={!!busyName || saving}
@@ -1190,7 +1190,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 {busyName === 'add' ? '添加中...' : '添加并探测'}
               </button>
               {(!addForm.host.trim() || !addForm.user.trim()) && (
-                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写带 <span className="text-[var(--status-danger)]">*</span> 的主机与用户名后即可添加</div>
+                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写带 <span className="text-red-400">*</span> 的主机与用户名后即可添加</div>
               )}
             </div>
 
@@ -1357,7 +1357,7 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto p-5 space-y-2">
-          {err && <pre className="text-[11px] text-[var(--status-danger)] whitespace-pre-wrap break-all">{err}</pre>}
+          {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
           {loading ? (
             <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : (
@@ -1563,7 +1563,7 @@ function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, o
               </div>
             </>
           )}
-          {err && <pre className="text-[11px] text-[var(--status-danger)] whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
+          {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
           {importInfo && <pre className="text-[11px] text-amber-400 whitespace-pre-wrap break-all max-h-48 overflow-auto">{importInfo}</pre>}
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>

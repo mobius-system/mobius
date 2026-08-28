@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bot, Users, Trash2 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
@@ -8,25 +8,12 @@ import { ChatArea, SessionRow, isSessionNameMuted } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
-import { AdvancedPageChrome } from '../components/advanced-page-chrome'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
-import type { CodeArtifactEditorRequest, CodeArtifactTarget } from '../components/code-artifacts/file-target'
 import { pollRecursive } from '../services/polling'
-import {
-  focusWorkbenchTarget,
-  navigateToWorkbench,
-  projectPath,
-  readWorkbenchFocusTarget,
-  readWorkbenchReturnTo,
-  researchPath,
-  sessionNavigation,
-  sessionPath,
-  workbenchLocationPath,
-} from '../services/workbench-navigation'
 
 const ResearchAgentTeamModal = lazy(() => import('../components/research-agent-team-modal')
   .then(mod => ({ default: mod.ResearchAgentTeamModal })))
@@ -38,12 +25,10 @@ const SESSION_SIDEBAR_PAGE_SIZE = 16
 
 export default function ResearchPage() {
   const params = useParams()
-  const location = useLocation()
-  const navigate = useNavigate()
   const [search, setSearch] = useSearchParams()
   const { projects, setProjects, setCurrentProject, setCurrentIssue, setCurrentResearch,
           sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
-          workspaceLayoutMode, setWorkspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
+          workspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
   const researchId = params.research || ''
@@ -55,7 +40,7 @@ export default function ResearchPage() {
   // Research Agent 与 Issue Session 共用同一套三种工作区布局。此前顶栏能写入
   // workspaceLayoutMode，但 ResearchPage 从未消费该状态，因此三个菜单项点击后均无视觉变化。
   const isMobile = useIsMobile()
-  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl, loading: editorLoading } = useEditorAvailability(projectId, !!currentSession)
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl } = useEditorAvailability(projectId, !!currentSession)
   const workspaceViewActive = !!currentSession && !showGraph && !showBlackboard
   const editorAvailable = workspaceViewActive && !!editorBindPath && !!editorVscodeUrl
   const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
@@ -63,22 +48,14 @@ export default function ResearchPage() {
   const useCodeConversation = workspaceLayoutMode === 'code-conversation' && codeConversationAvailable
   const [editorMounted, setEditorMounted] = useState(false)
   const [codeConversationMounted, setCodeConversationMounted] = useState(false)
-  const [codeEditorRequest, setCodeEditorRequest] = useState<CodeArtifactEditorRequest | null>(null)
 
   useEffect(() => {
     setEditorMounted(false)
     setCodeConversationMounted(false)
-    setCodeEditorRequest(null)
   }, [projectId])
 
   useEffect(() => { if (useEditorChat) setEditorMounted(true) }, [useEditorChat])
   useEffect(() => { if (useCodeConversation) setCodeConversationMounted(true) }, [useCodeConversation])
-  const openCodeConversation = useCallback((target?: CodeArtifactTarget) => {
-    if (target) {
-      setCodeEditorRequest(previous => ({ target, requestKey: (previous?.requestKey || 0) + 1 }))
-    }
-    setWorkspaceLayoutMode('code-conversation')
-  }, [setWorkspaceLayoutMode])
 
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
   const editorMinWidth = 480
@@ -102,22 +79,6 @@ export default function ResearchPage() {
   const project = projects.find((p: any) => p.id === projectId)
   const sessions = useMemo<any[]>(() => sessionsMap[researchId] || [], [sessionsMap, researchId])
   const research = researchState
-  const researchFallback = projectPath(userParam, projectId)
-  const returnTo = readWorkbenchReturnTo(
-    search,
-    sessionParam ? sessionPath(userParam, sessionParam) : researchFallback,
-  )
-  const researchSourcePath = workbenchLocationPath(
-    location,
-    researchPath(userParam, projectId, researchId, { returnTo }),
-  )
-
-  useEffect(() => {
-    const requestedFocus = readWorkbenchFocusTarget(location.state)
-    if (!showGraph && !showBlackboard && requestedFocus !== 'main-heading') return
-    const frame = window.requestAnimationFrame(() => focusWorkbenchTarget('main-heading'))
-    return () => window.cancelAnimationFrame(frame)
-  }, [location.key, showGraph, showBlackboard, researchState?.id])
 
   useEffect(() => {
     if (!projects.length) api('/api/projects').then(setProjects).catch(() => {})
@@ -276,14 +237,16 @@ export default function ResearchPage() {
     : (hasLeader ? (authorizingTeam ? '授权中' : '创建团队') : '组建团队')
 
   const goToSession = (sid: string) => {
-    navigateToWorkbench(navigate, sessionNavigation(userParam, sid, { sourceSurface: 'research' }))
+    const next = new URLSearchParams(search)
+    next.set('session', sid)
+    next.delete('view')
+    setSearch(next, { replace: false })
   }
 
   const goToOverview = () => {
     const next = new URLSearchParams(search)
     next.delete('session')
     next.delete('view')
-    next.delete('returnTo')
     setSearch(next, { replace: false })
   }
 
@@ -355,25 +318,8 @@ export default function ResearchPage() {
   }, [sidebarPagination.page])
 
   return (
-    <div className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)' }}>
+    <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
-      <AdvancedPageChrome
-        eyebrow="Research"
-        title={research?.title || '正在加载研究'}
-        meta={showGraph ? '研究图谱' : showBlackboard ? 'Blackboard' : `${sessions.length} 个研究智能体`}
-        returnTo={returnTo}
-        fallback={researchFallback}
-        actions={research ? (
-          <button
-            type="button"
-            onClick={() => setEditingResearch(true)}
-            className="workbench-control-md px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)]"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            编辑研究
-          </button>
-        ) : null}
-      />
       <div className="flex flex-1 min-h-0">
         {/* 普通会话布局保留原 Research 侧栏；进入任一编辑布局时隐藏。 */}
         <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
@@ -384,27 +330,30 @@ export default function ResearchPage() {
           maxWidth={480}
           side="left"
           className="border-r flex flex-col"
-          style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
-          <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-default)' }} data-tour="research-header">
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+          <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }} data-tour="research-header">
             <div className="flex items-start gap-2 mb-2">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a8 8 0 10-13.856 0M12 6v6l4 2" />
               </svg>
               <div className="flex-1 min-w-0">
-                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>高级研究工作台</span>
                 <button onClick={goToOverview}
-                  className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-[var(--accent-primary)] transition-colors truncate ${research?.status === 'completed' ? 'line-through' : ''}`}
+                  className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-emerald-400 transition-colors truncate ${research?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: research?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
                   title="返回研究智能体列表">
                   {research?.title || '加载中...'}
                 </button>
                 {project && (
-                  <Link to={projectPath(userParam, projectId, { returnTo: researchSourcePath })}
-                    className="text-[11px] hover:text-[var(--accent-primary)] transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
+                  <Link to={`/u/${userParam}/p/${projectId}`}
+                    className="text-[11px] hover:text-blue-400 transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
                     ← {project.name}
                   </Link>
                 )}
               </div>
+              <button onClick={() => setEditingResearch(true)} title="编辑研究"
+                className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
             </div>
             {research?.description && (
               <p className="text-[11px] leading-relaxed line-clamp-3" style={{ color: 'var(--text-secondary)' }}>{research.description}</p>
@@ -416,12 +365,12 @@ export default function ResearchPage() {
             )}
           </div>
 
-          <div className="px-2 py-2 border-b flex flex-col gap-1" style={{ borderColor: 'var(--border-default)' }}>
+          <div className="px-2 py-2 border-b flex flex-col gap-1" style={{ borderColor: 'var(--border-color)' }}>
             <button onClick={() => setView('blackboard')} title="查看当前研究的 Blackboard 内容" data-tour="research-toggle-blackboard"
               className={`w-full px-3 h-9 flex items-center gap-2 rounded-lg text-[12px] font-medium transition-colors ${showBlackboard ? '' : 'hover:bg-[var(--bg-hover)]'}`}
               style={{
-                background: showBlackboard ? 'var(--surface-active)' : 'transparent',
-                color: showBlackboard ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                background: showBlackboard ? 'rgba(16,185,129,0.12)' : 'transparent',
+                color: showBlackboard ? '#10b981' : 'var(--text-secondary)',
               }}>
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -431,8 +380,8 @@ export default function ResearchPage() {
             <button onClick={() => setView('graph')} title="查看研究 Graph" data-tour="research-toggle-graph"
               className={`w-full px-3 h-9 flex items-center gap-2 rounded-lg text-[12px] font-medium transition-colors ${showGraph ? '' : 'hover:bg-[var(--bg-hover)]'}`}
               style={{
-                background: showGraph ? 'var(--surface-active)' : 'transparent',
-                color: showGraph ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                background: showGraph ? 'rgba(16,185,129,0.12)' : 'transparent',
+                color: showGraph ? '#10b981' : 'var(--text-secondary)',
               }}>
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -441,17 +390,16 @@ export default function ResearchPage() {
             </button>
           </div>
 
-          <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: 'var(--border-default)' }}>
+          <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: 'var(--border-color)' }}>
             <button onClick={goToOverview}
-              className="text-[13px] font-semibold hover:text-[var(--accent-primary)] transition-colors min-w-0 truncate"
+              className="text-[13px] font-semibold hover:text-emerald-400 transition-colors min-w-0 truncate"
               style={{ color: 'var(--text-muted)' }}>
               Research Agents ({sessions.length})
             </button>
             <button onClick={openNewAgent}
               disabled={authorizingTeam}
               title={research?.mode === 'chief_led' && assistantCount === 0 ? '授权 Chief 创建团队' : (assistantCount === 0 ? '搭建研究团队' : '新建单个研究智能体')} data-tour="research-new-agent"
-              className="h-6 px-2 flex items-center gap-1 rounded-md hover:bg-[var(--surface-active)] transition-colors text-[11px] shrink-0"
-              style={{ color: 'var(--accent-primary)' }}>
+              className="h-6 px-2 flex items-center gap-1 rounded-md hover:bg-emerald-500/15 text-emerald-400 transition-colors text-[11px] shrink-0">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               {newAgentLabel}
             </button>
@@ -522,29 +470,36 @@ export default function ResearchPage() {
                 projectId={projectId}
                 bindPath={editorBindPath}
                 vscodeWebUrl={editorVscodeUrl}
-                initialFilePath={codeEditorRequest?.target.path}
-                initialLine={codeEditorRequest?.target.line}
-                initialColumn={codeEditorRequest?.target.column}
-                initialEndLine={codeEditorRequest?.target.endLine}
-                initialOpenKey={codeEditorRequest?.requestKey}
               />
             </Suspense>
           </div>
         )}
 
         {showGraph ? (
-          <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--surface-raised)' }}>
-            <div className="flex-shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-default)' }}>
-              <h2 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>研究图谱</h2>
+          <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-secondary)' }}>
+            <div className="flex-shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>研究图谱</span>
+              {currentSession && (
+                <button onClick={() => goToSession(currentSession.session_id)}
+                  className="text-[12px] hover:text-emerald-400 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                  ← 返回 Research Agent
+                </button>
+              )}
             </div>
             <div className="flex-1 min-h-0">
               <ResearchGraph researchId={researchId} />
             </div>
           </main>
         ) : showBlackboard ? (
-          <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--surface-raised)' }}>
-            <div className="flex-shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-default)' }}>
-              <h2 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Blackboard</h2>
+          <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-secondary)' }}>
+            <div className="flex-shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Blackboard</span>
+              {currentSession && (
+                <button onClick={() => goToSession(currentSession.session_id)}
+                  className="text-[12px] hover:text-emerald-400 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                  ← 返回 Research Agent
+                </button>
+              )}
             </div>
             <div className="flex-1 min-h-0">
               <ResearchBlackboard researchId={researchId} />
@@ -553,16 +508,7 @@ export default function ResearchPage() {
         ) : currentSession ? (
           <ChatArea
             layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
-            toolOrigin="research"
             onNewSession={(useEditorChat || useCodeConversation) ? openNewAgent : undefined}
-            workspaceEditor={{
-              available: codeConversationAvailable,
-              loading: editorLoading,
-              open: useCodeConversation,
-              unavailableReason: !currentSession ? '请先选择会话' : !editorBindPath ? '需要先为项目绑定工作路径（bind path）' : '',
-              onOpen: openCodeConversation,
-              supportsFileLocation: true,
-            }}
           />
         ) : sessionParam ? (
           <Loading text="正在加载研究智能体..." />
@@ -620,9 +566,8 @@ export default function ResearchPage() {
         }} />}
       {showTeamSession && (
         <Suspense fallback={
-          <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center backdrop-blur-sm">
-            <div className="theme-overlay__scrim absolute inset-0" />
-            <div className="theme-overlay__panel relative rounded-[var(--radius-modal)] border px-5 py-3 text-[13px] shadow-xl" style={{ color: 'var(--text-muted)' }}>正在加载 Agent 团队菜单...</div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <div className="rounded-xl border px-5 py-3 text-[13px] shadow-xl" style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>正在加载 Agent 团队菜单...</div>
           </div>
         }>
           <ResearchAgentTeamModal
@@ -693,14 +638,14 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
     : (assistantCount === 0 ? '搭建团队' : '新Agent')
 
   return (
-    <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--surface-raised)' }}>
+    <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-secondary)' }}>
       <div className="flex-shrink-0 px-6 pt-4 flex items-center gap-1 border-b" style={{ borderColor: 'var(--border-color)' }}>
         {([['sessions', '研究智能体'], ['blackboard', 'Blackboard'], ['graph', '研究 Graph']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setView(key)}
             className="px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors"
             style={{
               color: view === key ? 'var(--text-primary)' : 'var(--text-muted)',
-              borderColor: view === key ? 'var(--accent-primary)' : 'transparent',
+              borderColor: view === key ? '#10b981' : 'transparent',
             }}>
             {label}
           </button>
@@ -720,39 +665,37 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
       <div className="max-w-5xl mx-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 data-workbench-main-heading tabIndex={-1} className="text-[18px] font-semibold outline-none" style={{ color: 'var(--text-primary)' }}>所有研究智能体</h1>
+            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>所有研究智能体</h1>
             <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
               共 {sessions.length} 个 Research Agent · 点击进入对话或新建 Research Agent
             </p>
           </div>
           <button onClick={onNewSession} disabled={authorizingTeam}
-            className="h-9 px-4 rounded-lg text-[13px] transition-colors flex items-center gap-2"
-            style={{ color: 'var(--text-on-accent)', background: 'var(--accent-primary)' }}>
+            className="h-9 px-4 rounded-lg text-[13px] text-white bg-emerald-500 hover:bg-emerald-600 transition-colors flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
             {newAgentLabel === '授权中' ? '授权中...' : newAgentLabel}
           </button>
         </div>
 
-        <div className="mb-5 rounded-xl border p-4" style={{ background: 'var(--surface-base)', borderColor: 'var(--border-default)' }}>
+        <div className="mb-5 rounded-xl border p-4" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <span className="rounded-full px-2 py-1 font-medium" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>
+            <span className="rounded-full px-2 py-1 font-medium" style={{ background: research?.mode === 'chief_led' ? 'rgba(16,185,129,.12)' : 'rgba(59,130,246,.12)', color: research?.mode === 'chief_led' ? '#10b981' : '#60a5fa' }}>
               {research?.mode === 'chief_led' ? 'Chief 主导 · AI 组队' : '自定义 · 人工组队'}
             </span>
             <span style={{ color: 'var(--text-secondary)' }}>
               存活 Assistant {teamState?.active_assistant_count ?? sessions.filter((s: any) => s.research_role === 'research_assistant').length}/{teamState?.assistant_limit ?? research?.assistant_limit ?? 3}
             </span>
             <span style={{ color: 'var(--text-muted)' }}>Chief 不占名额</span>
-            {teamState?.mutation_in_progress && <span style={{ color: 'var(--status-waiting)' }}>团队变更进行中</span>}
+            {teamState?.mutation_in_progress && <span className="text-amber-400">团队变更进行中</span>}
           </div>
-          {teamNotice && <div className="mt-2 text-[11px]" style={{ color: 'var(--status-success)' }}>{teamNotice}</div>}
+          {teamNotice && <div className="mt-2 text-[11px] text-emerald-400">{teamNotice}</div>}
           {Array.isArray(teamState?.actions) && teamState.actions.length > 0 && (
             <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
               <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>团队活动</div>
               <div className="space-y-1.5">
                 {teamState.actions.slice(0, 6).map((action: any) => (
                   <div key={action.id} className="flex items-start gap-2 text-[11px]">
-                    <span className={`mt-0.5 h-2 w-2 rounded-full ${action.status === 'completed' || action.status === 'authorized' ? '' : action.status === 'failed' ? '' : 'animate-pulse'}`}
-                      style={{ background: action.status === 'completed' || action.status === 'authorized' ? 'var(--status-success)' : action.status === 'failed' ? 'var(--status-danger)' : 'var(--status-waiting)' }} />
+                    <span className={`mt-0.5 h-2 w-2 rounded-full ${action.status === 'completed' || action.status === 'authorized' ? 'bg-emerald-400' : action.status === 'failed' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`} />
                     <span className="w-20 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
                       {action.action_type === 'authorize' ? '用户授权' : action.action_type === 'recruit' ? '招募 Agent' : action.action_type === 'remove' ? 'Agent 离队' : action.action_type}
                     </span>
@@ -771,8 +714,7 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
           <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
             <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前研究还没有智能体</div>
             <button onClick={onNewSession}
-              className="h-9 px-4 rounded-lg text-[13px] transition-colors inline-flex items-center gap-2"
-              style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+              className="h-9 px-4 rounded-lg text-[13px] text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 transition-colors inline-flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               创建第一个 Research Agent
             </button>
@@ -788,8 +730,8 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
               return (
                 <div key={s.session_id}
                   onClick={() => onOpenSession(s.session_id)}
-                  className="rounded-xl border overflow-hidden flex flex-col group cursor-pointer transition-all"
-                  style={{ background: 'var(--surface-base)', borderColor: 'var(--border-default)' }}>
+                  className="rounded-xl border overflow-hidden flex flex-col group cursor-pointer transition-all hover:border-emerald-500/30"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                   <div className="px-4 py-3 border-b flex items-start gap-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="mt-1 flex-shrink-0">
                       <AgentStatusDot agentStatus={s.agent_status} />
@@ -798,19 +740,19 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                       <div className={`text-[14px] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
                         style={{ color: nameMuted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
                       <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                        {isFailed && <span style={{ color: 'var(--status-danger)' }}>● 任务失败</span>}
-                        {!isFailed && isRunning && <span style={{ color: 'var(--status-running)' }}>● 执行中</span>}
-                        {!isFailed && !isRunning && isCompleted && <span style={{ color: 'var(--status-success)' }}>已完成</span>}
+                        {isFailed && <span className="text-red-400">● 任务失败</span>}
+                        {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
+                        {!isFailed && !isRunning && isCompleted && <span>已完成</span>}
                         {!isFailed && !isRunning && !isCompleted && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                      <button onClick={(e) => { e.stopPropagation(); onEdit(s) }} className="p-1 rounded hover:bg-[var(--surface-control-hover)]" title="重命名">
-                        <svg className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      <button onClick={(e) => { e.stopPropagation(); onEdit(s) }} className="p-1 rounded hover:bg-white/10" title="重命名">
+                        <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
                       {s.research_role !== 'chief_researcher' && (
-                        <button onClick={(e) => { e.stopPropagation(); onDelete(s) }} className="p-1 rounded" style={{ color: 'var(--status-danger)' }} title="删除">
-                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(s) }} className="p-1 rounded hover:bg-red-500/10" title="删除">
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" strokeWidth={1.8} />
                         </button>
                       )}
                     </div>
@@ -849,19 +791,22 @@ function ResearchAgentCreateChoiceModal({ onClose, onAiLeader, onCustom }: {
   onAiLeader: () => void
   onCustom: () => void
 }) {
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
   const optionStyle = {
-    background: 'var(--surface-control)',
-    borderColor: 'var(--border-strong)',
+    background: 'var(--input-bg)',
+    borderColor: 'var(--input-border)',
     color: 'var(--text-primary)',
   }
 
   return (
-    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
-      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
-      <div className="theme-overlay__panel relative w-[min(560px,calc(100vw-32px))] rounded-[var(--radius-modal)] border p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[min(560px,calc(100vw-32px))] rounded-2xl border p-5 shadow-2xl"
+        style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>选择组队方式</h3>
+            <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择组队方式</h3>
             <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>研究还没有任何 Agent。选择 AI-Leader 自动组队，或人工自定义组队。</p>
           </div>
           <button onClick={onClose} className="rounded-lg px-2 py-1 text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-muted)' }}>
@@ -871,9 +816,9 @@ function ResearchAgentCreateChoiceModal({ onClose, onAiLeader, onCustom }: {
 
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           <button onClick={onAiLeader}
-            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:bg-[var(--surface-control-hover)]"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-blue-500/40 hover:bg-blue-500/5"
             style={optionStyle}>
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg" style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
               <Bot className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">AI-Leader 自动组队</div>
@@ -883,9 +828,9 @@ function ResearchAgentCreateChoiceModal({ onClose, onAiLeader, onCustom }: {
           </button>
 
           <button onClick={onCustom}
-            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:bg-[var(--surface-control-hover)]"
+            className="min-w-0 rounded-xl border p-4 text-left whitespace-normal transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/5"
             style={optionStyle}>
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg" style={{ color: 'var(--status-success)', background: 'var(--status-success-soft)' }}>
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
               <Users className="h-5 w-5" strokeWidth={1.8} />
             </div>
             <div className="min-w-0 whitespace-normal break-words text-[14px] font-semibold">人工自定义组队</div>
@@ -904,6 +849,9 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
   onClose: () => void
   onDelete: (notifyOthers: boolean) => Promise<void>
 }) {
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
+  const [mode, setMode] = useState<'notify' | 'direct'>('notify')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const agentName = session?.name || session?.session_id || '这个研究智能体'
@@ -912,7 +860,7 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
     setLoading(true)
     setErr('')
     try {
-      await onDelete(true)
+      await onDelete(mode === 'notify')
     } catch (e: any) {
       setErr(e?.message || '删除失败')
     } finally {
@@ -920,27 +868,52 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
     }
   }
 
+  const optionStyle = (active: boolean) => ({
+    background: active ? (isDark ? 'rgba(16,185,129,0.13)' : 'rgba(16,185,129,0.08)') : 'var(--input-bg)',
+    borderColor: active ? 'rgba(16,185,129,0.55)' : 'var(--input-border)',
+    color: 'var(--text-primary)',
+  })
+
   return (
-    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
-      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
-      <div className="theme-overlay__panel relative w-[420px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-6" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start gap-3 mb-4">
-          <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}>
+          <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-400">
             <Trash2 className="w-4 h-4" strokeWidth={1.8} />
           </div>
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除研究智能体</h3>
-            <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>删除研究智能体</h3>
+            <p className="mt-1 text-[12px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               这会永久删除「{agentName}」的会话记录，并关闭它的后台执行。
             </p>
           </div>
         </div>
 
-        <div className="mb-4 rounded-lg border px-3 py-2.5" style={{ background: 'var(--status-success-soft)', borderColor: 'color-mix(in srgb, var(--status-success) 35%, transparent)' }}>
-          <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>由 HR 通告并交接</div>
-          <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            HR 会在 Blackboard 写入离队原因和任务交接，再关闭并删除这个 Research Agent。Research Agent 不允许静默离队。
-          </div>
+        <div className="space-y-2 mb-4">
+          <button type="button" disabled={loading} onClick={() => { setMode('notify'); setErr('') }}
+            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
+            style={optionStyle(mode === 'notify')}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium">告知其他智能体</span>
+              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'notify' ? '#10b981' : 'var(--input-border)', background: mode === 'notify' ? '#10b981' : 'transparent' }} />
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              先由 HR 在黑板（Blackboard）写下该智能体已离开团队，再删除。
+            </div>
+          </button>
+          <button type="button" disabled={loading} onClick={() => { setMode('direct'); setErr('') }}
+            className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50"
+            style={optionStyle(mode === 'direct')}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium">直接删除</span>
+              <span className="h-3.5 w-3.5 rounded-full border" style={{ borderColor: mode === 'direct' ? '#10b981' : 'var(--input-border)', background: mode === 'direct' ? '#10b981' : 'transparent' }} />
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              不通知 HR，也不写黑板记录，直接删除这个 Research Agent。
+            </div>
+          </button>
         </div>
 
         {err && <ErrBanner>{err}</ErrBanner>}
@@ -948,13 +921,12 @@ function DeleteResearchAgentModal({ session, onClose, onDelete }: {
         <div className="flex gap-2">
           <button onClick={onClose} disabled={loading}
             className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-control-hover)' }}>
+            style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>
             取消
           </button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] transition-colors disabled:opacity-40"
-            style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }}>
-            {loading ? '删除中...' : '由 HR 通告并删除'}
+            className="flex-1 h-9 rounded-xl text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
+            {loading ? '删除中...' : (mode === 'notify' ? '写入并删除' : '直接删除')}
           </button>
         </div>
       </div>

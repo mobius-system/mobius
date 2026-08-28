@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
-import { useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
+import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { TopNav } from '../components/shell'
 import {
-  NewIssueModal, RenameIssueModal, ConfirmModal,
+  NewIssueModal, ConfirmModal,
   NewProjectModal, DeleteProjectModal, PathPickerModal,
   NewResearchModal, RenameResearchModal,
 } from '../components/modals'
@@ -22,7 +22,6 @@ import {
 import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
 import { ProjectSettingsPanel, type SettingsPane } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
-import { AdvancedPageChrome } from '../components/advanced-page-chrome'
 import type { OverflowTab } from '../components/project-page/ProjectOverflowTabs'
 import { ResizablePanel, useMobileNavBreakpoint, useIsMobile } from '../components/resizable-panel'
 import type { GitRepoDraft, IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectListSection } from '../components/project-page/types'
@@ -33,19 +32,6 @@ import {
 } from '../services/project-session-search'
 import { projectItemOrder } from '../services/project-session-order'
 import { pollRecursive } from '../services/polling'
-import {
-  focusWorkbenchTarget,
-  homePath,
-  issueNavigation,
-  navigateToWorkbench,
-  projectPath,
-  projectNavigation,
-  readWorkbenchFocusTarget,
-  readWorkbenchReturnTo,
-  researchNavigation,
-  sessionNavigation,
-  workbenchLocationPath,
-} from '../services/workbench-navigation'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -122,7 +108,6 @@ function intervalDraftMatchesSaved(value: string, saved: any, fallback: number) 
 // =====================================================================
 export default function ProjectPage() {
   const params = useParams()
-  const location = useLocation()
   const navigate = useNavigate()
   const { projects, setProjects, currentProject, setCurrentProject,
           issues, issuesMap, setIssues, setIssuesMap, setCurrentIssue,
@@ -130,18 +115,6 @@ export default function ProjectPage() {
           sessionsMap, setSessionsMap, setSessionsMapBatch, setCurrentSession, setCurrentTask } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
-  const projectFallback = homePath(userParam)
-  const returnTo = readWorkbenchReturnTo(location.search, projectFallback)
-  const projectSourcePath = workbenchLocationPath(
-    location,
-    projectPath(userParam, projectId, { returnTo }),
-  )
-
-  useEffect(() => {
-    if (readWorkbenchFocusTarget(location.state) !== 'main-heading') return
-    const frame = window.requestAnimationFrame(() => focusWorkbenchTarget('main-heading'))
-    return () => window.cancelAnimationFrame(frame)
-  }, [location.key, currentProject?.id])
 
   // 项目详情页内容密集 (左栏 + 多面板主区), 把移动端断点提到 1024px,
   // 让平板宽度也进入抽屉式侧栏 + 主区纵向堆叠, 排版更宽松美观.
@@ -155,7 +128,6 @@ export default function ProjectPage() {
   const [showNewProject, setShowNewProject] = useState(false)
   const [showNewIssue, setShowNewIssue] = useState(false)
   const [showNewResearch, setShowNewResearch] = useState(false)
-  const [editingIssue, setEditingIssue] = useState<any>(null)
   const [editingResearch, setEditingResearch] = useState<any>(null)
   const [confirmAction, setConfirmAction] = useState<IssueConfirmAction | null>(null)
   const [showDelete, setShowDelete] = useState(false)
@@ -191,7 +163,7 @@ export default function ProjectPage() {
 
   // 左侧导航按钮样式与用户主页统一 (图标 + 文案). settings tab 在此追加图标并改用更短的文案.
   const navCls = (active: boolean) =>
-    `flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${active ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--surface-control-hover)]'}`
+    `flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`
   const SETTINGS_NAV_META: Record<string, { label: string; icon: ReactNode }> = {
     settings: { label: '项目设置', icon: <Settings className="w-4 h-4" strokeWidth={1.8} /> },
     context: { label: '记忆技能', icon: <Brain className="w-4 h-4" strokeWidth={1.8} /> },
@@ -727,16 +699,10 @@ export default function ProjectPage() {
       .catch(() => {})
   }
 
-  if (!projectId) return <Navigate to={homePath(userParam)} replace />
+  if (!projectId) return <Navigate to={`/u/${userParam}`} replace />
   if (!project) return (
-    <div className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)' }}>
+    <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
-      <AdvancedPageChrome
-        eyebrow="Project"
-        title="正在加载项目"
-        returnTo={returnTo}
-        fallback={projectFallback}
-      />
       <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
         <div className="text-[13px]">加载项目中...</div>
       </div>
@@ -747,15 +713,8 @@ export default function ProjectPage() {
   const PROJECT_SIDEBAR_HIDDEN = true
 
   return (
-    <div className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)' }}>
+    <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
-      <AdvancedPageChrome
-        eyebrow="Project"
-        title={project.name}
-        meta={rightView === 'items' ? (section === 'issues' ? '任务列表' : '研究列表') : '项目设置'}
-        returnTo={returnTo}
-        fallback={projectFallback}
-      />
       <div className="flex flex-1 min-h-0">
         {/* 元素3 (原项目 issue 列表侧边栏) 暂时隐藏 (仅桌面端; 移动端仍保留抽屉). */}
         {(!PROJECT_SIDEBAR_HIDDEN || isMobile) && (
@@ -766,11 +725,10 @@ export default function ProjectPage() {
           maxWidth={480}
           side="left"
           className="border-r flex flex-col"
-          style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           <ProjectSidebar
             userParam={userParam}
             projectId={projectId}
-            returnTo={projectSourcePath}
             issues={sidebarPagedIssues}
             search={search}
             filter={filter}
@@ -806,12 +764,8 @@ export default function ProjectPage() {
             maxWidth={360}
             side="left"
             className="border-r flex flex-col"
-            style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
             <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto p-2">
-              <div className="mb-1 rounded-lg px-3 py-2" aria-label="项目详情">
-                <span className="block text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>项目详情</span>
-                <strong className="mt-0.5 block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{project.name}</strong>
-              </div>
               <button type="button" onClick={() => { setRightView('items'); setSection('issues') }}
                 className={navCls(rightView === 'items' && section === 'issues')}
                 style={rightView === 'items' && section === 'issues' ? undefined : { color: 'var(--text-secondary)' }}
@@ -825,7 +779,7 @@ export default function ProjectPage() {
                 style={rightView === 'items' && section === 'researches' ? undefined : { color: 'var(--text-secondary)' }}>
                 <FlaskConical className="w-4 h-4" strokeWidth={1.8} /> 研究列表
               </button>
-              <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--border-default)' }} />
+              <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
               {exposedSettingsTabs.map(t => {
                 const meta = SETTINGS_NAV_META[t.key] || { label: t.label, icon: null as ReactNode }
                 const active = rightView === 'settings' && !!t.active
@@ -842,7 +796,7 @@ export default function ProjectPage() {
           </ResizablePanel>
         )}
 
-        <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--surface-raised)' }}>
+        <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
           {/* 任务/研究列表是卡片网格, 在大屏放宽最大宽度让网格铺开更多列, 减少右侧留白;
               项目设置表单仍保持 max-w-7xl 保证长表单可读性. */}
           <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
@@ -909,7 +863,6 @@ export default function ProjectPage() {
                   project={project}
                   userParam={userParam}
                   projectId={projectId}
-                  returnTo={projectSourcePath}
                   section={section}
                   filter={filter}
                   search={search}
@@ -945,7 +898,6 @@ export default function ProjectPage() {
                   onCreateIssue={openNewIssue}
                   onCreatePlanningIssue={openNewPlanningIssue}
                   onCreateResearch={openNewResearch}
-                  onEditIssue={setEditingIssue}
                   onEditResearch={setEditingResearch}
                   onIssueConfirm={setConfirmAction}
                   onToggleResearchStatus={toggleResearchStatus}
@@ -974,7 +926,7 @@ export default function ProjectPage() {
 
       {showNewProject && <NewProjectModal onClose={() => setShowNewProject(false)} onCreated={(p: any) => {
         setShowNewProject(false)
-        if (p?.id && p?.created_by) navigateToWorkbench(navigate, projectNavigation(p.created_by, p.id))
+        if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`)
       }} />}
       {showNewIssue && <NewIssueModal projectId={projectId} defaultUseWorktree={!!project?.default_use_worktree} forcePlanning={newIssueForcePlanning}
         onClose={() => { setShowNewIssue(false); setNewIssueForcePlanning(false) }}
@@ -984,25 +936,17 @@ export default function ProjectPage() {
           refreshIssues()
           // 规划模式: 后端已自动创建 Session, 直接跳到 Session 页面.
           if (options?.planningSessionId) {
-            navigateToWorkbench(navigate, sessionNavigation(userParam, options.planningSessionId))
+            navigate(`/u/${userParam}/p/${projectId}/i/${iss.id}?session=${options.planningSessionId}`)
           } else {
-            navigateToWorkbench(navigate, issueNavigation(userParam, projectId, iss.id, {
-              newSession: !!options?.createFirstSession,
-              returnTo: projectSourcePath,
-            }))
+            navigate(`/u/${userParam}/p/${projectId}/i/${iss.id}${options?.createFirstSession ? '?newSession=1' : ''}`)
           }
         }} />}
       {showNewResearch && <NewResearchModal projectId={projectId} onClose={() => setShowNewResearch(false)}
         onCreated={(research: any, options?: { createLeader?: boolean }) => {
           setShowNewResearch(false); refreshResearches()
           // 仿 Issue 的"立即创建第一个会话": 立即创建 Leader 时进入 Research 自动打开 Leader 配置.
-          navigateToWorkbench(navigate, researchNavigation(userParam, projectId, research.id, {
-            newLeader: !!options?.createLeader,
-            returnTo: projectSourcePath,
-          }))
+          navigate(`/u/${userParam}/p/${projectId}/r/${research.id}${options?.createLeader ? '?newLeader=1' : ''}`)
         }} />}
-      {editingIssue && <RenameIssueModal issue={editingIssue} onClose={() => setEditingIssue(null)}
-        onRenamed={() => { setEditingIssue(null); refreshIssues() }} />}
       {editingResearch && <RenameResearchModal research={editingResearch} onClose={() => setEditingResearch(null)}
         onRenamed={() => { setEditingResearch(null); refreshResearches() }} />}
       {confirmAction && <ConfirmModal
@@ -1023,13 +967,13 @@ export default function ProjectPage() {
         onConfirm={handleConfirm}
         onClose={() => setConfirmAction(null)}
         confirmText={confirmAction.kind === 'delete' ? '删除' : '确认'}
-        confirmClass={confirmAction.kind === 'delete' ? 'bg-[var(--status-danger)] !text-[var(--status-danger-foreground)] hover:opacity-90' :
-          confirmAction.kind === 'complete' ? 'bg-[var(--status-success)] !text-[var(--surface-base)] hover:opacity-90' :
-          'bg-[var(--accent-primary)] !text-[var(--text-on-accent)] hover:opacity-90'} />}
+        confirmClass={confirmAction.kind === 'delete' ? 'bg-red-500 hover:bg-red-600' :
+          confirmAction.kind === 'complete' ? 'bg-green-500 hover:bg-green-600' :
+          'bg-blue-500 hover:bg-blue-600'} />}
       {pickerOpen && <PathPickerModal initialPath={editBindPath} onClose={() => setPickerOpen(false)}
         onPick={(abs, _rel, manual) => { setEditBindPath(abs); setEditBindPathManual(!!manual); setPickerOpen(false) }} />}
       {showDelete && <DeleteProjectModal project={project} onClose={() => setShowDelete(false)}
-        onDeleted={() => { setShowDelete(false); navigate(homePath(userParam)) }} />}
+        onDeleted={() => { setShowDelete(false); navigate(`/u/${userParam}`) }} />}
     </div>
   )
 }

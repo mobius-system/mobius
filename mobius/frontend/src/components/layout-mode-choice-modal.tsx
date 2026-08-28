@@ -37,7 +37,7 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
           </span>
           <h1 id="layout-mode-choice-title" className="text-lg font-semibold">选择你的使用模式</h1>
           <p id="layout-mode-choice-description" className="mt-1.5 text-[13px] leading-5" style={{ color: 'var(--text-muted)' }}>
-            此选择会保存在当前浏览器中，之后也可以在顶栏里随时切换。
+            此选择会保存在当前浏览器中，之后也可以在主题菜单里随时切换。
           </p>
         </div>
 

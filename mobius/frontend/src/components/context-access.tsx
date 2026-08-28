@@ -135,7 +135,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                     <button key={tab.key} type="button" onClick={() => setFilter(tab.key)}
                       className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors"
                       style={active
-                        ? { background: 'var(--surface-active)', borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' }
+                        ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
                         : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
                       {tab.label}
                       <span style={{ opacity: 0.7 }}>{count}</span>
@@ -150,7 +150,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索访客姓名或账号..."
-                  className="h-8 flex-1 min-w-[140px] rounded-md border px-3 text-[12px] outline-none focus:border-[var(--accent-border)]"
+                  className="h-8 flex-1 min-w-[140px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
                 />
                 <button type="button" onClick={() => setShowAdd((s) => !s)}
@@ -190,7 +190,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                           <div className="mt-0.5 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{ownerId}</div>
                         </td>
                         <td style={tdStyle}>
-                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)', borderColor: 'var(--accent-border)' }}>创建者 · 全权</span>
+                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={{ background: 'rgba(59,130,246,0.16)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.32)' }}>创建者 · 全权</span>
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
                           <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>
@@ -209,7 +209,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
                           <button type="button" onClick={() => removeGuest(id)} disabled={saving}
                             className="h-7 px-2 rounded-md text-[11px] border transition-colors"
-                            style={{ borderColor: 'var(--status-danger-border)', color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}>
+                            style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
                             移除
                           </button>
                         </td>
@@ -225,7 +225,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
               <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
                 创建者全权；访客可阅读、可使用，但不能修改。无访客时仅创建者可见。
               </p>
-              {err && <pre className="text-[11px] text-[var(--status-danger)] whitespace-pre-wrap break-all">{err}</pre>}
+              {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
             </>
           )}
         </div>

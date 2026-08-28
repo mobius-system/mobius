@@ -298,7 +298,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
           </button>
           <button onClick={() => setAdding(true)}
             data-tour={addTour}
-            className="text-[10.5px] px-1.5 py-1 rounded bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] border border-[var(--accent-border)] transition-colors whitespace-nowrap">
+            className="text-[10.5px] px-1.5 py-1 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors whitespace-nowrap">
             添加
           </button>
         </div>
@@ -408,7 +408,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
             </>
           )}
 
-          {err && <pre className="text-[11px] text-[var(--status-danger)] mb-2 whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
+          {err && <pre className="text-[11px] text-red-400 mb-2 whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
           {importInfo && <pre className="text-[11px] text-amber-400 mb-2 whitespace-pre-wrap break-all max-h-40 overflow-auto">{importInfo}</pre>}
           <div className="flex gap-2">
             {addMode === 'manual' ? (
@@ -451,7 +451,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                         {sk.body_length} 字符
                       </span>
                     )}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
                       {visibilityLabel(sk.visibility, sk.scope)}
                     </span>
                   </div>
@@ -478,7 +478,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button onClick={() => handleDelete(sk.id)} title="移除"
-                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-[var(--status-danger-soft)] hover:text-[var(--status-danger)] transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    className="h-7 w-7 inline-flex items-center justify-center rounded border hover:bg-red-500/10 hover:text-red-400 transition-colors" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -554,7 +554,7 @@ function SkillBodyViewer({ baseUrl, skillId, title, onClose }: { baseUrl: string
         </div>
         <div className="flex-1 overflow-auto p-5">
           {loading ? <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-            : err ? <div className="text-[12px] text-[var(--status-danger)]">{err}</div>
+            : err ? <div className="text-[12px] text-red-400">{err}</div>
             : <pre className="text-[12px] leading-relaxed whitespace-pre-wrap font-mono p-4 rounded-xl border"
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>{body}</pre>}
         </div>
@@ -647,9 +647,9 @@ export function IssueSkillSelector({ issueId, onChange }: { issueId: string; onC
         {data.available.map((sk: any) => {
           const st = stateOf(sk.id)
           const colors = st === 'selected'
-            ? { bg: 'var(--status-success-soft)', border: 'color-mix(in srgb, var(--status-success) 40%, transparent)', text: 'var(--status-success)', label: '✓ 启用' }
+            ? { bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.4)', text: '#22c55e', label: '✓ 启用' }
             : st === 'excluded'
-            ? { bg: 'var(--status-danger-soft)', border: 'var(--status-danger-border)', text: 'var(--status-danger)', label: '✕ 排除' }
+            ? { bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.4)', text: '#ef4444', label: '✕ 排除' }
             : { bg: 'transparent', border: 'var(--input-border)', text: 'var(--text-muted)', label: '默认' }
           return (
             <button key={sk.id} onClick={() => cycle(sk.id)} disabled={saving}

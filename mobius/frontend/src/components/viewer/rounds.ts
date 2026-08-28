@@ -8,18 +8,11 @@
 import type { AnyEntry, JsonlViewItem, Round, RoundItem } from './types'
 import { isNewRound } from '../jsonl-round-helpers'
 
-const USER_QUESTION_MARKERS = [
-  /(?:^|\n)\s*【?\s*##\s*用户的问题\s*】?\s*(?:\r?\n|$)/,
-  /(?:^|\n)\s*【用户的问题】\s*(?:\r?\n|$)/,
-  /(?:^|\n)\s*【?\s*##\s*User'?s Question\s*】?\s*(?:\r?\n|$)/i,
-  /(?:^|\n)\s*【User'?s Question】\s*(?:\r?\n|$)/i,
-]
-
-// 提取一个"开新轮"候选条目里实际呈现给用户的原文, 三种格式对应同一次输入:
-// mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
+// 提取一个"开新轮"候选条目里实际呈现给用户的归一化文本, 仅用于 buildRounds 内部去重比较.
+// 三种格式对应同一次输入: mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
 function userTextOf(e: AnyEntry): string {
   if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') {
-    return String(e?.payload?.message || e?.payload?.content || '').trim()
+    return String(e?.payload?.message || '').trim()
   }
   if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
     const c = e?.payload?.content
@@ -36,42 +29,17 @@ function userTextOf(e: AnyEntry): string {
   return ''
 }
 
-function findUserQuestionMarker(text: string): { index: number; length: number } | null {
-  let best: { index: number; length: number } | null = null
-  for (const marker of USER_QUESTION_MARKERS) {
-    const match = text.match(marker)
-    if (match && match.index != null && (!best || match.index < best.index)) {
-      best = { index: match.index, length: match[0].length }
-    }
-  }
-  return best
-}
-
-function stripUserFraming(text: string): string {
-  if (!text) return text
-  const marker = findUserQuestionMarker(text)
-  if (!marker) return text
-  const after = text.slice(marker.index + marker.length).trim()
-  return after || text
-}
-
-function canonicalUserText(text: string): string {
-  return stripUserFraming(text).replace(/\s+/g, ' ').trim()
-}
-
-function isFramedUserText(text: string): boolean {
-  return !!findUserQuestionMarker(text)
-}
-
-// 上一轮是否已经开始真正回复. developer / system 指令不算, 否则 wrapUserMessage
-// 前的 Codex 系统消息会把「裸原文 + 带框架原文」拆成两轮.
+// 该 entry 是否承载 agent 侧输出 — 用来判断上一轮"是否已经开始接收回复"(用以拒绝把真正的二次提问误判为重复入口).
 function isAssistantOutput(e: AnyEntry): boolean {
   if (e?.type === 'assistant') return true
   if (e?.type === 'event_msg' && e?.payload?.type === 'agent_message') return true
   if (e?.type === 'response_item') {
     const pt = e?.payload?.type
     if (pt === 'function_call' || pt === 'function_call_output' || pt === 'custom_tool_call' || pt === 'custom_tool_call_output' || pt === 'reasoning') return true
-    if (pt === 'message') return e?.payload?.role === 'assistant'
+    if (pt === 'message') {
+      const role = e?.payload?.role
+      return !!role && role !== 'user'
+    }
   }
   return false
 }
@@ -84,22 +52,15 @@ export function buildRounds(
   for (const item of visibleItems) {
     const e = item.entry
     if (isNewRound(e)) {
-      // 去重: 同一次用户输入会以多种形态出现 (裸原文 / wrapUserMessage 框架 /
-      // response_item.message[role=user] / event_msg.user_message). 用剥掉
-      // 「## 用户的问题」之后的正文比较; 若相同且上一轮还没有 agent 输出, 视为同一轮.
-      // 有框架的那条优先留下, 这样界面能折叠系统上下文, 而不是只剩一张裸气泡.
-      const raw = userTextOf(e)
-      const text = canonicalUserText(raw)
+      // 去重: 同一次用户输入会以多种形态出现 (mobius type:user 写一条, codex 紧接着写
+      // response_item.message[role=user] + event_msg.user_message). 若上一轮的"开篇用户
+      // 文本"与当前候选相同, 且上一轮还没出现任何 agent 输出, 则视为同一轮的重复入口,
+      // 直接丢弃而不开新轮 — 既避免生成中出现 10.0 / 11.0 重复条目, 也不会误合并真正的二次提问.
+      const text = userTextOf(e)
       const prev = rounds[rounds.length - 1]
-      const prevRaw = prev ? userTextOf(prev.items[0]?.entry) : ''
-      const prevText = canonicalUserText(prevRaw)
+      const prevText = prev ? userTextOf(prev.items[0]?.entry) : ''
       const prevHasAssistant = !!prev && prev.items.some((it) => isAssistantOutput(it.entry))
-      if (text && prev && text === prevText && !prevHasAssistant) {
-        if (isFramedUserText(raw) && !isFramedUserText(prevRaw) && prev.items[0]) {
-          prev.items[0] = { ...(item as RoundItem), relIdx: 0 }
-        }
-        continue
-      }
+      if (text && prev && text === prevText && !prevHasAssistant) continue
       rounds.push({ roundNum: rounds.length + 1, items: [] })
     }
     if (rounds.length === 0) {

@@ -1,0 +1,4769 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { useStore, api, APP_DIR } from '../store'
+import { timeAgo } from './shell'
+import { SkillsManager } from './skills'
+import { MemoriesManager } from './memories'
+import { ProjectUserContextWhitelist } from './context-whitelist'
+import { ToggleSwitch } from './toggle-switch'
+import { ExpandableTextarea } from './expandable-textarea'
+import { type Attachment, AttachmentComposer, appendAttachmentsToDesc } from './attachments'
+import {
+  completeGuidedDemoStateForProject,
+  isGuidedDemoIssue,
+  isGuidedDemoProject,
+  patchGuidedDemoState,
+  readActiveGuidedDemo,
+} from '../services/guided-demo'
+import {
+  SELF_EVOLVE_GUIDE_STYLE_MEMORY_NAMES,
+  SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME,
+  SELF_EVOLVE_REQUIRED_MEMORY_NAME,
+  SELF_EVOLVE_REQUIRED_SKILL_NAME,
+} from '../services/self-evolve-demo'
+import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
+import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
+import { ProjectTeamPanel } from './project-page/ProjectTeamPanel'
+import {
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE,
+  FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX,
+  FORGOTTEN_FLAG_BACKOFF_MAX,
+  FORGOTTEN_FLAG_PATIENCE_MAX,
+  intervalInputValue,
+  numberInputValue,
+  parseIntervalInput,
+  parseBackoffInput,
+  parsePatienceInput,
+} from './project-page/utils'
+import { markFireAndForgetSession } from '../services/session-start-policy'
+import { pollRecursive } from '../services/polling'
+import { DESKTOP_MANIFEST_URL, hasDesktopDownloadBuilds } from '../services/client-distribution'
+import {
+  SessionMentionPicker,
+  sessionMentionPayload,
+  type SessionMentionSelection,
+} from './session-mention-picker'
+
+type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
+type IssueVisibility = 'inherit' | ProjectVisibility
+const PROJECT_VISIBILITY_OPTIONS: Array<{ value: ProjectVisibility; label: string; description: string }> = [
+  { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
+  { value: 'public', label: '公开', description: '所有登录用户都能看到本项目；仅项目成员可写。' },
+]
+const ISSUE_VISIBILITY_OPTIONS: Array<{ value: IssueVisibility; label: string; description: string }> = [
+  { value: 'inherit', label: '继承项目', description: '跟随所属项目的可见性。' },
+  { value: 'private', label: '仅自己', description: '只有任务单创建者、项目创建者和管理员可见。' },
+  { value: 'team', label: '同组', description: '同一群组用户可见，前提是他们也能看到项目。' },
+  { value: 'public', label: '项目可见者', description: '所有能看到项目的登录用户都可见。' },
+  { value: 'allowlist', label: '指定用户', description: '只有任务单创建者、项目创建者、管理员和允许名单中的用户可见。' },
+]
+type NewProjectKind = 'default' | 'research' | 'extension'
+const NEW_PROJECT_KIND_LABELS: Record<NewProjectKind, string> = {
+  default: '经典项目',
+  research: '研究项目',
+  extension: '莫比乌斯拓展项目',
+}
+const RANDOM_PROJECT_ADJECTIVES = [
+  'bright', 'calm', 'clever', 'cozy', 'cute', 'eager', 'fresh', 'gentle',
+  'happy', 'kind', 'lively', 'lovely', 'lucky', 'merry', 'neat', 'nimble',
+  'quiet', 'rapid', 'smart', 'sunny', 'tidy', 'warm', 'wise', 'young',
+]
+const RANDOM_PROJECT_NOUNS = [
+  'bird', 'brook', 'cloud', 'field', 'forest', 'garden', 'harbor', 'lake',
+  'leaf', 'light', 'meadow', 'moon', 'mountain', 'river', 'seed', 'snake',
+  'spark', 'star', 'stone', 'sun', 'tree', 'valley', 'wave', 'wind',
+]
+const MODEL_PICKER_COLLAPSED_ROWS = 3
+
+function useResponsiveModelColumns() {
+  const [columns, setColumns] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches ? 3 : 2
+  ))
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 640px)')
+    const update = () => setColumns(mq.matches ? 3 : 2)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+  return columns
+}
+
+function randomProjectWord(words: string[]) {
+  return words[Math.floor(Math.random() * words.length)] || words[0]
+}
+
+function randomProjectSlug() {
+  return `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}_${randomProjectWord(RANDOM_PROJECT_NOUNS)}`
+}
+
+function randomProjectBindPath(workDir?: string | null) {
+  const root = (workDir || '').trim().replace(/\/+$/, '')
+  if (!root) return ''
+  return `${root || '/'}/${randomProjectSlug()}`.replace(/\/{2,}/g, '/')
+}
+
+function middleEllipsisPath(value: string, maxLength = 64) {
+  const text = String(value || '')
+  if (text.length <= maxLength) return text
+  const available = Math.max(8, maxLength - 3)
+  const headLength = Math.max(4, Math.floor(available * 0.45))
+  const tailLength = Math.max(4, available - headLength)
+  return `${text.slice(0, headLength)}...${text.slice(-tailLength)}`
+}
+
+// 统一的错误横幅: 与 ChatArea 同款 rounded-xl 红色 banner.
+// 用于替换散落在 modals 各处的裸 text-red-400 段.
+export function ErrBanner({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  if (!children) return null
+  return (
+    <div className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 ${className}`}>
+      <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" strokeWidth={1.75} />
+      <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{children}</div>
+    </div>
+  )
+}
+
+
+// =====================================================================
+// 路径选择器（限定家目录）
+// =====================================================================
+export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?: string; onClose: () => void; onPick: (absPath: string, relPath: string, manual?: boolean) => void }) {
+  const { theme, user, token, setAuth } = useStore()
+  const isDark = theme !== 'light'
+  const [userHome, setUserHome] = useState(user?.work_dir || '')
+  const toRel = (p: string, home = userHome): string => {
+    if (!p) return '/'
+    if (p === home) return '/'
+    if (home && p.startsWith(home + '/')) return p.slice(home.length)
+    if (p.startsWith('/')) return p
+    return '/' + p
+  }
+  const [currentPath, setCurrentPath] = useState<string>('/')
+  const [entries, setEntries] = useState<{ name: string; type: 'dir' | 'file' }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [createErr, setCreateErr] = useState('')
+  // 手动输入路径: 绕过浏览, 直接键入绝对路径, 后端不校验存在性/位置/是否目录
+  const [manualMode, setManualMode] = useState(false)
+  const [manualPath, setManualPath] = useState('')
+  const [manualErr, setManualErr] = useState('')
+  const submitManual = () => {
+    const p = manualPath.trim()
+    if (!p) { setManualErr('请输入路径'); return }
+    onPick(p, p, true)
+  }
+
+  // silent: 不设置/不清除错误横幅。初次加载不存在的绑定路径时静默失败, 由调用方回退到
+  // workspace 根, 避免一闪而过的「读取目录失败」再被回退覆盖。返回是否加载成功。
+  const loadDir = useCallback(async (p: string, opts?: { silent?: boolean }): Promise<boolean> => {
+    setLoading(true)
+    if (!opts?.silent) setErr('')
+    try {
+      const data = await api(`/api/files?path=${encodeURIComponent(p)}`)
+      setEntries((data.entries || []).filter((e: any) => e.type === 'dir'))
+      setCurrentPath(data.path || p)
+      setLoading(false)
+      return true
+    } catch {
+      setEntries([])
+      if (!opts?.silent) setErr('读取目录失败')
+      setLoading(false)
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    const boot = async () => {
+      let home = user?.work_dir || ''
+      if (!home && token) {
+        try {
+          const me = await api('/api/auth/me')
+          if (alive) {
+            setAuth(token, me)
+            home = me?.work_dir || ''
+            setUserHome(home)
+          }
+        } catch {
+          // loadDir 会展示可见错误, 这里不额外打断路径选择器.
+        }
+      } else {
+        setUserHome(home)
+      }
+      if (alive) {
+        // 初次加载绑定路径: 若路径不存在(例如随机生成的、或已被删除的绑定路径), 静默回退到
+        // 当前用户的 workspace 根目录, 而不是直接报错卡住路径浏览器。
+        const ok = await loadDir(toRel(initialPath || '/', home), { silent: true })
+        if (alive && !ok) await loadDir('/')
+      }
+    }
+    boot()
+    return () => { alive = false }
+  }, [initialPath, loadDir, setAuth, token, user?.work_dir])
+
+  const breadcrumbs = currentPath.split('/').filter(Boolean)
+  const absPath = currentPath === '/' ? (userHome || '~') : (userHome + currentPath)
+  const goUp = () => {
+    if (currentPath === '/') return
+    const parent = currentPath.split('/').slice(0, -1).join('/') || '/'
+    loadDir(parent)
+  }
+  const enter = (name: string) => {
+    const next = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`
+    loadDir(next)
+  }
+  const submitCreate = async () => {
+    const n = newName.trim()
+    if (!n) { setCreateErr('请输入目录名'); return }
+    if (n.includes('/') || n === '.' || n === '..') { setCreateErr('目录名不能包含 / 或为 . / ..'); return }
+    const target = currentPath === '/' ? `/${n}` : `${currentPath}/${n}`
+    setCreateErr('')
+    try {
+      const r = await api('/api/files/mkdir', { method: 'POST', body: JSON.stringify({ path: target }) })
+      if (r?.error) { setCreateErr(r.error); return }
+      setCreating(false); setNewName('')
+      await loadDir(currentPath)
+    } catch {
+      setCreateErr('创建失败')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="relative w-[560px] max-h-[70vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
+          <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          <span className="text-[14px] font-semibold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>选择绑定路径</span>
+          <div className="flex items-center gap-1 text-[12px] min-w-0 flex-1 overflow-hidden" style={{ color: 'var(--text-muted)' }}>
+            <button onClick={() => loadDir('/')} className="hover:text-blue-400 transition-colors">~</button>
+            {breadcrumbs.map((seg, i) => (
+              <span key={i} className="flex items-center gap-1 min-w-0">
+                <span style={{ color: 'var(--text-muted)' }}>/</span>
+                <button onClick={() => loadDir('/' + breadcrumbs.slice(0, i + 1).join('/'))}
+                  className="hover:text-blue-400 transition-colors truncate max-w-[120px]">{seg}</button>
+              </span>
+            ))}
+          </div>
+          <button onClick={() => { setManualMode(m => !m); setManualErr(''); if (!manualMode && !manualPath) setManualPath(absPath) }}
+            className="flex-shrink-0 h-7 px-2 inline-flex items-center gap-1 rounded-xl text-[12px] border transition-colors"
+            style={{
+              color: manualMode ? '#fff' : 'var(--text-secondary)',
+              background: manualMode ? '#3b82f6' : 'var(--bg-card-hover)',
+              borderColor: manualMode ? '#3b82f6' : 'var(--input-border)',
+            }}>
+            <Pencil className="w-3 h-3" strokeWidth={1.75} />
+            手动输入
+          </button>
+          <button onClick={() => { setCreating(true); setNewName(''); setCreateErr('') }}
+            className="flex-shrink-0 h-7 px-2 rounded-xl text-[12px] bg-[var(--bg-card-hover)] hover:bg-[var(--bg-hover)] border transition-colors"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>
+            + 新建子目录
+          </button>
+        </div>
+
+        {manualMode && (
+          <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)', background: 'var(--input-bg)' }}>
+            <div className="flex items-center gap-2">
+              <input autoFocus value={manualPath}
+                onChange={e => { setManualPath(e.target.value); setManualErr('') }}
+                onKeyDown={e => { if (e.key === 'Enter') submitManual(); if (e.key === 'Escape') setManualMode(false) }}
+                placeholder="绝对路径，如 /data/repos/foo"
+                className="flex-1 h-8 px-3 rounded-xl text-[13px] border outline-none focus:border-blue-400"
+                style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
+              <button onClick={submitManual}
+                className="flex-shrink-0 h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">使用此路径</button>
+            </div>
+            <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px text-amber-400" strokeWidth={1.75} />
+              <span>手动输入的路径<strong>不做任何校验</strong>（不检查是否存在 / 是否目录 / 是否在工作目录内），请自行确认无误。</span>
+            </p>
+            {manualErr && <span className="text-[11px] text-red-400">{manualErr}</span>}
+          </div>
+        )}
+
+        {creating && (
+          <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)', background: 'var(--input-bg)' }}>
+            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setCreating(false) }}
+              placeholder="新目录名"
+              className="flex-1 h-8 px-3 rounded-xl text-[13px] border outline-none focus:border-blue-400"
+              style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
+            <button onClick={submitCreate}
+              className="h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">创建</button>
+            <button onClick={() => setCreating(false)}
+              className="h-8 px-3 rounded-xl text-[12px] bg-[var(--bg-card-hover)] border"
+              style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>取消</button>
+            {createErr && <span className="text-[11px] text-red-400 ml-1">{createErr}</span>}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto min-h-[260px]">
+          {currentPath !== '/' && (
+            <button onClick={goUp} className="w-full flex items-center gap-3 px-5 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left" style={{ color: 'var(--text-muted)' }}>
+              <FolderOpen className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} />
+              <span className="text-[13px]">..</span>
+            </button>
+          )}
+          {loading ? (
+            <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+          ) : err ? (
+            <div className="text-center text-[13px] py-8 text-red-400">{err}</div>
+          ) : entries.length === 0 ? (
+            <div className="text-center text-[13px] py-8 px-6 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              此目录下没有子目录，可点击下方「选择此目录」绑定当前目录，或点上方「新建子目录」创建一个。
+            </div>
+          ) : entries.map(entry => (
+            <button key={entry.name} onClick={() => enter(entry.name)}
+              className="w-full flex items-center gap-3 px-5 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left">
+              <Folder className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} style={{ color: 'var(--text-muted)' }} />
+              <span className="text-[13px] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="px-5 py-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={absPath}>
+            将选择：<span style={{ color: 'var(--text-primary)' }}>{absPath}</span>
+          </div>
+          <button onClick={onClose} className="h-8 px-3 rounded-xl text-[12px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={() => {
+              const abs = currentPath === '/' ? userHome : (userHome + currentPath)
+              onPick(abs, currentPath, false)
+            }}
+            className="h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">
+            选择此目录
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 新建 Project
+// =====================================================================
+export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: any) => void }) {
+  const DRAFT_KEY = 'new-project'
+  const { theme, user } = useStore()
+  const initialDraft = draftLoad<{
+    name?: string
+    desc?: string
+    bindPath?: string
+    bindPathManual?: boolean
+    defaultUseWorktree?: boolean
+    researchEnabled?: boolean
+    visibility?: ProjectVisibility
+    projectKind?: NewProjectKind
+    extensionName?: string
+    canPostIssue?: boolean
+    canRunSession?: boolean
+    inviteMembers?: MemberInput[]
+  }>(DRAFT_KEY)
+  const guidedDemo = readActiveGuidedDemo()
+  const guidedDemoState = guidedDemo?.state
+  const isGuidedDemo = !!guidedDemoState?.active && !guidedDemoState.projectId
+  const [name, setName] = useState(isGuidedDemo ? (guidedDemoState?.projectName || '') : (initialDraft?.name || ''))
+  const [desc, setDesc] = useState(isGuidedDemo ? (guidedDemoState?.projectDescription || '') : (initialDraft?.desc || ''))
+  const initialBindPathFromDraft = !isGuidedDemo && initialDraft?.bindPath?.trim() ? (initialDraft.bindPath || '') : ''
+  const [bindPath, setBindPath] = useState(
+    isGuidedDemo
+      ? (guidedDemoState?.projectRelPath || '')
+      : (initialBindPathFromDraft || randomProjectBindPath(user?.work_dir))
+  )
+  const [bindPathSource, setBindPathSource] = useState<'auto' | 'custom'>(
+    isGuidedDemo || initialBindPathFromDraft ? 'custom' : 'auto'
+  )
+  const [bindPathManual, setBindPathManual] = useState(isGuidedDemo ? false : !!initialDraft?.bindPathManual)
+  const [defaultUseWorktree, setDefaultUseWorktree] = useState(isGuidedDemo ? false : (typeof initialDraft?.defaultUseWorktree === 'boolean' ? initialDraft.defaultUseWorktree : false))
+  const [researchEnabled, setResearchEnabled] = useState(isGuidedDemo ? false : !!initialDraft?.researchEnabled)
+  const [visibility, setVisibility] = useState<ProjectVisibility>(
+    initialDraft?.visibility === 'team' || initialDraft?.visibility === 'public' || initialDraft?.visibility === 'allowlist'
+      ? initialDraft.visibility
+      : 'private'
+  )
+  const [inviteMembers, setInviteMembers] = useState<MemberInput[]>(
+    Array.isArray(initialDraft?.inviteMembers) ? initialDraft.inviteMembers.filter((m) => m && m.user_id) : []
+  )
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [permissionOpen, setPermissionOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const initialKind = isGuidedDemo
+    ? 'default'
+    : (initialDraft?.projectKind === 'research' || initialDraft?.projectKind === 'extension' ? initialDraft.projectKind : 'default')
+  const canCreateExtensionProject = user?.role === 'admin' || user?.role === 'developer'
+  const initialProjectKind: NewProjectKind = canCreateExtensionProject || initialKind !== 'extension' ? initialKind : 'default'
+  const initialDraftHasContent = !!(
+    initialDraft?.name?.trim()
+    || initialDraft?.desc?.trim()
+    || initialDraft?.bindPath?.trim()
+    || initialDraft?.extensionName?.trim()
+  )
+  const [projectKind, setProjectKind] = useState<NewProjectKind>(initialProjectKind)
+  const [step, setStep] = useState<'type' | 'details'>(isGuidedDemo || initialDraftHasContent ? 'details' : 'type')
+  const [extensionName, setExtensionName] = useState(initialDraft?.extensionName || '')
+  // v3 写权限: 默认关闭, 与后端 schema 默认一致; private 项目这两个开关无效, 但允许 owner 主动打开.
+  const [canPostIssue, setCanPostIssue] = useState<boolean>(!!initialDraft?.canPostIssue)
+  const [canRunSession, setCanRunSession] = useState<boolean>(!!initialDraft?.canRunSession)
+
+  useEffect(() => {
+    if (isGuidedDemo || projectKind === 'extension' || bindPathSource !== 'auto') return
+    if (bindPath.trim() || !user?.work_dir) return
+    setBindPath(randomProjectBindPath(user.work_dir))
+    setBindPathManual(false)
+  }, [bindPath, bindPathSource, isGuidedDemo, projectKind, user?.work_dir])
+
+  useEffect(() => {
+    if (isGuidedDemo) return
+    const hasDraftContent = !!(name.trim() || desc.trim() || extensionName.trim() || (bindPath.trim() && bindPathSource === 'custom'))
+    if (hasDraftContent) {
+      draftSave(DRAFT_KEY, { name, desc, bindPath, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
+    } else {
+      draftClear(DRAFT_KEY)
+    }
+  }, [isGuidedDemo, name, desc, bindPath, bindPathSource, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession])
+
+  const refreshRandomBindPath = () => {
+    let next = randomProjectBindPath(user?.work_dir)
+    if (!next) {
+      setErr('当前用户尚未配置工作目录，无法生成随机绑定路径')
+      return
+    }
+    for (let i = 0; i < 5 && next === bindPath; i += 1) next = randomProjectBindPath(user?.work_dir)
+    setBindPath(next)
+    setBindPathManual(false)
+    setBindPathSource('auto')
+    setErr('')
+  }
+
+  const chooseProjectKind = (kind: NewProjectKind) => {
+    if (kind === 'extension' && !canCreateExtensionProject) return
+    setProjectKind(kind)
+    setErr('')
+    if (kind === 'default') {
+      setResearchEnabled(false)
+      setDefaultUseWorktree(false)
+      setExtensionName('')
+    } else if (kind === 'research') {
+      setResearchEnabled(true)
+      setDefaultUseWorktree(false)
+      setExtensionName('')
+    }
+    setStep('details')
+  }
+
+  const submit = async () => {
+    if (!name.trim()) { setErr('请输入项目名称'); return }
+    if (projectKind === 'extension') {
+      if (!canCreateExtensionProject) { setErr('只有管理员或开发者可以创建莫比乌斯拓展项目'); return }
+      if (!extensionName.trim()) { setErr('请输入拓展标识名'); return }
+      if (!/^[a-z][a-z0-9-]{0,31}$/.test(extensionName.trim())) { setErr('拓展标识名格式：以小写字母开头，可包含小写字母、数字和连字符，1-32字符'); return }
+    } else {
+      if (!bindPath.trim()) { setErr('请选择项目绑定路径 (必填)'); return }
+    }
+    setLoading(true); setErr('')
+    try {
+      const effectiveWt = researchEnabled ? false : defaultUseWorktree
+      const body: any = {
+        name,
+        description: desc,
+        visibility,
+        guidedDemoKind: isGuidedDemo ? guidedDemo?.kind : undefined,
+      }
+      if (projectKind === 'extension') {
+        body.kind = 'extension'
+        body.extensionName = extensionName.trim()
+      } else {
+        body.can_post_issue = canPostIssue
+        body.can_run_session = canRunSession
+        body.bindPath = bindPath
+        body.bindPathManual = bindPathManual
+        body.defaultUseWorktree = effectiveWt
+        body.researchEnabled = projectKind === 'research' ? true : researchEnabled
+        // 首批项目组成员 (带角色; 排除创建者本人, 他自动成为项目负责人).
+        body.members = inviteMembers.filter(m => m.user_id && m.user_id !== user?.id)
+      }
+      const p = await api('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if ((p as any)?.error) { setErr((p as any).error); return }
+      draftClear(DRAFT_KEY)
+      if (isGuidedDemo && guidedDemo && p?.id) {
+        const patch: any = { projectId: p.id }
+        if (guidedDemo.kind === 'context-setup' && p?.guided_demo_assets?.ok) {
+          patch.preparedAt = Date.now()
+          if (p.guided_demo_assets.memory_material) patch.memoryMaterialRelPath = p.guided_demo_assets.memory_material
+          if (p.guided_demo_assets.skill_material_file) patch.skillMaterialRelPath = p.guided_demo_assets.skill_material_file
+          if (p.guided_demo_assets.materials_zip) patch.materialsZipRelPath = p.guided_demo_assets.materials_zip
+        } else if (guidedDemo.kind === 'project-import' && p?.guided_demo_assets?.ok) {
+          patch.preparedAt = Date.now()
+          if (p.guided_demo_assets.upload_sample_dir) patch.uploadSampleDirRelPath = p.guided_demo_assets.upload_sample_dir
+          if (p.guided_demo_assets.upload_sample_zip) patch.uploadSampleZipRelPath = p.guided_demo_assets.upload_sample_zip
+        }
+        patchGuidedDemoState(guidedDemo.kind, patch)
+      }
+      onCreated(p)
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+
+  const visibilityOption = PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility) || PROJECT_VISIBILITY_OPTIONS[0]
+  const writablePermissions = Number(!!canPostIssue) + Number(!!canRunSession)
+  const permissionDetail = projectKind === 'extension'
+    ? '拓展项目仅设置可见范围'
+    : visibility === 'private'
+      ? '仅创建者可写'
+      : writablePermissions === 2
+        ? '读者可建任务单和执行会话'
+        : canPostIssue
+          ? '读者可建任务单'
+          : canRunSession
+            ? '读者可执行会话'
+            : '读者不可写'
+  const bindPathDisplay = middleEllipsisPath(bindPath, 70)
+
+  const visibilityControl = (
+    <div>
+      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {PROJECT_VISIBILITY_OPTIONS.map((option) => {
+          const active = visibility === option.value
+          return (
+            <button key={option.value} type="button" onClick={() => setVisibility(option.value)}
+              title={option.description}
+              className="h-8 rounded-lg border text-[12px] transition-colors"
+              style={active
+                ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
+                : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+        {visibilityOption.description}
+      </p>
+      {projectKind === 'extension' ? (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+          拓展项目的写权限由系统管理；这里仅设置谁能看到这个项目。
+        </p>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          <ToggleSwitch
+            checked={canPostIssue}
+            onChange={v => { setCanPostIssue(v); setErr('') }}
+            className="flex items-center gap-3 text-[12px]"
+            style={{ color: 'var(--text-secondary)' }}>
+            读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
+          </ToggleSwitch>
+          <ToggleSwitch
+            checked={canRunSession}
+            onChange={v => { setCanRunSession(v); setErr('') }}
+            className="flex items-center gap-3 text-[12px]"
+            style={{ color: 'var(--text-secondary)' }}>
+            读者可启动执行会话 (同上, private 永远只允许 owner)
+          </ToggleSwitch>
+        </div>
+      )}
+    </div>
+  )
+
+  const permissionSettingsModal = permissionOpen ? (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>修改项目权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
+        {projectKind !== 'extension' && (
+          <div className="mt-3">
+            <ProjectMemberInvite
+              value={inviteMembers}
+              onChange={setInviteMembers}
+              currentUserId={user?.id}
+            />
+          </div>
+        )}
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={() => setPermissionOpen(false)}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const projectKindOptions: Array<{
+    kind: NewProjectKind
+    label: string
+    description: string
+    note: string
+    icon: React.ReactNode
+  }> = [
+    {
+      kind: 'default',
+      label: '经典项目（推荐）',
+      description: '导入或新建一个项目，后续可以随时转化为研究项目。',
+      note: '默认不启动研究系统',
+      icon: <FolderPlus className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      kind: 'research',
+      label: '研究项目',
+      description: '通过多智能体协作完成需要持续整夜甚至数周的开放研究任务。',
+      note: '自动启用研究，并禁用 git worktree',
+      icon: <FlaskConical className="h-5 w-5" strokeWidth={1.8} />,
+    },
+    {
+      kind: 'extension',
+      label: '莫比乌斯拓展项目',
+      description: '创建一个有漂亮前端+后端的拓展项目，满足您的任何需求。',
+      note: canCreateExtensionProject ? '能直接在本系统主页打开的特殊拓展项目，内嵌到本系统之中' : '仅管理员或开发者可创建',
+      icon: <Puzzle className="h-5 w-5" strokeWidth={1.8} />,
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div data-tour="project-modal" className="relative w-[575px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        {step === 'type' ? (
+          <>
+            <h3 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>选择项目类型</h3>
+            <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>先选择本次要创建的项目类型，下一步再填写细节。</p>
+            <div className="space-y-2.5">
+              {projectKindOptions.map(opt => {
+                const disabled = opt.kind === 'extension' && !canCreateExtensionProject
+                return (
+                  <button
+                    key={opt.kind}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => chooseProjectKind(opt.kind)}
+                    data-tour={`project-kind-${opt.kind}`}
+                    className="flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45"
+                    style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                    <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border"
+                      style={{ color: opt.kind === 'research' ? '#34d399' : opt.kind === 'extension' ? '#a78bfa' : '#60a5fa', borderColor: 'var(--input-border)', background: 'rgba(255,255,255,0.03)' }}>
+                      {opt.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold">{opt.label}</span>
+                      <span className="mt-0.5 block text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{opt.description}</span>
+                      <span className="mt-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.note}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {err && <ErrBanner className="mt-4">{err}</ErrBanner>}
+            <div className="mt-5 flex gap-2">
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center gap-2">
+              {!isGuidedDemo && (
+                <button type="button" onClick={() => { setErr(''); setStep('type') }}
+                  title="返回选择项目类型"
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border bg-[var(--bg-card-hover)]"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                  <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              )}
+              <div className="min-w-0">
+                <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>新建{NEW_PROJECT_KIND_LABELS[projectKind]}</h3>
+                <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {projectKind === 'default'
+                    ? '经典项目默认不启动研究系统。'
+                    : projectKind === 'research'
+                      ? '研究项目会自动启用研究，并禁用 git worktree。'
+                      : '拓展项目会创建 mobius/extension 下的可加载拓展骨架。'}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-3 mb-4">
+              <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
+                data-tour="project-name-input"
+                placeholder="项目名称" onKeyDown={e => e.key === 'Enter' && submit()}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <ExpandableTextarea value={desc} onValueChange={setDesc}
+                placeholder="项目描述（选填）"
+                overlayTitle="编辑项目描述"
+                className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              {projectKind === 'extension' ? (
+                <div>
+                  <input value={extensionName} onChange={e => { setExtensionName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); setErr('') }}
+                    placeholder="拓展标识名，如 my-awesome-ext"
+                    maxLength={32}
+                    className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>小写字母开头，可含小写字母、数字和连字符，1-32字符。</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>
+                    您希望把项目放置于什么位置？
+                    {bindPathManual
+                      ? <span className="text-amber-400"> · 手动输入路径</span>
+                      : <span> · 自动创建目录</span>}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input value={bindPathDisplay} readOnly placeholder="绑定路径（必填，限家目录下）"
+                      data-tour="project-path-input"
+                      title={bindPath}
+                      aria-label={bindPath ? `绑定路径：${bindPath}` : '绑定路径'}
+                      className="flex-1 h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
+                      onClick={() => setPickerOpen(true)}
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    <button type="button" onClick={() => setPickerOpen(true)}
+                      data-tour="project-path-picker"
+                      className="h-10 px-3 rounded-xl text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                      <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      选择路径
+                    </button>
+                    <button type="button" onClick={refreshRandomBindPath}
+                      title="换一个随机路径名"
+                      aria-label="换一个随机路径名"
+                      className="h-10 w-10 flex-shrink-0 rounded-xl text-blue-400 bg-blue-500/15 hover:bg-blue-500/25 transition-colors border border-blue-500/20 inline-flex items-center justify-center">
+                      <Dices className="h-4 w-4" strokeWidth={1.8} />
+                    </button>
+                  </div>
+
+                  <ToggleSwitch
+                    data-tour="project-worktree-toggle"
+                    checked={!researchEnabled && defaultUseWorktree}
+                    disabled={researchEnabled}
+                    onChange={setDefaultUseWorktree}
+                    className="flex items-center gap-3 text-[13px]"
+                    style={{ color: 'var(--text-secondary)' }}>
+                    默认使用 git worktree（新建任务时该选项默认打钩）
+                  </ToggleSwitch>
+                  {researchEnabled && (
+                    <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用研究系统，本项目强制禁用 worktree</p>
+                  )}
+                  {projectKind === 'default' && (
+                    <ToggleSwitch
+                      data-tour="project-research-toggle"
+                      checked={researchEnabled}
+                      onChange={enabled => {
+                        setResearchEnabled(enabled)
+                        if (enabled) setDefaultUseWorktree(false)
+                      }}
+                      className="flex items-center gap-3 text-[13px]"
+                      style={{ color: 'var(--text-secondary)' }}>
+                      启用研究系统（默认关闭，开启后自动禁用 git worktree）
+                    </ToggleSwitch>
+                  )}
+                </>
+              )}
+              <button type="button" onClick={() => setPermissionOpen(true)}
+                data-tour="project-visibility"
+                className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+                <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>设置项目成员</span>
+                  <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（创建后可随时修改）'}
+                  </span>
+                </span>
+                <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+              </button>
+            </div>
+            {err && <ErrBanner>{err}</ErrBanner>}
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+              <button onClick={submit} disabled={loading}
+                data-tour="project-submit"
+                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                {loading ? '创建中...' : '创建'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+      {permissionSettingsModal}
+      {pickerOpen && projectKind !== 'extension' && <PathPickerModal initialPath={bindPath} onClose={() => setPickerOpen(false)} onPick={(abs, _rel, manual) => { setBindPath(abs); setBindPathManual(!!manual); setBindPathSource('custom'); setPickerOpen(false) }} />}
+    </div>
+  )
+}
+
+// =====================================================================
+// 项目设置（修改名称/描述/绑定路径）
+// =====================================================================
+export function ProjectSettingsModal({ project, onClose, onSaved }: { project: any; onClose: () => void; onSaved: (p: any) => void }) {
+  const [name, setName] = useState(project.name)
+  const [desc, setDesc] = useState(project.description || '')
+  const [bindPath, setBindPath] = useState<string>(project.bind_path || '')
+  // 从持久化标记还原: 若该路径当初是手动输入(不校验)的, 重开设置时仍按手动对待,
+  // 否则一旦重新提交就会走严格校验把 work_dir 外的路径静默回撤.
+  const [bindPathManual, setBindPathManual] = useState(!!project.bind_path_manual)
+  const [defaultUseWorktree, setDefaultUseWorktree] = useState(!!project.default_use_worktree)
+  const [researchEnabled, setResearchEnabled] = useState(!!project.research_enabled)
+  const [visibility, setVisibility] = useState<ProjectVisibility>(
+    project.visibility === 'team' || project.visibility === 'public' || project.visibility === 'allowlist' ? project.visibility : 'private'
+  )
+  const [allowUserIds] = useState<string[]>(
+    Array.isArray(project.access?.allow_user_ids) ? [...project.access.allow_user_ids] : []
+  )
+  // v3 写权限: 读权限打开的项目默认 false; 用户在设置里打开 can_post_issue / can_run_session 后,
+  // 同组 (team) 或任意读者 (public) 才能创建任务单 / 触发 Session.
+  const [canPostIssue, setCanPostIssue] = useState<boolean>(!!project.can_post_issue)
+  const [canRunSession, setCanRunSession] = useState<boolean>(!!project.can_run_session)
+  const [forgottenFlagMessage, setForgottenFlagMessage] = useState<string>(project.forgotten_flag_message_effective ?? (project.forgotten_flag_message || ''))
+  const [forgottenFlagIssueInit, setForgottenFlagIssueInit] = useState<string>(
+    intervalInputValue(project.forgotten_flag_issue_init_minutes ?? project.forgotten_flag_issue_interval_minutes, DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES)
+  )
+  const [forgottenFlagIssueBackoff, setForgottenFlagIssueBackoff] = useState<string>(
+    numberInputValue(project.forgotten_flag_issue_backoff, DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF)
+  )
+  const [forgottenFlagIssuePatience, setForgottenFlagIssuePatience] = useState<string>(
+    intervalInputValue(project.forgotten_flag_issue_patience, DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE)
+  )
+  const [forgottenFlagResearchInit, setForgottenFlagResearchInit] = useState<string>(
+    intervalInputValue(project.forgotten_flag_research_init_minutes ?? project.forgotten_flag_research_interval_minutes, DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES)
+  )
+  const [forgottenFlagResearchBackoff, setForgottenFlagResearchBackoff] = useState<string>(
+    numberInputValue(project.forgotten_flag_research_backoff, DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF)
+  )
+  const [forgottenFlagResearchPatience, setForgottenFlagResearchPatience] = useState<string>(
+    intervalInputValue(project.forgotten_flag_research_patience, DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE)
+  )
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const { theme } = useStore()
+  const submit = async () => {
+    if (!name.trim()) { setErr('请输入项目名称'); return }
+    if (!bindPath.trim()) { setErr('绑定路径不能为空 (必填)'); return }
+    let issueInit: number
+    let issueBackoff: number
+    let issuePatience: number
+    let researchInit: number
+    let researchBackoff: number
+    let researchPatience: number
+    try {
+      issueInit = parseIntervalInput(forgottenFlagIssueInit, '任务会话 Init', 1)
+      issueBackoff = parseBackoffInput(forgottenFlagIssueBackoff, '任务会话 Backoff')
+      issuePatience = parsePatienceInput(forgottenFlagIssuePatience, '任务会话 Patience')
+      researchInit = parseIntervalInput(forgottenFlagResearchInit, '研究智能体 Init', 30)
+      researchBackoff = parseBackoffInput(forgottenFlagResearchBackoff, '研究智能体 Backoff')
+      researchPatience = parsePatienceInput(forgottenFlagResearchPatience, '研究智能体 Patience')
+    } catch (e: any) {
+      setErr(e?.message || '提醒策略格式错误')
+      return
+    }
+    setLoading(true); setErr('')
+    try {
+      const body: any = {
+        name,
+        description: desc,
+        visibility,
+        allow_user_ids: allowUserIds,
+        can_post_issue: canPostIssue,
+        can_run_session: canRunSession,
+        // 项目级规则: Research 启用时强制禁用 worktree (后端也会兜底强制)
+        defaultUseWorktree: researchEnabled ? false : defaultUseWorktree,
+        researchEnabled,
+        forgottenFlagMessage,
+        forgottenFlagIssueInitMinutes: issueInit,
+        forgottenFlagIssueBackoff: issueBackoff,
+        forgottenFlagIssuePatience: issuePatience,
+        forgottenFlagResearchInitMinutes: researchInit,
+        forgottenFlagResearchBackoff: researchBackoff,
+        forgottenFlagResearchPatience: researchPatience,
+      }
+      // 仅在路径实际变化时提交, 避免对已存在的(可能是手动设定/work_dir 外)路径
+      // 重新做严格校验, 把它静默回撤 (与 ProjectPage.saveMeta 行为一致).
+      if (bindPath !== (project.bind_path || '')) {
+        body.bindPath = bindPath
+        body.bindPathManual = bindPathManual
+      }
+      // 拓展项目: name/路径/可见性/写权限/worktree/research 由 manifest 锁定, 后端会 400; 提交前删掉.
+      if (project.kind === 'extension') {
+        ['name','description','visibility','allow_user_ids','can_post_issue','can_run_session','defaultUseWorktree','researchEnabled','bindPath','bindPathManual'].forEach((k) => { delete body[k]; });
+      }
+      const updated = await api(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      })
+      if ((updated as any)?.error) { setErr((updated as any).error); return }
+      onSaved(updated)
+    } catch { setErr('保存失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[640px] max-h-[85vh] rounded-2xl p-6 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-5 flex-shrink-0" style={{ color: 'var(--text-primary)' }}>项目设置</h3>
+        <div className="space-y-3 mb-4 overflow-y-auto pr-1 flex-1">
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目名称</label>
+            <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
+              placeholder="项目名称" onKeyDown={e => e.key === 'Enter' && submit()}
+              className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </div>
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目描述</label>
+            <ExpandableTextarea value={desc} onValueChange={setDesc}
+              placeholder="项目描述（选填）"
+              overlayTitle="编辑项目描述"
+              className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </div>
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>项目文件路径 & 工作目录</p>
+            <div className="flex items-center gap-2">
+              <input value={bindPath} readOnly placeholder="必填（限家目录下）"
+                className="flex-1 h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
+                onClick={() => setPickerOpen(true)}
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <button type="button" onClick={() => setPickerOpen(true)}
+                className="h-10 px-3 rounded-xl text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+                选择路径
+              </button>
+            </div>
+          </div>
+          <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+            <summary className="text-[11px] cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>项目成员</summary>
+            <div className="mt-2">
+              <ProjectTeamPanel projectId={project.id} canManage={project.can_manage} actorRole={project.project_role || null} />
+            </div>
+          </details>
+          <div>
+            <ToggleSwitch
+              checked={!researchEnabled && defaultUseWorktree}
+              disabled={researchEnabled}
+              onChange={v => { setDefaultUseWorktree(v); setErr('') }}
+              className="flex items-center gap-3 text-[13px]"
+              style={{ color: 'var(--text-secondary)' }}>
+              默认使用 git worktree
+            </ToggleSwitch>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+              {researchEnabled
+                ? '已启用研究系统，本项目强制禁用 worktree'
+                : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
+            </p>
+          </div>
+          <div>
+            <ToggleSwitch
+              checked={researchEnabled}
+              onChange={v => { setResearchEnabled(v); setErr('') }}
+              className="flex items-center gap-3 text-[13px]"
+              style={{ color: 'var(--text-secondary)' }}>
+              启用研究系统
+            </ToggleSwitch>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
+          </div>
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒消息</label>
+            <ExpandableTextarea value={forgottenFlagMessage} onValueChange={value => { setForgottenFlagMessage(value); setErr('') }}
+              overlayTitle="编辑 running.flag 提醒消息"
+              className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>后台每 60s 巡检，若某会话 agent 已停工但 running.flag 未删除，自动向该会话发送此消息。已自动填入系统默认文案，可直接修改保存；若清空保存则恢复使用系统默认文案</p>
+          </div>
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
+            <div className="space-y-3">
+              <div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                    <input type="number" min={1} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
+                      value={forgottenFlagIssueInit}
+                      onChange={e => { setForgottenFlagIssueInit(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                    <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
+                      value={forgottenFlagIssueBackoff}
+                      onChange={e => { setForgottenFlagIssueBackoff(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                    <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
+                      value={forgottenFlagIssuePatience}
+                      onChange={e => { setForgottenFlagIssuePatience(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                    <input type="number" min={30} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
+                      value={forgottenFlagResearchInit}
+                      onChange={e => { setForgottenFlagResearchInit(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                    <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
+                      value={forgottenFlagResearchBackoff}
+                      onChange={e => { setForgottenFlagResearchBackoff(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                  <div>
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                    <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
+                      value={forgottenFlagResearchPatience}
+                      onChange={e => { setForgottenFlagResearchPatience(e.target.value); setErr('') }}
+                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
+          </div>
+
+          <div className="pt-2">
+            <ProjectUserContextWhitelist projectId={project.id} />
+          </div>
+          <div className="pt-2">
+            <SkillsManager scope="project" projectId={project.id} />
+          </div>
+          <div className="pt-2">
+            <MemoriesManager scope="project" projectId={project.id} />
+          </div>
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+      {pickerOpen && <PathPickerModal initialPath={bindPath} onClose={() => setPickerOpen(false)} onPick={(abs, _rel, manual) => { setBindPath(abs); setBindPathManual(!!manual); setPickerOpen(false) }} />}
+    </div>
+  )
+}
+
+type ProjectDeletePolicy = {
+  allowed: boolean
+  mode: 'creator' | 'system_admin_override' | null
+  requires_password: boolean
+  requires_reason: boolean
+  protected: boolean
+  denial_reason: string | null
+}
+
+type ProjectDeletePreview = {
+  policy: ProjectDeletePolicy
+  impact: {
+    issue_count: number
+    research_count: number
+    session_count: number
+    running_session_count: number
+  }
+}
+
+// =====================================================================
+// 删除 Project（后端策略 + 多重确认 + 当前账号密码）
+// =====================================================================
+export function DeleteProjectModal({ project, onClose, onDeleted }: { project: any; onClose: () => void; onDeleted: () => void }) {
+  const [confirmName, setConfirmName] = useState('')
+  const [dangerAcknowledged, setDangerAcknowledged] = useState(false)
+  const [password, setPassword] = useState('')
+  const [reason, setReason] = useState('')
+  const [preview, setPreview] = useState<ProjectDeletePreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(true)
+  const [err, setErr] = useState('')
+  const [loading, setLoading] = useState(false)
+  const { theme } = useStore()
+  const policy = preview?.policy || project?.delete_policy as ProjectDeletePolicy | undefined
+  const impact = preview?.impact
+  const adminOverride = policy?.mode === 'system_admin_override'
+  const accepted = new Set([project.name, project.id].filter(Boolean).map(String))
+  const confirmValue = confirmName.trim()
+  const canSubmit = !previewLoading
+    && policy?.allowed === true
+    && accepted.has(confirmValue)
+    && dangerAcknowledged
+    && !!password
+    && (!policy.requires_reason || !!reason.trim())
+
+  useEffect(() => {
+    let alive = true
+    setPreviewLoading(true)
+    api(`/api/projects/${project.id}/delete-preview`)
+      .then((data: ProjectDeletePreview) => {
+        if (!alive) return
+        setPreview(data)
+        if (!data?.policy?.allowed) setErr(data?.policy?.denial_reason || '当前账号不能删除此项目')
+      })
+      .catch((e: any) => { if (alive) setErr(e?.message || '无法读取项目删除信息') })
+      .finally(() => { if (alive) setPreviewLoading(false) })
+    return () => { alive = false }
+  }, [project.id])
+
+  const submit = async () => {
+    if (!policy?.allowed) { setErr(policy?.denial_reason || '当前账号不能删除此项目'); return }
+    if (!accepted.has(confirmValue)) { setErr('请输入项目名或项目 ID 确认'); return }
+    if (!dangerAcknowledged) { setErr('请勾选不可恢复确认'); return }
+    if (policy.requires_reason && !reason.trim()) { setErr('系统管理员代删他人项目时必须填写原因'); return }
+    if (!password) { setErr('请输入当前账号密码'); return }
+    setLoading(true); setErr('')
+    try {
+      const demo = readActiveGuidedDemo()
+      const logoReviewDemo = demo?.kind === 'logo-review' ? readLogoReviewDemoState() : null
+      const cleanupProjectId = logoReviewDemo?.cleanupProjectId || demo?.state.projectId
+      const cleanupProjectRelPath = logoReviewDemo?.cleanupProjectRelPath || demo?.state.projectRelPath
+      const cleanupDemoWorkspace = !!demo?.state.active
+        && cleanupProjectId === project.id
+        && (cleanupProjectRelPath || '').startsWith('/imac-demo/')
+      await api(`/api/projects/${project.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          confirm: confirmValue,
+          irreversible_acknowledged: dangerAcknowledged,
+          current_password: password,
+          reason: reason.trim(),
+          cleanup_demo_workspace: cleanupDemoWorkspace,
+        }),
+      })
+      completeGuidedDemoStateForProject(project.id)
+      onDeleted()
+    } catch (e: any) {
+      setPassword('')
+      setErr(e?.message || '确认信息错误或权限不足')
+    } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div data-tour="delete-project-modal" className="relative max-h-[calc(100vh-32px)] w-[440px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl p-5 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>删除项目</h3>
+        <p className="text-[12px] leading-5 mb-4" style={{ color: 'var(--text-muted)' }}>
+          删除「<strong>{project.name}</strong>」后，相关数据不能从回收站恢复。
+        </p>
+        <div className="mb-4 flex gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px]"
+          style={{ color: 'var(--status-danger)' }}>
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.75} />
+          <div className="min-w-0">删除会移除该项目、任务单、研究记录、执行会话及项目级 Skill 和 Memory。</div>
+        </div>
+        <div className="mb-4 grid grid-cols-4 overflow-hidden rounded-lg border" style={{ borderColor: 'var(--input-border)' }}>
+          {[
+            ['Issue', impact?.issue_count],
+            ['Research', impact?.research_count],
+            ['Session', impact?.session_count],
+            ['运行中', impact?.running_session_count],
+          ].map(([label, value], index) => (
+            <div key={String(label)} className={`min-w-0 px-2 py-2 text-center ${index ? 'border-l' : ''}`} style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+              <div className="text-[15px] font-semibold tabular-nums" style={{ color: label === '运行中' && Number(value) > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
+                {previewLoading ? '...' : Number(value || 0)}
+              </div>
+              <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        {adminOverride && (
+          <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] leading-5"
+            style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
+            你正在以系统管理员身份删除他人创建的项目。本次操作将记录账号、原因、影响范围和结果。
+          </div>
+        )}
+        <div className="space-y-3 mb-4">
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+              确认 1：输入项目名或项目 ID
+            </span>
+            <input autoFocus value={confirmName} onChange={e => { setConfirmName(e.target.value); setErr('') }}
+              data-tour="delete-project-confirm-input"
+              placeholder={project.name || project.id}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </label>
+          <label data-tour="delete-project-final-confirm" className="flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-[12px]"
+            style={{ borderColor: dangerAcknowledged ? 'rgba(239,68,68,0.45)' : 'var(--input-border)', background: dangerAcknowledged ? 'rgba(239,68,68,0.08)' : 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={dangerAcknowledged}
+              onChange={e => { setDangerAcknowledged(e.target.checked); setErr('') }}
+              className="mt-0.5 h-4 w-4 accent-red-500" />
+            <span className="min-w-0">
+              确认 2：我理解删除项目不可恢复，并确认继续删除。
+            </span>
+          </label>
+          {policy?.requires_reason && (
+            <label className="block">
+              <span className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                代删原因
+              </span>
+              <textarea value={reason} onChange={e => { setReason(e.target.value); setErr('') }}
+                data-tour="delete-project-reason-input"
+                placeholder="说明为什么需要由系统管理员删除"
+                maxLength={1000}
+                className="h-20 w-full resize-none rounded-lg px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-amber-500/40"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            </label>
+          )}
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+              当前账号密码
+            </span>
+            <input type="password" value={password} onChange={e => { setPassword(e.target.value); setErr('') }}
+              data-tour="delete-project-password-input"
+              placeholder="输入当前登录账号的密码"
+              autoComplete="current-password"
+              onKeyDown={e => { if (e.key === 'Enter' && canSubmit) submit() }}
+              className="w-full h-10 px-3 rounded-lg text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-red-500/40"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </label>
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading || !canSubmit}
+            data-tour="delete-project-submit"
+            className="flex-1 h-9 rounded-lg text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
+            {loading ? '删除中...' : '确认删除'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 拓展项目: 隐藏 / 彻底删除当前用户数据 (per-user)
+// 拓展是全局共享卡片, 此模态只管理当前用户在该拓展上的显示和数据.
+//   - 隐藏: 仅插 project_user_hidden 行, 管理员面板可恢复.
+//   - 彻底删除: 事务删该用户 sessions/issues/stars/whitelist + 隐藏. 不可恢复数据.
+// =====================================================================
+export function ExtensionDeleteModal({ project, onClose, onDone }: { project: any; onClose: () => void; onDone: () => void }) {
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submitHide = async () => {
+    setLoading(true); setErr('')
+    try {
+      await api(`/api/projects/${project.id}/hide`, { method: 'POST', body: JSON.stringify({}) })
+      onDone()
+    } catch (e: any) { setErr(e?.message || '隐藏失败') } finally { setLoading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[420px] rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+          隐藏拓展「{project.name}」
+        </h3>
+        <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>
+          只从你的项目页隐藏入口，不删除任务单、执行会话或星标。可在「已屏蔽项目」中随时恢复显示。
+        </p>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submitHide} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '处理中...' : '隐藏卡片'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 新建 Issue
+// =====================================================================
+type NewIssueCreatedOptions = {
+  createFirstSession: boolean
+  planningSessionId?: string | null
+}
+
+export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktree = true, forcePlanning = false }: { projectId: string; onClose: () => void; onCreated: (iss: any, options: NewIssueCreatedOptions) => void; defaultUseWorktree?: boolean; forcePlanning?: boolean }) {
+  const DRAFT_KEY = `new-issue:${projectId}`
+  const initialDraft = draftLoad<{
+    title?: string
+    desc?: string
+    descTouched?: boolean
+    useWorktree?: boolean
+    createFirstSession?: boolean
+    branch?: string
+    visibility?: IssueVisibility
+    isPlanning?: boolean
+  }>(DRAFT_KEY)
+  const guidedDemo = readActiveGuidedDemo()
+  const guidedDemoState = guidedDemo?.state
+  const isGuidedDemo = isGuidedDemoProject(projectId) && !guidedDemoState?.issueId
+  const { theme, projects } = useStore()
+  // 从 store 找父项目: 用来限制 issue 的可见性不能比 project 宽 (反向放大禁止).
+  const parentProject: any = (projects || []).find((p: any) => p.id === projectId)
+  const parentVisibility: 'private' | 'team' | 'public' | 'allowlist' =
+    parentProject?.visibility === 'team' || parentProject?.visibility === 'public' || parentProject?.visibility === 'allowlist'
+      ? parentProject.visibility
+      : 'private'
+  // 反向放大: 仅当父项目允许时才显示对应档位; inherit 也可选项, 默认值总是 inherit.
+  const allowedVisibilities: IssueVisibility[] = ['inherit']
+  if (parentVisibility === 'private') allowedVisibilities.push('private')
+  if (parentVisibility === 'team') { allowedVisibilities.push('private', 'team') }
+  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'team', 'public') }
+  if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
+  const initialVisibility: IssueVisibility =
+    (initialDraft?.visibility && allowedVisibilities.includes(initialDraft.visibility)) ? initialDraft.visibility : 'inherit'
+  const [title, setTitle] = useState(isGuidedDemo ? guidedDemoState?.issueTitle || '' : (initialDraft?.title || ''))
+  const [desc, setDesc] = useState(isGuidedDemo ? guidedDemoState?.issueDescription || '' : (initialDraft?.desc || ''))
+  const [descTouched, setDescTouched] = useState(isGuidedDemo ? true : !!initialDraft?.descTouched)
+  const [useWorktree, setUseWorktree] = useState(isGuidedDemo ? false : (typeof initialDraft?.useWorktree === 'boolean' ? initialDraft.useWorktree : defaultUseWorktree))
+  const [createFirstSession, setCreateFirstSession] = useState(isGuidedDemo ? false : (typeof initialDraft?.createFirstSession === 'boolean' ? initialDraft.createFirstSession : true))
+  const [isPlanning, setIsPlanning] = useState(forcePlanning || (typeof initialDraft?.isPlanning === 'boolean' ? initialDraft.isPlanning : false))
+  const [branch, setBranch] = useState(isGuidedDemo ? '' : (initialDraft?.branch || ''))
+  const [visibility, setVisibility] = useState<IssueVisibility>(initialVisibility)
+  const [permissionOpen, setPermissionOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const isDark = theme !== 'light'
+  const effectiveDesc = descTouched ? desc : title
+  const issueVisibilityOptions = ISSUE_VISIBILITY_OPTIONS.filter(opt => allowedVisibilities.includes(opt.value))
+  const visibilityOption = issueVisibilityOptions.find(opt => opt.value === visibility) || ISSUE_VISIBILITY_OPTIONS[0]
+  const parentVisibilityLabel = parentVisibility === 'public' ? '公开' : '私有'
+
+  useEffect(() => {
+    if (!isGuidedDemo) draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning })
+  }, [DRAFT_KEY, isGuidedDemo, title, desc, descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning])
+  const submit = async () => {
+    if (!title.trim()) { setErr('请填写任务标题'); return }
+    if (!effectiveDesc.trim()) { setErr('请填写任务描述'); return }
+    setLoading(true); setErr('')
+    try {
+      const iss = await api(`/api/projects/${projectId}/issues`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          description: effectiveDesc,
+          use_worktree: isPlanning ? false : useWorktree,
+          worktree_branch: (!isPlanning && useWorktree) ? branch.trim() : '',
+          visibility,
+          is_planning: isPlanning,
+        }),
+      })
+      draftClear(DRAFT_KEY)
+      if (isGuidedDemo && guidedDemo && iss?.id) patchGuidedDemoState(guidedDemo.kind, { issueId: iss.id })
+      onCreated(iss, { createFirstSession: isPlanning ? false : createFirstSession, planningSessionId: iss?.planning_session_id })
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+
+  const issuePermissionControl = (
+    <div>
+      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {issueVisibilityOptions.map((opt) => {
+          const active = visibility === opt.value
+          return (
+            <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }}
+              title={opt.description}
+              className="h-8 rounded-lg border text-[12px] transition-colors"
+              style={active
+                ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
+                : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+        父项目可见性为「{parentVisibilityLabel}」，本任务单可选范围已自动收窄。
+      </p>
+    </div>
+  )
+
+  const issuePermissionModal = permissionOpen ? (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>修改任务权限</h4>
+        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围会受所属项目权限限制。</p>
+        {issuePermissionControl}
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={() => setPermissionOpen(false)}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div data-tour="issue-modal" className="relative w-[440px] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>新建任务</h3>
+        <div className="space-y-3 mb-4">
+          <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
+            data-tour="issue-title-input"
+            placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
+            data-tour="issue-description-input"
+            placeholder="任务描述（默认同标题）"
+            overlayTitle="编辑任务描述"
+            className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+
+          <button type="button" onClick={() => setPermissionOpen(true)}
+            data-tour="issue-visibility"
+            className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
+            <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>修改任务权限</span>
+              <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
+              </span>
+            </span>
+            <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+          </button>
+
+          <ToggleSwitch
+            data-tour="issue-worktree-toggle"
+            checked={useWorktree}
+            onChange={v => { setUseWorktree(v); setErr('') }}
+            className="flex items-center gap-3 text-[13px]"
+            style={{ color: 'var(--text-secondary)' }}>
+            使用 git worktree（在绑定路径下为本任务开独立工作区）
+          </ToggleSwitch>
+          {useWorktree && (
+            <div className="space-y-1.5">
+              <input value={branch} onChange={e => { setBranch(e.target.value); setErr('') }}
+                data-tour="issue-branch-input"
+                placeholder="分支名称（留空默认使用任务标识）"
+                onKeyDown={e => e.key === 'Enter' && submit()}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              <p className="text-[11px] px-1" style={{ color: 'var(--text-dimmed)' }}>
+                工作区路径 = 绑定路径/分支名。若该路径已存在，创建会失败并提示重新输入。
+              </p>
+            </div>
+          )}
+
+          <ToggleSwitch
+            checked={isPlanning}
+            onChange={v => { setIsPlanning(v); setErr('') }}
+            className="flex items-start gap-3 text-[13px] leading-5"
+            style={{ color: 'var(--text-secondary)' }}>
+            <span>
+              <span className="font-medium">系统宏观规划模式</span>
+            </span>
+          </ToggleSwitch>
+
+          {!isPlanning && (
+            <ToggleSwitch
+              checked={createFirstSession}
+              onChange={v => { setCreateFirstSession(v); setErr('') }}
+              className="flex items-start gap-3 text-[13px] leading-5"
+              style={{ color: 'var(--text-secondary)' }}>
+              <span>立即创建第一个会话（创建后自动打开新会话菜单）</span>
+            </ToggleSwitch>
+          )}
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            data-tour="issue-submit"
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '创建中...' : '创建'}
+          </button>
+        </div>
+        {issuePermissionModal}
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 重命名 / 编辑 Issue
+// =====================================================================
+export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; onClose: () => void; onRenamed: (iss: any) => void }) {
+  const [name, setName] = useState(issue.title)
+  const [desc, setDesc] = useState(issue.description || '')
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const { theme, projects } = useStore()
+  // 反向放大禁止: 不能把 issue visibility 改成比父项目更宽.
+  const parentProject: any = (projects || []).find((p: any) => p.id === issue.project_id)
+  const parentVisibility: 'private' | 'team' | 'public' | 'allowlist' =
+    parentProject?.visibility === 'team' || parentProject?.visibility === 'public' || parentProject?.visibility === 'allowlist'
+      ? parentProject.visibility
+      : 'private'
+  const initialIssueVisibility: 'inherit' | 'private' | 'team' | 'public' | 'allowlist' = (() => {
+    if (issue.visibility === 'private' || issue.visibility === 'team' || issue.visibility === 'public' || issue.visibility === 'allowlist') return issue.visibility
+    return 'inherit'
+  })()
+  const [visibility, setVisibility] = useState<'inherit' | 'private' | 'team' | 'public' | 'allowlist'>(initialIssueVisibility)
+  const allowedVisibilities: Array<'inherit' | 'private' | 'team' | 'public' | 'allowlist'> = ['inherit']
+  if (parentVisibility === 'private') allowedVisibilities.push('private')
+  if (parentVisibility === 'team') { allowedVisibilities.push('private', 'team') }
+  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'team', 'public') }
+  if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
+  const submit = async () => {
+    if (!name.trim()) { setErr('请输入任务标题'); return }
+    setLoading(true); setErr('')
+    try {
+      const updated = await api(`/api/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ title: name, description: desc, visibility }) })
+      onRenamed(updated)
+    } catch { setErr('修改失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-96 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>修改任务</h3>
+        <div className="space-y-3 mb-4">
+          <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
+            placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <ExpandableTextarea value={desc} onValueChange={setDesc}
+            placeholder="任务描述（选填）"
+            overlayTitle="编辑任务描述"
+            className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <div>
+            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { value: 'inherit', label: '继承项目', desc: '跟随所属项目的可见性' },
+                { value: 'private', label: '仅自己', desc: '只有任务单创建者、项目创建者和管理员可见' },
+                { value: 'team', label: '同组', desc: '同一群组用户可见，前提是他们也能看到项目' },
+                { value: 'public', label: '项目可见者', desc: '所有能看到项目的登录用户都可见' },
+                { value: 'allowlist', label: '指定用户', desc: '只有任务单创建者、项目创建者、管理员和允许名单中的用户可见' },
+              ].filter(opt => allowedVisibilities.includes(opt.value as any)).map((opt) => {
+                const active = visibility === opt.value
+                return (
+                  <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value as any); setErr('') }}
+                    title={opt.desc}
+                    className="h-8 rounded-lg border text-[12px] transition-colors"
+                    style={active
+                      ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
+                      : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 新建 / 编辑 Research
+// =====================================================================
+export function NewResearchModal({ projectId, onClose, onCreated }: { projectId: string; onClose: () => void; onCreated: (research: any, options?: { createLeader?: boolean }) => void }) {
+  const DRAFT_KEY = `new-research:${projectId}`
+  const initialDraft = draftLoad<any>(DRAFT_KEY)
+  const [title, setTitle] = useState(initialDraft?.title || '')
+  const [desc, setDesc] = useState(initialDraft?.desc || '')
+  const [descTouched, setDescTouched] = useState(!!initialDraft?.descTouched)
+  const [assistantLimit, setAssistantLimit] = useState(Number(initialDraft?.assistantLimit) || 3)
+  const [createLeader, setCreateLeader] = useState(initialDraft?.createLeader !== false)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const { theme } = useStore()
+  const effectiveDesc = descTouched ? desc : title
+  useEffect(() => {
+    draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, assistantLimit, createLeader })
+  }, [DRAFT_KEY, title, desc, descTouched, assistantLimit, createLeader])
+  const submit = async () => {
+    if (!title.trim()) { setErr('请填写研究标题'); return }
+    if (!Number.isInteger(assistantLimit) || assistantLimit < 1 || assistantLimit > 12) { setErr('Assistant limit 必须是 1-12 的整数'); return }
+    const submittedDescription = effectiveDesc.trim() || title.trim()
+    setLoading(true); setErr('')
+    try {
+      // Research 本身默认不创建任何 Agent; 组队方式 (AI-Leader / 人工自定义) 进入 Research 后再选.
+      const research = await api(`/api/projects/${projectId}/researches`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          description: submittedDescription,
+          assistant_limit: assistantLimit,
+        }),
+      })
+      draftClear(DRAFT_KEY)
+      onCreated(research, { createLeader })
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>新建研究</h3>
+        <div className="space-y-3 mb-4">
+          <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
+            placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
+            placeholder="研究描述（默认同标题）"
+            overlayTitle="编辑研究描述"
+            className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+            Assistant limit（AI-Leader 的招募上限，Leader 不占名额，默认为3；真人用户后续补建不受此限）
+            <input type="number" min={1} max={12} value={assistantLimit}
+              onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
+              className="mt-1 w-full h-9 px-3 rounded-xl focus:outline-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </label>
+          <ToggleSwitch
+            checked={createLeader}
+            onChange={v => { setCreateLeader(v); setErr('') }}
+            className="flex items-start gap-3 text-[13px] leading-5"
+            style={{ color: 'var(--text-secondary)' }}>
+            <span>立即创建 Leader（创建后自动打开 Leader 配置，走 AI-Leader 自动组队）</span>
+          </ToggleSwitch>
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '创建中...' : '创建'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 为已存在的 Research 装配唯一 Leader (Chief): "AI-Leader 自动组队"路径的起点.
+export function NewResearchLeaderModal({ research, onClose, onCreated }: { research: any; onClose: () => void; onCreated: (leaderSession: any, research: any) => void }) {
+  const [leaderName, setLeaderName] = useState(`${research?.title || 'Research'} Leader`)
+  const [leaderPurpose, setLeaderPurpose] = useState(research?.description || research?.title || '')
+  const [leaderPrompt, setLeaderPrompt] = useState(research?.description || research?.title || '')
+  const [leaderModel, setLeaderModel] = useState('codex')
+  const [memoryConfirmed, setMemoryConfirmed] = useState(true)
+  const [modelOptions, setModelOptions] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/model-options').then((rows: any) => {
+      if (!alive) return
+      const list = Array.isArray(rows) ? rows : []
+      setModelOptions(list)
+      if (list.length > 0 && !list.some((item: any) => item.key === leaderModel)) setLeaderModel(list[0].key)
+    }).catch(() => {})
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const submit = async () => {
+    if (!leaderPrompt.trim()) { setErr('请填写 Leader 初始 Prompt'); return }
+    if (!memoryConfirmed) { setErr('请明确确认 Leader 的 Memory 选择'); return }
+    if (!modelOptions.some((item: any) => item.key === leaderModel)) { setErr('模型目录尚未加载，请刷新后重试'); return }
+    setLoading(true); setErr('')
+    try {
+      const result = await api(`/api/researches/${research.id}/leader`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: leaderName.trim(),
+          purpose: leaderPurpose.trim() || leaderName.trim(),
+          initial_prompt: leaderPrompt.trim(),
+          model: leaderModel,
+          language: 'zh',
+          skill_ids: ['research-chief-agent'],
+          memory_ids: [],
+          memory_selection_confirmed: memoryConfirmed,
+        }),
+      })
+      onCreated(result?.leader_session, result?.research)
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-[var(--radius-modal)] border p-6 shadow-2xl">
+        <h3 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>创建 Leader · AI-Leader 自动组队</h3>
+        <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>Leader 会先与你讨论研究方案，获得你的授权后再自动招募团队。</p>
+        <div className="space-y-3 mb-4">
+          <input value={leaderName} onChange={e => { setLeaderName(e.target.value); setErr('') }}
+            placeholder="Leader 名称"
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <input value={leaderPurpose} onChange={e => { setLeaderPurpose(e.target.value); setErr('') }} placeholder="Leader 职责"
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <select value={leaderModel} onChange={e => setLeaderModel(e.target.value)}
+            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
+            {modelOptions.map((item: any) => (
+              <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
+            ))}
+          </select>
+          <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+            Skill：research-chief-agent（Leader 必选）
+          </div>
+          <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={memoryConfirmed} onChange={e => setMemoryConfirmed(e.target.checked)} />
+            明确选择：Leader 初始不加载额外 Memory
+          </label>
+          <ExpandableTextarea value={leaderPrompt} onValueChange={setLeaderPrompt}
+            placeholder="Leader 初始 Prompt / 初始研究任务"
+            overlayTitle="编辑 Leader 初始 Prompt"
+            className="w-full h-28 px-3 py-2 rounded-lg text-[12px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '创建中...' : '创建并启动 Leader'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function RenameResearchModal({ research, onClose, onRenamed }: { research: any; onClose: () => void; onRenamed: (research: any) => void }) {
+  const [title, setTitle] = useState(research.title)
+  const [desc, setDesc] = useState(research.description || '')
+  const [assistantLimit, setAssistantLimit] = useState(Number(research.assistant_limit) || 3)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const submit = async () => {
+    if (!title.trim()) { setErr('请输入研究标题'); return }
+    setLoading(true); setErr('')
+    try {
+      const updated = await api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ title, description: desc, assistant_limit: assistantLimit }) })
+      onRenamed(updated)
+    } catch (e: any) { setErr(e?.message || '保存失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-96 rounded-[var(--radius-modal)] border p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>修改研究</h3>
+        <div className="space-y-3 mb-4">
+          <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
+            placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <ExpandableTextarea value={desc} onValueChange={setDesc}
+            placeholder="研究描述（选填）"
+            overlayTitle="编辑研究描述"
+            className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+            Assistant limit（1-12，AI-Leader 的招募上限；真人用户后续补建不受此限）
+            <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
+              className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          </label>
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 默认会话名 = 可选所属标题 + 当前时间（YYYY-MM-DD HH:mm）
+function formatNowForName(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export function formatDefaultSessionName(scopeTitle?: string): string {
+  const time = formatNowForName()
+  const title = (scopeTitle || '').replace(/\s+/g, ' ').trim()
+  return title ? `${title} ${time}` : time
+}
+
+// =====================================================================
+// 新建 Session Wizard — 两步:
+//   Step 1: 填名称 / 描述
+//   Step 2: 预览将注入的上下文 (skill/memory 列表 + 完整 body), 提示「之后不可改」
+// 用户在 Step 2 才看到 [创建] 按钮; 想改 skill/memory 需要返回去用户中心改, 然后再走 wizard.
+// =====================================================================
+type WizardItem = {
+  id: string
+  name: string
+  description?: string
+  scope: string
+  dirName?: string | null
+  research_role?: string
+  body?: string
+  contributor_id?: string | null
+}
+
+interface WizardPreview {
+  body: string
+  sources: {
+    skills?: WizardItem[]
+    memories?: { id: string; name: string; description?: string; scope: string; contributor_id?: string | null }[]
+    forced_skill_conflicts?: { id: string; name: string }[]
+    user?: { id?: string; display_name?: string; role?: string } | null
+  } | null
+  defaults?: SelectionDefaults | null
+}
+interface SelectionDefaults {
+  inherited?: boolean
+  source_session?: { session_id: string; name: string } | null
+  // 当前 issue/research 内"上次所选模型" = 该作用域最近一次 Session 的 model (无历史为 null).
+  // 仅作用于当前作用域, 用作模型默认值的最高优先级.
+  model?: string | null
+  excluded_skill_ids?: string[]
+  excluded_memory_ids?: string[]
+}
+const SCOPE_LABEL_WIZ: Record<string, string> = { user: '用户级', project: '项目级', builtin: '内置', issue: '任务级' }
+
+type ModelKey = string
+
+function SessionSkillPreviewDialog({ skill, onClose }: { skill: WizardItem; onClose: () => void }) {
+  const body = typeof skill.body === 'string' ? skill.body : ''
+  const scopeLabel = SCOPE_LABEL_WIZ[skill.scope] || skill.scope
+  return (
+    <div className="theme-overlay fixed inset-0 z-[70] flex items-center justify-center px-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="theme-overlay__panel relative flex max-h-[86vh] w-[min(860px,calc(100vw-32px))] flex-col overflow-hidden rounded-[var(--radius-modal)] border shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="min-w-0 text-[15px] font-semibold leading-6 break-words" style={{ color: 'var(--text-primary)' }}>
+                {skill.name}
+              </h3>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>
+                {scopeLabel}
+              </span>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--status-running-soft)', color: 'var(--status-running)' }}>
+                {body.length} 字
+              </span>
+            </div>
+            {skill.description && (
+              <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {skill.description}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}
+            aria-label="关闭 Skill 预览"
+            title="关闭"
+          >
+            <X className="h-4 w-4" strokeWidth={1.8} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-5">
+          <pre
+            className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[12px] leading-relaxed"
+            style={{
+              background: 'var(--surface-overlay)',
+              borderColor: 'var(--border-default)',
+              color: 'var(--text-primary)',
+              fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace',
+            }}
+          >
+            {body || '未读取到 SKILL.md 正文。'}
+          </pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function isSelfEvolveRequiredMemoryItem(item: { name?: string }) {
+  return String(item.name || '') === SELF_EVOLVE_REQUIRED_MEMORY_NAME
+}
+
+function isSelfEvolveProjectMemoryItem(item: { name?: string; description?: string }) {
+  const text = `${item.name || ''} ${item.description || ''}`
+  return text.includes(SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME)
+    || (text.includes('项目知识') && (text.includes('MOBIUS') || text.includes('中台') || text.includes('莫比乌斯')))
+}
+
+function isSelfEvolveGuideMemoryItem(item: { id?: string; name?: string; description?: string }) {
+  const text = `${item.id || ''} ${item.name || ''} ${item.description || ''}`
+  return SELF_EVOLVE_GUIDE_STYLE_MEMORY_NAMES.some(name => text.includes(name))
+    || (text.includes('引导') && text.includes('文案'))
+}
+
+function shouldKeepSelfEvolveMemory(item: { id?: string; name?: string; description?: string }) {
+  return isSelfEvolveRequiredMemoryItem(item) || isSelfEvolveProjectMemoryItem(item) || isSelfEvolveGuideMemoryItem(item)
+}
+
+type SessionModelOption = {
+  key: string
+  value?: string
+  model?: string
+  label: string
+  title: string
+  sub: string
+  backend: string
+  imported?: boolean
+  use_proxy?: 0 | 1 | boolean | null
+}
+const DEFAULT_SESSION_MODEL: ModelKey = 'codex'
+
+const SESSION_MODEL_LABEL: Record<string, string> = {
+  opus: 'Opus',
+  codex: 'Codex',
+}
+
+// 模型 → 后端渠道
+// 用来对照 /api/sessions/prompt-stats 中的渠道桶
+type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
+function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
+  if (opt?.backend === 'tmux-codex') return 'codex'
+  if (opt?.backend === 'deepseek-harness') return 'deepseek_harness'
+  return 'claude_code'
+}
+
+type ModelUsageLimit = {
+  key: string
+  model?: string
+  label: string
+  title?: string
+  count: number
+  limit: number | null
+  remaining: number | null
+  blocked: boolean
+  blocked_by?: string | null
+  window_hours: number
+  window_minutes?: number
+  since: string
+  usage?: {
+    allUsers5h?: LimitUsageState
+    allUsers5m?: LimitUsageState
+    perUser5h?: LimitUsageState
+    perUser5m?: LimitUsageState
+    tmuxWindows?: LimitUsageState & { warning?: boolean }
+  }
+}
+type LimitUsageState = {
+  count: number
+  limit: number | null
+  remaining: number | null
+  blocked: boolean
+}
+type ModelUsageLimits = {
+  window_hours: number
+  window_minutes?: number
+  since: string
+  models: Record<string, ModelUsageLimit>
+}
+type PromptStats = {
+  window_hours: number
+  window_minutes?: number
+  since: string
+  codex: number
+  claude_code: number
+  deepseek_harness: number
+  codex_5min?: number
+  claude_code_5min?: number
+  deepseek_harness_5min?: number
+  codex_2min: number
+  claude_code_2min: number
+  deepseek_harness_2min: number
+  total: number
+  active_tmux_window_count?: number
+  active_windows_by_backend?: Partial<Record<PromptBackendKey, number>>
+  model_usage_limits?: ModelUsageLimits
+}
+
+const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
+  codex: 'Codex',
+  claude_code: 'Claude Code',
+  deepseek_harness: 'DeepSeek Harness',
+}
+
+// 注入上下文语言: 决定首轮注入的「上下文」段落用中文还是英文. 默认中文.
+export type SessionLanguage = 'zh' | 'en'
+const DEFAULT_SESSION_LANGUAGE: SessionLanguage = 'zh'
+const SESSION_LANGUAGE_CHOICES: { key: SessionLanguage; title: string; sub: string }[] = [
+  { key: 'zh', title: '中文', sub: '注入上下文 · 默认' },
+  { key: 'en', title: 'English', sub: 'Inject context in English' },
+]
+const SESSION_LANGUAGE_LABEL: Record<SessionLanguage, string> = {
+  zh: '中文',
+  en: 'English',
+}
+
+type AgentSkill = { id: string; name: string; description?: string; research_role: string; scope: string }
+
+export type ExistingSessionAction = 'ignore' | 'block_new' | 'terminate_old' | 'delete_old'
+
+export const EXISTING_SESSION_ACTION_OPTIONS: {
+  key: ExistingSessionAction
+  title: string
+  sub: string
+}[] = [
+  { key: 'ignore', title: '无视', sub: '直接创建新的会话' },
+  { key: 'block_new', title: '阻止新会话运行', sub: '存在旧会话时不创建新的会话' },
+  { key: 'terminate_old', title: '终止旧会话', sub: '先终止旧会话的后台执行' },
+  { key: 'delete_old', title: '删除旧会话', sub: '先永久删除旧会话' },
+]
+
+export const EXISTING_SESSION_ACTION_LABEL: Record<ExistingSessionAction, string> = {
+  ignore: '无视',
+  block_new: '阻止新会话运行',
+  terminate_old: '终止旧会话',
+  delete_old: '删除旧会话',
+}
+
+export function normalizeExistingSessionAction(value: any): ExistingSessionAction {
+  return value === 'block_new' || value === 'terminate_old' || value === 'delete_old' ? value : 'ignore'
+}
+
+export type SessionPresetConfig = {
+  name: string
+  description: string
+  personality?: string
+  model: string
+  role?: 'chief_researcher' | 'research_assistant'
+  language: SessionLanguage
+  existing_session_action?: ExistingSessionAction
+  excluded_skill_ids: string[]
+  excluded_memory_ids: string[]
+  required_skill_ids?: string[]
+  saved_at?: string
+}
+
+export type SessionPersonalityOption = {
+  key: string
+  label: string
+  description: string
+}
+
+type RequiredSessionSkill = {
+  dirName: string
+  name?: string
+  label?: string
+}
+
+function agentSkillInstruction(sk: AgentSkill) {
+  return `你的任务是按照 ${sk.name} skill 中的指示完成任务`
+}
+
+function removeAutoAgentSkillInstruction(desc: string, autoText: string) {
+  if (!autoText) return desc
+  const trimmed = desc.trimEnd()
+  if (trimmed === autoText) return ''
+  for (const suffix of [`\n\n${autoText}`, `\n${autoText}`]) {
+    if (trimmed.endsWith(suffix)) {
+      return trimmed.slice(0, -suffix.length).trimEnd()
+    }
+  }
+  return desc
+}
+
+function appendAgentSkillInstruction(desc: string, autoText: string, nextText: string) {
+  const base = removeAutoAgentSkillInstruction(desc, autoText).trimEnd()
+  return base.trim() ? `${base}\n\n${nextText}` : nextText
+}
+
+// PcTaskModeSection — 仅 electron 桌面端: 新建 Session 第1步模型栏上方的 PC 任务模式区块。
+// 通过 window.mobiusDesktop bridge 读写本机 project 绑定路径 + 工作模式偏好 (存桌面端 userData)。
+// 浏览器里 window.mobiusDesktop 不存在 → 不渲染 (NewSessionModal 调用处已用 isDesktop 守卫)。
+export function PcTaskModeSection({ projectId, onModeChange, onPathChange }: { projectId?: string; onModeChange?: (m: 'hub' | 'pc' | 'dual') => void; onPathChange?: (p: string) => void }) {
+  type Mode = 'hub' | 'pc' | 'dual'
+  const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  // projectId 兜底从 URL 取: NewSessionModal 某些调用入口未传 projectId, 但用户在项目页时 URL 含 /u/:user/p/:projectId;
+  // 与 main.ts handleProjectUrl 存路径用的 projectId 同源, 保证读写 key 一致 (否则读到 ::undefined 这种脏 key).
+  const pid = projectId || (typeof window !== 'undefined' ? (window.location.pathname.match(/\/u\/[^/]+\/p\/([^/?#]+)/) || [])[1] : undefined)
+  const [path, setPath] = useState('')
+  const [mode, setMode] = useState<Mode>('dual')
+  // aimux 连接状态: 仅 state==='connected' 时 pc/dual 可用; 未连接 (starting/failed/stopped) 时 pc/dual 灰色禁用并回落 hub.
+  const [aimuxConnected, setAimuxConnected] = useState(false)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (!md) { setReady(true); return }
+    if (!pid) { setReady(true); onModeChange?.('dual'); return }
+    let cancelled = false
+    // aimux 状态: 初始快照 + 实时订阅 (连接状态会动态变化)
+    const unsubStatus = md.onAimuxStatus?.((s: { state?: string } | null | undefined) => {
+      if (!cancelled) setAimuxConnected(!!s && s.state === 'connected')
+    })
+    Promise.all([
+      md.getProjectLocalPath?.(pid).then((p: string | null | undefined) => { if (!cancelled) { setPath(p || ''); onPathChange?.(p || '') } }),
+      md.getProjectWorkMode?.(pid).then((m: string | null | undefined) => {
+        if (cancelled) return
+        const valid: Mode = m === 'hub' || m === 'pc' || m === 'dual' ? m : 'dual'
+        setMode(valid); onModeChange?.(valid)
+      }),
+      md.getAimuxStatus?.().then((s: { state?: string } | null | undefined) => { if (!cancelled) setAimuxConnected(!!s && s.state === 'connected') }),
+    ]).finally(() => { if (!cancelled) setReady(true) })
+    return () => { cancelled = true; unsubStatus?.() }
+  }, [md, pid])
+  // 不变式: aimux 未连接时 mode 强制回落 hub (pc/dual 不可用). 覆盖初值/用户偏好为 pc/dual 但 aimux 断开的情形.
+  useEffect(() => {
+    if (!ready) return
+    if (!aimuxConnected && mode !== 'hub') {
+      setMode('hub'); onModeChange?.('hub')
+    }
+  }, [aimuxConnected, mode, ready])
+  const choosePath = async () => {
+    if (!md || !pid) return
+    const picked = await md.pickDirectory?.()
+    if (!picked) return
+    const r = await md.confirmProjectPath?.(pid, picked)
+    if (r?.ok) { setPath(picked); onPathChange?.(picked) }
+  }
+  const chooseMode = (m: Mode) => {
+    // aimux 未连接时 pc/dual 不可选 (按钮已 disabled, 此为双保险)
+    if (m !== 'hub' && !aimuxConnected) return
+    setMode(m); onModeChange?.(m); if (pid) md?.setProjectWorkMode?.(pid, m)
+  }
+  if (!ready) return null
+  const MODES: Array<{ k: Mode; t: string; s: string }> = [
+    { k: 'hub', t: '只在 Mobius 中枢工作', s: '会话在服务器跑' },
+    { k: 'pc', t: '只在此电脑上工作', s: '调度本机 (aimux)' },
+    { k: 'dual', t: '双侧工作', s: '中枢 + 本机 · 默认' },
+  ]
+  return (
+    <div>
+      <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>PC 任务模式</div>
+      <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-2" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+        <Folder className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>本机工作路径</div>
+          <div className="text-[12px] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{path || '未绑定'}</div>
+        </div>
+        <button type="button" onClick={choosePath} className="shrink-0 text-[11px] px-2 py-1 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--status-running)' }}>{path ? '更改' : '选择'}</button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {MODES.map(opt => {
+          const active = mode === opt.k
+          const disabled = opt.k !== 'hub' && !aimuxConnected
+          return (
+            <button key={opt.k} type="button" disabled={disabled} onClick={() => chooseMode(opt.k)} title={disabled ? 'aimux 未连接，此模式不可用' : undefined} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: active ? 'var(--accent-soft)' : 'var(--input-bg)', border: `1px solid ${active ? 'var(--accent-border)' : 'var(--input-border)'}`, color: 'var(--text-primary)' }}>
+              <div className="text-[12px] font-medium leading-snug">{opt.t}</div>
+              <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.s}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export function NewSessionModal({
+  issueId,
+  researchId,
+  projectId,
+  existingSessions = [],
+  onClose,
+  onCreated,
+  defaultName,
+  defaultDescription,
+  defaultNamePrefix,
+  entityLabel,
+  mode = 'create',
+  initialPreset,
+  requiredSkill,
+  projectKind,
+  personalityOptions = [],
+  onPresetSaved,
+  presetContextPreviewEndpoint,
+  presetSelectionDefaultsEndpoint,
+  showExistingSessionAction = true,
+  modalZIndexClass = 'z-50',
+  modalTitle,
+  continueFromSessionId,
+  defaultModel,
+}: {
+  issueId?: string; researchId?: string; projectId?: string; existingSessions?: any[];
+  onClose: () => void; onCreated: (s: any) => void;
+  defaultName?: string; defaultDescription?: string; defaultNamePrefix?: string
+  entityLabel?: string
+  mode?: 'create' | 'preset'
+  initialPreset?: SessionPresetConfig | null
+  requiredSkill?: RequiredSessionSkill
+  projectKind?: string
+  personalityOptions?: SessionPersonalityOption[]
+  onPresetSaved?: (preset: SessionPresetConfig) => void
+  presetContextPreviewEndpoint?: string
+  presetSelectionDefaultsEndpoint?: string
+  showExistingSessionAction?: boolean
+  modalZIndexClass?: string
+  modalTitle?: string
+  continueFromSessionId?: string
+  defaultModel?: string | null
+}) {
+  const isResearch = !!researchId
+  const isPresetMode = mode === 'preset'
+  const isProjectPreset = isPresetMode && !!projectId && !issueId && !researchId
+  const displayEntityLabel = entityLabel || (isResearch ? '研究智能体' : '会话')
+  const entityNameLabel = isResearch ? `${displayEntityLabel} 名称` : `${displayEntityLabel}名称`
+  const entityPurposeLabel = isResearch ? `${displayEntityLabel} 目的/问题描述` : `${displayEntityLabel}目的/问题描述`
+  const chiefExists = existingSessions.some((s: any) => s.research_role === 'chief_researcher')
+  const DRAFT_KEY = isPresetMode ? `session-preset:${projectId || issueId || researchId || 'unknown'}`
+    : continueFromSessionId
+      ? `continue-session:${continueFromSessionId}`
+      : `new-session:${isResearch ? `r:${researchId}` : `i:${issueId}`}`
+  const initialDraft = isPresetMode ? null : draftLoad<{
+    name?: string
+    desc?: string
+    model?: ModelKey
+    // model 是否为用户"手动选过"的 deliberate 选择. 旧草稿无此字段 → 视为非手动, 不作为权威模型.
+    model_touched?: boolean
+    role?: 'chief_researcher' | 'research_assistant'
+    language?: SessionLanguage
+    excluded_skill_ids?: string[]
+    excluded_memory_ids?: string[]
+    chosen_agent_skill_id?: string
+    selection_ready?: boolean
+    mentions?: SessionMentionSelection[]
+  }>(DRAFT_KEY)
+  const guidedDemo = readActiveGuidedDemo()
+  const guidedDemoState = guidedDemo?.state
+  const isGuidedDemo = !isPresetMode && !!issueId && isGuidedDemoIssue(issueId) && !guidedDemoState?.sessionId
+  const isSelfEvolveGuidedDemo = isGuidedDemo && guidedDemo?.kind === 'self-evolve'
+  const isExtensionProject = projectKind === 'extension'
+  const requiredSessionSkill = isSelfEvolveGuidedDemo
+    ? { dirName: SELF_EVOLVE_REQUIRED_SKILL_NAME, name: SELF_EVOLVE_REQUIRED_SKILL_NAME, label: SELF_EVOLVE_REQUIRED_SKILL_NAME }
+    : (isExtensionProject
+      ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
+      : requiredSkill)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [name, setName] = useState(() => isGuidedDemo
+    ? (guidedDemoState?.sessionName || '')
+    : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
+  // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 桌面端初值 'dual' (默认双侧, 避免 mount 秒提交时 null 导致 UI 与必选逻辑不一致); web 端恒 null → 不注入、不影响 skill.
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
+    typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
+  )
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  // PC 端工作路径 (桌面端 PcTaskModeSection 经 onPathChange 回传): 塞进 pc_client_metadata.local_path, 注入 session 提示词; web 端恒 '' → 不追加, 行为不变.
+  const [pcPath, setPcPath] = useState<string>('')
+  // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
+  // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
+  useEffect(() => {
+    const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+    if (!md?.isDesktop) return
+    md.getBootData?.().then?.((b: any) => {
+      if (!b?.hostname) return
+      setAimuxId(b.aimuxIdentifier || null)
+      const osName = b.platform === 'win32' ? 'Windows' : b.platform === 'darwin' ? 'macOS' : b.platform === 'linux' ? 'Linux' : (b.platform || 'PC')
+      const tag = `[${osName} · ${b.hostname}]`
+      setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
+    })
+  }, [])
+  const [desc, setDesc] = useState(isGuidedDemo
+    ? (guidedDemoState?.sessionDescription || '')
+    : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
+  const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
+    Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
+  )
+  const [deferPurpose, setDeferPurpose] = useState(false)
+  const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(
+    initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
+  )
+  // 模型在创建时定型, 之后不可改 (随会话生命周期).
+  // 默认值统一三级优先级 (与顶栏快捷一致, 见 services/global-default-model.ts):
+  //   当前 issue/research 上次所选 > 项目默认模型偏好 > 全局默认模型 > 内置 codex.
+  // "上次所选"取自该作用域最近一次 Session 的 model (session-selection-defaults 回传, 服务端按作用域隔离),
+  // 不进任何跨作用域草稿 → 绝不影响其他 issue/项目/新项目.
+  // 草稿中的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则只是历次默认值
+  // 的快照, 会把模型钉在过期值上 (管理员改了项目/全局默认也不生效). 旧草稿无 model_touched → 忽略.
+  // preset 模式 (架构/小莫预设) 下, 预设自带 model 视为权威, 优先于其他优先级.
+  const modelUserTouchedRef = useRef(false)
+  const [scopeLastModel, setScopeLastModel] = useState('')
+  const [globalDefaultModel, setGlobalDefaultModel] = useState('')
+  // 仅当用户手动选过模型才视为权威, 避免过期草稿的快照钉死模型.
+  const draftModelDeliberate = initialDraft?.model_touched ? initialDraft?.model : undefined
+  const resolvedDefaultModel = useMemo<ModelKey>(() => {
+    if (isPresetMode && initialPreset?.model) return initialPreset.model
+    if (draftModelDeliberate) return draftModelDeliberate
+    return resolveDefaultModelKey({
+      scopeLastModel,
+      projectDefaultModel: typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : '',
+      globalDefaultModel,
+      fallback: DEFAULT_SESSION_MODEL,
+    })
+  }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
+  const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
+  useEffect(() => {
+    let alive = true
+    fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    if (modelUserTouchedRef.current) return
+    setModel(resolvedDefaultModel)
+  }, [resolvedDefaultModel])
+  // 注入上下文语言, 创建时定型 (默认中文).
+  const [language, setLanguage] = useState<SessionLanguage>(initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
+  const [personality, setPersonality] = useState<string>(initialPreset?.personality || personalityOptions[0]?.key || 'balanced')
+  const [existingSessionAction, setExistingSessionAction] = useState<ExistingSessionAction>(
+    () => normalizeExistingSessionAction(initialPreset?.existing_session_action)
+  )
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [preview, setPreview] = useState<WizardPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  // Issue 默认就有的全集 (从第一次 preview 拉到, 不随勾选变化)
+  const [availableSkills, setAvailableSkills] = useState<WizardItem[]>([])
+  const [availableMemories, setAvailableMemories] = useState<WizardItem[]>([])
+  // 必选 skill 被项目/用户白名单过滤掉时, 后端返回的冲突列表; 用于在 skill 选择界面提示.
+  const [forcedSkillConflicts, setForcedSkillConflicts] = useState<{ id: string; name: string }[]>([])
+  // 用户取消勾选的 id 集合 (默认全勾)
+  const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
+  const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
+  const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
+  // 用户级 ↔ 项目级 升级/取消升级 (Skill 与 Memory)
+  const [currentUserId, setCurrentUserId] = useState('')
+  const [scopeBusyId, setScopeBusyId] = useState('')
+  const [scopeNotice, setScopeNotice] = useState('')
+  const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
+  // 项目级目录: resolver 会把与用户级同名的项目副本去重隐藏 (user 优先),
+  // 升级状态必须单独拉项目列表判断, 不能依赖 availableSkills。
+  const [scopeRefreshKey, setScopeRefreshKey] = useState(0)
+  const [projectSkillCatalog, setProjectSkillCatalog] = useState<any[]>([])
+  const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const canDeferPurpose = !isPresetMode
+  const submittedDescription = canDeferPurpose && deferPurpose ? '' : desc
+
+  // research agent skill: 名字 research-* 且含 research_role 字段的特殊 skill.
+  const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
+  const [showAgentSkillModal, setShowAgentSkillModal] = useState(false)
+  const [chosenAgentSkill, setChosenAgentSkill] = useState<AgentSkill | null>(null)
+  // 全站 5h 提问量 (codex / claude_code) — 用于在模型按钮显示渠道负载与高负荷警告
+  const [promptStats, setPromptStats] = useState<PromptStats | null>(null)
+  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>([])
+  const [modelGridManuallyExpanded, setModelGridManuallyExpanded] = useState(false)
+  const modelGridColumns = useResponsiveModelColumns()
+  const selectedModelOption = useMemo(
+    () => modelOptions.find(opt => opt.key === model) || modelOptions[0] || null,
+    [modelOptions, model],
+  )
+  const collapsedModelVisibleCount = modelGridColumns * MODEL_PICKER_COLLAPSED_ROWS
+  const selectedModelIndex = useMemo(() => modelOptions.findIndex(opt => opt.key === model), [modelOptions, model])
+  const hasCollapsedModelOverflow = modelOptions.length > collapsedModelVisibleCount
+  const modelExpandedForSelection = selectedModelIndex >= collapsedModelVisibleCount
+  const modelGridExpanded = modelGridManuallyExpanded || modelExpandedForSelection || !hasCollapsedModelOverflow
+  const hiddenModelCount = Math.max(0, modelOptions.length - collapsedModelVisibleCount)
+  const selectedPersonality = useMemo(
+    () => personalityOptions.find(option => option.key === personality) || personalityOptions[0] || null,
+    [personalityOptions, personality],
+  )
+  const selectedBackendKey = promptBackendKeyForOption(selectedModelOption)
+  const selectedActiveWindowCount = Number(promptStats?.active_windows_by_backend?.[selectedBackendKey] || 0)
+  const selectedBackendLabel = PROMPT_BACKEND_LABEL[selectedBackendKey]
+  const selectedModelUsage = promptStats?.model_usage_limits?.models?.[model] || null
+  const selectedTmuxUsage = selectedModelUsage?.usage?.tmuxWindows || null
+  const selectedTmuxWarning = !!selectedTmuxUsage?.warning
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/model-options')
+      .then((arr: SessionModelOption[]) => {
+        if (!alive) return
+        const options = Array.isArray(arr) ? arr : []
+        setModelOptions(options)
+        if (!options.some(opt => opt.key === model)) {
+          setModel(options[0]?.key || DEFAULT_SESSION_MODEL)
+        }
+      })
+      .catch(() => { if (alive) setModelOptions([]) })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/prompt-stats')
+      .then((s: PromptStats) => { if (alive) setPromptStats(s) })
+      .catch(() => { /* 失败就不显示徽标, 不影响创建流程 */ })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!isGuidedDemo && !isPresetMode) {
+      draftSave(DRAFT_KEY, {
+        name,
+        desc,
+        // 仅当用户手动选过模型才把 model 持久化进草稿 (并标 model_touched=true);
+        // 否则不写 model, 让下次重开时按项目/全局默认重新解析, 避免过期默认值钉死模型.
+        model: modelUserTouchedRef.current ? model : undefined,
+        model_touched: modelUserTouchedRef.current,
+        role,
+        language,
+        excluded_skill_ids: Array.from(excludedSkills),
+        excluded_memory_ids: Array.from(excludedMemories),
+        chosen_agent_skill_id: chosenAgentSkill?.id || '',
+        selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
+        mentions: selectedMentions,
+      }, { minChars: 1 })
+    }
+  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+
+  const modelUsageFor = useCallback((modelKey: ModelKey) => {
+    return promptStats?.model_usage_limits?.models?.[modelKey] || null
+  }, [promptStats])
+
+  const isModelQuotaBlocked = useCallback((modelKey: ModelKey) => {
+    return !!modelUsageFor(modelKey)?.blocked
+  }, [modelUsageFor])
+
+  const modelQuotaError = useCallback((modelKey: ModelKey) => {
+    const usage = modelUsageFor(modelKey)
+    if (!usage || usage.limit == null) return '当前模型已达到管理员设置的使用限额, 请切换模型。'
+    const label = usage.label || usage.title || modelKey
+    const limitLabels: Record<string, string> = {
+      allUsers5h: '所有用户 5 小时提问次数',
+      allUsers5m: '所有用户 5 分钟提问次数',
+      perUser5h: '单个用户 5 小时提问次数',
+      perUser5m: '单个用户 5 分钟提问次数',
+    }
+    const blockedBy = usage.blocked_by || 'perUser5h'
+    const state = usage.usage?.[blockedBy as keyof NonNullable<ModelUsageLimit['usage']>] || { count: usage.count, limit: usage.limit }
+    return `${label} 的${limitLabels[blockedBy] || '管理员提问次数'}已达限制 (${state.count}/${state.limit}), 请切换模型或稍后再创建该模型的新 ${displayEntityLabel}。已有 ${displayEntityLabel} 可继续提问。`
+  }, [modelUsageFor, displayEntityLabel])
+
+  const isModelCreationBlocked = useCallback((modelKey: ModelKey) => {
+    return !isPresetMode && isModelQuotaBlocked(modelKey)
+  }, [isModelQuotaBlocked, isPresetMode])
+
+  useEffect(() => {
+    if (!promptStats || !isModelCreationBlocked(model)) return
+    const fallback = modelOptions.find(opt => !isModelCreationBlocked(opt.key))
+    if (fallback && fallback.key !== model) {
+      setModel(fallback.key)
+    }
+  }, [promptStats, model, modelOptions, isModelCreationBlocked])
+
+  useEffect(() => {
+    if (personalityOptions.length === 0) return
+    if (personalityOptions.some(option => option.key === personality)) return
+    setPersonality(personalityOptions[0].key)
+  }, [personalityOptions, personality])
+
+  // 记录最近一次自动追加的目的文本, 切换或取消时只移除这段自动文本.
+  const [autoFilledDesc, setAutoFilledDesc] = useState('')
+
+  useEffect(() => {
+    if (!isResearch || !researchId) return
+    api(`/api/researches/${researchId}/research-agent-skills`)
+      .then((arr: AgentSkill[]) => setAgentSkills(Array.isArray(arr) ? arr : []))
+      .catch(() => {})
+  }, [isResearch, researchId])
+
+  useEffect(() => {
+    if (isPresetMode || chosenAgentSkill || !initialDraft?.chosen_agent_skill_id || agentSkills.length === 0) return
+    const sk = agentSkills.find(item => item.id === initialDraft.chosen_agent_skill_id)
+    if (!sk) return
+    setChosenAgentSkill(sk)
+    setAutoFilledDesc(agentSkillInstruction(sk))
+  }, [agentSkills, chosenAgentSkill, initialDraft?.chosen_agent_skill_id, isPresetMode])
+
+  const chooseAgentSkill = (sk: AgentSkill | null) => {
+    setChosenAgentSkill(sk)
+    setShowAgentSkillModal(false)
+    setErr('')
+    if (sk) {
+      const text = agentSkillInstruction(sk)
+      setDesc(prev => appendAgentSkillInstruction(prev, autoFilledDesc, text))
+      setAutoFilledDesc(text)
+    } else {
+      setDesc(prev => removeAutoAgentSkillInstruction(prev, autoFilledDesc))
+      setAutoFilledDesc('')
+    }
+  }
+
+  const chooseModel = (nextModel: ModelKey) => {
+    setModel(nextModel)
+    modelUserTouchedRef.current = true
+    setErr('')
+  }
+
+  const isChosenAgentSkill = useCallback((id: string) => chosenAgentSkill?.id === id, [chosenAgentSkill])
+  const isMutuallyExclusiveAgentSkill = useCallback((id: string) => {
+    return !!chosenAgentSkill && agentSkills.some(sk => sk.id === id && sk.id !== chosenAgentSkill.id)
+  }, [agentSkills, chosenAgentSkill])
+  const matchesRequiredSkill = useCallback((sk: { id?: string; name?: string; dirName?: string | null }) => {
+    // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选. web 端 workMode 恒 null → 不触发, 不改变 web 端 skill 行为.
+    if ((workMode === 'pc' || workMode === 'dual') && (sk.dirName || '').replace(/_/g, '-') === 'mobius-aimux') return true
+    if (!requiredSessionSkill) return false
+    const dirName = requiredSessionSkill.dirName
+    const normalizedName = (requiredSessionSkill.name || dirName).replace(/_/g, '-')
+    const itemDir = (sk.dirName || '').replace(/_/g, '-')
+    const itemName = (sk.name || '').replace(/_/g, '-')
+    const itemId = (sk.id || '').replace(/_/g, '-')
+    return itemDir === dirName
+      || itemName === normalizedName
+      || itemId === `builtin:${dirName}`
+      || itemId.endsWith(`:${dirName}`)
+  }, [requiredSessionSkill, workMode])
+
+  const normalizeSkillExclusions = useCallback((skillEx: Set<string>, availableSkillIds?: Set<string>) => {
+    const next = new Set(skillEx)
+    if (chosenAgentSkill) {
+      next.delete(chosenAgentSkill.id)
+      agentSkills.forEach(sk => {
+        if (sk.id !== chosenAgentSkill.id && (!availableSkillIds || availableSkillIds.has(sk.id))) {
+          next.add(sk.id)
+        }
+      })
+    }
+    // 必选 skill 从排除集清理 (含 PC 任务模式 pc/dual 的 mobius-aimux; matchesRequiredSkill 自身判 workMode/requiredSessionSkill,
+    // web 端 workMode 恒 null → mobius-aimux 不匹配 → 不清理, 行为不变).
+    availableSkills.forEach(sk => {
+      if (matchesRequiredSkill(sk) && (!availableSkillIds || availableSkillIds.has(sk.id))) {
+        next.delete(sk.id)
+      }
+    })
+    return next
+  }, [agentSkills, availableSkills, chosenAgentSkill, matchesRequiredSkill])
+
+  // Step 2 期间, 用户切换勾选 → 重拉 preview, 让"完整注入文本"和字数都跟着变.
+  // 用 POST + body 提交: description 可能很长, 放 URL query 会撑爆请求头导致 fail to fetch.
+  const fetchPreview = useCallback(async (
+    skillEx: Set<string>,
+    memEx: Set<string>,
+    options: { includeDefaults?: boolean; includeBody?: boolean; includeItemBodies?: boolean } = {},
+  ) => {
+    const endpoint = isResearch
+      ? `/api/researches/${researchId}/context-preview`
+      : presetContextPreviewEndpoint
+        ? presetContextPreviewEndpoint
+        : isProjectPreset
+        ? `/api/projects/${projectId}/architecture-session-preset/context-preview`
+        : `/api/issues/${issueId}/context-preview`
+    return await api(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        description: submittedDescription,
+        role,
+        language,
+        personality,
+        excluded_skill_ids: Array.from(skillEx),
+        excluded_memory_ids: Array.from(memEx),
+        ...(options.includeDefaults ? { include_defaults: true } : {}),
+        ...(options.includeBody === false ? { include_body: false } : {}),
+        ...(options.includeItemBodies === false ? { include_item_bodies: false } : {}),
+        // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+      }),
+    }) as WizardPreview
+  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
+
+  // 拉取当前 issue/research 的"上次所选模型" (该作用域最近一次 Session 的 model).
+  // preset / 引导演示模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
+  useEffect(() => {
+    if (isPresetMode || isGuidedDemo) { setScopeLastModel(''); return }
+    let alive = true
+    fetchPreview(new Set(), new Set(), { includeDefaults: true, includeBody: false, includeItemBodies: false })
+      .then(d => { if (alive) setScopeLastModel(typeof d?.defaults?.model === 'string' ? d.defaults.model : '') })
+      .catch(() => { if (alive) setScopeLastModel('') })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueId, researchId, isPresetMode, isGuidedDemo])
+
+  const goPreview = async () => {
+    if (!name.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityNameLabel}`); return }
+    if (!deferPurpose && !desc.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityPurposeLabel}`); return }
+    if (!isPresetMode && isModelQuotaBlocked(model)) {
+      setErr(modelQuotaError(model))
+      return
+    }
+    setErr('')
+    // 先进入第 2 步, 在该页内加载预览, 避免在第 1 步原地卡住等加载.
+    // 同步校验 (名称/目的/配额) 通过即可推进; 异步拉取失败或必选 skill 缺失时退回第 1 步并提示.
+    setStep(2)
+    setPreviewLoading(true)
+    try {
+      const pAll = await fetchPreview(new Set(), new Set(), { includeDefaults: true })
+      const defaults: SelectionDefaults = pAll.defaults || {}
+      const availableSkillIds = new Set((pAll.sources?.skills || []).map(s => s.id))
+      const availableMemoryIds = new Set((pAll.sources?.memories || []).map(m => m.id))
+      const requiredSessionSkillIds = requiredSessionSkill
+        ? (pAll.sources?.skills || []).filter(matchesRequiredSkill).map(s => s.id)
+        : []
+      if (requiredSessionSkill && requiredSessionSkillIds.length === 0) {
+        throw new Error(`未找到必选内置 Skill: ${requiredSessionSkill.label || requiredSessionSkill.dirName}`)
+      }
+      let defaultSkillEx = new Set<string>(
+        ((isPresetMode && initialPreset?.excluded_skill_ids)
+          ? initialPreset.excluded_skill_ids
+          : (defaults.excluded_skill_ids || [])
+        ).filter(id => availableSkillIds.has(id))
+      )
+      if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_skill_ids) {
+        defaultSkillEx = new Set(initialDraft.excluded_skill_ids.filter(id => availableSkillIds.has(id)))
+      }
+      requiredSessionSkillIds.forEach(id => defaultSkillEx.delete(id))
+      // 选中的 research agent skill 强制注入; 其他 research agent skill 与它互斥, 必须排除.
+      defaultSkillEx = normalizeSkillExclusions(defaultSkillEx, availableSkillIds)
+      let defaultMemoryEx = new Set<string>(
+        ((isPresetMode && initialPreset?.excluded_memory_ids)
+          ? initialPreset.excluded_memory_ids
+          : (defaults.excluded_memory_ids || [])
+        ).filter(id => availableMemoryIds.has(id))
+      )
+      if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_memory_ids) {
+        defaultMemoryEx = new Set(initialDraft.excluded_memory_ids.filter(id => availableMemoryIds.has(id)))
+      }
+      if (isSelfEvolveGuidedDemo) {
+        defaultSkillEx = normalizeSkillExclusions(
+          new Set(
+            (pAll.sources?.skills || [])
+              .filter(sk => !matchesRequiredSkill(sk))
+              .map(sk => sk.id)
+              .filter(id => availableSkillIds.has(id))
+          ),
+          availableSkillIds,
+        )
+        defaultMemoryEx = new Set(
+          (pAll.sources?.memories || [])
+            .filter(memory => !shouldKeepSelfEvolveMemory(memory))
+            .map(memory => memory.id)
+            .filter(id => availableMemoryIds.has(id))
+        )
+      }
+      const hasInheritedExclusions = defaultSkillEx.size > 0 || defaultMemoryEx.size > 0
+      const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx, { includeDefaults: true }) : pAll
+      setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
+      setAvailableSkills((pAll.sources?.skills || []) as WizardItem[])
+      setCurrentUserId(String(pAll.sources?.user?.id || ''))
+      setForcedSkillConflicts((pAll.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
+      setExcludedSkills(defaultSkillEx)
+      setExcludedMemories(defaultMemoryEx)
+      setPreview(p0)
+    } catch (e: any) {
+      setErr(e?.message || '加载预览失败')
+      setStep(1)
+    } finally { setPreviewLoading(false) }
+  }
+
+  // Step 2 内勾选状态变更 → 即时拉新 preview, 不阻塞 UI (lastSent 防竞态)
+  const toggleSkill = async (id: string) => {
+    const item = availableSkills.find(sk => sk.id === id)
+    if (isChosenAgentSkill(id) || isMutuallyExclusiveAgentSkill(id) || (item && matchesRequiredSkill(item))) return
+    const next = new Set(excludedSkills)
+    next.has(id) ? next.delete(id) : next.add(id)
+    const normalized = normalizeSkillExclusions(next)
+    setExcludedSkills(normalized)
+    try { setPreview(await fetchPreview(normalized, excludedMemories)) } catch { /* 静默, 字数会过时但勾选状态本地是对的 */ }
+  }
+  const toggleMemory = async (id: string) => {
+    const next = new Set(excludedMemories)
+    next.has(id) ? next.delete(id) : next.add(id)
+    setExcludedMemories(next)
+    try { setPreview(await fetchPreview(excludedSkills, next)) } catch { /* 静默 */ }
+  }
+
+  // ---- 用户级 ↔ 项目级: 升级 / 取消升级 -------------------------------------
+  // 升级 = 把我的用户级条目快照复制到项目级 (原件保留); 取消 = 移除项目副本。
+  // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
+  const canScopeChange = !!projectId && !isGuidedDemo
+  // 拉项目级 Skill/Memory 目录, 用于判断「已升级 / 可取消升级」(见上方注释)。
+  useEffect(() => {
+    if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
+    let alive = true
+    Promise.all([
+      api(`/api/projects/${projectId}/skills`).catch(() => []),
+      api(`/api/projects/${projectId}/memories`).catch(() => []),
+    ]).then(([skills, memories]: any[]) => {
+      if (!alive) return
+      setProjectSkillCatalog(Array.isArray(skills) ? skills : [])
+      setProjectMemoryCatalog(Array.isArray(memories) ? memories : [])
+    })
+    return () => { alive = false }
+  }, [canScopeChange, projectId, scopeRefreshKey])
+  const refreshWizardSources = async () => {
+    const p = await fetchPreview(excludedSkills, excludedMemories, { includeDefaults: true })
+    setCurrentUserId(String(p?.sources?.user?.id || currentUserId))
+    setAvailableSkills((p?.sources?.skills || []) as WizardItem[])
+    setAvailableMemories((p?.sources?.memories || []) as WizardItem[])
+    setForcedSkillConflicts((p?.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
+    setPreview(p)
+    setScopeRefreshKey(k => k + 1)
+  }
+  const upgradeScopeItem = async (kind: 'skill' | 'memory', item: WizardItem) => {
+    if (!projectId) return
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(kind === 'skill' ? `/api/skills/${encodeURIComponent(item.id)}/move` : `/api/memories/${encodeURIComponent(item.id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId }),
+      })
+      setScopeNotice(`已将「${item.name}」升级为项目级, 对项目成员可见`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '升级失败')
+    } finally { setScopeBusyId('') }
+  }
+  const cancelUpgradeScopeItem = async () => {
+    if (!cancelTarget || !projectId) return
+    const { kind, item } = cancelTarget
+    const busyId = `${kind}:${item.id}`
+    setScopeBusyId(busyId); setErr(''); setScopeNotice('')
+    try {
+      await api(`/api/projects/${projectId}/${kind === 'skill' ? 'skills' : 'memories'}/${encodeURIComponent(item.id)}/cancel-upgrade`, {
+        method: 'POST',
+      })
+      setCancelTarget(null)
+      setScopeNotice(`已取消「${item.name}」的项目级升级, 你的用户级原件保留`)
+      await refreshWizardSources()
+    } catch (e: any) {
+      setErr(e?.message || '取消升级失败')
+    } finally { setScopeBusyId('') }
+  }
+
+  const submit = async () => {
+    if (!isPresetMode && isModelQuotaBlocked(model)) {
+      setErr(modelQuotaError(model))
+      return
+    }
+    if (isPresetMode) {
+      const requiredSessionSkillIds = availableSkills.filter(matchesRequiredSkill).map(sk => sk.id)
+      if (requiredSessionSkill && requiredSessionSkillIds.length === 0) {
+        setErr(`未找到必选内置 Skill: ${requiredSessionSkill.label || requiredSessionSkill.dirName}`)
+        return
+      }
+      const nextExcludedSkills = Array.from(normalizeSkillExclusions(excludedSkills))
+        .filter(id => !requiredSessionSkillIds.includes(id))
+      onPresetSaved?.({
+        name: name.trim(),
+        description: desc.trim(),
+        personality,
+        model,
+        role,
+        language,
+        existing_session_action: existingSessionAction,
+        excluded_skill_ids: nextExcludedSkills,
+        excluded_memory_ids: Array.from(excludedMemories),
+        required_skill_ids: requiredSessionSkillIds,
+        saved_at: new Date().toISOString(),
+      })
+      return
+    }
+    setLoading(true); setErr('')
+    try {
+      if (isResearch) {
+        if (role !== 'research_assistant') {
+          setErr('Research 的 Chief 会在创建 Research 时自动建立，不能从这里重复创建')
+          return
+        }
+        const initialPrompt = [name.trim(), appendAttachmentsToDesc(submittedDescription, attachments)].filter(Boolean).join('\n\n')
+        const selectedSkillIds = availableSkills
+          .filter(sk => !excludedSkills.has(sk.id) && !isMutuallyExclusiveAgentSkill(sk.id))
+          .map(sk => sk.id)
+        const selectedMemoryIds = availableMemories
+          .filter(memory => !excludedMemories.has(memory.id))
+          .map(memory => memory.id)
+        if (!initialPrompt.trim()) { setErr('Research Agent 必须填写初始 Prompt'); return }
+        if (selectedSkillIds.length === 0) { setErr('请至少选择一个 Skill'); return }
+        const s = await api(`/api/researches/${researchId}/team/manual-agents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            request_id: `research-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: name.trim(),
+            purpose: submittedDescription.trim() || name.trim(),
+            model,
+            role,
+            language,
+            skill_ids: selectedSkillIds,
+            memory_ids: selectedMemoryIds,
+            memory_selection_confirmed: true,
+            initial_prompt: initialPrompt,
+            recruit_reason: '用户明确创建该 Research Agent，当前任务需要其专长',
+            expected_outcome: submittedDescription.trim() || name.trim(),
+            mentions: sessionMentionPayload(selectedMentions),
+            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+          }),
+        })
+        draftClear(DRAFT_KEY)
+        if (deferPurpose) markFireAndForgetSession(s?.session_id)
+        onCreated(s)
+        return
+      }
+      const endpoint = `/api/issues/${issueId}/sessions`
+      const s = await api(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({
+          name, description: appendAttachmentsToDesc(submittedDescription, attachments), model, role, language,
+          mentions: sessionMentionPayload(selectedMentions),
+          excluded_skill_ids: Array.from(excludedSkills),
+          excluded_memory_ids: Array.from(excludedMemories),
+          continue_from_session_id: continueFromSessionId || undefined,
+          // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
+            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+        }),
+      })
+      draftClear(DRAFT_KEY)
+      if (deferPurpose) markFireAndForgetSession(s?.session_id)
+      if (isGuidedDemo && guidedDemo && s?.session_id) patchGuidedDemoState(guidedDemo.kind, { sessionId: s.session_id })
+      onCreated(s)
+    } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
+  }
+
+  // 统计已勾选(未被排除)的条目数
+  const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
+  const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
+  const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
+  // 升级/取消升级 分组与匹配: skill 按 id 里的 dirName, memory 按名称 (副本保留原名)。
+  const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
+  const userSkillItems = availableSkills.filter(s => s.scope === 'user')
+  const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
+  const scopeIdDir = (id: string) => {
+    const parts = String(id || '').split(':')
+    if (parts[0] === 'project') return parts.slice(3).join(':')
+    if (parts[0] === 'user') return parts.slice(2).join(':')
+    return null
+  }
+  // dirName → 我升级产生的项目副本 (catalog 行, 含项目 id)
+  const myUpgradedSkillByDir = new Map<string, any>()
+  const allUpgradedSkillDirs = new Set<string>()
+  for (const s of projectSkillCatalog) {
+    const dir = scopeIdDir(s.id)
+    if (!dir) continue
+    allUpgradedSkillDirs.add(dir)
+    if (String(s.created_by || '') === currentUserId) myUpgradedSkillByDir.set(dir, s)
+  }
+  const myUpgradedMemoryByName = new Map<string, any>()
+  const allUpgradedMemoryNames = new Set<string>()
+  for (const m of projectMemoryCatalog) {
+    allUpgradedMemoryNames.add(m.name)
+    if (String(m.created_by || '') === currentUserId) myUpgradedMemoryByName.set(m.name, m)
+  }
+  const isUpgradedByMe = (item: WizardItem) => !!item.contributor_id && item.contributor_id === currentUserId
+  const cancelUpgradeButton = (kind: 'skill' | 'memory', projectIdCopyId: string, name: string) => (
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
+      disabled={!!scopeBusyId}
+      title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+      className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+      style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--status-danger-soft)' }}>
+      取消升级
+    </button>
+  )
+  const upgradedChip = (label = '已升级') => (
+    <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>{label}</span>
+  )
+  const skillUpgradeAction = (sk: WizardItem) => {
+    if (!canScopeChange || sk.scope !== 'user') return null
+    const dir = sk.dirName || scopeIdDir(sk.id) || sk.name
+    const mine = myUpgradedSkillByDir.get(dir)
+    if (mine) {
+      return (<>
+        {upgradedChip()}
+        {cancelUpgradeButton('skill', mine.id, sk.name)}
+      </>)
+    }
+    if (allUpgradedSkillDirs.has(dir)) return upgradedChip('项目已有同名')
+    const busy = scopeBusyId === `skill:${sk.id}`
+    return (
+      <button type="button" onClick={() => upgradeScopeItem('skill', sk)} disabled={!!scopeBusyId}
+        title="把这条用户级 Skill 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+        className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+        style={{ color: 'var(--status-success)', borderColor: 'var(--status-success-border)', background: 'var(--status-success-soft)' }}>
+        {busy ? '升级中…' : '升级'}
+      </button>
+    )
+  }
+  const memoryUpgradeAction = (m: WizardItem) => {
+    if (!canScopeChange) return null
+    if (m.scope === 'user') {
+      const mine = myUpgradedMemoryByName.get(m.name)
+      if (mine) {
+        return (<>
+          {upgradedChip()}
+          {cancelUpgradeButton('memory', mine.id, m.name)}
+        </>)
+      }
+      if (allUpgradedMemoryNames.has(m.name)) return upgradedChip('项目已有同名')
+      const busy = scopeBusyId === `memory:${m.id}`
+      return (
+        <button type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); upgradeScopeItem('memory', m) }}
+          disabled={!!scopeBusyId}
+          title="把这条用户级 Memory 复制升级为项目级, 对项目成员可见 (个人原件保留)"
+          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+          style={{ color: 'var(--status-success)', borderColor: 'var(--status-success-border)', background: 'var(--status-success-soft)' }}>
+          {busy ? '升级中…' : '升级'}
+        </button>
+      )
+    }
+    if (m.scope === 'project' && isUpgradedByMe(m)) {
+      return cancelUpgradeButton('memory', m.id, m.name)
+    }
+    return null
+  }
+  const pcTaskRequiresAimux = workMode === 'pc' || workMode === 'dual'
+  const requiredSkillNames = [
+    ...(requiredSessionSkill ? [requiredSessionSkill.label || requiredSessionSkill.dirName] : []),
+    ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
+  ].filter(Boolean)
+  const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
+  const totalSteps = 2
+
+  // 目的/描述输入框: preset 模板模式保留自带边框(裸); 正常创建模式下边框透明,
+  // 交给 AttachmentComposer 的整合容器统一包边, 使附件芯片/上传按钮与输入框融为一体.
+  const descTextarea = (
+    <ExpandableTextarea value={desc} onValueChange={value => { setDesc(value); setErr('') }}
+      data-tour="session-description-input"
+      placeholder={`${isResearch ? `${displayEntityLabel} 目的` : '会话目的'}/要解决的问题（必填）`}
+      overlayTitle={`编辑 ${displayEntityLabel} 目的/问题描述`}
+      expandButtonClassName="w-20"
+      innerControl={canDeferPurpose ? (
+        <button
+          type="button"
+          onClick={() => { setDeferPurpose(!deferPurpose); setErr('') }}
+          className="inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          style={{
+            color: 'var(--text-muted)',
+            borderColor: 'var(--input-border)',
+            background: 'var(--input-bg)',
+          }}
+        >
+          {deferPurpose
+            ? <CheckSquare className="h-3 w-3" strokeWidth={1.9} />
+            : <Square className="h-3 w-3" strokeWidth={1.9} />}
+          <span>稍后再写</span>
+        </button>
+      ) : undefined}
+      className={`w-full h-28 px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none resize-none ${isPresetMode ? 'rounded-xl focus:border-blue-500/30' : 'border-0 bg-transparent'}`}
+      style={isPresetMode
+        ? { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }
+        : { color: 'var(--text-primary)' }} />
+  )
+
+  return (
+    <div className={`theme-overlay fixed inset-0 ${modalZIndexClass} flex items-center justify-center`}>
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div data-tour="session-modal" className="theme-overlay__panel relative rounded-[var(--radius-modal)] border p-6 shadow-2xl flex flex-col" style={{
+        width: step === 2
+          ? 'min(1120px, calc(100vw - 32px))'
+          : 'min(560px, calc(100vw - 32px))',
+        height: step === 2 ? 'min(760px, calc(100vh - 32px))' : undefined,
+        maxHeight: 'calc(100vh - 32px)',
+      }}>
+        {loading && (
+          <div
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 rounded-2xl"
+            style={{ background: 'var(--surface-scrim)', backdropFilter: 'blur(2px)' }}
+          >
+            <Loader2 className="h-9 w-9 animate-spin" style={{ color: 'var(--status-running)' }} strokeWidth={1.8} />
+            <div className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              {isPresetMode ? '正在保存预设，请稍候…' : '正在创建会话，请稍候…'}
+            </div>
+            {!isPresetMode && continueFromSessionId && (
+              <div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
+            )}
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · 第 {step} 步 / 共 {totalSteps} 步
+          </h3>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalSteps }, (_, index) => (
+                <div key={index} className="w-6 h-1 rounded" style={{ background: step >= index + 1 ? 'var(--accent-primary)' : 'var(--border-default)' }} />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}
+              aria-label="关闭"
+              title="关闭"
+            >
+              <X className="h-4 w-4" strokeWidth={1.8} />
+            </button>
+          </div>
+        </div>
+
+        {continueFromSessionId && (
+          <div
+            className="mb-4 rounded-lg border px-3 py-2.5 text-[12px] leading-relaxed"
+            style={{
+              color: 'var(--accent-primary)',
+              borderColor: 'var(--accent-border)',
+              background: 'var(--accent-soft)',
+            }}
+            role="note"
+          >
+            确认后会<strong>新建一个 Session</strong>，继承当前会话的转接上下文，并进入新 Session；不会在原会话中热切模型。取消或关闭将留在原 Session，原会话和草稿都不会改变。
+          </div>
+        )}
+
+        {step === 1 && (
+          <>
+            <p className="text-[12px] mb-3 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {isPresetMode
+                ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
+                : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
+              {requiredSkillNames.length > 0 && <span className="block mt-1">必选 Skill: {requiredSkillNames.join('、')}</span>}
+            </p>
+            <div className="flex-1 min-h-0 space-y-3 mb-4 overflow-y-auto overscroll-contain pr-1">
+              <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
+                data-tour="session-name-input"
+                placeholder={`${entityNameLabel}（如：修复登录 Bug）`}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+              {canDeferPurpose && deferPurpose ? (
+                <button
+                  type="button"
+                  data-tour="session-description-input"
+                  onClick={() => { setDeferPurpose(false); setErr('') }}
+                  className="w-full min-h-14 rounded-xl border px-3 py-2 text-left text-[13px] font-medium transition-colors hover:bg-blue-500/10"
+                  style={{
+                    background: 'var(--accent-soft)',
+                    borderColor: 'var(--accent-border)',
+                    color: 'var(--accent-primary)',
+                  }}
+                >
+                  恢复Session目输入框（Fire & Forget 模式）
+                </button>
+              ) : isPresetMode ? (
+                descTextarea
+              ) : (
+                <AttachmentComposer attachments={attachments} setAttachments={setAttachments} projectId={projectId}>
+                  {descTextarea}
+                </AttachmentComposer>
+              )}
+              {!isPresetMode && (
+                <SessionMentionPicker
+                  value={desc}
+                  onValueChange={value => { setDesc(value); setErr('') }}
+                  selected={selectedMentions}
+                  onSelectedChange={setSelectedMentions}
+                  projectId={projectId}
+                  issueId={issueId}
+                  researchId={researchId}
+                  disabled={!issueId && !researchId}
+                />
+              )}
+              {isResearch && (
+                <div>
+                  <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>研究角色（创建后不可更改）</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" disabled={chiefExists}
+                      onClick={() => { setRole('chief_researcher'); setErr(''); if (agentSkills.length > 0) setShowAgentSkillModal(true) }}
+                      className="min-h-14 rounded-xl text-left px-3 py-2 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                      style={{
+                        background: role === 'chief_researcher' ? 'var(--status-success-soft)' : 'var(--input-bg)',
+                        border: `1px solid ${role === 'chief_researcher' ? 'var(--status-success-border)' : 'var(--input-border)'}`,
+                        color: 'var(--text-primary)',
+                      }}>
+                      <div className="text-[13px] font-medium">chief_researcher</div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {chiefExists ? '当前研究已存在' : '每个研究只能有一个'}
+                      </div>
+                    </button>
+                    <button type="button"
+                      onClick={() => { setRole('research_assistant'); setErr(''); if (agentSkills.length > 0) setShowAgentSkillModal(true) }}
+                      className="min-h-14 rounded-xl text-left px-3 py-2 transition-colors"
+                      style={{
+                        background: role === 'research_assistant' ? 'var(--accent-soft)' : 'var(--input-bg)',
+                        border: `1px solid ${role === 'research_assistant' ? 'var(--accent-border)' : 'var(--input-border)'}`,
+                        color: 'var(--text-primary)',
+                      }}>
+                      <div className="text-[13px] font-medium">research_assistant</div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>数量不限</div>
+                    </button>
+                  </div>
+                  {agentSkills.length > 0 && (
+                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[12px]"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+                      <div className="min-w-0">
+                        <span style={{ color: 'var(--text-muted)' }}>Agent Main Skill: </span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{chosenAgentSkill ? chosenAgentSkill.name : '完全自定义'}</strong>
+                      </div>
+                      <button type="button" onClick={() => setShowAgentSkillModal(true)}
+                        className="shrink-0 text-[11px] px-2 py-0.5 rounded border text-blue-400" style={{ borderColor: 'var(--input-border)' }}>
+                        选择 / 更改
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
+                <PcTaskModeSection projectId={projectId} onModeChange={setWorkMode} onPathChange={setPcPath} />
+              )}
+              <div>
+                <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: 'var(--text-muted)' }}>
+                  <span>模型（创建后不可更改）</span>
+                </div>
+                <div
+                  data-tour="session-model-picker"
+                  className={`grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3 ${modelGridExpanded ? 'max-h-none' : 'max-h-[13.5rem]'}`}
+                >
+                  {modelOptions.map(opt => {
+                    const active = model === opt.key
+                    const backendKey = promptBackendKeyForOption(opt)
+                    const count5h = promptStats ? promptStats[backendKey] : null
+                    const count5min = promptStats
+                      ? (promptStats[`${backendKey}_5min` as `${PromptBackendKey}_5min`] ?? promptStats[`${backendKey}_2min` as `${PromptBackendKey}_2min`] ?? 0)
+                      : null
+                    const usage = promptStats?.model_usage_limits?.models?.[opt.key] || null
+                    const quotaBlocked = !isPresetMode && !!usage?.blocked
+                    const blocked = quotaBlocked && !active
+                    const tmuxUsage = usage?.usage?.tmuxWindows
+                    const tmuxWarning = !!tmuxUsage?.warning
+                    const quotaTitle = usage?.limit != null
+                      ? `单用户 5 小时 ${usage.count}/${usage.limit} 次${usage.blocked ? ', 已达管理员限额' : `, 剩余 ${usage.remaining} 次`}`
+                      : '提问硬限制按管理员配置检查，未配置项不限'
+                    const tmuxTitle = tmuxUsage?.limit != null
+                      ? `tmux 窗口 ${tmuxUsage.count}/${tmuxUsage.limit}${tmuxWarning ? ', 已达软提醒阈值' : ''}`
+                      : 'tmux 窗口未配置限制'
+                    const badgeTitle = quotaBlocked
+                      ? `${opt.title} ${quotaTitle}, 暂不可选`
+                      : `${opt.title} 渠道最近 5 小时 ${count5h} 次提问 / 5 分钟 ${count5min} 次; ${quotaTitle}; ${tmuxTitle}`
+                    const cardStyle = {
+                      background: active ? 'var(--accent-soft)' : quotaBlocked ? 'var(--status-danger-soft)' : 'var(--input-bg)',
+                      border: `1px solid ${active ? 'var(--accent-border)' : quotaBlocked ? 'var(--status-danger-border)' : 'var(--input-border)'}`,
+                      color: 'var(--text-primary)',
+                      opacity: quotaBlocked ? 0.58 : 1,
+                    }
+                    const cardBody = (
+                      <>
+                        <div className="text-[13px] font-medium truncate">{opt.title || opt.label}</div>
+                        <div className="text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0" style={{ color: 'var(--text-muted)' }}>
+                          <span className="truncate">{opt.sub}</span>
+                          {!quotaBlocked && usage?.limit != null && (
+                            <span className="font-medium whitespace-nowrap" style={{ color: quotaBlocked ? 'var(--status-danger)' : 'var(--status-running)' }}>
+                              个人5h {usage.count}/{usage.limit} 次
+                            </span>
+                          )}
+                          {!quotaBlocked && tmuxWarning && (
+                            <span className="font-medium whitespace-nowrap" style={{ color: 'var(--status-waiting)' }}>
+                              tmux {tmuxUsage?.count}/{tmuxUsage?.limit}
+                            </span>
+                          )}
+                          {quotaBlocked && (
+                            <span className="font-medium whitespace-nowrap" style={{ color: 'var(--status-danger)' }}>
+                              已达限额 · 暂不可选
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )
+                    return (
+                      <button key={opt.key} type="button" disabled={blocked} title={badgeTitle} onClick={() => chooseModel(opt.key)}
+                        className="relative min-h-16 rounded-xl text-left px-3 py-2 transition-colors disabled:cursor-not-allowed"
+                        style={cardStyle}>
+                        {cardBody}
+                      </button>
+                    )
+                  })}
+                </div>
+                {hasCollapsedModelOverflow && !modelExpandedForSelection && (
+                  <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{
+                      borderColor: 'var(--input-border)',
+                      color: 'var(--text-muted)',
+                      background: 'var(--input-bg)',
+                    }}>
+                    <span>{modelGridManuallyExpanded ? '收起模型' : `展开剩余 ${hiddenModelCount} 个模型`}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${modelGridManuallyExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+                {selectedModelUsage?.limit != null && (
+                  <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px]"
+                    style={{
+                      background: selectedModelUsage.blocked ? 'var(--status-danger-soft)' : 'var(--status-running-soft)',
+                      borderColor: selectedModelUsage.blocked ? 'var(--status-danger-border)' : 'var(--status-running-border)',
+                      color: selectedModelUsage.blocked ? 'var(--status-danger)' : 'var(--status-running)',
+                    }}>
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <span>
+                      管理员模型限额: 最近 {selectedModelUsage.window_hours} 小时单用户提问 {selectedModelUsage.count}/{selectedModelUsage.limit} 次
+                      {selectedModelUsage.blocked
+                        ? '，已达限制，请切换模型或稍后再创建。'
+                        : `，剩余 ${selectedModelUsage.remaining} 次。`}
+                    </span>
+                  </div>
+                )}
+                {promptStats && (
+                  <div className="mt-2 text-[12px] font-medium" style={{ color: selectedTmuxWarning ? 'var(--status-waiting)' : 'var(--status-success)' }}>
+                    {selectedTmuxUsage?.limit != null
+                      ? selectedTmuxWarning
+                        ? `${selectedModelOption?.label || selectedBackendLabel} tmux 窗口达到软提醒阈值（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}），仍可创建。`
+                        : `${selectedModelOption?.label || selectedBackendLabel} tmux 窗口正常（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}）`
+                      : `${selectedBackendLabel} 活跃后台窗口 ${selectedActiveWindowCount}`}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>语言（创建后不可更改）</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {SESSION_LANGUAGE_CHOICES.map(opt => {
+                    const active = language === opt.key
+                    return (
+                      <button key={opt.key} type="button" onClick={() => { setLanguage(opt.key); setErr('') }}
+                        className="min-h-16 rounded-xl text-left px-3 py-2 transition-colors"
+                        style={{
+                          background: active ? 'var(--accent-soft)' : 'var(--input-bg)',
+                          border: `1px solid ${active ? 'var(--accent-border)' : 'var(--input-border)'}`,
+                          color: 'var(--text-primary)',
+                        }}>
+                        <div className="text-[13px] font-medium">{opt.title}</div>
+                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.sub}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              {isPresetMode && personalityOptions.length > 0 && (
+                <div>
+                  <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>性格预设</div>
+                  <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
+                    {personalityOptions.map(opt => {
+                      const active = personality === opt.key
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => { setPersonality(opt.key); setErr('') }}
+                          className="min-w-0 min-h-16 rounded-xl text-left whitespace-normal px-3 py-2 transition-colors"
+                          style={{
+                            background: active ? 'var(--accent-soft)' : 'var(--input-bg)',
+                            border: `1px solid ${active ? 'var(--accent-border)' : 'var(--input-border)'}`,
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          <div className="min-w-0 truncate text-[13px] font-medium">{opt.label}</div>
+                          <div className="mt-0.5 min-w-0 whitespace-normal break-words text-[11px] leading-snug" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {isPresetMode && showExistingSessionAction && (
+                <div>
+                  <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>旧会话存在时的动作</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {EXISTING_SESSION_ACTION_OPTIONS.map(opt => {
+                      const active = existingSessionAction === opt.key
+                      return (
+                        <button key={opt.key} type="button" onClick={() => { setExistingSessionAction(opt.key); setErr('') }}
+                          className="min-h-14 rounded-xl text-left px-3 py-2 transition-colors"
+                          style={{
+                            background: active ? 'var(--accent-soft)' : 'var(--input-bg)',
+                            border: `1px solid ${active ? 'var(--accent-border)' : 'var(--input-border)'}`,
+                            color: 'var(--text-primary)',
+                          }}>
+                          <div className="text-[13px] font-medium">{opt.title}</div>
+                          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.sub}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            {err && <ErrBanner>{err}</ErrBanner>}
+            <div className="flex gap-2 mt-auto">
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>{continueFromSessionId ? '取消，留在原 Session' : '取消'}</button>
+              <button onClick={goPreview} disabled={previewLoading}
+                data-tour="session-preview-next"
+                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                {previewLoading ? '加载预览...' : continueFromSessionId ? '下一步 · 配置新 Session' : '下一步 · 预览配置'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 2 && !preview && (
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--text-muted)' }}>
+            <Loader2 className="h-7 w-7 animate-spin" style={{ color: 'var(--status-running)' }} strokeWidth={1.8} />
+            <div className="text-[13px]">正在加载预览配置…</div>
+          </div>
+        )}
+
+        {step === 2 && preview && (
+          <>
+            <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto xl:overflow-hidden pr-1 xl:pr-0">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 xl:h-full xl:min-h-0 xl:overflow-hidden">
+                <div className="space-y-3 min-h-0 xl:h-full xl:overflow-y-auto xl:overscroll-contain xl:pr-2">
+                  <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
+                    background: 'var(--status-running-soft)',
+                    border: '1px solid var(--status-running-border)',
+                    color: 'var(--status-running)',
+                  }}>
+                    勾选要在本{displayEntityLabel}启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建${displayEntityLabel}时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体。
+                    {isResearch && <div className="mt-1.5">研究角色: <strong>{role}</strong>（创建后不可更改）</div>}
+                    <div className="mt-1.5">模型: <strong>{selectedModelOption?.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
+                    <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
+                    {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality?.label}</strong></div>}
+                    {requiredSkillNames.length > 0 && <div className="mt-1">必选 Skill: <strong>{requiredSkillNames.join('、')}</strong></div>}
+                  </div>
+
+                  <section data-tour="session-preview-skills">
+                    {forcedSkillConflicts.length > 0 && (
+                      <div className="mb-2 rounded-md border px-2.5 py-1.5 text-[11px] leading-relaxed"
+                           style={{ background: 'var(--status-danger-soft)', borderColor: 'var(--status-danger-border)', color: 'var(--status-danger)' }}>
+                        <div className="font-medium">【必选skill与当前的skill白名单冲突】</div>
+                        <div className="mt-0.5 opacity-90">
+                          以下必选 Skill 被白名单过滤, 本次会话不会注入: {forcedSkillConflicts.map(s => s.name).join('、')}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Skill ({skillCheckedCount}/{availableSkills.length})
+                      </h4>
+                      {availableSkills.length > 0 && (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => { const none = normalizeSkillExclusions(new Set<string>()); setExcludedSkills(none); fetchPreview(none, excludedMemories).then(setPreview).catch(() => {}) }}
+                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全选</button>
+                          <button onClick={() => { const all = normalizeSkillExclusions(new Set<string>(availableSkills.map(s => s.id))); setExcludedSkills(all); fetchPreview(all, excludedMemories).then(setPreview).catch(() => {}) }}
+                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全不选</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: 'var(--surface-raised)', border: `1px solid ${'var(--border-default)'}` }}>
+                      {availableSkills.length === 0 && <p className="italic" style={{ color: 'var(--text-dimmed)' }}>无 (本 {isResearch ? '研究' : '任务'} 未启用任何 Skill)</p>}
+                      {(() => {
+                        const renderSkillRow = (sk: WizardItem, showUpgrade: boolean) => {
+                          const required = matchesRequiredSkill(sk)
+                          const locked = required || isChosenAgentSkill(sk.id)
+                          const mutuallyExclusive = isMutuallyExclusiveAgentSkill(sk.id)
+                          const checked = locked || (!mutuallyExclusive && !excludedSkills.has(sk.id))
+                          return (
+                            <div
+                              key={sk.id}
+                              data-tour={(sk.name === 'mobius-extension' || sk.dirName === 'mobius-extension') ? 'session-preview-mobius-extension-skill' : undefined}
+                              className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                            >
+                              <label className={`flex min-w-0 flex-1 items-start gap-2 ${locked ? 'cursor-default' : mutuallyExclusive ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input type="checkbox" checked={checked} disabled={locked || mutuallyExclusive} onChange={() => toggleSkill(sk.id)}
+                                  className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                                <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
+                                  <div className="truncate" style={{ color: 'var(--text-primary)' }}>{sk.name}</div>
+                                  {sk.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-dimmed)' }}>{sk.description}</div>}
+                                </div>
+                              </label>
+                              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                                {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--status-running-soft)', color: 'var(--status-running)' }}>{required ? '必选' : '主Skill'}</span>}
+                                {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--status-danger-soft)', color: 'var(--status-danger)' }}>互斥</span>}
+                                {sk.scope === 'project' && canScopeChange && isUpgradedByMe(sk) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
+                                    disabled={!!scopeBusyId}
+                                    title="移除我升级产生的项目级副本 (你的用户级原件保留)"
+                                    className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+                                    style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--status-danger-soft)' }}>
+                                    取消升级
+                                  </button>
+                                )}
+                                {showUpgrade && skillUpgradeAction(sk)}
+                                <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>
+                                  {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewingSkill(sk)}
+                                  className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                                  style={{ color: 'var(--status-running)', borderColor: 'var(--input-border)' }}
+                                  title={`预览 ${sk.name} 的完整 SKILL.md`}
+                                  aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
+                                >
+                                  <Eye className="h-3 w-3" strokeWidth={1.8} />
+                                  <span>预览</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        }
+                        const groupHeader = (label: string, count: number) => count > 0 ? (
+                          <div className="pt-1 pb-0.5 text-[10px] font-medium" style={{ color: 'var(--text-dimmed)' }}>{label} ({count})</div>
+                        ) : null
+                        return (<>
+                          {groupHeader('项目 Skill', projectSkillItems.length)}
+                          {projectSkillItems.map(sk => renderSkillRow(sk, false))}
+                          {groupHeader('用户 Skill', userSkillItems.length)}
+                          {userSkillItems.map(sk => renderSkillRow(sk, true))}
+                          {groupHeader('内置 / 其他', otherSkillItems.length)}
+                          {otherSkillItems.map(sk => renderSkillRow(sk, false))}
+                        </>)
+                      })()}
+                      {availableSkills.length > 0 && !isResearch && (
+                        <p className="pt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                          {projectSkillCount > 0
+                            ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
+                            : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
+                          {canScopeChange && ' 在「用户 Skill」分组点「升级」可把个人 Skill 复制为项目级供项目成员使用; 由你升级的条目可随时「取消升级」。'}
+                        </p>
+                      )}
+                    </div>
+                  </section>
+
+                  <section data-tour="session-preview-memories">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Memory ({memoryCheckedCount}/{availableMemories.length})
+                      </h4>
+                      {availableMemories.length > 0 && (
+                        <div className="flex gap-1.5">
+                          <button onClick={() => { const none = new Set<string>(); setExcludedMemories(none); fetchPreview(excludedSkills, none).then(setPreview).catch(() => {}) }}
+                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全选</button>
+                          <button onClick={() => { const all = new Set<string>(availableMemories.map(m => m.id)); setExcludedMemories(all); fetchPreview(excludedSkills, all).then(setPreview).catch(() => {}) }}
+                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全不选</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: 'var(--surface-raised)', border: `1px solid ${'var(--border-default)'}` }}>
+                      {availableMemories.length === 0 && <p className="italic" style={{ color: 'var(--text-dimmed)' }}>无</p>}
+                      {availableMemories.map(m => {
+                        const checked = !excludedMemories.has(m.id)
+                        const memoryTour = isSelfEvolveGuidedDemo
+                          ? isSelfEvolveRequiredMemoryItem(m)
+                            ? 'session-preview-self-evolve-required-memory'
+                            : isSelfEvolveProjectMemoryItem(m)
+                              ? 'session-preview-self-evolve-project-memory'
+                              : isSelfEvolveGuideMemoryItem(m)
+                                ? 'session-preview-self-evolve-guide-memory'
+                                : undefined
+                          : m.name.includes('莫比乌斯光点标志空间案例') || m.name.includes('莫比乌斯光点 Logo 空间案例')
+                            ? 'session-preview-logo-memory'
+                            : undefined
+                        return (
+                          <div
+                            key={m.id}
+                            data-tour={memoryTour}
+                            className="flex items-start gap-2 hover:bg-[var(--bg-card)] -mx-1 px-1 py-0.5 rounded"
+                          >
+                            <label className="flex min-w-0 flex-1 items-start gap-2 cursor-pointer">
+                              <input type="checkbox" checked={checked} onChange={() => toggleMemory(m.id)}
+                                className="mt-0.5 accent-blue-500 cursor-pointer" />
+                              <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
+                                <div className="truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</div>
+                                {m.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-dimmed)' }}>{m.description}</div>}
+                              </div>
+                            </label>
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                              {memoryUpgradeAction(m)}
+                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>
+                                {SCOPE_LABEL_WIZ[m.scope] || m.scope}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                </div>
+
+                <section className="order-first min-h-[320px] xl:order-none xl:h-full xl:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: 'var(--surface-raised)', border: `1px solid ${'var(--border-default)'}` }}>
+                  <h4 className="shrink-0 text-[12px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                    完整注入文本 ({previewBodyText.length} 字)
+                  </h4>
+                  <pre className="m-0 flex-1 min-h-[260px] xl:min-h-0 max-h-[45vh] xl:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
+                    style={{ background: 'var(--surface-overlay)', border: `1px solid ${'var(--border-default)'}`, color: 'var(--text-primary)', fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace' }}>
+                    {previewBodyText || '暂无可注入文本。'}
+                  </pre>
+                </section>
+              </div>
+            </div>
+
+            {err && <ErrBanner>{err}</ErrBanner>}
+            {scopeNotice && (
+              <div className="mb-2 rounded-lg border px-3 py-1.5 text-[12px]"
+                   style={{ background: 'var(--status-success-soft)', borderColor: 'var(--status-success-border)', color: 'var(--status-success)' }}>
+                {scopeNotice}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>上一步</button>
+              <button onClick={submit} disabled={loading || previewLoading}
+                data-tour="session-submit"
+                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                {loading
+                  ? (isPresetMode ? '保存中...' : '创建中...')
+                  : isPresetMode
+                    ? '保存预设'
+                    : continueFromSessionId
+                      ? '新建 Session 并继续'
+                      : '确认并创建'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {previewingSkill && (
+        <SessionSkillPreviewDialog
+          skill={previewingSkill}
+          onClose={() => setPreviewingSkill(null)}
+        />
+      )}
+
+      {cancelTarget && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center">
+          <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={() => { if (!scopeBusyId) setCancelTarget(null) }} />
+          <div className="theme-overlay__panel relative rounded-[var(--radius-modal)] border p-5 shadow-2xl flex flex-col" style={{
+            width: 'min(460px, calc(100vw - 32px))',
+          }}>
+            <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+              取消升级「{cancelTarget.item.name}」?
+            </h3>
+            <p className="text-[12px] mb-4 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              项目级副本将被移除, 你的用户级原件保留。若副本在升级后被编辑过, 这些修改会一并丢弃;
+              已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setCancelTarget(null)} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>保留项目级</button>
+              <button type="button" onClick={cancelUpgradeScopeItem} disabled={!!scopeBusyId}
+                className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
+                style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--status-danger-soft)' }}>
+                {scopeBusyId ? '处理中…' : '确认取消升级'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAgentSkillModal && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center">
+          <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={() => setShowAgentSkillModal(false)} />
+          <div className="theme-overlay__panel relative rounded-[var(--radius-modal)] border p-5 shadow-2xl flex flex-col" style={{
+            width: 'min(560px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)',
+          }}>
+            <h3 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>选择研究智能体 Skill</h3>
+            <p className="text-[12px] mb-3 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              选中后会把「按照该 skill 完成任务」追加到当前 {displayEntityLabel} 目的末尾，并确保该 skill 注入当前 {displayEntityLabel}（第二步不可取消）。
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {agentSkills.map(sk => {
+                const active = chosenAgentSkill?.id === sk.id
+                return (
+                  <button key={sk.id} type="button" onClick={() => chooseAgentSkill(sk)}
+                    className="w-full text-left rounded-xl px-3 py-2.5 transition-colors"
+                    style={{ background: active ? 'var(--accent-soft)' : 'var(--input-bg)', border: `1px solid ${active ? 'var(--accent-border)' : 'var(--input-border)'}` }}>
+                    <div className="flex items-center gap-2">
+                      <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{sk.name}</div>
+                      {sk.research_role && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>{sk.research_role}</span>
+                      )}
+                      <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0 ml-auto" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>{SCOPE_LABEL_WIZ[sk.scope] || sk.scope}</span>
+                    </div>
+                    {sk.description && <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{sk.description}</div>}
+                  </button>
+                )
+              })}
+              <button type="button" onClick={() => chooseAgentSkill(null)}
+                className="w-full text-left rounded-xl px-3 py-2.5 transition-colors"
+                style={{ background: !chosenAgentSkill ? 'var(--accent-soft)' : 'var(--input-bg)', border: `1px dashed ${!chosenAgentSkill ? 'var(--accent-border)' : 'var(--input-border)'}` }}>
+                <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>不选择，完全自定义</div>
+                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>自行填写 {displayEntityLabel} 目的，不绑定任何 research agent skill</div>
+              </button>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowAgentSkillModal(false)}
+                className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =====================================================================
+// 重命名 Session
+// =====================================================================
+export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = '会话' }: {
+  session: any
+  onClose: () => void
+  onRenamed: (s: any) => void
+  entityLabel?: string
+}) {
+  const [name, setName] = useState(session.name)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const entityNameLabel = entityLabel === '会话' ? '会话名称' : `${entityLabel} 名称`
+  const entityTitleLabel = entityLabel === '会话' ? '会话' : ` ${entityLabel}`
+  const submit = async () => {
+    if (!name.trim()) { setErr(`请输入${entityLabel === '会话' ? '' : ' '}${entityNameLabel}`); return }
+    setLoading(true); setErr('')
+    try {
+      const updated = await api(`/api/sessions/${session.session_id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+      onRenamed(updated)
+    } catch { setErr('修改失败') } finally { setLoading(false) }
+  }
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-80 rounded-[var(--radius-modal)] border p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>重命名{entityTitleLabel}</h3>
+        <div className="mb-4">
+          <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
+            placeholder={entityNameLabel} onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+        </div>
+        {err && <ErrBanner>{err}</ErrBanner>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={loading}
+            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            {loading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 通用确认弹窗
+// =====================================================================
+export function ConfirmModal({ title, message, onConfirm, onClose, confirmText = '确认', confirmClass = 'bg-red-500 hover:bg-red-600', dataTour, confirmDataTour }: {
+  title: string; message: string; onConfirm: () => void | Promise<void>; onClose: () => void; confirmText?: string; confirmClass?: string; dataTour?: string; confirmDataTour?: string
+}) {
+  const { theme } = useStore()
+  const [loading, setLoading] = useState(false)
+  const handleConfirm = async () => {
+    setLoading(true)
+    try { await onConfirm() } finally { setLoading(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div data-tour={dataTour} className="relative w-80 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <p className="text-[13px] mb-5" style={{ color: 'var(--text-muted)' }}>{message}</p>
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={handleConfirm} disabled={loading}
+            data-tour={confirmDataTour}
+            className={`flex-1 h-9 rounded-xl text-[13px] text-white transition-colors disabled:opacity-40 ${confirmClass}`}>
+            {loading ? '处理中...' : confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// Memory / Skill 跨 scope 移动: 选目标 (用户级 / 某个项目)
+// 用户级条目调用时 lockToProject=true (只能选目标项目);
+// 项目级条目则 user / project 二选一.
+// =====================================================================
+export function MoveScopeModal({
+  title, currentScopeLabel, lockToProject = false, operationLabel = '移动', onClose, onMove,
+}: {
+  title: string
+  currentScopeLabel: string
+  lockToProject?: boolean
+  operationLabel?: '移动' | '复制'
+  onClose: () => void
+  onMove: (target: { scope: 'user' | 'project'; projectId?: string }) => Promise<void>
+}) {
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
+  const textPrimary = 'var(--text-primary)'
+  const textMuted = 'var(--text-muted)'
+  const [projects, setProjects] = useState<any[]>([])
+  const [scope, setScope] = useState<'user' | 'project'>(lockToProject ? 'project' : 'user')
+  const [projectId, setProjectId] = useState<string>('')
+  const [err, setErr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api('/api/projects')
+      .then((arr: any[]) => { setProjects(Array.isArray(arr) ? arr : []); setLoading(false) })
+      .catch(() => { setProjects([]); setLoading(false) })
+  }, [])
+
+  const submit = async () => {
+    if (scope === 'project' && !projectId) { setErr('请选择目标项目'); return }
+    setErr(''); setSaving(true)
+    try {
+      await onMove({ scope, projectId: scope === 'project' ? projectId : undefined })
+    } catch (e: any) {
+      setErr(e?.message || '移动失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[420px] rounded-2xl p-5 shadow-2xl" onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <h3 className="text-[14px] font-semibold mb-1" style={{ color: textPrimary }}>{title}</h3>
+        <p className="text-[11px] mb-4" style={{ color: textMuted }}>
+          当前位置: {currentScopeLabel}{operationLabel === '复制' ? '。复制后源位置仍会保留' : ''}
+        </p>
+
+        {!lockToProject && (
+          <div className="mb-3">
+            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>目标</label>
+            <div className="flex gap-2">
+              <button onClick={() => setScope('user')} disabled={saving}
+                className={`flex-1 h-8 rounded text-[12px] border transition-colors ${scope === 'user' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
+                style={scope === 'user' ? {} : { color: textMuted, borderColor: 'var(--input-border)' }}>
+                我的 (用户级)
+              </button>
+              <button onClick={() => setScope('project')} disabled={saving}
+                className={`flex-1 h-8 rounded text-[12px] border transition-colors ${scope === 'project' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
+                style={scope === 'project' ? {} : { color: textMuted, borderColor: 'var(--input-border)' }}>
+                项目级
+              </button>
+            </div>
+          </div>
+        )}
+
+        {scope === 'project' && (
+          <div className="mb-3">
+            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>选择目标项目</label>
+            {loading ? (
+              <div className="text-[12px] py-1" style={{ color: textMuted }}>加载中...</div>
+            ) : projects.length === 0 ? (
+              <div className="text-[12px] py-1" style={{ color: textMuted }}>暂无可选项目</div>
+            ) : (
+              <select value={projectId} onChange={e => { setProjectId(e.target.value); setErr('') }}
+                disabled={saving}
+                className="w-full h-8 px-2 rounded text-[12px] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
+                <option value="">-- 请选择 --</option>
+                {projects.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {err && <pre className="text-[11px] text-red-400 mb-3 whitespace-pre-wrap break-all max-h-32 overflow-auto">{err}</pre>}
+
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={saving}
+            className="flex-1 h-8 rounded text-[12px] border disabled:opacity-40"
+            style={{ color: textMuted, borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={submit} disabled={saving || loading || (scope === 'project' && !projectId)}
+            className="flex-1 h-8 rounded text-[12px] bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40">
+            {saving ? `${operationLabel}中...` : operationLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// Turn 历史
+// =====================================================================
+export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string; onClose: () => void; onRefresh?: (data: any[]) => void }) {
+  const [turns, setTurns] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
+  const textPrimary = 'var(--text-primary)'
+  const textMuted = 'var(--text-dimmed)'
+
+  useEffect(() => {
+    api(`/api/sessions/${sessionId}/turns`).then(data => {
+      setTurns(data); setLoading(false)
+      onRefresh?.(data)
+    }).catch(() => setLoading(false))
+  }, [sessionId])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[680px] max-h-[75vh] rounded-2xl shadow-2xl flex flex-col"
+        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <h3 className="text-[14px] font-semibold" style={{ color: textPrimary }}>对话轮次历史</h3>
+            <span className="text-[11px] px-2 py-0.5 rounded bg-[var(--bg-card-hover)]" style={{ color: textMuted }}>{turns.length} 轮</span>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors" style={{ color: textMuted }}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          {loading && <div className="text-center py-8 text-[13px]" style={{ color: textMuted }}>加载中...</div>}
+          {!loading && turns.length === 0 && <div className="text-center py-8 text-[13px]" style={{ color: textMuted }}>暂无对话记录</div>}
+          {turns.map(t => (
+            <details key={t.turn_number} className="group rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+              <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--bg-card)] transition-colors">
+                <div className="w-7 h-7 rounded-full bg-blue-500/15 flex items-center justify-center text-[12px] font-semibold text-blue-400 flex-shrink-0">
+                  {t.turn_number}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-medium truncate" style={{ color: textPrimary }}>
+                    {t.user_input || '(用户输入)'}
+                  </div>
+                  <div className="text-[11px] mt-0.5 truncate" style={{ color: textMuted }}>
+                    {t.agent_output || '(Agent 输出)'}
+                  </div>
+                </div>
+                <div className="text-[10px] flex-shrink-0" style={{ color: textMuted }}>
+                  {timeAgo(t.created_at)}
+                </div>
+                <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90" style={{ color: textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </summary>
+              <div className="border-t px-4 py-3 space-y-2" style={{ borderColor: 'var(--border-color)' }}>
+                <div>
+                  <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>用户输入</div>
+                  <div className="text-[12px] px-3 py-2 rounded-lg" style={{ background: 'var(--input-bg)', color: textPrimary }}>
+                    {t.user_input ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>Agent 输出</div>
+                  <div className="text-[12px] px-3 py-2 rounded-lg max-h-[300px] overflow-y-auto" style={{ background: 'var(--input-bg)', color: textPrimary }}>
+                    {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
+                  </div>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// 下载桌面客户端 — 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取。
+//   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
+//   - manifest 由 build.py / scripts/desktop_manifest.py 从构建产物生成, 含 version/size/sha256
+//   - 不再在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
+// =====================================================================
+interface DesktopManifestBuild { platform: string; arch: string; format: string; file: string; size: number; sha256: string }
+interface DesktopManifest { version: string; generatedAt?: string; builds: DesktopManifestBuild[] }
+
+// 把 manifest.builds 按 (platform,arch) 聚合成展示行: mac 默认 DMG, ZIP 作备用链接; win 用 ZIP。
+interface DesktopDownloadRow {
+  key: string
+  label: string
+  sub: string
+  primary: DesktopManifestBuild
+  alt?: DesktopManifestBuild
+}
+
+const DESKTOP_ROW_LABELS: Record<string, { label: string; sub: string }> = {
+  'mac-arm64': { label: 'macOS', sub: 'Apple Silicon · M1/M2/M3/M4' },
+  'mac-x64': { label: 'macOS', sub: 'Intel · x64' },
+  'win-x64': { label: 'Windows', sub: 'x64 · Intel / AMD 64 位' },
+}
+
+function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
+  const byKey = new Map<string, DesktopManifestBuild[]>()
+  for (const b of manifest.builds) {
+    const k = `${b.platform}-${b.arch}`
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k)!.push(b)
+  }
+  const rows: DesktopDownloadRow[] = []
+  for (const [k, list] of byKey) {
+    const meta = DESKTOP_ROW_LABELS[k] || { label: k, sub: '' }
+    const dmg = list.find(b => b.format === 'dmg')
+    const zip = list.find(b => b.format === 'zip')
+    const primary = dmg || zip || list[0]
+    const alt = dmg && zip ? zip : undefined
+    rows.push({ key: k, label: meta.label, sub: `${meta.sub} · ${primary.format.toUpperCase()}`, primary, alt })
+  }
+  const order = ['mac-arm64', 'mac-x64', 'win-x64']
+  rows.sort((a, b) => {
+    const ia = order.indexOf(a.key), ib = order.indexOf(b.key)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
+  return rows
+}
+
+// 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
+// size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
+// (按各 ABI 的 file 行匹配更新); iOS 暂留空 (file='' → 显示「未上线」)。
+const MOBILE_VERSION = '0.1.7'
+// iOS 走 TestFlight 公开邀请链接: build 上传后在 App Store Connect → TestFlight 开启"公开链接",
+// 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE。
+// 仍是占位时, iOS 行显示"未上线"; 填入真实 code 后自动变成 TestFlight 下载按钮。
+const IOS_TESTFLIGHT_CODE = 'EgamfnR7'
+const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: number; sha256: string; url?: string }> = [
+  {
+    label: 'Android',
+    sub: 'arm64-v8a · 大多数现代手机',
+    file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
+    size: 15433314,
+    sha256: '20cf95fc8a09697877085aad192cc56de214c4e81730c1ba1462991af4f26dc2',
+  },
+  {
+    label: 'Android',
+    sub: 'armeabi-v7a · 老旧手机',
+    file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
+    size: 15441282,
+    sha256: '2f2d5f691b6a88a5a44863b04350829e6cfb218603289deac842eb0961af3b4a',
+  },
+  {
+    label: 'iOS',
+    sub: 'TestFlight 内测 · iPhone/iPad',
+    file: '',
+    size: 0,
+    sha256: '',
+    url: `https://testflight.apple.com/join/${IOS_TESTFLIGHT_CODE}`,
+  },
+]
+
+// 把字节数格式化为人类可读体积 (供移动端下载菜单显示包大小)。
+function formatBytes(n: number): string {
+  if (!n || n <= 0) return ''
+  const mb = n / (1024 * 1024)
+  return mb >= 100 ? `${mb.toFixed(0)} MB` : `${mb.toFixed(1)} MB`
+}
+
+function DesktopDownloadRowItem({
+  row,
+  copied,
+  onCopy,
+}: {
+  row: DesktopDownloadRow
+  copied: string
+  onCopy: (id: string, path: string) => void
+}) {
+  const primaryPath = `/desktop-builds/${row.primary.file}`
+  const primaryCopyId = `${row.key}-primary`
+  return (
+    <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-secondary)' }}>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+          </svg>
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{row.label}</div>
+            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+              {row.sub}{row.primary.size ? ` · ${formatBytes(row.primary.size)}` : ''} · SHA256 {row.primary.sha256.slice(0, 8)}…
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={() => onCopy(primaryCopyId, primaryPath)}
+            className="workbench-control-sm rounded-lg border px-2.5 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+            {copied === primaryCopyId ? '已复制' : '复制链接'}
+          </button>
+          <a href={primaryPath} download title={`SHA256: ${row.primary.sha256}`}
+            className="workbench-control-sm inline-flex items-center rounded-lg border px-3 text-[12px] font-medium" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+            下载 {row.primary.format.toUpperCase()}
+          </a>
+        </div>
+      </div>
+      {row.alt && (
+        <div className="mt-2 flex items-center gap-2 pl-8 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <span>或下载 <a href={`/desktop-builds/${row.alt.file}`} download className="underline" style={{ color: 'var(--accent-primary)' }}>ZIP 压缩包</a>
+            {row.alt.size ? ` (${formatBytes(row.alt.size)})` : ''}</span>
+          <button type="button" onClick={() => onCopy(`${row.key}-alt`, `/desktop-builds/${row.alt!.file}`)} className="underline underline-offset-2">
+            {copied === `${row.key}-alt` ? '已复制' : '复制链接'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
+  const [manifest, setManifest] = useState<DesktopManifest | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState('')
+  const [copyError, setCopyError] = useState('')
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    fetch(DESKTOP_MANIFEST_URL, { signal: ctrl.signal, cache: 'no-cache' })
+      .then(async r => {
+        if (r.status === 404) throw new Error('manifest 不存在 (尚未发布任何桌面客户端版本)')
+        if (!r.ok) throw new Error(`服务器返回 ${r.status}`)
+        return r.json() as Promise<DesktopManifest>
+      })
+      .then(m => {
+        if (!hasDesktopDownloadBuilds(m)) {
+          throw new Error('manifest 格式不完整')
+        }
+        setManifest(m)
+      })
+      .catch(e => setError(e?.name === 'AbortError' ? '获取版本信息超时，请稍后再试' : (e?.message || '无法获取版本信息')))
+      .finally(() => clearTimeout(timer))
+    return () => { clearTimeout(timer); ctrl.abort() }
+  }, [])
+
+  const rows = manifest ? manifestToRows(manifest) : []
+  const copyDownloadLink = async (id: string, path: string) => {
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(new URL(path, window.location.href).toString())
+      setCopied(id)
+      window.setTimeout(() => setCopied(current => current === id ? '' : current), 1500)
+    } catch {
+      setCopied('')
+      setCopyError('复制失败，请右键下载按钮复制链接。')
+    }
+  }
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div className="theme-overlay__panel relative max-h-[85vh] w-[520px] max-w-[92vw] overflow-y-auto rounded-[var(--radius-modal)] border p-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>下载桌面客户端</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取最新版本信息…'}
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="关闭" className="workbench-control-sm w-8 text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }}>×</button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {error ? (
+            <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{error}</div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
+            </div>
+          ) : rows.length ? (
+            rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} copied={copied} onCopy={(id, path) => void copyDownloadLink(id, path)} />)
+          ) : (
+            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--surface-control-hover)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>加载中…</div>
+          )}
+        </div>
+
+        {copyError && <div role="alert" className="mt-3 text-[11px]" style={{ color: 'var(--status-danger)' }}>{copyError}</div>}
+
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: 'var(--text-muted)' }}>
+          <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
+          <div>· macOS 默认提供 DMG 安装镜像 (ZIP 为备用)；不确定芯片型号可点左上角  →「关于本机」查看</div>
+          <div>· 登录后桌面端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>desktop-&lt;主机名&gt;</code> 注册到 AIMUX 节点列表</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// Mobius 命令行终端命令 — Linux/macOS 走 npm，Windows 使用便携安装脚本。
+// Windows 脚本不要求预装 Node/管理员权限，并自动注册两个 Explorer 右键入口。
+// =====================================================================
+const TERMINAL_INSTALL_OPTIONS = [
+  {
+    id: 'linux',
+    label: 'Linux',
+    sub: '需要 Node.js 18+ 与 npm',
+    command: 'npm install -g @mobius-os/mobius@latest',
+    note: '安装完成后运行 mobius。若全局安装提示权限不足，可改用用户级 npm prefix。',
+  },
+  {
+    id: 'macos',
+    label: 'macOS',
+    sub: 'Apple Silicon / Intel · 需要 Node.js 18+ 与 npm',
+    command: 'npm install -g @mobius-os/mobius@latest',
+    note: '安装完成后打开终端运行 mobius。',
+  },
+  {
+    id: 'windows',
+    label: 'Windows',
+    sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v15.ps1 | iex',
+    note: '安装后重新打开 PowerShell 并运行 mobius；同时添加文件夹和文件夹空白处的“在 Mobius 中打开”右键菜单。',
+  },
+] as const
+
+export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
+
+  const copyCommand = async (id: string, command: string) => {
+    setCopyError(null)
+    try {
+      await navigator.clipboard.writeText(command)
+      setCopied(id)
+      setTimeout(() => setCopied(current => current === id ? null : current), 1500)
+    } catch {
+      setCopied(null)
+      setCopyError(id)
+    }
+  }
+
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div className="theme-overlay__panel relative max-h-[85vh] w-[600px] max-w-[92vw] overflow-y-auto rounded-[var(--radius-modal)] border p-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>Mobius CLI 命令</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              在本机终端直接创建任务、连接 AIMUX，并与 Mobius Web 共享项目和会话。
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="关闭" className="workbench-control-sm w-8 text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }}>×</button>
+        </div>
+
+        <div className="space-y-3 mt-4">
+          {TERMINAL_INSTALL_OPTIONS.map(option => (
+            <section key={option.id} className="px-4 py-3 rounded-xl"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{option.label}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{option.sub}</div>
+                </div>
+                {option.id === 'windows' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full shrink-0" style={{ background: 'var(--surface-control)', color: 'var(--text-muted)' }}>PowerShell</span>
+                )}
+              </div>
+              <div className="relative">
+                <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
+                  style={{ background: 'var(--surface-code)', color: 'var(--code-text, var(--text-primary))', border: '1px solid var(--border-default)' }}>
+                  {option.command}
+                </pre>
+                <button type="button" onClick={() => void copyCommand(option.id, option.command)}
+                  className="workbench-control-sm absolute right-1.5 top-1.5 rounded-md border px-2 text-[11px] transition-colors"
+                  style={{ background: 'var(--surface-control-hover)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                  {copied === option.id ? '已复制' : '复制'}
+                </button>
+              </div>
+              {copyError === option.id && (
+                <div role="alert" className="mt-2 text-[11px]" style={{ color: 'var(--status-danger)' }}>复制失败，请手动选择上方命令复制。</div>
+              )}
+              <div className="text-[11px] mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>{option.note}</div>
+            </section>
+          ))}
+        </div>
+
+        <div className="text-[11px] mt-4 p-3 rounded-lg" style={{ background: 'var(--accent-soft)', color: 'var(--text-secondary)' }}>
+          npm 包名：<code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>@mobius-os/mobius</code>。安装命令使用 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>latest</code> 标签，始终获取最新公开版本。
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState('')
+  const [copyError, setCopyError] = useState('')
+  const copyMobileLink = async (id: string, value: string) => {
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(new URL(value, window.location.href).toString())
+      setCopied(id)
+      window.setTimeout(() => setCopied(current => current === id ? '' : current), 1500)
+    } catch {
+      setCopied('')
+      setCopyError('复制失败，请右键下载按钮复制链接。')
+    }
+  }
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div className="theme-overlay__panel relative max-h-[85vh] w-[520px] max-w-[92vw] overflow-y-auto rounded-[var(--radius-modal)] border p-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>下载移动端 App</h3>
+            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Mobius Mobile v{MOBILE_VERSION} · 连接 Mobius 服务器，移动端使用小莫助理
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="关闭" className="workbench-control-sm w-8 text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }}>×</button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {MOBILE_BUILDS.map(b => (b.url && !b.url.includes('REPLACE_WITH_TESTFLIGHT_CODE')) ? (
+            <div key={b.label}
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-secondary)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{b.sub}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => void copyMobileLink(`mobile-${b.label}`, b.url!)}
+                  className="workbench-control-sm rounded-lg border px-2.5 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                  {copied === `mobile-${b.label}` ? '已复制' : '复制链接'}
+                </button>
+                <a href={b.url} target="_blank" rel="noopener noreferrer"
+                  className="workbench-control-sm inline-flex items-center rounded-lg border px-3 text-[12px] font-medium" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>TestFlight</a>
+              </div>
+            </div>
+          ) : b.file ? (
+            <div key={b.file}
+              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-secondary)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {b.sub}{formatBytes(b.size) ? ` · ${formatBytes(b.size)}` : ''}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => void copyMobileLink(`mobile-${b.file}`, `/mobile-builds/${b.file}`)}
+                  className="workbench-control-sm rounded-lg border px-2.5 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                  {copied === `mobile-${b.file}` ? '已复制' : '复制链接'}
+                </button>
+                <a href={`/mobile-builds/${b.file}`} download title={b.sha256 ? `SHA256: ${b.sha256}` : undefined}
+                  className="workbench-control-sm inline-flex items-center rounded-lg border px-3 text-[12px] font-medium" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>下载</a>
+              </div>
+            </div>
+          ) : (
+            <div key={b.label}
+              className="flex items-center justify-between px-4 py-3 rounded-xl opacity-50"
+              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-secondary)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{b.sub}</div>
+                </div>
+              </div>
+              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
+            </div>
+          ))}
+        </div>
+
+        {copyError && <div role="alert" className="mt-3 text-[11px]" style={{ color: 'var(--status-danger)' }}>{copyError}</div>}
+
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: 'var(--text-muted)' }}>
+          <div>· 首次安装需允许"未知来源应用"（设置 → 安全 → 允许此来源）</div>
+          <div>· 登录后移动端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>mobile-&lt;设备名&gt;</code> 注册到设备列表</div>
+          <div>· 服务器地址可在 App 设置页修改；推荐使用 HTTPS</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 修改密码
+// =====================================================================
+export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [oldPw, setOldPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [err, setErr] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const submit = async () => {
+    if (!oldPw) { setErr('请输入原密码'); return }
+    if (newPw.length < 6) { setErr('新密码至少 6 位'); return }
+    if (newPw !== confirmPw) { setErr('两次输入的新密码不一致'); return }
+    setLoading(true); setErr('')
+    try {
+      await api('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
+      })
+      setSuccess(true)
+      setTimeout(onClose, 1500)
+    } catch {
+      setErr('原密码错误')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-80 rounded-[var(--radius-modal)] border p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-[15px] font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>修改密码</h3>
+        {success ? (
+          <div className="text-center py-4">
+            <div className="text-[14px] mb-1" style={{ color: 'var(--status-success)' }}>密码修改成功</div>
+            <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>即将关闭...</div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 mb-4">
+              <input type="password" placeholder="原密码" value={oldPw}
+                onChange={e => { setOldPw(e.target.value); setErr('') }}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }} />
+              <input type="password" placeholder="新密码（至少 6 位）" value={newPw}
+                onChange={e => { setNewPw(e.target.value); setErr('') }}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }} />
+              <input type="password" placeholder="确认新密码" value={confirmPw}
+                onChange={e => { setConfirmPw(e.target.value); setErr('') }}
+                onKeyDown={e => e.key === 'Enter' && submit()}
+                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                style={{ background: 'var(--surface-control)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }} />
+            </div>
+            {err && <ErrBanner>{err}</ErrBanner>}
+            <div className="flex gap-2">
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl border text-[13px] transition-colors" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-control-hover)' }}>取消</button>
+              <button onClick={submit} disabled={loading}
+                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                {loading ? '提交中...' : '确认修改'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+// =====================================================================
+// AimuxGuideModal — 展示如何用 aimux bridge client 反向连接到当前 server
+//   - 外部 aimux client 不直连 bridge (bridge 只 bind 127.0.0.1)
+//   - 而是走 mobius 反代 /aimux_bridge/*, 用当前用户的 mobius JWT 作 --token
+//   - mobius proxy 内部把 JWT 换成 bridge Bearer 再转发
+// =====================================================================
+const AIMUX_IDENTIFIER_STORAGE_KEY = 'mobius.aimux.guide.identifier'
+
+export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
+  const [copied, setCopied] = useState<string>('')
+  const [copyError, setCopyError] = useState<string>('')
+  const [remotes, setRemotes] = useState<Array<{ name: string; status: string; platform: string; default_profile?: string; last_seen?: string }>>([])
+  const [remotesErr, setRemotesErr] = useState('')
+  // 默认 identifier 随机生成 (复用 randomProjectSlug → adjective_noun, 字符为字母+_, 符合 identifier 规则),
+  // 避免多台外部机器都叫 my-windows-box 在 mobius 里重名; 用户可自行覆盖, 留空则回退到该随机值
+  const defaultIdentifier = useMemo(() => randomProjectSlug(), [])
+  const [identifier, setIdentifier] = useState<string>(() => {
+    if (typeof window === 'undefined') return defaultIdentifier
+    try {
+      const saved = window.localStorage.getItem(AIMUX_IDENTIFIER_STORAGE_KEY)
+      return saved && saved.trim() ? saved : defaultIdentifier
+    } catch {
+      return defaultIdentifier
+    }
+  })
+
+  const handleIdentifierChange = (v: string) => {
+    // identifier 仅用于命令行参数, 不接受空白; 其余字符交由 bridge 校验
+    const cleaned = v.replace(/\s+/g, '')
+    setIdentifier(cleaned)
+    try {
+      if (cleaned.trim()) {
+        window.localStorage.setItem(AIMUX_IDENTIFIER_STORAGE_KEY, cleaned)
+      } else {
+        window.localStorage.removeItem(AIMUX_IDENTIFIER_STORAGE_KEY)
+      }
+    } catch {
+      // localStorage 不可用时静默降级, 仅内存生效
+    }
+  }
+
+  // 拼装外部可达的 base URL:
+  //   - localhost / 127.0.0.1 / 192.168.* / 10.* / 172.16-31.* (内网/dev):
+  //     直接用 window.location (含端口), 方便本机调试
+  //   - 公网域名 (mobius.example.com 等):
+  //     强制 https + 无 port (公网入口都走 443 反代; 即使浏览器通过 http://domain:45616 直连 mobius,
+  //     外部 aimux client 也无法达到那个非标端口, 必须走 https 443).
+  const browserHost = typeof window !== 'undefined' ? window.location.hostname : 'server-host'
+  const browserPort = typeof window !== 'undefined' ? window.location.port : ''
+  const isInternalHost = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(browserHost)
+  const baseUrl = isInternalHost
+    ? `${window.location.protocol}//${browserHost}${browserPort ? ':' + browserPort : ''}/aimux_bridge`
+    : `https://${browserHost}/aimux_bridge`
+  const displayProto = isInternalHost ? window.location.protocol.replace(/:$/, '') : 'https'
+  const displayPort = isInternalHost
+    ? (browserPort || (displayProto === 'https' ? '443' : '80'))
+    : '443'
+  const userJwt = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '<未登录>') : '<JWT>'
+  // 输入为空时回退到默认值, 避免生成 --identifier 空参数导致命令非法
+  const effectiveIdentifier = identifier.trim() || defaultIdentifier
+
+  const installCmd = 'pip install --force-reinstall aimux==0.1.23'
+  const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${effectiveIdentifier} --token ${userJwt}`
+  // 步骤4 话术: 命名占位用第2步输入的 identifier (实时随输入更新); skill 路径用后端 branding 下发的
+  // APP_DIR 绝对路径展开 (用户要求显示绝对路径, agent 无论 cwd 在哪都能直达内置 skill 源目录);
+  // APP_DIR 为空 (旧后端未下发) 时回退相对路径, agent 仍可在 workDir 下找到镜像副本.
+  const skillPath = APP_DIR ? `${APP_DIR}/skills/mobius-aimux` : '.imac/skills/mobius-aimux/SKILL.md'
+  const announceText = `当你的任务需要连接 \`${effectiveIdentifier}\` 时，请阅读 mobius-aimux 技能（${skillPath}），根据提示进行连接`
+
+  const refreshRemotes = useCallback((signal?: AbortSignal) => {
+    api('/aimux_bridge/api/remotes', { signal }).then((data: any) => {
+      const list = Array.isArray(data?.remotes) ? data.remotes : []
+      setRemotes(list)
+      setRemotesErr('')
+    }).catch((e: any) => {
+      if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
+      setRemotesErr(e?.message || 'bridge 不可用')
+      setRemotes([])
+    })
+  }, [])
+
+  useEffect(() => {
+    // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
+    // 首轮立即由 pollRecursive 发起, 无需再手动调一次.
+    const stop = pollRecursive((signal) => refreshRemotes(signal), 3000)
+    return () => stop()
+  }, [refreshRemotes])
+
+  const copy = async (label: string, text: string) => {
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(label)
+      setTimeout(() => setCopied(''), 1500)
+    } catch {
+      setCopied('')
+      setCopyError(label)
+    }
+  }
+
+  // render function (非内部组件): AimuxGuideModal 有 setInterval(refreshRemotes,3000) 每 3 秒重渲染,
+  // 内部组件会让复制按钮/标题每次 unmount/remount -> 点复制可能 mousedown/mouseup 落不同节点而 click 落空.
+  const renderSectionTitle = (text: string) => (
+    <div className="text-[12px] font-semibold mb-2 mt-4 first:mt-0" style={{ color: 'var(--text-secondary)' }}>{text}</div>
+  )
+
+  const renderCodeBlock = (label: string, text: string) => (
+    <div className="relative">
+      <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
+        style={{ background: 'var(--surface-code)', color: 'var(--code-text, var(--text-primary))', border: '1px solid var(--border-default)' }}>
+        {text}
+      </pre>
+      <button onClick={() => copy(label, text)}
+        className="workbench-control-sm absolute right-1.5 top-1.5 rounded-md border px-2 text-[11px] transition-colors"
+        style={{ background: 'var(--surface-control-hover)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+        {copied === label ? '已复制' : '复制'}
+      </button>
+      {copyError === label && (
+        <div role="alert" className="mt-1 text-[11px]" style={{ color: 'var(--status-danger)' }}>复制失败，请手动选择上方内容复制。</div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div data-tour="aimux-guide-modal" className="theme-overlay__panel relative max-h-[85vh] w-[560px] max-w-[92vw] overflow-y-auto rounded-[var(--radius-modal)] border p-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>AIMUX 连接指引</h3>
+            {/* <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              把您的计算机 (Windows/Mac/Linux) 连接到 Mobius 中枢，然后允许智能体联合您的计算机一起执行任务。
+            </div> */}
+          </div>
+          <button onClick={onClose} aria-label="关闭" className="workbench-control-sm w-8 text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }}>×</button>
+        </div>
+
+        <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: 'var(--accent-soft)', color: 'var(--text-secondary)' }}>
+          <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，形成协作网络，从而完成复杂跨设备任务。AIMUX专门针对 <strong>缺SSH/SSH不可达</strong> 的桌面笔记本、工作站、嵌入式设备、网络受限设备设计。
+        </div>
+
+        {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
+          <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: 'var(--status-success-soft)', color: 'var(--text-secondary)' }}>
+            您正在使用桌面客户端，<strong>已自动连接</strong>，无需手动连接。当您需要连接更多<strong>其他</strong>计算机时，可在<strong>其他</strong>设备上运行下面的命令。
+          </div>
+        )}
+
+        {renderSectionTitle('1. 在外部机器上安装 aimux (Python 3.10+)')}
+        {renderCodeBlock('install', installCmd)}
+
+        {renderSectionTitle('2. 启动连接')}
+        <div className="mb-2">
+          <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>identifier ( 给您的计算机起一个绰号，作为辨识名称。 )</div>
+          <input
+            value={identifier}
+            onChange={e => handleIdentifierChange(e.target.value)}
+            placeholder={defaultIdentifier}
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full h-8 px-3 rounded-xl text-[13px] font-mono border outline-none focus:border-blue-400"
+            style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
+        </div>
+        <div className="text-[11px] mb-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
+          <div>
+            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--identifier</code> 改成你想要的名字 (字母/数字/_.-)
+          </div>
+          <div>
+            <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--token</code> 是你当前登录 Mobius 的 JWT (已自动填入), 7 天有效
+          </div>
+        </div>
+        {renderCodeBlock('connect', connectCmd)}
+
+        {renderSectionTitle('3. 在 mobius 中验证')}
+        <div className="text-[12px] mb-2" style={{ color: 'var(--text-secondary)' }}>
+          连接成功后, 该机器会出现在下方列表 (每 3 秒刷新)
+        </div>
+
+        <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-color)' }}>
+          <div className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ background: 'var(--surface-control-hover)', color: 'var(--text-muted)' }}>
+            <span>已连接的 bridge clients ({remotes.length})</span>
+            <span>每 3 秒刷新</span>
+          </div>
+          {remotesErr ? (
+            <div className="px-3 py-3 text-[12px]" style={{ color: 'var(--status-danger)' }}>{remotesErr}</div>
+          ) : remotes.length === 0 ? (
+            <div className="px-3 py-3 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              暂无 client 连接. 在外部机器上执行上面的命令, 几秒后这里会出现它
+            </div>
+          ) : (
+            <div className="max-h-[180px] overflow-y-auto">
+              {remotes.map((r, i) => (
+                <div key={r.name + i} className="flex items-center gap-2 px-3 py-1.5 text-[12px]" style={{ borderTop: i > 0 ? '1px solid var(--border-color)' : 'none' }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: r.status === 'connected' ? 'var(--status-success)' : 'var(--status-unknown)' }} />
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+                  <span className="opacity-50">·</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{r.platform || '?'}</span>
+                  <span className="opacity-50">·</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{r.default_profile || '?'}</span>
+                  <span className="ml-auto text-[10px]" style={{ color: r.status === 'connected' ? 'var(--status-success)' : 'var(--status-unknown)' }}>{r.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {renderSectionTitle('4. 赋能智能体连接能力')}
+        <div className="text-[12px] mb-2" style={{ color: 'var(--text-secondary)' }}>
+          在与智能体对话时, 复制粘贴以下话术, 赋能智能体连接能力 (话术里的名称会随第 2 步输入实时更新)
+        </div>
+        {renderCodeBlock('announce', announceText)}
+
+        <div className="mt-4 pt-3 border-t text-[11px] space-y-1" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+          <div>endpoint: <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>{baseUrl}</code> ({displayProto.toUpperCase()} · host: {browserHost} · port: {displayPort})</div>
+        </div>
+
+        <div className="flex justify-end mt-5">
+          <button onClick={onClose} className="h-9 rounded-xl border px-5 text-[13px] transition-colors"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-control-hover)' }}>关闭</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+//   - 拉 /api/sessions/:id/turns, 把每轮的 turn_summary 拼成草稿
+//   - 用户改写名称 / 描述 / 正文, 选 scope (user/project)
+//   - 提交时按 scope 走对应的 POST memory 接口
+// =====================================================================
+export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, onCreated }: {
+  sessionId: string
+  sessionName?: string
+  projectId?: string | null
+  onClose: () => void
+  onCreated?: (m: any) => void
+}) {
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
+  const textPrimary = 'var(--text-primary)'
+  const textMuted = 'var(--text-muted)'
+
+  const [name, setName] = useState('')
+  const [desc, setDesc] = useState('')
+  const [body, setBody] = useState('')
+  const [scope, setScope] = useState<'user' | 'project'>('user')
+  const [turnsLoading, setTurnsLoading] = useState(true)
+  const [turnsCount, setTurnsCount] = useState(0)
+  const [summaryCount, setSummaryCount] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    const ymd = new Date().toISOString().slice(0, 10)
+    setName(`沉淀自「${sessionName || '会话'}」@ ${ymd}`)
+    setTurnsLoading(true); setErr('')
+    api(`/api/sessions/${sessionId}/turns`).then((turns: any[]) => {
+      // 把每轮的 user_input + agent_output 完整拼成 Markdown 草稿, 用户自己在 textarea 里裁剪.
+      const rows = (turns || []).filter(t => t && t.turn_number != null)
+      setTurnsCount(rows.length)
+      setSummaryCount(rows.filter(t => (t.turn_summary || '').toString().trim()).length)
+      const blocks: string[] = []
+      for (const t of rows) {
+        const userInput = (t.user_input || '').toString().trim()
+        const agentOutput = (t.agent_output || '').toString().trim()
+        const summary = (t.turn_summary || '').toString().trim()
+        const parts: string[] = [`### 轮 ${t.turn_number}`]
+        if (summary) parts.push(`> ${summary}`)
+        if (userInput) parts.push(`**🧑 用户提问**\n\n${userInput}`)
+        if (agentOutput) parts.push(`**🤖 Agent 回复**\n\n${agentOutput}`)
+        blocks.push(parts.join('\n\n'))
+      }
+      const fallback = '<!-- 该会话还没有任何轮次, 请手写本条 Memory 的内容 -->'
+      const header = `## 来自会话「${sessionName || ''}」的完整对话\n\n`
+      setBody(blocks.length > 0 ? header + blocks.join('\n\n---\n\n') : fallback)
+    }).catch(e => setErr(e?.message || '加载会话轮次失败')).finally(() => setTurnsLoading(false))
+  }, [sessionId, sessionName])
+
+  const submit = async () => {
+    if (!name.trim()) { setErr('请填写 Memory 名称'); return }
+    if (!body.trim()) { setErr('Memory 正文不能为空'); return }
+    if (scope === 'project' && !projectId) { setErr('当前会话没有所属项目, 无法保存为项目级 Memory'); return }
+    setSaving(true); setErr('')
+    try {
+      const payload = JSON.stringify({ name: name.trim(), description: desc.trim(), body: body.trim() })
+      let url = '/api/memories'
+      if (scope === 'project' && projectId) url = `/api/projects/${projectId}/memories`
+      const m = await api(url, { method: 'POST', body: payload })
+      onCreated?.(m)
+      onClose()
+    } catch (e: any) {
+      setErr(e?.message || '保存失败')
+    } finally { setSaving(false) }
+  }
+
+  const scopeButton = (s: 'user' | 'project', label: string, disabled = false) => (
+    <button onClick={() => !disabled && setScope(s)} disabled={disabled}
+      className={`flex-1 h-9 rounded-lg text-[12px] border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+        scope === s
+          ? (isDark ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' : 'bg-rose-500/10 text-rose-700 border-rose-500/30')
+          : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)]'
+      }`}>
+      {label}
+    </button>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative w-[640px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col"
+        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-rose-400 text-[14px]">📌</span>
+            <h3 className="text-[14px] font-semibold" style={{ color: textPrimary }}>沉淀为 Memory</h3>
+            {!turnsLoading && (
+              <span className="text-[10px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
+                {turnsCount === 0 ? '会话暂无轮次' :
+                  `已拼入 ${turnsCount} 轮完整对话` + (summaryCount > 0 ? ` (含 ${summaryCount} 条 hook 摘要)` : '')}
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors" style={{ color: textMuted }}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
+            background: isDark ? 'rgba(244,63,94,0.06)' : 'rgba(244,63,94,0.04)',
+            border: `1px solid ${isDark ? 'rgba(244,63,94,0.25)' : 'rgba(244,63,94,0.2)'}`,
+            color: isDark ? '#fda4af' : '#9f1239',
+          }}>
+            保存后,本 Memory 会按所选 scope 自动注入到符合条件的<strong>新会话</strong>(用户级 → 你创建的所有任务;项目级 → 该项目下所有任务).
+          </div>
+
+          <div>
+            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>Memory 名称 (必填)</label>
+            <input value={name} onChange={e => { setName(e.target.value); setErr('') }}
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary }} />
+          </div>
+
+          <div>
+            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>简介 (可选, 用于列表展示)</label>
+            <input value={desc} onChange={e => { setDesc(e.target.value); setErr('') }}
+              placeholder="例: 调试 SSO 重定向 loop 的根因和修复路径"
+              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary }} />
+          </div>
+
+          <div>
+            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>正文 (草稿已预填,可任意改写)</label>
+            <textarea value={body} onChange={e => { setBody(e.target.value); setErr('') }}
+              disabled={turnsLoading}
+              className="w-full px-3 py-2 rounded-lg text-[12px] font-mono leading-snug resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-50"
+              rows={22}
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary, maxHeight: '50vh' }} />
+          </div>
+
+          <div>
+            <label className="text-[11px] mb-1.5 block" style={{ color: textMuted }}>保存到</label>
+            <div className="flex gap-2">
+              {scopeButton('user', '用户级 (仅我可见)')}
+              {scopeButton('project', '项目级' + (projectId ? '' : ' (无项目)'), !projectId)}
+            </div>
+          </div>
+        </div>
+
+        {err && <div className="px-6 pb-2 text-[12px] text-red-400">{err}</div>}
+        <div className="px-6 py-3 border-t flex justify-end gap-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <button onClick={onClose} className="h-9 px-4 rounded-lg text-[12px] border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
+            取消
+          </button>
+          <button onClick={submit} disabled={saving || turnsLoading}
+            className="h-9 px-4 rounded-lg text-[12px] text-white bg-rose-500 hover:bg-rose-600 transition-colors disabled:opacity-40">
+            {saving ? '保存中...' : '沉淀'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

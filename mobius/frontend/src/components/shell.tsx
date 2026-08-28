@@ -6,10 +6,11 @@ import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-cr
 import { SearchModal } from './search-modal'
 import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
+import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -17,15 +18,9 @@ import { useIsMobile } from './resizable-panel'
 import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
+import { RecentSessionGroupList } from './recent-session-group-list'
+import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
-import { SettingsPanel, type SettingsSection } from './settings-panel'
-import { LayoutModeSwitch } from './layout-mode-switch'
-import { logUiEvent } from '../services/ui-observability'
-import {
-  homePath,
-  projectPath,
-  sessionPath,
-} from '../services/workbench-navigation'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -436,8 +431,16 @@ function NavSwitcherPanel({
 }
 
 function recentSessionPath(userId: string | undefined, session: RecentSession) {
-  if (!userId || !session.session_id) return ''
-  return `/u/${encodeURIComponent(userId)}/s/${encodeURIComponent(session.session_id)}`
+  if (!userId || !session.session_id || !session.project_id) return ''
+  const base = `/u/${encodeURIComponent(userId)}/p/${encodeURIComponent(session.project_id)}`
+  const qs = `?session=${encodeURIComponent(session.session_id)}`
+  if (session.scope_type === 'research' && session.research_id) {
+    return `${base}/r/${encodeURIComponent(session.research_id)}${qs}`
+  }
+  if (session.issue_id) {
+    return `${base}/i/${encodeURIComponent(session.issue_id)}${qs}`
+  }
+  return ''
 }
 
 // 近期会话本地缓存 (stale-while-revalidate): 打开下拉先秒显本地缓存, 后台静默刷新。
@@ -685,7 +688,14 @@ function RecentSessionsPanel({
                     </span>
                   </button>
 
-                  <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                  <RecentSessionGroupList
+                    id={groupDomId}
+                    hidden={collapsed}
+                    className="relative ml-[18px] border-l pl-1.5"
+                    style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
+                    groupLabel={group.subjectTitle}
+                    itemLabel={isResearch ? '智能体' : '会话'}
+                  >
                     {group.sessions.map(session => {
                       const to = recentSessionPath(userId, session)
                       const active = session.session_id === activeSessionId
@@ -718,7 +728,7 @@ function RecentSessionsPanel({
                         </LinklessRouteButton>
                       )
                     })}
-                  </div>
+                  </RecentSessionGroupList>
                 </section>
               )
             })}
@@ -734,195 +744,6 @@ function RecentSessionsPanel({
 // 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
 // 管理员通过弹层（覆盖右侧主区域）
 // =====================================================================
-export function WorkbenchTopNav({ rightExtra, showHistory = false }: { rightExtra?: React.ReactNode; showHistory?: boolean } = {}) {
-  const {
-    user, currentProject, currentSession, branding, logout,
-  } = useStore()
-  const params = useParams()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const topnavDrag = useDesktopWindowDrag()
-  const [showSearch, setShowSearch] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const [showChangePw, setShowChangePw] = useState(false)
-  const searchButtonRef = useRef<HTMLButtonElement | null>(null)
-  const searchReturnFocusRef = useRef<HTMLElement | null>(null)
-  const settingsButtonRef = useRef<HTMLButtonElement | null>(null)
-  const settingsReturnFocusRef = useRef<HTMLElement | null>(null)
-  const userParam = params.user || user?.id
-  const projectParam = params.project
-  const sessionProjectId = params.session && currentSession?.session_id === params.session
-    ? currentSession?.project_id
-    : undefined
-  const projectContextId = projectParam || sessionProjectId || (!params.session ? currentProject?.id : undefined)
-  const projectName = currentProject && currentProject.id === projectContextId ? currentProject.name : projectContextId
-  void rightExtra
-
-  const isPointerOnInteractive = (event: { target: EventTarget | null; nativeEvent: Event }): boolean => {
-    const selector = 'button, a, input, select, textarea, [role="button"], [role="menuitem"], mobius-desktop-page-actions'
-    if ((event.target as Element | null)?.closest?.(selector)) return true
-    return event.nativeEvent.composedPath().some(element => element instanceof Element && !!element.matches?.(selector))
-  }
-  const onTopNavPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!topnavDrag.enabled || isPointerOnInteractive(event)) return
-    topnavDrag.startDrag(event)
-  }
-  const onTopNavDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!topnavDrag.enabled || isPointerOnInteractive(event)) return
-    topnavDrag.toggleMaximize()
-  }
-
-  const openSearch = (trigger?: HTMLElement | null) => {
-    searchReturnFocusRef.current = trigger
-      || (document.activeElement instanceof HTMLElement ? document.activeElement : searchButtonRef.current)
-    setShowSearch(true)
-  }
-
-  const openSettings = (trigger?: HTMLElement | null, initialSection: SettingsSection = 'general') => {
-    logUiEvent('settings_opened', { path: location.pathname })
-    settingsReturnFocusRef.current = showUserMenu
-      ? settingsButtonRef.current
-      : trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : settingsButtonRef.current)
-    setShowUserMenu(false)
-    setShowSearch(false)
-    setSettingsInitialSection(initialSection)
-    setShowSettings(true)
-  }
-
-  useEffect(() => {
-    const handleOpenSettings = (event: Event) => {
-      const requested = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section
-      const section: SettingsSection = requested === 'context' || requested === 'connections' || requested === 'advanced' || requested === 'admin'
-        ? requested
-        : 'general'
-      openSettings(settingsButtonRef.current, section)
-    }
-    window.addEventListener('mobius:open-settings', handleOpenSettings)
-    return () => window.removeEventListener('mobius:open-settings', handleOpenSettings)
-  }, [location.pathname, showUserMenu])
-
-  const startNewConversation = () => {
-    const eventName = 'mobius:new-conversation'
-    if (location.pathname === `/u/${userParam}` || location.pathname === `/u/${userParam}/`) {
-      window.dispatchEvent(new CustomEvent(eventName))
-      return
-    }
-    const inheritedProjectId = projectContextId
-    navigate(homePath(userParam || '', { projectId: inheritedProjectId }))
-    window.setTimeout(() => window.dispatchEvent(new CustomEvent(eventName)), 80)
-  }
-
-  useEffect(() => {
-    if (!showUserMenu) return
-    const close = () => setShowUserMenu(false)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [showUserMenu])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const modifier = event.metaKey || event.ctrlKey
-      if (!modifier || event.altKey || event.shiftKey) return
-      const settingsShortcut = event.key === ',' || event.code === 'Comma'
-      if (showSettings) {
-        if (settingsShortcut) event.preventDefault()
-        return
-      }
-      if (event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch() }
-      if (event.key.toLowerCase() === 'n') { event.preventDefault(); startNewConversation() }
-      if (settingsShortcut) { event.preventDefault(); openSettings() }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  })
-
-  useEffect(() => {
-    const baseName = branding.systemNameZh || 'Mobius'
-    document.title = projectName ? `${projectName} - ${baseName}` : baseName
-  }, [branding.systemNameZh, projectName])
-
-  return (
-    <>
-      <header
-        className="mobius-topnav flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-2 sm:px-3"
-        style={{ height: 'var(--chrome-height)', background: 'var(--surface-base)', borderColor: 'var(--border-default)' }}
-        onPointerDown={onTopNavPointerDown}
-        onDoubleClick={onTopNavDoubleClick}
-      >
-        <LinklessRouteButton to={userParam ? homePath(userParam) : '/'} aria-label="Mobius 主页" title="Mobius 主页"
-          className="workbench-control-md flex items-center gap-2 px-1.5 hover:bg-[var(--surface-control-hover)]">
-          <MobiusLogo className="h-6 w-6" />
-        </LinklessRouteButton>
-        <LinklessRouteButton
-          to={userParam ? homePath(userParam) : '/'}
-          aria-label="回到主页"
-          title="回到主页"
-          className="mobius-topnav-userlink workbench-link hidden max-w-[140px] truncate text-[12px] font-medium lg:block"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {user?.display_name || userParam || '主页'}
-        </LinklessRouteButton>
-        {projectContextId && (
-          <>
-            <span className="hidden text-[11px] sm:inline" style={{ color: 'var(--text-muted)' }}>/</span>
-            <LinklessRouteButton to={projectPath(userParam || '', projectContextId, {
-              returnTo: params.session ? sessionPath(userParam || '', params.session) : undefined,
-            })} title="打开项目详情"
-              className="workbench-control-md max-w-[72px] truncate px-1.5 py-1 text-[12px] hover:bg-[var(--surface-control-hover)] sm:max-w-[150px] sm:px-2 lg:max-w-[220px]"
-              style={{ color: 'var(--text-secondary)' }}>
-              {projectName}
-            </LinklessRouteButton>
-          </>
-        )}
-        <div className="flex-1" />
-        {showHistory && (
-          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-history'))} aria-label="历史" title="历史"
-            className="workbench-control-md flex items-center gap-1.5 border px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)] xl:hidden"
-            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
-            <History className="h-3.5 w-3.5" /><span className="hidden sm:inline">历史</span>
-          </button>
-        )}
-        <button ref={searchButtonRef} type="button" onClick={event => openSearch(event.currentTarget)} aria-label="搜索" title="搜索"
-          className="workbench-control-md flex items-center gap-1.5 px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
-          <Search className="h-3.5 w-3.5" /><span className="hidden sm:inline">搜索</span>
-        </button>
-        <button type="button" onClick={startNewConversation} aria-label="新会话" title="新会话"
-          className={`workbench-control-md flex items-center gap-1.5 border px-3 text-[12px] font-medium transition-colors hover:bg-[var(--surface-control-hover)] ${showHistory ? 'xl:w-8 xl:justify-center xl:gap-0 xl:px-0' : ''}`}
-          style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
-          <Plus className="h-3.5 w-3.5" /><span className={`hidden sm:inline ${showHistory ? 'xl:hidden' : ''}`}>新会话</span>
-        </button>
-        <LayoutModeSwitch />
-        <button ref={settingsButtonRef} type="button" onClick={event => openSettings(event.currentTarget)} aria-label="设置/更多" title="设置/更多"
-          className="workbench-control-md flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
-          <Sliders className="h-4 w-4" />
-        </button>
-        <div className="relative">
-          <button type="button" onClick={event => { event.stopPropagation(); setShowUserMenu(value => !value) }} aria-label="账户" title="账户"
-            className="workbench-control-md flex w-8 items-center justify-center border hover:bg-[var(--surface-control-hover)]"
-            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
-            <UserRound className="h-4 w-4" />
-          </button>
-          {showUserMenu && (
-            <div className="workbench-popover absolute right-0 top-10 w-44 border p-1" onClick={event => event.stopPropagation()}
-              style={{ background: 'var(--surface-overlay)', borderColor: 'var(--border-strong)' }}>
-              <div className="truncate px-3 py-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{user?.display_name || user?.id}</div>
-              <button type="button" onClick={event => openSettings(event.currentTarget)} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>设置/更多</button>
-              <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePw(true) }} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>修改密码</button>
-              <button type="button" onClick={() => { setShowUserMenu(false); logout(); navigate('/') }} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--status-danger-soft)]" style={{ color: 'var(--status-danger)' }}>退出登录</button>
-            </div>
-          )}
-        </div>
-        {IS_DESKTOP && <WindowControls />}
-      </header>
-      {showSearch && <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} returnFocusRef={searchReturnFocusRef} />}
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} returnFocusRef={settingsReturnFocusRef} initialSection={settingsInitialSection} />}
-      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
-    </>
-  )
-}
-
 export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const {
     user,
@@ -973,6 +794,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const layoutMode = useLayoutMode()
+  const easyModeEnabled = layoutMode === 'easy_mode'
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1012,13 +835,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   // 顶栏「搜索」弹窗: 跨项目/Issue/Research 搜索所有会话 JSONL 内容.
   const [showSearch, setShowSearch] = useState(false)
-  const searchReturnFocusRef = useRef<HTMLElement | null>(null)
-
-  const openSearch = (trigger?: HTMLElement | null) => {
-    searchReturnFocusRef.current = trigger
-      || (document.activeElement instanceof HTMLElement ? document.activeElement : null)
-    setShowSearch(true)
-  }
 
   const refreshCustomThemes = () => {
     const map = loadCustomThemes()
@@ -1074,6 +890,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const issueParam = params.issue
   const researchParam = params.research
   const activeSessionId = new URLSearchParams(location.search).get('session') || undefined
+
   const projectName = currentProject?.name || projectParam
   const issueTitle = currentIssue?.title || issueParam
   const researchTitle = currentResearch?.title || researchParam
@@ -1377,7 +1194,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <TopNavActionElement
             type="button"
-            onClick={(event: any) => openSearch(event.currentTarget)}
+            onClick={() => setShowSearch(true)}
             title="搜索会话内容"
             aria-label="搜索会话内容"
             data-tour="top-search"
@@ -1422,7 +1239,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <VersionIndicator />
             </div>
           )}
-          <LayoutModeSwitch />
           <div className="relative shrink-0" data-tour="top-theme-toggle">
             <TopNavActionElement
               type="button"
@@ -1434,7 +1250,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 event.stopPropagation()
                 setShowThemeMenu(v => !v)
               }}
-              title={`外观与界面：主题色（当前 ${headerLabel}）。Alt+点击切换下一个主题色`}
+              title={`外观与界面：主题色 / 简易·常规模式（当前 ${headerLabel}）。Alt+点击切换下一个主题色`}
               aria-label="外观与界面设置"
               aria-expanded={showThemeMenu}
               className="max-w-[128px] min-w-0 justify-center"
@@ -1537,6 +1353,55 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         background: assistantBubbleEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
                         transform: assistantBubbleEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
                         boxShadow: assistantBubbleEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                      }}
+                    />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="简易模式"
+                  aria-checked={easyModeEnabled}
+                  data-testid="easy-mode-switch"
+                  onClick={() => {
+                    const nextEnabled = !easyModeEnabled
+                    setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
+                    setShowThemeMenu(false)
+                    if (nextEnabled) {
+                      // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
+                      // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
+                      const sid = currentSession?.session_id
+                      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
+                    }
+                    // 关闭简易模式(简易→标准)时不在此导航: EasyModePage 的 layoutMode 同步 effect
+                    // 持有完整上下文(currentSession + 已加载 sessions + URL ?session), 由它构造目标
+                    // Issue/Research 页. 本 TopNav 闭包里的 currentSession 在会话刚进入未就绪时为 null,
+                    // 在这里直接构造 URL 会粗暴回到用户首页.
+                  }}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                      精简会话界面 · {easyModeEnabled ? '已开启' : '已关闭'}
+                    </span>
+                  </span>
+                  <span
+                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
+                    style={{
+                      background: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: easyModeEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                    }}
+                  >
+                    <span
+                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
+                      style={{
+                        left: 2,
+                        background: easyModeEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: easyModeEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
+                        boxShadow: easyModeEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
                       }}
                     />
                   </span>
@@ -1683,7 +1548,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
       {showSearch && (
-        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} returnFocusRef={searchReturnFocusRef} />
+        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
       )}
       {createKind && (
         <GlobalCreateRoot
@@ -1693,7 +1558,44 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           onNavigate={navigate}
         />
       )}
+      <OverlayPanels />
     </>
+  )
+}
+
+// =====================================================================
+// 全局弹层（Admin）
+// 通过 store 上挂载的方法触发；这种"弹层"覆盖在主内容上
+// =====================================================================
+type OverlayKind = 'admin' | null
+
+// 全局打开 overlay 的函数 (供引导系统等外部触发, 如「重温管理中心」按钮先打开 overlay 再启动引导).
+// 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
+// 使用 pending 模式: OverlayPanels 在 useEffect 中赋值 _setOverlay 之前若被调用, 请求会留在 _pendingAdminTab
+// 里, 下次 OverlayPanels 挂载 AdminPanel 时读取并清空, 避免「点按钮 overlay 没反应 / 落错 tab」.
+let _pendingAdminTab: AdminPanelTab | null = null
+window.openAdminOverlay = (tab?: AdminPanelTab) => {
+  _pendingAdminTab = tab ?? null
+  _setOverlay?.('admin')
+  window.dispatchEvent(new CustomEvent('imac:admin-overlay-opened'))
+}
+let _setOverlay: ((kind: OverlayKind) => void) | null = null
+function openOverlay(kind: OverlayKind) { _setOverlay?.(kind) }
+
+function OverlayPanels() {
+  const [overlay, setOverlay] = useState<OverlayKind>(null)
+  useEffect(() => {
+    _setOverlay = setOverlay
+    return () => { _setOverlay = null }
+  }, [])
+  if (!overlay) return null
+  // 取一次 pending tab 后立即清空, 避免下次无参 openAdminOverlay 时落错 tab.
+  const initialTab = _pendingAdminTab
+  _pendingAdminTab = null
+  return (
+    <div className="fixed inset-0 z-40 flex" style={{ background: 'var(--bg-secondary)' }}>
+      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} initialTab={initialTab ?? undefined} />}
+    </div>
   )
 }
 

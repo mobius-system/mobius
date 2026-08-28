@@ -1,0 +1,166 @@
+// 桌面端自绘窗口控制按钮 (最小化 / 最大化-还原 / 关闭)。
+// 三平台 (Windows/Linux/macOS) 统一渲染: 都隐藏了原生标题栏
+// (Win/Linux 用 titleBarStyle:"hidden", macOS 用 frame:false 彻底移除含交通灯),
+// 而 titleBarOverlay 的原生按钮符号在本环境 (未签名 exe + 高 DPI) 不渲染 (只剩背景色块), 故前端自绘。
+// macOS 此前用系统交通灯 (hiddenInset), 现统一改 Win 方式 (frame:false + 前端自绘), 隐藏 macOS 特征。
+// 主题自适应: 图标色 var(--text-primary), hover 用 var(--bg-hover), 关闭键 hover 红 (#e81123)。
+import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { useStore } from '../store'
+import { DesktopPageActions } from './desktop-page-actions'
+
+type Bridge = {
+  isDesktop?: boolean
+  syncReload?: () => Promise<unknown>
+  windowZoomIn?: () => Promise<unknown>
+  windowZoomOut?: () => Promise<unknown>
+  windowMinimize?: () => Promise<unknown>
+  windowToggleMaximize?: () => Promise<{ maximized?: boolean } | unknown>
+  windowClose?: () => Promise<unknown>
+  windowIsMaximized?: () => Promise<boolean>
+  windowStartDrag?: () => Promise<unknown>
+  windowEndDrag?: () => Promise<unknown>
+  onMaximizeChange?: (cb: (m: boolean) => void) => (() => void) | undefined
+}
+
+function getBridge(): Bridge | undefined {
+  return typeof window !== 'undefined' ? (window as { mobiusDesktop?: Bridge }).mobiusDesktop : undefined
+}
+
+// 桌面端窗口拖拽 (pointer 事件 → IPC window:start-drag/end-drag), 抽成 hook 供
+// DesktopDragHandle 与 shell TopNav 根容器复用, 保证整条顶栏拖拽行为一致。
+// 三平台桌面端统一 enabled (mac 已改 frame:false 走 IPC 拖窗); web 端不启用。
+export function useDesktopWindowDrag() {
+  const md = getBridge()
+  const enabled = !!md?.isDesktop && typeof md.windowStartDrag === 'function'
+
+  const endDrag = useCallback(() => {
+    md?.windowEndDrag?.().catch(() => {})
+  }, [md])
+
+  const startDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (!enabled) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* ignore */ }
+    md?.windowStartDrag?.().catch(() => {})
+    window.addEventListener('pointerup', endDrag, { once: true })
+    window.addEventListener('blur', endDrag, { once: true })
+  }, [enabled, endDrag, md])
+
+  const toggleMaximize = useCallback(() => {
+    if (!enabled) return
+    md?.windowToggleMaximize?.().catch(() => {})
+  }, [enabled, md])
+
+  return { enabled, startDrag, endDrag, toggleMaximize }
+}
+
+export function DesktopDragHandle({ className = '', 'aria-hidden': ariaHidden }: { className?: string; 'aria-hidden'?: boolean }) {
+  const { enabled, startDrag, endDrag, toggleMaximize } = useDesktopWindowDrag()
+  return (
+    <div
+      className={className}
+      aria-hidden={ariaHidden}
+      onPointerDown={startDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={toggleMaximize}
+      style={enabled ? { cursor: 'grab', userSelect: 'none' } : undefined}
+    />
+  )
+}
+
+// thickMinimize (默认 false = 主界面原样 1.1px 细线): 仅 /welcome 的 DesktopTitleBar 传 true,
+// 高 DPI 下把最小化横线加粗到 1.8px 可见。作用严格局限调用方, 不影响 shell 主界面 (未传参)。
+export function WindowControls({ thickMinimize = false }: { thickMinimize?: boolean } = {}) {
+  const userId = useStore(state => state.user?.id || '')
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => {
+    const md = getBridge()
+    if (!md?.windowIsMaximized) return
+    md.windowIsMaximized().then((m) => setMaximized(!!m)).catch(() => {})
+    const off = md.onMaximizeChange?.((m) => setMaximized(m))
+    return () => { off?.() }
+  }, [])
+  const md = getBridge()
+  if (!md?.windowMinimize) return null
+  const visualizationPath = userId
+    ? `/u/${encodeURIComponent(userId)}/mobius_overview_cluster`
+    : '/'
+
+  const btnBase: CSSProperties = {
+    width: 38,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--text-primary)',
+    transition: 'background 0.12s',
+    height: '100%',
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+  }
+  const enterHover = (e: MouseEvent<HTMLElement>, bg: string) => { e.currentTarget.style.background = bg }
+  const leaveHover = (e: MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent' }
+
+  return (
+    <div className="flex items-stretch flex-shrink-0 no-drag" style={{ height: 48, marginLeft: 4, marginRight: -14 }}>
+      <DesktopPageActions
+        onBack={() => window.history.back()}
+        onReload={() => md.syncReload?.().catch(() => {})}
+        onZoomIn={() => md.windowZoomIn?.().catch(() => {})}
+        onZoomOut={() => md.windowZoomOut?.().catch(() => {})}
+        onWelcome={() => window.location.assign('/welcome')}
+        onSystemVisualization={() => window.location.assign(visualizationPath)}
+        visualizationPath={visualizationPath}
+      />
+      <button type="button" title="最小化" aria-label="最小化"
+        style={btnBase}
+        onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
+        onClick={() => md.windowMinimize?.().catch(() => {})}>
+        <svg width="10" height="10" viewBox="0 0 11 11"><rect y={thickMinimize ? 4.6 : 5} width="11" height={thickMinimize ? 1.8 : 1.1} fill="currentColor" /></svg>
+      </button>
+      <button type="button" title={maximized ? '还原' : '最大化'} aria-label={maximized ? '还原' : '最大化'}
+        style={btnBase}
+        onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
+        onClick={() => md.windowToggleMaximize?.().then((r) => {
+          if (r && typeof r === 'object' && 'maximized' in r) setMaximized(!!(r as { maximized: boolean }).maximized)
+        }).catch(() => {})}>
+        {maximized ? (
+          <svg width="10" height="10" viewBox="0 0 11 11">
+            <rect x="1" y="3.2" width="6.4" height="6.4" fill="none" stroke="currentColor" strokeWidth="1" />
+            <path d="M3.2 3.2 V1 H9.6 V7.4 H7.4" fill="none" stroke="currentColor" strokeWidth="1" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 11 11"><rect x="0.7" y="0.7" width="9.6" height="9.6" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
+        )}
+      </button>
+      <button type="button" title="关闭" aria-label="关闭"
+        style={btnBase}
+        onMouseEnter={(e) => { enterHover(e, '#e81123'); e.currentTarget.style.color = '#fff' }}
+        onMouseLeave={(e) => { leaveHover(e); e.currentTarget.style.color = 'var(--text-primary)' }}
+        onClick={() => md.windowClose?.().catch(() => {})}>
+        <svg width="10" height="10" viewBox="0 0 11 11"><path d="M0.5 0.5 L10.5 10.5 M10.5 0.5 L0.5 10.5" stroke="currentColor" strokeWidth="1.1" /></svg>
+      </button>
+    </div>
+  )
+}
+
+// 全屏独立页 (如 /welcome 欢迎向导) 的极简桌面顶栏: 唯一拖拽区 + 自绘窗口按钮。
+// 这些页面不走 shell 的 TopNav (拖拽区 + WindowControls 都挂在 TopNav 上), 此处补齐 ——
+// 否则桌面端窗口拖不动、也没有最小化/关闭按钮 (用户报: 欢迎页没关闭按钮、无法拖动)。
+// web 端不渲染 (无窗口概念); 三平台桌面端统一渲染 (mac 亦走自绘按钮 + IPC 拖窗)。
+// px-5 对齐 shell TopNav, 让 WindowControls 的 marginRight:-14 把关闭键贴到距右边缘 ~6px (与主界面一致)。
+export function DesktopTitleBar() {
+  const md = getBridge()
+  const isDesktop = !!md?.isDesktop
+  if (!isDesktop) return null
+  return (
+    <div className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex h-12 items-stretch px-5">
+      {/* 唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击 (与 shell TopNav 同策略) */}
+      <DesktopDragHandle className="pointer-events-auto flex-1 self-stretch" aria-hidden />
+      <WindowControls thickMinimize />
+    </div>
+  )
+}

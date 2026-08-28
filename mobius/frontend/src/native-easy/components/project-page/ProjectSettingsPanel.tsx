@@ -1,0 +1,1418 @@
+import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { AlertTriangle, Check, Copy, Download, Eye, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
+import { ProjectUserContextWhitelist } from '../context-whitelist'
+import { HelpHint } from './help-hint'
+import { ToggleSwitch } from '../toggle-switch'
+import { MemoriesManager } from '../memories'
+import { OpenInVSCodeButton } from '../project-files'
+import { SkillsManager } from '../skills'
+import { timeAgo } from '../shell'
+import { api, useStore } from '../../store'
+import { readContextSetupDemoState } from '../../services/context-setup-demo'
+import {
+  PROJECT_IMPORT_DEMO_TOUR_EVENT,
+  patchProjectImportDemoState,
+  readProjectImportDemoState,
+} from '../../services/project-import-demo'
+import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
+import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
+import { ProjectPackagePanel } from './ProjectPackagePanel'
+import { ProjectTodosPanel } from './ProjectTodosPanel'
+import { ProjectTeamPanel } from './ProjectTeamPanel'
+import { ProjectOverflowTabs, type OverflowTab } from './ProjectOverflowTabs'
+import { ExpandableTextarea } from '../expandable-textarea'
+import { GitChangesViewer } from '../code-git/GitChangesViewer'
+import type { GitRepoDraft } from './types'
+import {
+  FORGOTTEN_FLAG_BACKOFF_MAX,
+  FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX,
+  FORGOTTEN_FLAG_PATIENCE_MAX,
+} from './utils'
+
+type ProjectMetaValues = {
+  editName: string
+  editDesc: string
+  editBindPath: string
+  editGitRepos: GitRepoDraft[]
+  editDefaultUseWorktree: boolean
+  editResearchEnabled: boolean
+  editVisibility: 'private' | 'team' | 'public' | 'allowlist'
+  editAllowUserIds: string[]
+  editCanPostIssue: boolean
+  editCanRunSession: boolean
+  editDefaultModel: string
+  editForgottenFlagMessage: string
+  editForgottenFlagIssueInit: string
+  editForgottenFlagIssueBackoff: string
+  editForgottenFlagIssuePatience: string
+  editForgottenFlagResearchInit: string
+  editForgottenFlagResearchBackoff: string
+  editForgottenFlagResearchPatience: string
+}
+
+type ProjectMetaSetters = {
+  setEditName: Dispatch<SetStateAction<string>>
+  setEditDesc: Dispatch<SetStateAction<string>>
+  setEditBindPath: Dispatch<SetStateAction<string>>
+  setEditBindPathManual: Dispatch<SetStateAction<boolean>>
+  setEditGitRepos: Dispatch<SetStateAction<GitRepoDraft[]>>
+  setEditDefaultUseWorktree: Dispatch<SetStateAction<boolean>>
+  setEditResearchEnabled: Dispatch<SetStateAction<boolean>>
+  setEditVisibility: Dispatch<SetStateAction<'private' | 'team' | 'public' | 'allowlist'>>
+  setEditAllowUserIds: Dispatch<SetStateAction<string[]>>
+  setEditCanPostIssue: Dispatch<SetStateAction<boolean>>
+  setEditCanRunSession: Dispatch<SetStateAction<boolean>>
+  setEditDefaultModel: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagMessage: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagIssueInit: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagIssueBackoff: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagIssuePatience: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagResearchInit: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagResearchBackoff: Dispatch<SetStateAction<string>>
+  setEditForgottenFlagResearchPatience: Dispatch<SetStateAction<string>>
+}
+
+type ProjectSettingsPanelProps = {
+  project: any
+  desktopWorkspace?: boolean
+  values: ProjectMetaValues
+  setters: ProjectMetaSetters
+  metaErr: string
+  savingMeta: boolean
+  metaDirty: boolean
+  onDeleteProject: () => void
+  onOpenPathPicker: () => void
+  onArchitectureSessionCreated: (issue: any, session: any) => void
+  // 设计师之眼布局: 把顶部 settings tab 条外移到 ProjectPage 左侧边栏时,
+  // 由父层接管 activePane (受控) 并把 settingsTabs 上抛给父层渲染;
+  // hideHeaderTabs=true 时不再在面板内部渲染那条横向 tab 条 (移动端仍保留).
+  controlledActivePane?: SettingsPane
+  onSelectPane?: (pane: SettingsPane) => void
+  onExposeTabs?: (tabs: OverflowTab[]) => void
+  hideHeaderTabs?: boolean
+}
+
+export type SettingsPane = 'settings' | 'context' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
+
+const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
+  { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
+  { value: 'public', label: '公开', description: '所有登录用户都能看到本项目；仅项目成员可写。' },
+]
+
+type GitTrackingCommit = {
+  hash: string
+  short_hash: string
+  author_name: string
+  author_email: string
+  date: string
+  relative_date: string
+  subject: string
+  refs?: string[]
+}
+
+type GitTrackingState = {
+  available: boolean
+  bind_path?: string
+  repo_path?: string
+  repo_name?: string
+  branch?: string
+  head?: string
+  remote?: string
+  dirty?: boolean
+  dirty_count?: number
+  staged_count?: number
+  unstaged_count?: number
+  untracked_count?: number
+  reason?: string
+  log_error?: string
+  commits?: GitTrackingCommit[]
+  updated_at?: string
+}
+
+type GitTrackingAction = 'pull' | 'push' | 'stage'
+
+const GIT_TRACKING_ACTIONS: Array<{ key: GitTrackingAction; label: string; description: string }> = [
+  { key: 'pull', label: '拉取', description: 'git pull --ff-only' },
+  { key: 'push', label: '推送', description: 'git push' },
+  { key: 'stage', label: '暂存', description: 'git add -A' },
+]
+
+function formatCommitDate(date: string) {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+function normalizeSingleLineText(value: string) {
+  return value.replace(/[\r\n]+/g, ' ')
+}
+
+function isAssistantProject(project: any, userId?: string) {
+  if (!project?.id || project?.created_by !== userId) return false
+  const id = String(project.id)
+  const name = String(project.name || '')
+  const description = String(project.description || '')
+  return /^xm-[a-f0-9]{10}$/.test(id)
+    && (name.endsWith('的小莫助理') || name.endsWith('的小莫项目') || description.includes('小莫'))
+}
+
+function GitTrackingPanel({
+  data,
+  loading,
+  error,
+  onRefresh,
+  currentCommitHash,
+  isSelfDevelop,
+  canDeployVersion,
+  deployingHash,
+  hardResettingHash,
+  deployMessage,
+  deployError,
+  canRunGitAction,
+  gitActionRunning,
+  gitActionMessage,
+  gitActionError,
+  onGitAction,
+  onOpenReadonly,
+  onDeployVersion,
+  onHardResetVersion,
+}: {
+  data: GitTrackingState | null
+  loading: boolean
+  error: string
+  onRefresh: () => void
+  currentCommitHash?: string
+  isSelfDevelop?: boolean
+  canDeployVersion?: boolean
+  deployingHash?: string
+  hardResettingHash?: string
+  deployMessage?: string
+  deployError?: string
+  canRunGitAction?: boolean
+  gitActionRunning?: GitTrackingAction | ''
+  gitActionMessage?: string
+  gitActionError?: string
+  onGitAction?: (action: GitTrackingAction) => void
+  onOpenReadonly?: () => void
+  onDeployVersion?: (commit: GitTrackingCommit) => void
+  onHardResetVersion?: (commit: GitTrackingCommit) => void
+}) {
+  const commits = data?.commits || []
+  const [gitMenuOpen, setGitMenuOpen] = useState(false)
+  const showGitActionMenu = !!data?.available && !!canRunGitAction && !!onGitAction
+  const gitActionBusy = !!gitActionRunning
+  const statusText = data?.dirty
+    ? `有 ${data.dirty_count || 0} 个未提交变更`
+    : '工作区干净'
+
+  return (
+    <div className="p-3 w-full space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>版本追踪</h3>
+            {data?.available && (
+              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${data.dirty ? 'text-[var(--status-waiting)] bg-[var(--status-waiting-soft)] border-[var(--status-waiting-border)]' : 'text-[var(--status-success)] bg-[var(--status-success-soft)] border-[var(--status-success-border)]'}`}>
+                {statusText}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+            {data?.available
+              ? `${data.repo_path || ''}${data.branch ? ` · ${data.branch}` : ''}${data.head ? ` · ${data.head}` : ''}`
+              : (data?.reason || error || '绑定路径下未检测到 Git 仓库')}
+          </div>
+        </div>
+        <div className="relative flex shrink-0 items-center gap-2">
+          {data?.available && onOpenReadonly && (
+            <button
+              type="button"
+              onClick={onOpenReadonly}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors hover:bg-[var(--accent-soft)]"
+              style={{ borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' }}
+            >
+              <Eye className="h-3.5 w-3.5" />只读查看
+            </button>
+          )}
+          <button type="button" onClick={onRefresh} disabled={loading}
+            className="h-8 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] disabled:opacity-50">
+            {loading ? '刷新中...' : '刷新'}
+          </button>
+          {showGitActionMenu && (
+            <>
+              {gitMenuOpen && (
+                <button
+                  type="button"
+                  aria-label="关闭 Git 操作菜单"
+                  className="fixed inset-0 z-20 cursor-default bg-transparent"
+                  onClick={() => setGitMenuOpen(false)}
+                />
+              )}
+              <button
+                type="button"
+                aria-label="Git 操作"
+                title="Git 操作"
+                disabled={loading || gitActionBusy}
+                onClick={() => setGitMenuOpen((value) => !value)}
+                className="relative z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-primary)] transition-colors hover:bg-[var(--surface-active)] disabled:cursor-not-allowed disabled:opacity-50">
+                <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+              {gitMenuOpen && (
+                <div className="absolute right-0 top-10 z-30 w-44 overflow-hidden rounded-lg border shadow-xl"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                  {GIT_TRACKING_ACTIONS.map((item) => {
+                    const runningThisAction = gitActionRunning === item.key
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        disabled={gitActionBusy}
+                        onClick={() => {
+                          setGitMenuOpen(false)
+                          onGitAction?.(item.key)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-55"
+                        style={{ color: 'var(--text-primary)' }}>
+                        {item.key === 'pull' ? <Download className="h-3.5 w-3.5 text-[var(--accent-primary)]" strokeWidth={1.8} /> : null}
+                        {item.key === 'push' ? <Upload className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.8} /> : null}
+                        {item.key === 'stage' ? <Plus className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.8} /> : null}
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{runningThisAction ? `${item.label}中...` : item.label}</span>
+                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.description}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {loading && !data && (
+        <div className="text-[12px] px-3 py-8 rounded-lg border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+          正在检测绑定路径中的 Git 仓库...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="workbench-status-danger text-[12px] px-3 py-2 rounded-lg border">
+          {error}
+        </div>
+      )}
+
+      {deployMessage && (
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-soft)] text-[var(--status-success)]">
+          {deployMessage}
+        </div>
+      )}
+
+      {deployError && (
+        <div className="workbench-status-danger text-[12px] px-3 py-2 rounded-lg border">
+          {deployError}
+        </div>
+      )}
+
+      {gitActionMessage && (
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-soft)] text-[var(--status-success)]">
+          {gitActionMessage}
+        </div>
+      )}
+
+      {gitActionError && (
+        <div className="workbench-status-danger whitespace-pre-wrap text-[12px] px-3 py-2 rounded-lg border">
+          {gitActionError}
+        </div>
+      )}
+
+      {!loading && data && !data.available && (
+        <div className="text-[12px] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+          {data.reason || '绑定路径下未检测到 Git 仓库'}
+        </div>
+      )}
+
+      {data?.available && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>分支</div>
+              <div className="text-[12px] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.branch || 'HEAD'}</div>
+            </div>
+            <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>当前 HEAD</div>
+              <div className="text-[12px] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.head || '--'}</div>
+            </div>
+            <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>未提交</div>
+              <div className="text-[12px] truncate" style={{ color: data.dirty ? 'var(--status-waiting)' : 'var(--text-primary)' }}>
+                {data.dirty_count || 0} 个文件
+              </div>
+            </div>
+          </div>
+
+          {data.remote && (
+            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={data.remote}>
+              origin: {data.remote}
+            </div>
+          )}
+
+          {data.log_error && (
+            <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-waiting-border)] bg-[var(--status-waiting-soft)] text-[var(--status-waiting)]">
+              {data.log_error}
+            </div>
+          )}
+
+          {commits.length === 0 ? (
+            <div className="text-[12px] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+              当前仓库还没有提交记录
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>近期 commits</div>
+              {commits.map((commit) => {
+                const isCurrentVersion = !!isSelfDevelop && !!currentCommitHash && commit.hash === currentCommitHash
+                const canRollbackToCommit = !!isSelfDevelop && !!currentCommitHash && !isCurrentVersion && !!canDeployVersion && !!onDeployVersion
+                const canHardResetToCommit = !!isSelfDevelop && !!currentCommitHash && !isCurrentVersion && !!canDeployVersion && !!onHardResetVersion
+                const versionActionInProgress = !!deployingHash || !!hardResettingHash
+                const deployingThisCommit = deployingHash === commit.hash
+                const hardResettingThisCommit = hardResettingHash === commit.hash
+                return (
+                <div key={commit.hash}
+                  className={`rounded-lg border px-3 py-2.5 ${isCurrentVersion ? 'mobius-current-version-commit' : ''}`}
+                  style={{
+                    borderColor: isCurrentVersion ? 'rgba(251,191,36,0.72)' : 'var(--border-color)',
+                    background: isCurrentVersion
+                      ? 'linear-gradient(135deg, rgba(251,191,36,0.12), var(--bg-secondary) 46%)'
+                      : 'var(--bg-secondary)',
+                  }}>
+                  <div className="flex flex-col items-start gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <code className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border font-mono"
+                        style={{ color: 'var(--accent-primary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                        title={commit.hash}>
+                        {commit.short_hash}
+                      </code>
+                      {isCurrentVersion && (
+                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border font-medium"
+                          style={{ color: 'var(--status-waiting)', borderColor: 'var(--status-waiting-border)', background: 'var(--status-waiting-soft)' }}>
+                          当前版本
+                        </span>
+                      )}
+                      {canRollbackToCommit && (
+                        <button
+                          type="button"
+                          disabled={versionActionInProgress}
+                          onClick={() => onDeployVersion?.(commit)}
+                          className="h-7 px-2.5 rounded-md text-[11px] border border-[var(--status-waiting-border)] bg-[var(--status-waiting-soft)] text-[var(--status-waiting)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                          {deployingThisCommit ? '正在回退...' : '回退到此版本'}
+                        </button>
+                      )}
+                      {canHardResetToCommit && (
+                        <button
+                          type="button"
+                          disabled={versionActionInProgress}
+                          onClick={() => onHardResetVersion?.(commit)}
+                          className="h-7 px-2.5 rounded-md text-[11px] border border-[var(--status-danger-border)] bg-[var(--status-danger-soft)] text-[var(--status-danger)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                          {hardResettingThisCommit ? '正在硬回退...' : '回退并撤销未来更改'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="min-w-0 w-full">
+                      <div className="text-[13px] leading-5 break-words" style={{ color: 'var(--text-primary)' }}>
+                        {commit.subject || '(无提交信息)'}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <span className="truncate max-w-[220px]" title={commit.author_email}>{commit.author_name || 'unknown'}</span>
+                        <span>·</span>
+                        <span>{formatCommitDate(commit.date) || commit.relative_date}</span>
+                        {commit.relative_date && <span>· {commit.relative_date}</span>}
+                        {!!commit.refs?.length && (
+                          <span className="truncate max-w-full" title={commit.refs.join(', ')}>· {commit.refs.join(', ')}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function SettingsCard({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          {hint && <HelpHint text={hint} />}
+        </div>
+      </div>
+      <div className="p-4 space-y-3">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+// 本机工作路径行 — 仅 Electron 桌面端渲染。读写桌面端 userData 里存的 project 本机路径
+// (与 aimux 调度本机/PC 任务模式同源)。支持复制 + 更改 (走 pickDirectory/confirmProjectPath)。
+// 浏览器里 window.mobiusDesktop 不存在 → 返回 null, 不占位。
+function LocalPcPathRow({ projectId }: { projectId: string }) {
+  const md: any = typeof window !== 'undefined' ? (window as any).mobiusDesktop : undefined
+  const isDesktop = !!md?.isDesktop
+  const [path, setPath] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!isDesktop) return
+    let cancelled = false
+    md.getProjectLocalPath?.(projectId).then((p: string | null | undefined) => { if (!cancelled) setPath(p || '') })
+    return () => { cancelled = true }
+  }, [isDesktop, projectId])
+  if (!isDesktop) return null
+  const edit = async () => {
+    if (busy || !md?.pickDirectory) return
+    const picked = await md.pickDirectory()
+    if (!picked) return
+    setBusy(true)
+    try {
+      const r = await md.confirmProjectPath?.(projectId, picked)
+      if (r?.ok) setPath(picked)
+    } finally { setBusy(false) }
+  }
+  const copy = async () => {
+    if (!path) return
+    try {
+      await navigator.clipboard.writeText(path)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch { setCopied(false) }
+  }
+  return (
+    <div>
+      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本机工作路径（桌面端 · aimux 调度本机时使用）</label>
+      <div className="flex min-w-0 flex-nowrap items-center gap-2">
+      <input value={path} readOnly placeholder="未绑定"
+        className="flex-1 min-w-0 max-w-[20rem] h-9 px-3 rounded-lg text-[13px] font-mono truncate"
+        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+      <button type="button" onClick={copy} disabled={!path}
+        title={copied ? '已复制' : '复制路径'} aria-label={copied ? '已复制' : '复制路径'}
+        className="h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] transition-colors border flex items-center justify-center disabled:opacity-40"
+        style={{ color: copied ? 'var(--status-success)' : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+        {copied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
+      </button>
+      <button type="button" onClick={edit} disabled={busy}
+        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
+        <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+        <span>{busy ? '…' : path ? '更改' : '选择'}</span>
+      </button>
+      </div>
+    </div>
+  )
+}
+
+export function ProjectSettingsPanel({
+  project,
+  desktopWorkspace = false,
+  values,
+  setters,
+  metaErr,
+  savingMeta,
+  metaDirty,
+  onDeleteProject,
+  onOpenPathPicker,
+  onArchitectureSessionCreated,
+  controlledActivePane,
+  onSelectPane,
+  onExposeTabs,
+  hideHeaderTabs = false,
+}: ProjectSettingsPanelProps) {
+  const { user } = useStore()
+  const {
+    editName,
+    editDesc,
+    editBindPath,
+    editGitRepos,
+    editDefaultUseWorktree,
+    editResearchEnabled,
+    editVisibility,
+    editCanPostIssue,
+    editCanRunSession,
+    editDefaultModel,
+    editForgottenFlagMessage,
+    editForgottenFlagIssueInit,
+    editForgottenFlagIssueBackoff,
+    editForgottenFlagIssuePatience,
+    editForgottenFlagResearchInit,
+    editForgottenFlagResearchBackoff,
+    editForgottenFlagResearchPatience,
+  } = values
+  const {
+    setEditName,
+    setEditDesc,
+    setEditBindPath,
+    setEditBindPathManual,
+    setEditGitRepos,
+    setEditDefaultUseWorktree,
+    setEditResearchEnabled,
+    setEditVisibility,
+    setEditCanPostIssue,
+    setEditCanRunSession,
+    setEditDefaultModel,
+    setEditForgottenFlagMessage,
+    setEditForgottenFlagIssueInit,
+    setEditForgottenFlagIssueBackoff,
+    setEditForgottenFlagIssuePatience,
+    setEditForgottenFlagResearchInit,
+    setEditForgottenFlagResearchBackoff,
+    setEditForgottenFlagResearchPatience,
+  } = setters
+
+  const PaneKey = `mobius:project:pane:${project?.id || ''}`
+  const paneInit = (): SettingsPane => {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
+    return v && (['settings','context','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
+  }
+  // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
+  const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
+  const activePane = controlledActivePane ?? internalPane
+  const setActivePane = (pane: SettingsPane) => {
+    if (controlledActivePane !== undefined) onSelectPane?.(pane)
+    else setInternalPane(pane)
+  }
+  const [showDeletePermissionNotice, setShowDeletePermissionNotice] = useState(false)
+  useEffect(() => { try { localStorage.setItem(PaneKey, activePane) } catch {} }, [PaneKey, activePane])
+  useEffect(() => { setShowDeletePermissionNotice(false) }, [project?.id])
+  const [gitTracking, setGitTracking] = useState<GitTrackingState | null>(null)
+  const [gitTrackingLoading, setGitTrackingLoading] = useState(false)
+  const [gitTrackingErr, setGitTrackingErr] = useState('')
+  const [projectModelOptions, setProjectModelOptions] = useState<Array<{ key: string; label?: string; title?: string; sub?: string }>>([])
+  const [backendCommitHash, setBackendCommitHash] = useState('')
+  const [deployingHash, setDeployingHash] = useState('')
+  const [hardResettingHash, setHardResettingHash] = useState('')
+  const [deployMessage, setDeployMessage] = useState('')
+  const [deployError, setDeployError] = useState('')
+  const [gitActionRunning, setGitActionRunning] = useState<GitTrackingAction | ''>('')
+  const [gitActionMessage, setGitActionMessage] = useState('')
+  const [gitActionError, setGitActionError] = useState('')
+  const [gitReadonlyViewerOpen, setGitReadonlyViewerOpen] = useState(false)
+  const [, setImportDemoRefreshKey] = useState(0)
+  const [importUploadConfirmBusy, setImportUploadConfirmBusy] = useState(false)
+  const [importCleanupBusy, setImportCleanupBusy] = useState(false)
+  const [importGuideMessage, setImportGuideMessage] = useState('')
+  const [bindPathCopied, setBindPathCopied] = useState(false)
+  const importDemoState = readProjectImportDemoState()
+  const contextDemoState = readContextSetupDemoState()
+  const importDemoActiveForProject = !!importDemoState?.active && importDemoState.projectId === project?.id
+  const contextDemoActiveForProject = !!contextDemoState?.active && contextDemoState.projectId === project?.id
+  const canManageProject = project?.can_manage !== false
+  const projectBindRoot = project?.bind_path ? String(project.bind_path).replace(/\/+$/, '') : ''
+  const uploadSampleZipRelPath = (importDemoState?.uploadSampleZipRelPath || 'upload-samples/vanilla-todomvc-upload-sample.zip').replace(/^\/+/, '')
+  const downloadToken = (typeof localStorage !== 'undefined' && localStorage.getItem('cc-token')) || ''
+  const downloadUrlForRelPath = (relPath?: string) => {
+    const rel = (relPath || '').replace(/^\/+/, '')
+    if (!projectBindRoot || !rel) return ''
+    return `/api/download?path=${encodeURIComponent(`${projectBindRoot}/${rel}`)}${downloadToken ? `&token=${encodeURIComponent(downloadToken)}` : ''}`
+  }
+  const uploadSampleDownloadUrl = importDemoActiveForProject
+    ? downloadUrlForRelPath(uploadSampleZipRelPath)
+    : ''
+  const showImportUploadCompleteButton = importDemoActiveForProject
+    && !!importDemoState?.uploadSampleDownloadedAt
+    && !importDemoState?.uploadSampleUploadedAt
+  const showImportCleanupButton = importDemoActiveForProject
+    && !!importDemoState?.uploadSampleUploadedAt
+    && !importDemoState?.uploadSampleClearedAt
+  const contextMaterialsZipUrl = contextDemoActiveForProject
+    ? downloadUrlForRelPath(contextDemoState?.materialsZipRelPath || 'context-materials/context-setup-materials.zip')
+    : ''
+  const contextMemoryMaterialUrl = contextDemoActiveForProject
+    ? downloadUrlForRelPath(contextDemoState?.memoryMaterialRelPath || 'context-materials/project_knowledge.md')
+    : ''
+  const contextSkillMaterialUrl = contextDemoActiveForProject
+    ? downloadUrlForRelPath(contextDemoState?.skillMaterialRelPath || 'context-materials/weekly-notes-summary/SKILL.md')
+    : ''
+  const assistantProject = isAssistantProject(project, user?.id)
+  const deletePolicy = project?.delete_policy
+  const canDeleteProject = deletePolicy?.allowed === true
+  const metaSaveStatus = !canManageProject
+    ? '只读'
+    : savingMeta
+      ? '保存中...'
+      : metaDirty
+        ? '修改即将自动保存'
+        : '已实时保存'
+  const metaSaveStatusColor = !canManageProject
+    ? 'var(--text-muted)'
+    : savingMeta
+      ? 'var(--status-running)'
+      : metaDirty
+        ? 'var(--status-waiting)'
+        : 'var(--status-success)'
+
+  const loadGitTracking = async () => {
+    if (!project?.id) return
+    setGitTrackingLoading(true)
+    setGitTrackingErr('')
+    try {
+      const data = await api(`/api/projects/${project.id}/git-tracking?limit=12`)
+      setGitTracking(data)
+      if (!data?.available && activePane === 'versions') setActivePane('settings')
+    } catch (e: any) {
+      setGitTrackingErr(e?.message || '读取版本追踪失败')
+      if (activePane === 'versions') setActivePane('settings')
+    } finally {
+      setGitTrackingLoading(false)
+    }
+  }
+
+  const markImportSampleDownloaded = () => {
+    if (!project?.id || !importDemoActiveForProject) return
+    patchProjectImportDemoState({ uploadSampleDownloadedAt: Date.now() })
+    setImportGuideMessage('样例已开始下载。解压后请打开网页代码编辑器，把文件夹拖进项目目录。')
+    setImportDemoRefreshKey((value) => value + 1)
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
+    }, 360)
+  }
+
+  const confirmImportUploadSample = async () => {
+    if (!project?.id || !importDemoActiveForProject || importUploadConfirmBusy) return
+    setImportUploadConfirmBusy(true)
+    setImportGuideMessage('')
+    try {
+      const data = await api(`/api/projects/${project.id}/files?path=/`)
+      const entries = Array.isArray(data?.entries) ? data.entries : []
+      const names = new Set(entries.map((entry: any) => String(entry?.name || '')))
+      const hasUploadedFolder = names.has('vanilla-todomvc')
+      const hasUploadedContents = names.has('index.html') && names.has('package.json') && names.has('src')
+      if (!hasUploadedFolder && !hasUploadedContents) {
+        setImportGuideMessage('还没有在项目目录里看到上传样例。请先把解压后的文件夹拖进网页代码编辑器左侧资源管理器，再点击确认。')
+        return
+      }
+      patchProjectImportDemoState({
+        uploadSampleUploadedAt: Date.now(),
+        uploadWalkthroughCompletedAt: Date.now(),
+      })
+      setImportGuideMessage('已确认上传样例。下一步可以清空样例，再学习公开仓库下载方式。')
+      setImportDemoRefreshKey((value) => value + 1)
+      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
+    } catch (e: any) {
+      setImportGuideMessage(e?.message || '确认上传样例失败')
+    } finally {
+      setImportUploadConfirmBusy(false)
+    }
+  }
+
+  const clearImportUploadSample = async () => {
+    if (!project?.id || !importDemoActiveForProject || importCleanupBusy) return
+    setImportCleanupBusy(true)
+    setImportGuideMessage('')
+    try {
+      const data = await api(`/api/projects/${project.id}/guided-demo/import/clear-upload-sample`, { method: 'POST' })
+      patchProjectImportDemoState({
+        uploadWalkthroughCompletedAt: Date.now(),
+        uploadSampleClearedAt: Date.now(),
+      })
+      const removedCount = Array.isArray(data?.removed) ? data.removed.length : 0
+      setImportGuideMessage(removedCount > 0
+        ? '已清空上传样例，可以继续学习公开仓库下载方式。'
+        : '没有发现已上传的样例，可以继续学习公开仓库下载方式。')
+      setImportDemoRefreshKey((value) => value + 1)
+      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
+    } catch (e: any) {
+      setImportGuideMessage(e?.message || '清空上传样例失败')
+    } finally {
+      setImportCleanupBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    let alive = true
+    setGitTracking(null)
+    setGitReadonlyViewerOpen(false)
+    setActivePane('settings')
+    const run = async () => {
+      if (!project?.id) return
+      setGitTrackingLoading(true)
+      setGitTrackingErr('')
+      try {
+        const data = await api(`/api/projects/${project.id}/git-tracking?limit=12`)
+        if (!alive) return
+        setGitTracking(data)
+        if (!data?.available) setActivePane('settings')
+      } catch (e: any) {
+        if (!alive) return
+        setGitTracking(null)
+        setGitTrackingErr(e?.message || '读取版本追踪失败')
+        setActivePane('settings')
+      } finally {
+        if (alive) setGitTrackingLoading(false)
+      }
+    }
+    run()
+    return () => { alive = false }
+  }, [project?.id, project?.bind_path])
+
+  useEffect(() => {
+    let alive = true
+    if (!project?.is_self_develop) {
+      setBackendCommitHash('')
+      return () => { alive = false }
+    }
+    const load = async () => {
+      try {
+        const health = await api('/api/v2/health')
+        const commit = typeof health?.git_commit === 'string'
+          ? health.git_commit
+          : typeof health?.code_version === 'string'
+            ? health.code_version.split('+')[1] || ''
+            : ''
+        if (alive) setBackendCommitHash(commit)
+      } catch {
+        if (alive) setBackendCommitHash('')
+      }
+    }
+    load()
+    return () => { alive = false }
+  }, [project?.id, project?.is_self_develop])
+
+  // 项目设置面板需要展示"默认模型偏好"下拉, 选项来自 /api/sessions/model-options.
+  // 与 NewSessionModal 用的是同一个端点, 保持模型短键一致 (opus / codex / 管理员导入 key).
+  useEffect(() => {
+    let alive = true
+    api('/api/sessions/model-options')
+      .then((arr: any) => {
+        if (!alive) return
+        const options = Array.isArray(arr) ? arr : []
+        setProjectModelOptions(options.map((opt: any) => ({
+          key: String(opt?.key || ''),
+          label: typeof opt?.label === 'string' ? opt.label : '',
+          title: typeof opt?.title === 'string' ? opt.title : '',
+          sub: typeof opt?.sub === 'string' ? opt.sub : '',
+        })).filter((opt: any) => opt.key))
+      })
+      .catch(() => { if (alive) setProjectModelOptions([]) })
+    return () => { alive = false }
+  }, [])
+
+  const deployOtherVersion = async (commit: GitTrackingCommit) => {
+    if (!project?.id || !commit?.hash || deployingHash || hardResettingHash) return
+    setDeployingHash(commit.hash)
+    setDeployMessage('')
+    setDeployError('')
+    try {
+      const result = await api(`/api/projects/${project.id}/deploy-version`, {
+        method: 'POST',
+        body: JSON.stringify({ git_hash: commit.hash }),
+      })
+      setDeployMessage(result?.message || `已开始回退到 ${commit.short_hash || commit.hash.slice(0, 7)}`)
+    } catch (e: any) {
+      setDeployError(e?.message || '启动版本回退失败')
+    } finally {
+      setDeployingHash('')
+    }
+  }
+
+  const runGitTrackingAction = async (action: GitTrackingAction) => {
+    if (!project?.id || gitActionRunning) return
+    setGitActionRunning(action)
+    setGitActionMessage('')
+    setGitActionError('')
+    setDeployMessage('')
+    setDeployError('')
+    try {
+      const result = await api(`/api/projects/${project.id}/git-action`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      })
+      if (result?.tracking) {
+        setGitTracking(result.tracking)
+      } else {
+        await loadGitTracking()
+      }
+      setGitActionMessage(result?.message || 'Git 操作完成')
+    } catch (e: any) {
+      setGitActionError(e?.message || 'Git 操作失败')
+      loadGitTracking().catch(() => {})
+    } finally {
+      setGitActionRunning('')
+    }
+  }
+
+  const hardResetVersion = async (commit: GitTrackingCommit) => {
+    if (!project?.id || !commit?.hash || deployingHash || hardResettingHash) return
+    setHardResettingHash(commit.hash)
+    setDeployMessage('')
+    setDeployError('')
+    try {
+      const result = await api(`/api/projects/${project.id}/hard-reset-version`, {
+        method: 'POST',
+        body: JSON.stringify({ git_hash: commit.hash }),
+      })
+      setDeployMessage(result?.message || `已开始硬回退到 ${commit.short_hash || commit.hash.slice(0, 7)}`)
+    } catch (e: any) {
+      setDeployError(e?.message || '启动版本硬回退失败')
+    } finally {
+      setHardResettingHash('')
+    }
+  }
+
+  const gitTrackingAvailable = !!gitTracking?.available
+  const gitTrackingTitle = gitTrackingLoading
+    ? '正在检测 Git 仓库'
+    : gitTrackingAvailable
+      ? '查看近期 Git commit'
+      : (gitTracking?.reason || gitTrackingErr || '绑定路径下未检测到 Git 仓库')
+  const embeddedSettingsCardStyle = { '--bg-card': 'var(--bg-secondary)' } as CSSProperties
+
+  // 顶部 tab 列表 (数据驱动): 空间不足时 ProjectOverflowTabs 会把溢出的 tab 收进「⋯」菜单, 而非换行.
+  const settingsTabs: OverflowTab[] = useMemo(() => {
+    const arr: OverflowTab[] = [
+      { key: 'settings', label: '项目设置', active: activePane === 'settings', dataTour: 'project-settings-tab' },
+    ]
+    // 项目级记忆/技能管理器已从「项目设置」页内移出, 独立成「记忆技能」页并紧跟其后.
+    arr.push({ key: 'context', label: '记忆技能', active: activePane === 'context', dataTour: 'project-context-tab' })
+    // 项目成员设置紧跟「项目设置」之后、版本追踪之前 (所有项目, 含拓展应用).
+    arr.push({ key: 'members', label: '项目成员', active: activePane === 'members' })
+    arr.push(
+      { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
+      { key: 'architecture', label: '系统剖析', active: activePane === 'architecture' },
+      { key: 'todos', label: '项目待办', active: activePane === 'todos' },
+      { key: 'package', label: '打包下载', active: activePane === 'package' },
+    )
+    if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
+    return arr
+  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
+
+  // 把当前 settingsTabs 上抛给父层 (设计师之眼侧边栏渲染用). settingsTabs 是 useMemo 产物,
+  // 仅在其依赖变化时换身份, 故不会造成父子间渲染抖动.
+  useEffect(() => {
+    if (onExposeTabs) onExposeTabs(settingsTabs)
+  }, [onExposeTabs, settingsTabs])
+
+  // 切到「版本追踪」时懒加载 git 追踪数据; 统一用 effect 触发, 这样无论是面板内点击
+  // 还是侧边栏外置 tab 条点击 (受控模式, 绕过 handleSelectPane) 都能覆盖.
+  useEffect(() => {
+    if (activePane === 'versions' && !gitTracking) loadGitTracking()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePane])
+
+  const handleSelectPane = (key: string) => {
+    setActivePane(key as SettingsPane)
+  }
+
+  return (
+    <section
+      data-tour="project-settings-panel"
+      className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
+      style={{ borderColor: 'var(--border-color)' }}>
+      {!hideHeaderTabs && (
+        <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <ProjectOverflowTabs
+            tabs={settingsTabs}
+            onSelect={handleSelectPane}
+            className="flex-1 min-w-0"
+          />
+        </div>
+      )}
+
+      {project.kind === 'extension' && (
+        <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"
+          style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
+          这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
+          名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
+          {project.disabled && <span style={{ color: 'var(--status-danger)' }}> [目录已消失, 但数据保留]</span>}
+          <span className="block mt-1">本项目所有会话必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+
+        {activePane === 'assistant' && assistantProject ? (
+          <div className="p-3 w-full">
+            <ProjectAssistantPresetPanel projectId={project.id} />
+          </div>
+        ) : activePane === 'architecture' ? (
+          <div className="p-3 w-full">
+            <ProjectArchitecturePanel
+              projectId={project.id}
+              onSessionCreated={onArchitectureSessionCreated}
+            />
+          </div>
+        ) : activePane === 'todos' ? (
+          <div className="p-3 w-full">
+            <ProjectTodosPanel projectId={project.id} canManage={canManageProject} />
+          </div>
+        ) : activePane === 'members' ? (
+          <div className="w-full min-w-0 p-3 space-y-4">
+            <SettingsCard title="权限设置" hint="管理项目成员及角色（owner/manager/member/viewer），决定谁能查看或修改本项目。">
+              {/* 项目可见性(私有/公开)与两个读者开关已退役 —— 改纯成员制:
+                  非成员不可见, 项目成员按角色(owner/manager/member/viewer)分权. */}
+              {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
+                  与主页「编辑项目」弹窗 modals.tsx 共用同一个 ProjectTeamPanel. */}
+              <div className="mt-4">
+                <div className="mb-2 text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>项目成员</div>
+                <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
+              </div>
+            </SettingsCard>
+          </div>
+        ) : activePane === 'package' ? (
+          <div className="p-3 w-full">
+            <ProjectPackagePanel projectId={project.id} />
+          </div>
+        ) : activePane === 'context' ? (
+          <div className="w-full min-w-0 p-3 space-y-4">
+            {/* 项目级记忆/技能管理器 (原嵌在「项目设置」页中部, 要翻过基本设置等卡片才能看到,
+                故按用户要求独立成「记忆技能」页, 放在「项目设置」下面). */}
+            <div style={embeddedSettingsCardStyle}>
+              <SkillsManager scope="project" projectId={project.id} />
+            </div>
+            <div className="pt-2" style={embeddedSettingsCardStyle}>
+              <MemoriesManager scope="project" projectId={project.id} />
+            </div>
+          </div>
+        ) : activePane === 'versions' ? (
+          <GitTrackingPanel
+            data={gitTracking}
+            loading={gitTrackingLoading}
+            error={gitTrackingErr}
+            onRefresh={loadGitTracking}
+            currentCommitHash={backendCommitHash}
+            isSelfDevelop={!!project?.is_self_develop}
+            canDeployVersion={user?.role === 'admin'}
+            deployingHash={deployingHash}
+            hardResettingHash={hardResettingHash}
+            deployMessage={deployMessage}
+            deployError={deployError}
+            canRunGitAction={canManageProject}
+            gitActionRunning={gitActionRunning}
+            gitActionMessage={gitActionMessage}
+            gitActionError={gitActionError}
+            onGitAction={runGitTrackingAction}
+            onOpenReadonly={() => setGitReadonlyViewerOpen(true)}
+            onDeployVersion={deployOtherVersion}
+            onHardResetVersion={hardResetVersion}
+          />
+        ) : (
+        <div className="w-full min-w-0 p-3 space-y-4">
+          {!canManageProject && (
+            <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
+              style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-soft)', color: 'var(--text-secondary)' }}>
+              当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
+            </div>
+          )}
+          {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}
+          {project.kind === 'extension' ? null : (
+            <SettingsCard title="基本设置" hint="项目的名称、描述，以及 Agent 实际读写的工作目录（绑定路径）。绑定路径下会持久化项目知识、Issue 知识与会话产物。">
+              <LocalPcPathRow projectId={project.id} />
+              {/* 豁免文本脱敏整框模糊: 项目名/描述/绑定路径常含 imac/tianyi 等匿名化关键词,
+                  命中后整框 filter:blur(5px) 不可读 (脱敏默认开启). 拥有者编辑面需可读. */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" data-text-redaction-ignore="true">
+                <div>
+                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>名称</label>
+                  <textarea value={editName} disabled={!canManageProject} onChange={e => setEditName(normalizeSingleLineText(e.target.value))}
+                    onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                    rows={2}
+                    className="w-full h-20 px-3 py-2 rounded-lg text-left text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>描述</label>
+                  <ExpandableTextarea value={editDesc} disabled={!canManageProject} onValueChange={setEditDesc} rows={2}
+                    overlayTitle="编辑项目描述"
+                    className="w-full h-20 px-3 py-2 rounded-lg text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                </div>
+                <div className="xl:col-span-2">
+                  <label htmlFor={`project-bind-path-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
+                  <div
+                    className="flex min-w-0 flex-wrap items-center gap-2 leading-[normal]"
+                    data-design-id="project-bind-path-actions"
+                  >
+                    <input id={`project-bind-path-${project.id}`} value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
+                      onClick={() => { if (canManageProject) onOpenPathPicker() }}
+                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-[var(--accent-border)] disabled:cursor-default disabled:opacity-60 truncate"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
+                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] font-medium bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                      <FolderOpen className="h-4 w-4" strokeWidth={1.8} />
+                      <span>选择路径</span>
+                    </button>
+                    {!!project.bind_path && editBindPath === (project.bind_path || '') && (
+                      <OpenInVSCodeButton
+                        key={`${project.id}:${project.bind_path || ''}`}
+                        projectId={project.id}
+                        mode="direct"
+                        showWorktreeOption={false}
+                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-primary)] transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
+                      />
+                    )}
+                    {editBindPath && (
+                      <button type="button" onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(editBindPath)
+                          setBindPathCopied(true)
+                          setTimeout(() => setBindPathCopied(false), 1200)
+                        } catch {
+                          setBindPathCopied(false)
+                        }
+                      }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
+                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-[var(--status-success)]' : 'hover:bg-[var(--accent-soft)] hover:text-[var(--accent-primary)]'} transition-colors border flex items-center justify-center`}
+                        style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                        {bindPathCopied ? <Check className="h-4 w-4" strokeWidth={2} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
+                      </button>
+                    )}
+                    {importDemoActiveForProject && uploadSampleDownloadUrl && (
+                      <a
+                        href={uploadSampleDownloadUrl}
+                        download
+                        onClick={markImportSampleDownloaded}
+                        data-tour="project-import-sample-download"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 flex items-center gap-1.5 whitespace-nowrap"
+                        title="仅导入演示项目显示：下载上传样例"
+                      >
+                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        下载上传样例
+                      </a>
+                    )}
+                    {showImportUploadCompleteButton && (
+                      <button
+                        type="button"
+                        onClick={confirmImportUploadSample}
+                        disabled={importUploadConfirmBusy}
+                        data-tour="project-import-confirm-upload-sample"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-sky-500/15 text-sky-500 hover:bg-sky-500/25 transition-colors border border-sky-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="仅导入演示项目显示：确认已经把上传样例拖进项目目录"
+                      >
+                        <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        {importUploadConfirmBusy ? '检查中...' : '我已完成上传'}
+                      </button>
+                    )}
+                    {showImportCleanupButton && (
+                      <button
+                        type="button"
+                        onClick={clearImportUploadSample}
+                        disabled={importCleanupBusy}
+                        data-tour="project-import-clear-upload-sample"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 transition-colors border border-amber-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="仅导入演示项目显示：清空刚才上传的样例并继续"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        {importCleanupBusy ? '清理中...' : '清空上传样例'}
+                      </button>
+                    )}
+                    {contextDemoActiveForProject && contextMaterialsZipUrl && (
+                      <a
+                        href={contextMaterialsZipUrl}
+                        download
+                        data-tour="project-context-materials-download"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-cyan-500/15 text-cyan-500 hover:bg-cyan-500/25 transition-colors border border-cyan-500/25 flex items-center gap-1.5 whitespace-nowrap"
+                        title="仅资料配置演示项目显示：下载演示素材包"
+                      >
+                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        下载资料包
+                      </a>
+                    )}
+                    {contextDemoActiveForProject && contextMemoryMaterialUrl && (
+                      <a
+                        href={contextMemoryMaterialUrl}
+                        download
+                        data-tour="project-context-memory-download"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 flex items-center gap-1.5 whitespace-nowrap"
+                        title="仅资料配置演示项目显示：下载项目知识文件"
+                      >
+                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        下载项目知识
+                      </a>
+                    )}
+                    {contextDemoActiveForProject && contextSkillMaterialUrl && (
+                      <a
+                        href={contextSkillMaterialUrl}
+                        download
+                        data-tour="project-context-skill-download"
+                        className="h-9 px-3 rounded-lg text-[12px] bg-violet-500/15 text-violet-500 hover:bg-violet-500/25 transition-colors border border-violet-500/25 flex items-center gap-1.5 whitespace-nowrap"
+                        title="仅资料配置演示项目显示：下载技能文件"
+                      >
+                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        下载技能文件
+                      </a>
+                    )}
+                    {importDemoActiveForProject && importGuideMessage && (
+                      <div className="basis-full text-[11px] text-[var(--status-waiting)] leading-5">
+                        {importGuideMessage}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </SettingsCard>
+          )}
+
+          {project.kind === 'extension' ? null : (
+            <SettingsCard title="默认模型偏好" hint="本项目新建执行会话时默认套用的模型；不指定则跟随系统默认。">
+              <div>
+                <label htmlFor={`project-default-model-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
+                <select
+                  id={`project-default-model-${project.id}`}
+                  value={editDefaultModel}
+                  disabled={!canManageProject}
+                  data-text-redaction-ignore="true"
+                  data-design-id="project-default-model-select"
+                  onChange={e => setEditDefaultModel(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                  style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+                >
+                  <option value="">未指定（跟随系统默认）</option>
+                  {projectModelOptions.map(opt => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.title || opt.label || opt.key}
+                    </option>
+                  ))}
+                  {editDefaultModel && !projectModelOptions.some(opt => opt.key === editDefaultModel) && (
+                    <option value={editDefaultModel} disabled>
+                      {editDefaultModel}（当前已不可用，建议改回未指定）
+                    </option>
+                  )}
+                </select>
+              </div>
+            </SettingsCard>
+          )}
+
+          {metaErr && <div className="text-[12px] text-[var(--status-danger)]">{metaErr}</div>}
+          {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
+          </div> */}
+
+          {/* 项目级 Skill/Memory 管理器已移至「记忆技能」独立页 (见 activePane === 'context' 分支). */}
+          <div className="pt-2" style={embeddedSettingsCardStyle}>
+            <ProjectUserContextWhitelist projectId={project.id} />
+          </div>
+
+          {project.kind === 'extension' ? null : (
+            <SettingsCard title="拓展功能" hint="git worktree 默认开关、Research 研究系统，以及本项目关联的 Git 仓库。">
+              <div>
+                <ToggleSwitch
+                  checked={!editResearchEnabled && editDefaultUseWorktree}
+                  disabled={editResearchEnabled || !canManageProject}
+                  onChange={setEditDefaultUseWorktree}
+                  className="flex items-center gap-3 text-[13px]"
+                  style={{ color: 'var(--text-primary)' }}>
+                  默认使用 git worktree
+                </ToggleSwitch>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {editResearchEnabled
+                    ? '已启用研究系统，本项目强制禁用 worktree'
+                    : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
+                </p>
+              </div>
+              <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                <ToggleSwitch
+                  checked={editResearchEnabled}
+                  disabled={!canManageProject}
+                  onChange={enabled => {
+                    setEditResearchEnabled(enabled)
+                    if (enabled) setEditDefaultUseWorktree(false)
+                  }}
+                  className="flex items-center gap-3 text-[13px]"
+                  style={{ color: 'var(--text-primary)' }}>
+                  启用 Research 系统
+                </ToggleSwitch>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
+              </div>
+              <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <label className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>Git 仓库（可添加多个）</label>
+                  <button type="button"
+                    disabled={!canManageProject}
+                    onClick={() => setEditGitRepos([...editGitRepos, { url: '', name: '' }])}
+                    className="h-7 px-2.5 rounded-md text-[11px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    添加仓库
+                  </button>
+                </div>
+                {editGitRepos.length === 0 ? (
+                  <div className="text-[11px] px-3 py-2 rounded-lg border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                    暂无仓库，点击右上方"添加仓库"
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {editGitRepos.map((repo, idx) => (
+                      <div key={idx} className="grid grid-cols-1 xl:grid-cols-[8rem_minmax(0,1fr)_2.25rem] gap-2">
+                        <input value={repo.name || ''}
+                          disabled={!canManageProject}
+                          onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
+                          placeholder="别名（可选）"
+                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                        <input value={repo.url}
+                          disabled={!canManageProject}
+                          onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, url: e.target.value } : r))}
+                          placeholder="git@github.com:org/repo.git 或 https://..."
+                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                        <button type="button"
+                          disabled={!canManageProject}
+                          onClick={() => setEditGitRepos(editGitRepos.filter((_, i) => i !== idx))}
+                          title="删除仓库"
+                          aria-label="删除仓库"
+                          className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-[var(--status-danger-soft)] hover:text-[var(--status-danger)] transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                          style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                          <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </SettingsCard>
+          )}
+
+          <SettingsCard title="巡检设置 - Agent鞭策设置" hint="后台每 60s 巡检；当某会话 Agent 已停工却未清理 running.flag 时，按下方策略自动发送此消息，鞭策其继续工作。">
+            <div>
+              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
+              <ExpandableTextarea value={editForgottenFlagMessage} disabled={!canManageProject} onValueChange={setEditForgottenFlagMessage} rows={4}
+                overlayTitle="编辑自动提醒消息"
+                className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            </div>
+            <div>
+              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                      <input type="number" min={1} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
+                        value={editForgottenFlagIssueInit}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagIssueInit(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                      <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
+                        value={editForgottenFlagIssueBackoff}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagIssueBackoff(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                      <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
+                        value={editForgottenFlagIssuePatience}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagIssuePatience(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                      <input type="number" min={30} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
+                        value={editForgottenFlagResearchInit}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagResearchInit(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                      <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
+                        value={editForgottenFlagResearchBackoff}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagResearchBackoff(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                      <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
+                        value={editForgottenFlagResearchPatience}
+                        disabled={!canManageProject}
+                        onChange={e => setEditForgottenFlagResearchPatience(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
+            </div>
+          </SettingsCard>
+
+          {canManageProject && project.kind !== 'extension' && (
+            <section className="rounded-lg border overflow-hidden"
+              style={{ borderColor: 'var(--status-danger-border)', background: 'var(--bg-secondary)' }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--status-danger-border)' }}>
+                <h3 className="text-[13px] font-semibold text-[var(--status-danger)]">危险操作</h3>
+              </div>
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>删除项目</div>
+                    <p className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                      删除后，该项目及其全部 Issue、执行会话、项目知识与绑定目录资料将无法恢复。点击后需要完成多重确认。
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (canDeleteProject) {
+                        onDeleteProject()
+                        return
+                      }
+                      setShowDeletePermissionNotice(true)
+                    }}
+                    title={canDeleteProject ? '删除项目（需要多重确认）' : '查看删除限制'}
+                    data-tour="project-delete"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--status-danger-border)] bg-[var(--status-danger-soft)] px-3 text-[12px] font-medium text-[var(--status-danger)] transition-colors hover:bg-[var(--status-danger)] hover:text-[var(--status-danger-foreground)]">
+                    <Trash2 className="h-4 w-4" strokeWidth={1.8} />
+                    删除项目
+                  </button>
+                </div>
+                {showDeletePermissionNotice && !canDeleteProject && (
+                  <div
+                    role="alert"
+                    className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
+                    style={{ borderColor: 'var(--status-waiting-border)', background: 'var(--status-waiting-soft)', color: 'var(--text-secondary)' }}>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-waiting)]" strokeWidth={1.8} />
+                    <span>{deletePolicy?.denial_reason || '当前账号没有删除此项目的权限。请联系项目创建者或系统管理员处理。'}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+        )}
+      </div>
+      {gitReadonlyViewerOpen && project?.id && (
+        <GitChangesViewer
+          projectId={project.id}
+          initialView="history"
+          sourceLabel="项目设置 · 中枢"
+          onClose={() => setGitReadonlyViewerOpen(false)}
+        />
+      )}
+    </section>
+  )
+}

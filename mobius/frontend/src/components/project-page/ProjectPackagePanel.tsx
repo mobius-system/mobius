@@ -171,7 +171,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>打包下载</h3>
             {selected.size > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full border border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-primary)]">
+              <span className="text-[11px] px-2 py-0.5 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-400">
                 已选 {selected.size} 项 · {formatBytes(selectedSize)}
               </span>
             )}
@@ -184,7 +184,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
           type="button"
           onClick={loadEntries}
           disabled={loading || downloading}
-          className="h-8 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] disabled:opacity-50 inline-flex items-center gap-1.5"
+          className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50 inline-flex items-center gap-1.5"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
           刷新
@@ -198,7 +198,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
       )}
 
       {error && (
-        <div className="workbench-status-danger text-[12px] px-3 py-2 rounded-lg border">
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {error}
         </div>
       )}
@@ -258,7 +258,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
                     disabled={downloading}
                     className="w-4 h-4 accent-blue-500 cursor-pointer disabled:cursor-not-allowed"
                   />
-                  <Icon className="h-4 w-4 text-[var(--accent-primary)]" strokeWidth={1.8} />
+                  <Icon className="h-4 w-4 text-blue-400" strokeWidth={1.8} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[13px] truncate" title={entry.name}>{entry.name}</span>

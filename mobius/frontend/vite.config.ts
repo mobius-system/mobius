@@ -71,6 +71,10 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      input: {
+        main: 'index.html',
+        easyNative: 'easy-native.html',
+      },
       output: {
         manualChunks,
       },

@@ -13,19 +13,7 @@ import { useStore } from '../store'
 type Status = 'connecting' | 'connected' | 'closed' | 'error' | 'reconnecting'
 export type WebTerminalMode = 'cwd' | 'agent'
 
-export function WebTerminalSurface({
-  sessionId,
-  mode = 'cwd',
-  workingDirectoryLabel,
-  onClose,
-  variant = 'drawer',
-}: {
-  sessionId: string | undefined
-  mode?: WebTerminalMode
-  workingDirectoryLabel?: string
-  onClose?: () => void
-  variant?: 'drawer' | 'dock' | 'modal'
-}) {
+export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { sessionId: string | undefined; mode?: WebTerminalMode; onClose: () => void }) {
   const { theme, token } = useStore()
   const isDark = theme !== 'light'
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -34,7 +22,6 @@ export function WebTerminalSurface({
   const wsRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState<Status>('connecting')
   const [errMsg, setErrMsg] = useState('')
-  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     if (!sessionId) { setErrMsg('当前没有活动会话, 无法打开终端'); setStatus('error'); return }
@@ -179,7 +166,7 @@ export function WebTerminalSurface({
       fitRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryKey])
+  }, [])
 
   const statusMeta: Record<Status, { label: string; color: string }> = {
     connecting: { label: '连接中', color: '#fbbf24' },
@@ -191,12 +178,12 @@ export function WebTerminalSurface({
   const sm = statusMeta[status]
 
   return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
-        className={`web-terminal-surface relative flex h-full min-h-0 w-full flex-col overflow-hidden ${variant === 'modal' ? 'rounded-2xl shadow-2xl' : 'rounded-[var(--radius-control)]'}`}
-        style={variant === 'modal'
-          ? { width: 'min(92vw, 1100px)', height: 'min(82vh, 720px)', background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
-          : { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
-        onClick={event => event.stopPropagation()}
+        className="relative flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ width: 'min(92vw, 1100px)', height: 'min(82vh, 720px)', background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+        onClick={e => e.stopPropagation()}
       >
         {/* 头部 */}
         <div className="flex items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
@@ -204,11 +191,6 @@ export function WebTerminalSurface({
           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
             {mode === 'agent' ? 'Agent 后台终端' : 'Web 终端'}
           </span>
-          {workingDirectoryLabel && (
-            <span className="min-w-0 truncate text-[10px]" style={{ color: 'var(--text-muted)' }} title={workingDirectoryLabel} data-terminal-working-directory>
-              {mode === 'agent' ? '会话后台' : `工作目录 · ${workingDirectoryLabel}`}
-            </span>
-          )}
           {sessionId && (
             <span className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
               sid: {sessionId.slice(0, 8)}
@@ -218,15 +200,13 @@ export function WebTerminalSurface({
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: sm.color }} />
             {sm.label}
           </span>
-          {onClose && (
-            <button
-              onClick={onClose}
-              title="关闭"
-              className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
-              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-              <X className="h-4 w-4" strokeWidth={1.75} />
-            </button>
-          )}
+          <button
+            onClick={onClose}
+            title="关闭"
+            className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+            <X className="h-4 w-4" strokeWidth={1.75} />
+          </button>
         </div>
 
         {/* 终端主体 (padding 框颜色与 xterm 背景一致, 避免亮色主题出现暗框) */}
@@ -237,21 +217,11 @@ export function WebTerminalSurface({
               <span className="text-[13px]" style={{ color: status === 'error' ? '#f87171' : '#cbd5e1' }}>
                 {errMsg || (status === 'closed' ? '终端连接已断开' : '')}
               </span>
-              <button type="button" onClick={() => { setErrMsg(''); setStatus('connecting'); setRetryKey(key => key + 1) }} className="workbench-control-md border px-3 text-[11px]" style={{ borderColor: 'rgba(255,255,255,.25)', color: '#cbd5e1' }}>
-                重试连接
-              </button>
+              <span className="text-[11px]" style={{ color: '#94a3b8' }}>关闭弹窗后可重新打开</span>
             </div>
           )}
         </div>
       </div>
-  )
-}
-
-export function WebTerminalModal({ sessionId, mode = 'cwd', workingDirectoryLabel, onClose }: { sessionId: string | undefined; mode?: WebTerminalMode; workingDirectoryLabel?: string; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <WebTerminalSurface sessionId={sessionId} mode={mode} workingDirectoryLabel={workingDirectoryLabel} onClose={onClose} variant="modal" />
     </div>
   )
 }

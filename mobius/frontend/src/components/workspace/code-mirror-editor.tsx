@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView, keymap, type KeyBinding } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
-import type { Extension, Text } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
 import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { syntaxHighlighting } from '@codemirror/language'
 
@@ -17,31 +17,6 @@ type CodeMirrorEditorProps = {
   wrap?: boolean
   /** Alt+Z / 工具栏按钮触发的切换回调. */
   onToggleWrap?: () => void
-  /** 显式从文件预览进入编辑器时的初始源码位置；普通文件树点击不传。 */
-  initialLine?: number | null
-  initialColumn?: number | null
-  initialEndLine?: number | null
-  /** 即使路径和范围相同，也允许一次新的显式打开请求重新定位。 */
-  initialLocationKey?: string | number | null
-}
-
-export type CodeEditorSelection = { anchor: number; head: number }
-
-/** 把 1-based 文件位置转成 CodeMirror offset，并把越界位置夹到当前文档。 */
-export function editorSelectionForLocation(
-  doc: Text,
-  line: number | null | undefined,
-  column?: number | null,
-  endLine?: number | null,
-): CodeEditorSelection | null {
-  if (!Number.isFinite(line) || Number(line) < 1 || doc.lines < 1) return null
-  const startNumber = Math.max(1, Math.min(doc.lines, Math.trunc(Number(line))))
-  const startLine = doc.line(startNumber)
-  const requestedColumn = Number.isFinite(column) && Number(column) > 0 ? Math.trunc(Number(column)) : 1
-  const anchor = Math.min(startLine.to, startLine.from + requestedColumn - 1)
-  if (!Number.isFinite(endLine) || Number(endLine) < 1) return { anchor, head: anchor }
-  const endNumber = Math.max(startNumber, Math.min(doc.lines, Math.trunc(Number(endLine))))
-  return { anchor, head: doc.line(endNumber).to }
 }
 
 const main_text_color_dark = '#c9c9c9'
@@ -100,20 +75,8 @@ const LANG_LOADERS: Record<string, () => Promise<Extension>> = {
   sql: () => import('@codemirror/lang-sql').then(m => m.sql()),
 }
 
-export function CodeMirrorEditor({
-  fileName,
-  value,
-  skin,
-  onChange,
-  wrap = false,
-  onToggleWrap,
-  initialLine = null,
-  initialColumn = null,
-  initialEndLine = null,
-  initialLocationKey = null,
-}: CodeMirrorEditorProps) {
+export function CodeMirrorEditor({ fileName, value, skin, onChange, wrap = false, onToggleWrap }: CodeMirrorEditorProps) {
   const [langExt, setLangExt] = useState<Extension | null>(null)
-  const [editorView, setEditorView] = useState<EditorView | null>(null)
 
   useEffect(() => {
     const key = langKeyForFile(fileName)
@@ -143,31 +106,10 @@ export function CodeMirrorEditor({
     return skin === 'dark' ? [...base, darkSkinOverride, syntaxHighlighting(oneDarkHighlightStyle)] : base
   }, [langExt, skin, wrap, onToggleWrap])
 
-  const captureEditorView = useCallback((view: EditorView) => {
-    setEditorView(view)
-  }, [])
-
-  useEffect(() => {
-    if (!editorView || initialLine === null) return
-    // @uiw/react-codemirror 同一轮还会把新的 value 写入 view；下一帧再按最终 doc 定位，
-    // 避免切文件时用上一份文档的行数计算 selection。
-    const frame = window.requestAnimationFrame(() => {
-      const selection = editorSelectionForLocation(editorView.state.doc, initialLine, initialColumn, initialEndLine)
-      if (!selection) return
-      editorView.dispatch({
-        selection,
-        effects: EditorView.scrollIntoView(selection.anchor, { y: 'center' }),
-      })
-      editorView.focus()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [editorView, fileName, initialColumn, initialEndLine, initialLine, initialLocationKey])
-
   return (
     <CodeMirror
       value={value}
       onChange={onChange}
-      onCreateEditor={captureEditorView}
       theme={theme}
       extensions={extensions}
       height="100%"

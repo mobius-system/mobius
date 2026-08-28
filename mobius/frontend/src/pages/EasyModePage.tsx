@@ -4,9 +4,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
-  CircleDot,
-  FlaskConical,
   FolderOpen,
   History,
   Loader2,
@@ -16,7 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
-import { buildNormalModeTargetUrl, useLayoutMode } from '../services/layout-mode'
+import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import {
@@ -29,7 +26,8 @@ import {
 import { ChatArea } from '../components/chat'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
-import { Loading, WorkbenchTopNav, timeAgoPrecise } from '../components/shell'
+import { SessionGroupTree } from '../components/session-group-tree'
+import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 
 type RecentSession = {
@@ -86,10 +84,10 @@ function projectChipStyle(active: boolean): CSSProperties {
 }
 
 function sessionStatus(session: RecentSession) {
-  if (session.agent_status === 'running') return { label: '执行中', color: 'var(--status-running)', bg: 'var(--status-running-soft)' }
-  if (session.agent_status === 'pending') return { label: '启动中', color: 'var(--status-waiting)', bg: 'var(--status-waiting-soft)' }
-  if (session.agent_status === 'waiting') return { label: '待命', color: 'var(--status-waiting)', bg: 'var(--status-waiting-soft)' }
-  if (session.agent_status === 'completed' || session.status === 'completed') return { label: '已完成', color: 'var(--status-success)', bg: 'var(--status-success-soft)' }
+  if (session.agent_status === 'running') return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
+  if (session.agent_status === 'pending') return { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
+  if (session.agent_status === 'waiting') return { label: '待命', color: '#38bdf8', bg: 'rgba(56,189,248,.10)' }
+  if (session.agent_status === 'completed' || session.status === 'completed') return { label: '已完成', color: '#34d399', bg: 'rgba(52,211,153,.10)' }
   return { label: '空闲', color: 'var(--text-muted)', bg: 'var(--bg-card)' }
 }
 
@@ -238,19 +236,23 @@ export default function EasyModePage() {
   }, [normalizedSessionQuery])
 
   useEffect(() => {
-    if (!layoutMode || layoutMode === 'easy_mode' || loading) return
+    if (!layoutMode || layoutMode === 'easy_mode') return
+    if (loading) return
     const ctx = currentSession
       || (sessionParam ? sessions.find(session => session.session_id === sessionParam) : null)
       || sessions[0]
       || null
-    navigate(buildNormalModeTargetUrl({
-      user: params.user,
-      projectId: ctx?.project_id,
-      issueId: ctx?.issue_id,
-      researchId: ctx?.research_id,
-      scopeType: ctx?.scope_type ?? null,
-      sessionId: ctx?.session_id || sessionParam || undefined,
-    }), { replace: true })
+    navigate(
+      buildNormalModeTargetUrl({
+        user: params.user,
+        projectId: ctx?.project_id,
+        issueId: ctx?.issue_id,
+        researchId: ctx?.research_id,
+        scopeType: ctx?.scope_type ?? null,
+        sessionId: ctx?.session_id || sessionParam || undefined,
+      }),
+      { replace: true },
+    )
   }, [layoutMode, params.user, navigate, currentSession, sessions, sessionParam, loading])
 
   useEffect(() => {
@@ -489,7 +491,7 @@ export default function EasyModePage() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)' }} data-page="easy-mode">
-      <WorkbenchTopNav />
+      <TopNav />
       <div className="flex min-h-0 flex-1">
         <ResizablePanel
           storageKey="mobius:ui:sidebar:easy-mode-recent"
@@ -512,7 +514,7 @@ export default function EasyModePage() {
               )}
             </div>
 
-            <label className="mt-2.5 flex h-9 items-center gap-2 rounded-lg border px-2.5 focus-within:ring-2 focus-within:ring-[var(--focus-ring-soft)]" style={{ borderColor: 'var(--border-color)', background: 'var(--input-bg)' }}>
+            <label className="mt-2.5 flex h-9 items-center gap-2 rounded-lg border px-2.5 focus-within:ring-2 focus-within:ring-blue-500/20" style={{ borderColor: 'var(--border-color)', background: 'var(--input-bg)' }}>
               <SearchIcon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
               <input
                 value={sessionQuery}
@@ -543,7 +545,7 @@ export default function EasyModePage() {
                   }}
                   aria-haspopup="menu"
                   aria-expanded={projectFilterOpen}
-                  className="flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                  className="flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
                   style={projectChipStyle(!!effectiveProject)}
                   title={selectedProjectOption?.name || '所有近期工作'}
                 >
@@ -598,7 +600,7 @@ export default function EasyModePage() {
                           style={{ color: 'var(--text-primary)', background: effectiveProject === project.id ? 'var(--bg-active)' : undefined }}
                         >
                           <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                          {project.runningCount > 0 && <span className="text-[10px] text-[var(--status-running)]">运行 {project.runningCount}</span>}
+                          {project.runningCount > 0 && <span className="text-[10px] text-amber-400">运行 {project.runningCount}</span>}
                           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{project.count ? `近期 ${project.count}` : '暂无近期会话'}</span>
                           {effectiveProject === project.id && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
                         </button>
@@ -611,7 +613,7 @@ export default function EasyModePage() {
                 type="button"
                 onClick={() => openCreateSession()}
                 data-testid="easy-new-session"
-                className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
                 style={{
                   borderColor: 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))',
                   color: 'var(--accent-primary)',
@@ -633,7 +635,7 @@ export default function EasyModePage() {
                   {activeHierarchySearch.truncated && <span>仅显示最相关结果</span>}
                 </div>
                 {hierarchySearchError ? (
-                  <div className="workbench-status-danger rounded-lg border px-3 py-5 text-center text-[11px]">{hierarchySearchError}</div>
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-5 text-center text-[11px] text-red-300">{hierarchySearchError}</div>
                 ) : !hierarchySearchLoading && activeHierarchySearch.projects.length === 0 ? (
                   <div className="px-3 py-10 text-center">
                     <SearchIcon className="mx-auto h-7 w-7" style={{ color: 'var(--text-muted)' }} />
@@ -648,7 +650,7 @@ export default function EasyModePage() {
                         setSessionQuery('')
                         selectProjectFilter(String(group.project.id))
                       }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
                       title={`切换到项目：${group.project.name || group.project.id}`}
                     >
                       <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
@@ -667,7 +669,7 @@ export default function EasyModePage() {
                               data-search-id={hit.id}
                               onClick={() => void openSearchSession(group, hit)}
                               disabled={!!openingSearchResult}
-                              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:opacity-60"
+                              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-60"
                             >
                               <span className="mt-0.5 flex-shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium" style={{ background: 'var(--bg-active)', color: 'var(--text-secondary)' }}>{hierarchyHitLabel(hit.kind)}</span>
                               <span className="min-w-0 flex-1">
@@ -688,7 +690,7 @@ export default function EasyModePage() {
             ) : loading ? (
               <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>正在加载工作导航...</div>
             ) : error ? (
-              <div className="workbench-status-danger rounded-lg border px-3 py-5 text-center text-[12px]">{error}</div>
+              <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-5 text-center text-[12px] text-red-300">{error}</div>
             ) : visibleSessions.length === 0 ? (
               <div className="px-3 py-10 text-center">
                 <FolderOpen className="mx-auto h-7 w-7" style={{ color: 'var(--text-muted)' }} />
@@ -699,110 +701,61 @@ export default function EasyModePage() {
                   {selectedProjectOption ? '可以在当前项目中创建一个新会话' : '创建会话后会显示在这里'}
                 </div>
                 {selectedProjectOption && workView === 'recent' && (
-                  <button type="button" onClick={() => openCreateSession()} className="mt-3 rounded-lg border px-3 py-2 text-[11px] font-medium text-[var(--accent-primary)] hover:bg-[var(--accent-soft)]" style={{ borderColor: 'var(--accent-border)' }}>
+                  <button type="button" onClick={() => openCreateSession()} className="mt-3 rounded-lg border px-3 py-2 text-[11px] font-medium text-blue-400 hover:bg-blue-500/10" style={{ borderColor: 'rgba(59,130,246,.28)' }}>
                     在当前项目新建会话
                   </button>
                 )}
               </div>
             ) : (
-              <div aria-label="按项目与任务分组的近期工作" data-testid="easy-session-tree">
-                {visibleSessionGroups.map(group => {
-                  const collapsed = collapsedSessionGroups.has(group.key)
-                  const isResearch = group.scopeType === 'research'
-                  const groupContainsCurrent = group.sessions.some(session => session.session_id === sessionParam) && contextMatchesProject
-                  const groupDomId = `easy-session-group-${encodeURIComponent(group.key).replace(/%/g, '-')}`
+              <SessionGroupTree
+                ariaLabel="按项目与任务分组的近期工作"
+                groups={visibleSessionGroups}
+                currentSessionId={sessionParam}
+                highlightCurrentGroup={contextMatchesProject}
+                collapsedKeys={collapsedSessionGroups}
+                onToggleGroup={toggleSessionGroup}
+                testIdPrefix="easy-session"
+                domIdPrefix="easy-session-group"
+                renderSession={session => {
+                  const isResearch = session.scope_type === 'research'
+                  const active = session.session_id === sessionParam && contextMatchesProject
+                  const status = sessionStatus(session)
                   return (
-                    <section
-                      key={group.key}
-                      className="mb-1.5"
-                      data-testid="easy-session-group"
-                      data-project-id={group.projectId}
-                      data-subject-id={group.subjectId}
-                      data-scope-type={group.scopeType}
+                    <button
+                      type="button"
+                      onClick={() => selectSession(session)}
+                      className="relative mt-0.5 flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                      style={{
+                        borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
+                        background: active ? 'var(--bg-active)' : undefined,
+                      }}
+                      data-session-id={session.session_id}
+                      aria-current={active ? 'true' : undefined}
+                      title={session.name || session.session_id}
                     >
-                      <button
-                        type="button"
-                        aria-expanded={!collapsed}
-                        aria-controls={groupDomId}
-                        onClick={() => toggleSessionGroup(group.key)}
-                        className="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                        style={{ background: groupContainsCurrent ? 'color-mix(in srgb, var(--bg-active) 58%, transparent)' : undefined }}
-                        title={`${group.projectName} / ${group.subjectTitle}`}
-                      >
-                        {collapsed
-                          ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                          : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
-                        <span
-                          className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md"
-                          style={{
-                            background: isResearch ? 'rgba(168,85,247,0.12)' : 'var(--accent-soft)',
-                            color: isResearch ? '#c084fc' : 'var(--accent-primary)',
-                          }}
-                        >
-                          {isResearch ? <FlaskConical className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
-                          <span className="block truncate text-[12px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
-                        </span>
-                        <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
-                          <span className="text-[9px] font-medium" style={{ color: isResearch ? '#c084fc' : 'var(--accent-primary)' }}>{isResearch ? '研究' : '任务'}</span>
-                          <span className="text-[9px] tabular-nums" style={{ color: group.activeCount ? 'var(--status-running)' : 'var(--text-muted)' }}>
-                            {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
+                      <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>
+                            {isResearch ? '智能体' : '会话'}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>
+                            {session.name || session.session_id}
                           </span>
                         </span>
-                      </button>
-
-                      <div
-                        id={groupDomId}
-                        hidden={collapsed}
-                        className="relative ml-[22px] border-l pl-2"
-                        style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}
-                      >
-                        {group.sessions.map(session => {
-                          const active = session.session_id === sessionParam && contextMatchesProject
-                          const status = sessionStatus(session)
-                          return (
-                            <button
-                              key={session.session_id}
-                              type="button"
-                              onClick={() => selectSession(session)}
-                              className="relative mt-0.5 flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                              style={{
-                                borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent',
-                                background: active ? 'var(--bg-active)' : undefined,
-                              }}
-                              data-session-id={session.session_id}
-                              aria-current={active ? 'true' : undefined}
-                              title={session.name || session.session_id}
-                            >
-                              <span className="absolute -left-2.5 top-1/2 w-2 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
-                              <span className="min-w-0 flex-1">
-                                <span className="flex min-w-0 items-center gap-1.5">
-                                  <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>
-                                    {isResearch ? '智能体' : '会话'}
-                                  </span>
-                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>
-                                    {session.name || session.session_id}
-                                  </span>
-                                </span>
-                                <span className="mt-0.5 flex items-center gap-2 text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>
-                                  <span>{timeAgoPrecise(session.last_active || '')}</span>
-                                  <span className="inline-flex items-center gap-1"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
-                                </span>
-                              </span>
-                              <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium" style={{ color: status.color, background: status.bg }}>
-                                {status.label}
-                              </span>
-                              {active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </section>
+                        <span className="mt-0.5 flex items-center gap-2 text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                          <span>{timeAgoPrecise(session.last_active || '')}</span>
+                          <span className="inline-flex items-center gap-1"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
+                        </span>
+                      </span>
+                      <span className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium" style={{ color: status.color, background: status.bg }}>
+                        {status.label}
+                      </span>
+                      {active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
+                    </button>
                   )
-                })}
-              </div>
+                }}
+              />
             )}
           </div>
         </ResizablePanel>
@@ -831,7 +784,7 @@ export default function EasyModePage() {
                 {workView !== 'recent' ? '切换到“最近”查看其他工作，或创建一个新会话。' : selectedProjectOption ? '这个项目不在最近 50 个会话中。新建会话后可以直接从这里继续工作。' : '选择一个项目或创建会话后开始工作。'}
               </div>
               {selectedProjectOption && workView === 'recent' && (
-                <button type="button" onClick={() => openCreateSession()} className="mt-4 rounded-lg bg-[var(--accent-primary)] px-4 py-2 text-[12px] font-medium text-[var(--text-on-accent)] hover:opacity-90">
+                <button type="button" onClick={() => openCreateSession()} className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-[12px] font-medium text-white hover:bg-blue-600">
                   在当前项目新建会话
                 </button>
               )}

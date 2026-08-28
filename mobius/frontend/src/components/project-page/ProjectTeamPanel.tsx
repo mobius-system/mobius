@@ -33,7 +33,7 @@ const ROLE_LABELS: Record<Role, string> = {
 const ROLE_OPTIONS: Role[] = ['member', 'manager', 'viewer', 'owner']
 
 const ROLE_BADGE_STYLE: Record<Role, React.CSSProperties> = {
-  owner: { background: 'var(--accent-soft)', color: 'var(--accent-primary)', borderColor: 'var(--accent-border)' },
+  owner: { background: 'rgba(59,130,246,0.16)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.32)' },
   manager: { background: 'rgba(16,185,129,0.14)', color: '#34d399', borderColor: 'rgba(16,185,129,0.30)' },
   member: { background: 'rgba(148,163,184,0.14)', color: 'var(--text-secondary)', borderColor: 'var(--input-border)' },
   viewer: { background: 'rgba(148,163,184,0.10)', color: 'var(--text-muted)', borderColor: 'var(--input-border)' },
@@ -201,7 +201,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
             <button key={tab.key} type="button" onClick={() => setFilterRole(tab.key)}
               className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors"
               style={active
-                ? { background: 'var(--surface-active)', borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' }
+                ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
                 : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               {tab.label}
               <span style={{ opacity: 0.7 }}>{countFor(tab.key)}</span>
@@ -216,7 +216,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="搜索成员姓名或账号..."
-          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[12px] outline-none focus:border-[var(--accent-border)]"
+          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
           style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
         />
         {canManage && (
@@ -285,7 +285,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       )}
 
       {err && (
-        <div className="workbench-status-danger rounded-lg border px-3 py-2 text-[12px]">
+        <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.08)', color: '#f87171' }}>
           {err}
         </div>
       )}
@@ -351,7 +351,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
                         {canEditThis ? (
                           <button type="button" onClick={() => removeMember(m.user_id)} disabled={busyId === m.user_id}
                             className="h-7 px-2 rounded-md text-[11px] border transition-colors"
-                            style={{ borderColor: 'var(--status-danger-border)', color: 'var(--status-danger)', background: 'var(--status-danger-soft)' }}>
+                            style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
                             移除
                           </button>
                         ) : null}

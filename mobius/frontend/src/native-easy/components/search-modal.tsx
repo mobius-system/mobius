@@ -1,0 +1,681 @@
+// =====================================================================
+// 全局会话搜索弹窗 — 顶栏搜索按钮触发
+//
+// 输入关键词 → GET /api/search → 展示命中的每个 session:
+//   项目 › Issue/Research › Session  +  命中片段 (关键词高亮)
+// 点结果卡 → SPA 内进入该 Session.
+//
+// 搜索为用户主动触发 (非轮询); 前端 450ms 防抖 + 最短 2 字符, 避免抖打的后端压力.
+// =====================================================================
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { api, useStore } from '../store'
+import {
+  sessionNavigation,
+  type WorkbenchNavigate,
+} from '../services/workbench-navigation'
+import {
+  resolvedSessionId,
+  searchInputIntent,
+  sessionLookupErrorMessage,
+  SESSION_UNAVAILABLE_MESSAGE,
+} from '../services/search-session-intent'
+import {
+  Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
+  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy,
+} from 'lucide-react'
+
+type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
+type SearchResult = {
+  session_id: string
+  session_name: string
+  project_id: string
+  project_name: string
+  issue_id: string | null
+  issue_title: string | null
+  research_id: string | null
+  research_title: string | null
+  scope_type: 'issue' | 'research'
+  last_active: string
+  model: string
+  fragments: Fragment[]
+}
+
+type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
+
+type SearchRetryAction =
+  | { kind: 'keyword'; query: string; range: RangeKey; caseSensitive: boolean; wholeWord: boolean }
+  | { kind: 'session'; query: string; sessionId: string; match?: string; timestamp?: string }
+
+const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
+  user: { label: '用户', color: 'var(--accent-primary)', bg: 'var(--accent-soft)' },
+  assistant: { label: '助手', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  tool: { label: '工具', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  thinking: { label: '思考', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  error: { label: '错误', color: 'var(--status-danger)', bg: 'var(--status-danger-soft)' },
+  system: { label: '系统', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' },
+}
+function roleMeta(role: string) {
+  return ROLE_META[role] || { label: role || '消息', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' }
+}
+
+// 把片段按关键词切开, 命中段包 <mark>. 与后端 buildMatcher 同口径:
+// 大小写敏感 / 全字匹配 (全字用 \w 词边界, CJK 视为边界).
+function Highlight({ text, query, caseSensitive, wholeWord }: { text: string; query: string; caseSensitive: boolean; wholeWord: boolean }) {
+  const parts = useMemo(() => {
+    const q = query.trim()
+    if (!q) return [text]
+    let re: RegExp
+    try {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const flags = caseSensitive ? 'g' : 'gi'
+      re = wholeWord ? new RegExp(`(?<![\\w])${escaped}(?![\\w])`, flags) : new RegExp(escaped, flags)
+    } catch {
+      return [text]
+    }
+    const out: Array<{ s: string; hit: boolean }> = []
+    let last = 0
+    let m: RegExpExecArray | null
+    re.lastIndex = 0
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) out.push({ s: text.slice(last, m.index), hit: false })
+      out.push({ s: m[0], hit: true })
+      last = m.index + m[0].length
+      if (m[0].length === 0) re.lastIndex++ // 防止零宽匹配死循环
+    }
+    if (last < text.length) out.push({ s: text.slice(last), hit: false })
+    return out.map((p, k) => (p.hit
+      ? <mark key={k} className="rounded px-0.5" style={{ background: 'rgba(250,204,21,0.45)', color: 'inherit' }}>{p.s}</mark>
+      : <span key={k}>{p.s}</span>))
+  }, [text, query, caseSensitive, wholeWord])
+  return <>{parts}</>
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return ''
+  const ms = new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return ''
+  const diff = Date.now() - ms
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return '刚刚'
+  if (m < 60) return `${m} 分钟前`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} 小时前`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d} 天前`
+  return new Date(iso).toLocaleDateString('zh-CN')
+}
+
+// 时间范围过滤选项: 默认仅扫描 7 天内创建的会话以加速搜索 (后端按 created_at 过滤候选集).
+type RangeKey = '1d' | '7d' | '30d' | 'all'
+const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
+  { value: '1d', label: '1天内' },
+  { value: '7d', label: '7天内' },
+  { value: '30d', label: '1个月内' },
+  { value: 'all', label: '全部' },
+]
+
+export function SearchModal({
+  onClose,
+  onNavigate,
+  returnFocusRef,
+}: {
+  onClose: () => void
+  onNavigate: WorkbenchNavigate
+  returnFocusRef?: RefObject<HTMLElement | null>
+}) {
+  const { theme, user } = useStore()
+  const dark = theme !== 'light'
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [meta, setMeta] = useState<{ scanned?: number; candidates?: number; truncated?: boolean } | null>(null)
+  const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
+  const [range, setRange] = useState<RangeKey>('7d')
+  const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || '7天内'
+  const reqId = useRef(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const initialFocusRef = useRef<HTMLElement | null>(null)
+  const navigationSucceededRef = useRef(false)
+  const navigationAttemptRef = useRef(0)
+  const [openingSessionId, setOpeningSessionId] = useState('')
+  const [retryAction, setRetryAction] = useState<SearchRetryAction | null>(null)
+  // 匹配选项: caseSensitive 区分大小写, wholeWord 全字匹配 (与后端 /api/search 的 case/word 参数同口径).
+  const [caseSensitive, setCaseSensitive] = useState(false)
+  const [wholeWord, setWholeWord] = useState(false)
+  // 搜索结果先打开命中预览，用户确认后才离开当前搜索弹窗进入会话。
+  // 这既让上下文可复制，也避免点击整张结果卡时误跳到非预期片段。
+  const [selectedFragment, setSelectedFragment] = useState<SelectedSearchFragment | null>(null)
+  // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
+  const optsRef = useRef({ caseSensitive, wholeWord, range })
+  optsRef.current = { caseSensitive, wholeWord, range }
+
+  useEffect(() => {
+    initialFocusRef.current = returnFocusRef?.current
+      || (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus())
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (navigationSucceededRef.current) return
+      const requested = returnFocusRef?.current
+      const target = requested?.isConnected ? requested : initialFocusRef.current
+      window.requestAnimationFrame(() => { if (target?.isConnected) target.focus() })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!err) return
+    window.requestAnimationFrame(() => errorRef.current?.focus())
+  }, [err])
+
+  const closeFragmentPreview = () => {
+    const sessionId = selectedFragment?.result.session_id
+    navigationAttemptRef.current += 1
+    if (openingSessionId) {
+      reqId.current += 1
+      abortRef.current?.abort()
+      setLoading(false)
+    }
+    setOpeningSessionId('')
+    setSelectedFragment(null)
+    window.requestAnimationFrame(() => {
+      if (!sessionId) return inputRef.current?.focus()
+      Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('[data-search-result]') || [])
+        .find(element => element.dataset.searchResult === sessionId)
+        ?.focus()
+    })
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        if (selectedFragment) closeFragmentPreview()
+        else onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const scope = selectedFragment
+        ? document.querySelector<HTMLElement>('[data-search-fragment-preview]')
+        : dialogRef.current
+      const focusable = Array.from(scope?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) || []).filter(element => element.getClientRects().length > 0)
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !scope?.contains(document.activeElement))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !scope?.contains(document.activeElement))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [selectedFragment, onClose])
+
+  // 流式搜索: GET /api/search?stream=1 走 SSE, result 事件随扫描完成逐条下发, 前端增量渲染.
+  // 不能用 EventSource (无法带 Authorization 头), 改用 fetch + ReadableStream 手解 SSE 帧.
+  const runSearch = (term: string, rangeArg: RangeKey = optsRef.current.range, cs: boolean = optsRef.current.caseSensitive, ww: boolean = optsRef.current.wholeWord) => {
+    const t = term.trim()
+    if (t.length < 2) {
+      abortRef.current?.abort()
+      setResults([]); setMeta(null); setLoading(false); setErr(''); setSearched(false); setRetryAction(null)
+      return
+    }
+    const id = ++reqId.current
+    // 取消上一个在途请求 (新查询 / 改选项 / 关弹窗都会触发).
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null); setRetryAction(null)
+    const params = new URLSearchParams({ q: t, limit: '50', range: rangeArg, stream: '1' })
+    if (cs) params.set('case', '1')
+    if (ww) params.set('word', '1')
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cc-token') : null
+    fetch(`/api/search?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: ctrl.signal,
+    }).then((res) => {
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      const handleFrame = (event: string, payload: any) => {
+        if (id !== reqId.current) return // 陈旧响应丢弃
+        if (event === 'result') {
+          setResults(prev => [...prev, payload as SearchResult])
+        } else if (event === 'start') {
+          setMeta({ candidates: payload?.candidate_sessions })
+        } else if (event === 'done') {
+          setMeta({ scanned: payload?.scanned_sessions, candidates: payload?.candidate_sessions, truncated: !!payload?.truncated })
+          setLoading(false)
+        } else if (event === 'error') {
+          setRetryAction({ kind: 'keyword', query: t, range: rangeArg, caseSensitive: cs, wholeWord: ww })
+          setErr(payload?.error || '搜索失败'); setLoading(false)
+        }
+      }
+      const dispatch = () => {
+        // SSE 帧以空行 (\n\n) 分隔; 每帧内 event:/data: 行. data 行可能多行 (payload 含换行时).
+        let sep: number
+        while ((sep = buf.indexOf('\n\n')) >= 0) {
+          const frame = buf.slice(0, sep)
+          buf = buf.slice(sep + 2)
+          let event = 'message'
+          const dataLines: string[] = []
+          for (const line of frame.split('\n')) {
+            if (line.startsWith('event:')) event = line.slice(6).trim()
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
+          }
+          if (dataLines.length === 0) continue // 注释帧 / keepalive
+          let payload: any
+          try { payload = JSON.parse(dataLines.join('\n')) } catch { continue }
+          handleFrame(event, payload)
+        }
+      }
+      const pump = (): Promise<void> => reader.read().then(({ done, value }) => {
+        if (done) { if (id === reqId.current) setLoading(false); return }
+        buf += dec.decode(value, { stream: true })
+        dispatch()
+        return pump()
+      })
+      return pump()
+    }).catch((e: any) => {
+      if (e?.name === 'AbortError') return
+      if (id !== reqId.current) return
+      setRetryAction({ kind: 'keyword', query: t, range: rangeArg, caseSensitive: cs, wholeWord: ww })
+      setErr(e?.message || '搜索失败'); setLoading(false)
+    })
+  }
+
+  const openSessionId = async ({
+    query,
+    sessionId,
+    match,
+    timestamp,
+    fromExactInput = false,
+  }: {
+    query: string
+    sessionId: string
+    match?: string
+    timestamp?: string
+    fromExactInput?: boolean
+  }) => {
+    const attempt = ++navigationAttemptRef.current
+    const request = ++reqId.current
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    const retry: SearchRetryAction = { kind: 'session', query, sessionId, match, timestamp }
+    setOpeningSessionId(sessionId)
+    setLoading(true)
+    setErr('')
+    setRetryAction(null)
+    if (fromExactInput) {
+      setResults([])
+      setMeta(null)
+      setSearched(true)
+      setSelectedFragment(null)
+    }
+    try {
+      const session = await api(`/api/tasks/${encodeURIComponent(sessionId)}`, { signal: ctrl.signal })
+      if (attempt !== navigationAttemptRef.current) return
+      const verifiedSessionId = resolvedSessionId(sessionId, session)
+      if (!verifiedSessionId) throw new Error(SESSION_UNAVAILABLE_MESSAGE)
+      const destination = sessionNavigation(user?.id || '', verifiedSessionId, { match, timestamp })
+      onNavigate(destination.path, { state: destination.state })
+      navigationSucceededRef.current = true
+      onClose()
+    } catch (reason) {
+      if ((reason as { name?: string })?.name === 'AbortError') return
+      if (attempt !== navigationAttemptRef.current) return
+      setSelectedFragment(null)
+      setRetryAction(retry)
+      setErr(sessionLookupErrorMessage(reason))
+    } finally {
+      if (attempt === navigationAttemptRef.current && request === reqId.current) {
+        setOpeningSessionId('')
+        setLoading(false)
+      }
+    }
+  }
+
+  // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
+  // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
+  const openSession = (r: SearchResult, frag?: Fragment) => {
+    const first = frag || r.fragments[0]
+    return openSessionId({
+      query: q,
+      sessionId: r.session_id,
+      match: first?.uuid || undefined,
+      timestamp: first?.timestamp || undefined,
+    })
+  }
+
+  const submitSearch = (value: string) => {
+    const intent = searchInputIntent(value)
+    if (intent.kind === 'session') {
+      void openSessionId({ query: intent.query, sessionId: intent.sessionId, fromExactInput: true })
+      return
+    }
+    runSearch(intent.query)
+  }
+
+  const retryLastAction = () => {
+    if (retryAction?.kind === 'session') {
+      void openSessionId(retryAction)
+      return
+    }
+    if (retryAction?.kind === 'keyword') {
+      runSearch(retryAction.query, retryAction.range, retryAction.caseSensitive, retryAction.wholeWord)
+      return
+    }
+    submitSearch(q)
+  }
+
+  const onType = (v: string) => {
+    setQ(v)
+    setErr('')
+    setRetryAction(null)
+    setOpeningSessionId('')
+    navigationAttemptRef.current += 1
+    reqId.current += 1
+    abortRef.current?.abort()
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => submitSearch(v), 450)
+  }
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
+    navigationAttemptRef.current += 1
+  }, [])
+
+  // 切换时间范围 / 大小写 / 全字: 用当前输入立即重试其对应动作 (显式动作, 不防抖).
+  useEffect(() => {
+    if (q.trim().length < 2) return
+    submitSearch(q)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, caseSensitive, wholeWord])
+
+  const openFragmentPreview = (r: SearchResult, frag?: Fragment) => {
+    const target = frag || r.fragments[0]
+    if (target) setSelectedFragment({ result: r, fragment: target })
+  }
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-start justify-center pt-[8vh] px-4" role="dialog" aria-modal="true" aria-label="全局搜索">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div ref={dialogRef} className="relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]"
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
+        {/* 头部: 关键词输入 */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <Search className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={e => onType(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); submitSearch(q) } }}
+            placeholder="搜索会话内容，或粘贴 Session ID…"
+            className="flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+            style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
+          />
+          {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). 激活时用 accent 色高亮. */}
+          <button
+            type="button"
+            onClick={() => setCaseSensitive(v => !v)}
+            title="区分大小写"
+            aria-pressed={caseSensitive}
+            className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
+            style={{
+              color: caseSensitive ? 'var(--accent-primary)' : 'var(--text-muted)',
+              borderColor: caseSensitive ? 'var(--accent-border)' : 'var(--border-color)',
+              background: caseSensitive ? 'var(--surface-active)' : 'transparent',
+            }}
+          >Aa</button>
+          <button
+            type="button"
+            onClick={() => setWholeWord(v => !v)}
+            title="全字匹配"
+            aria-pressed={wholeWord}
+            className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
+            style={{
+              color: wholeWord ? 'var(--accent-primary)' : 'var(--text-muted)',
+              borderColor: wholeWord ? 'var(--accent-border)' : 'var(--border-color)',
+              background: wholeWord ? 'var(--surface-active)' : 'transparent',
+            }}
+          >W</button>
+          {/* 时间范围过滤 (默认 7 天内创建的会话): 缩小候选集加速扫描 */}
+          <select
+            value={range}
+            onChange={e => setRange(e.target.value as RangeKey)}
+            title="时间范围"
+            className="flex-shrink-0 rounded-lg border text-[11px] px-1.5 py-1 cursor-pointer focus:outline-none"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}
+          >
+            {RANGE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {loading && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+          {q && !loading && (
+            <button type="button" onClick={() => {
+              if (debounceRef.current) clearTimeout(debounceRef.current)
+              abortRef.current?.abort()
+              navigationAttemptRef.current += 1
+              reqId.current += 1
+              setQ(''); setResults([]); setMeta(null); setSearched(false); setErr(''); setRetryAction(null); setOpeningSessionId(''); setLoading(false)
+              inputRef.current?.focus()
+            }}
+              className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <button type="button" onClick={onClose} title="关闭 (Esc)"
+            className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 结果区 */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {err ? (
+            <div ref={errorRef} role="alert" tabIndex={-1} className="px-4 py-8 flex flex-col items-center gap-2 text-center outline-none">
+              <AlertCircle className="w-6 h-6" style={{ color: 'var(--status-danger)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{err}</p>
+              <button type="button" onClick={retryLastAction} className="workbench-control-md mt-1 border px-3 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>{retryAction?.kind === 'session' ? '重试打开' : '重试搜索'}</button>
+            </div>
+          ) : loading && openingSessionId ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>正在查找 Session {openingSessionId}…</p>
+            </div>
+          ) : loading && results.length === 0 ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>正在搜索…</p>
+            </div>
+          ) : !searched ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <FileSearch className="w-7 h-7" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容，或粘贴完整 Session ID</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}创建的会话`}，命中片段会高亮显示</p>
+            </div>
+          ) : results.length === 0 ? (
+            <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+              <Search className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>未找到匹配的会话</p>
+              <button type="button" onClick={() => runSearch(q)} className="workbench-control-md mt-1 border px-3 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>重新搜索</button>
+            </div>
+          ) : (
+            <div className="py-1.5">
+              {results.map(r => {
+                const isResearch = r.scope_type === 'research'
+                const ScopeIcon = isResearch ? FlaskConical : CircleDot
+                return (
+                  <button key={r.session_id} type="button" onClick={() => openFragmentPreview(r)}
+                    data-search-result={r.session_id}
+                    className="w-full text-left px-4 py-2.5 transition-colors hover:bg-[var(--bg-card-hover)] border-b"
+                    style={{ borderColor: 'var(--border-color)' }}>
+                    {/* 面包屑: 项目 › Issue/Research › Session */}
+                    <div className="flex items-center gap-1 mb-1.5 flex-wrap text-[11px]">
+                      <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                        <Folder className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                        <span className="truncate max-w-[160px]">{r.project_name || '(未命名项目)'}</span>
+                      </span>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                        <ScopeIcon className="w-3 h-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : 'var(--accent-primary)' }} />
+                        <span className="truncate max-w-[180px]">{isResearch ? (r.research_title || '(研究)') : (r.issue_title || '(任务)')}</span>
+                      </span>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                      <span className="inline-flex items-center gap-1 truncate font-medium" style={{ color: dark ? '#e2e8f0' : '#1e293b' }}>
+                        <MessagesSquare className="w-3 h-3 flex-shrink-0" style={{ color: '#a855f7' }} />
+                        <span className="truncate max-w-[200px]">{r.session_name || '(未命名会话)'}</span>
+                      </span>
+                      <span className="ml-auto pl-2 flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{relativeTime(r.last_active)}</span>
+                    </div>
+                    {/* 命中片段: 先打开上下文预览；stopPropagation 避免改选成结果卡的首片段. */}
+                    <div className="space-y-1">
+                      {r.fragments.map((f, i) => {
+                        const rm = roleMeta(f.role)
+                        return (
+                          <div
+                            key={i}
+                            onClick={(e) => { e.stopPropagation(); openFragmentPreview(r, f) }}
+                            data-search-fragment={`${r.session_id}:${i}`}
+                            title="查看命中上下文"
+                            className="flex items-start gap-2 rounded -mx-1 px-1 py-0.5 cursor-pointer hover:bg-[var(--bg-hover)]"
+                          >
+                            <span className="flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded mt-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
+                            <p className="text-[12px] leading-relaxed break-all" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+                              <Highlight text={f.snippet} query={q} caseSensitive={caseSensitive} wholeWord={wholeWord} />
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 底部: 扫描统计 */}
+        {(meta || searched) && (
+          <div className="shrink-0 px-4 py-2 border-t flex items-center justify-between text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <span>
+              {loading && results.length === 0 ? '正在搜索…' : ''}
+              {searched && results.length > 0 ? `命中 ${results.length} 个会话${loading ? '…' : ''}` : ''}
+              {meta?.scanned != null ? ` · 扫描 ${meta.scanned}${meta.candidates != null ? `/${meta.candidates}` : ''} 个会话` : ''}
+              {` · 范围: ${rangeLabel}`}
+              {caseSensitive || wholeWord ? ` · ${[caseSensitive ? '区分大小写' : '', wholeWord ? '全字匹配' : ''].filter(Boolean).join(' / ')}` : ''}
+            </span>
+            {meta?.truncated && <span style={{ color: 'var(--status-waiting)' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
+          </div>
+        )}
+      </div>
+
+      {selectedFragment && (
+        <SearchFragmentPreviewModal
+          result={selectedFragment.result}
+          fragment={selectedFragment.fragment}
+          query={q}
+          caseSensitive={caseSensitive}
+          wholeWord={wholeWord}
+          dark={dark}
+          opening={openingSessionId === selectedFragment.result.session_id}
+          onBack={closeFragmentPreview}
+          onViewInSession={() => { void openSession(selectedFragment.result, selectedFragment.fragment) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// 搜索二级弹窗：服务于“先看上下文、再确认跳转”的流程。
+// 文本不是 button/input，也不加 user-select:none，因此浏览器原生支持框选并复制其中任意一段。
+function SearchFragmentPreviewModal({
+  result,
+  fragment,
+  query,
+  caseSensitive,
+  wholeWord,
+  dark,
+  opening,
+  onBack,
+  onViewInSession,
+}: {
+  result: SearchResult
+  fragment: Fragment
+  query: string
+  caseSensitive: boolean
+  wholeWord: boolean
+  dark: boolean
+  opening: boolean
+  onBack: () => void
+  onViewInSession: () => void
+}) {
+  const isResearch = result.scope_type === 'research'
+  const ScopeIcon = isResearch ? FlaskConical : CircleDot
+  const rm = roleMeta(fragment.role)
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="搜索命中预览" data-search-fragment-preview>
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onBack} />
+      <div
+        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 'min(620px, calc(100vh - 32px))' }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+              <FileSearch className="h-4 w-4 flex-shrink-0 text-[var(--accent-primary)]" />
+              <span>命中片段预览</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <span className="truncate max-w-[150px]">{result.project_name || '(未命名项目)'}</span>
+              <ChevronRight className="h-3 w-3 flex-shrink-0" />
+              <ScopeIcon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : 'var(--accent-primary)' }} />
+              <span className="truncate max-w-[180px]">{isResearch ? (result.research_title || '(研究)') : (result.issue_title || '(任务)')}</span>
+              <ChevronRight className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate max-w-[220px]">{result.session_name || '(未命名会话)'}</span>
+            </div>
+          </div>
+          <button autoFocus type="button" onClick={onBack} title="返回搜索结果" aria-label="返回搜索结果" className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[10px] rounded px-1.5 py-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>命中位置前后的上下文 · 可直接框选复制</span>
+          </div>
+          <div className="select-text whitespace-pre-wrap break-words rounded-xl border px-4 py-3 text-[13px] leading-7" style={{ color: dark ? '#e2e8f0' : '#1e293b', borderColor: 'var(--border-color)', background: dark ? 'rgba(15,23,42,0.35)' : 'rgba(248,250,252,0.75)' }}>
+            <Highlight text={fragment.snippet} query={query} caseSensitive={caseSensitive} wholeWord={wholeWord} />
+          </div>
+          <div className="mt-2 flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <Copy className="h-3 w-3" />
+            <span>选择文字后可使用系统复制快捷键。</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <button type="button" onClick={onBack} className="rounded-lg px-3 py-1.5 text-[12px] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-secondary)' }}>返回搜索结果</button>
+          <button type="button" onClick={onViewInSession} disabled={opening} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-on-accent)] shadow-sm transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60">
+            <span>{opening ? '正在打开…' : '在会话中查看'}</span>
+            {opening ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

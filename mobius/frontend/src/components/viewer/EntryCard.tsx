@@ -383,7 +383,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         )}
         {oversized && (
           <span
-            className="flex-shrink-0 text-[10px] font-mono text-[var(--status-waiting)] border border-[var(--status-waiting-border)] rounded px-1 py-0.5"
+            className="flex-shrink-0 text-[10px] font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5"
             title={`该条目原始约 ${totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 已截断显示以避免卡顿`}
           >
             ⚠ 已截断
@@ -450,7 +450,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       {open && (
         <div className="px-1 pb-1 pt-1">
           {oversized && (
-            <div className="mb-2 rounded border border-[var(--status-waiting-border)] bg-[var(--status-waiting-soft)] px-2 py-1 text-[11px] text-[var(--status-waiting)]">
+            <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.
             </div>
           )}

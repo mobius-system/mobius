@@ -44,26 +44,16 @@ function fetchEditorMeta(projectId: string): Promise<EditorMeta> {
 export function useEditorAvailability(projectId: string | undefined | null, enabled: boolean): EditorAvailability {
   const key = projectId || ''
   const cached = key ? metaCache.get(key) : undefined
-  const [resolved, setResolved] = useState<{ key: string; meta: EditorMeta } | null>(
-    cached && key ? { key, meta: cached } : null,
-  )
+  const [meta, setMeta] = useState<EditorMeta | null>(cached ?? null)
   const [loading, setLoading] = useState(false)
-  // 切项目后的首帧也不能回传上一项目的 bind path / code-server 地址，否则入口会
-  // 短暂可用并可能挂载错误 iframe。新项目缓存命中时仍可同步返回。
-  const meta = resolved?.key === key ? resolved.meta : (cached ?? null)
 
   useEffect(() => {
-    if (!enabled || !key) { setLoading(false); return }
-    if (metaCache.has(key)) {
-      const next = metaCache.get(key)
-      if (next) setResolved({ key, meta: next })
-      setLoading(false)
-      return
-    }
+    if (!enabled || !key) return
+    if (metaCache.has(key)) { setMeta(metaCache.get(key) ?? null); return }
     let cancelled = false
     setLoading(true)
     fetchEditorMeta(key).then((m) => {
-      if (!cancelled) setResolved({ key, meta: m })
+      if (!cancelled) setMeta(m)
     }).catch(() => {
       // 保持旧行为: 查询失败时只结束 loading, 不写入空缓存, 允许后续重试.
     }).finally(() => {

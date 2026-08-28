@@ -295,7 +295,7 @@ export default function Welcome() {
     { key: 'new', icon: Plus, title: '创建一个全新项目', desc: '从零开始一个新项目, 本地路径自动生成', onClick: () => startFlow('new') },
     { key: 'import', icon: FileText, title: '导入一些零散文件，随便聊聊', desc: '丢几个文件进来, 和小莫自由对话', onClick: () => void startImport(), busy: checking },
     { key: 'enter', icon: FolderOpen, title: '进入已创建的 Mobius 项目', desc: '浏览我已有的项目列表', onClick: () => setStep('projectList') },
-    { key: 'visualization', icon: Network, title: '系统可视化', desc: '查看 Mobius 系统集群与运行状态', onClick: () => navigate(`/u/${encodeURIComponent(user.id)}/mobius_overview_cluster`) },
+    { key: 'visualization', icon: Network, title: '系统可视化', desc: '查看 Mobius 系统集群与运行状态', onClick: () => navigate('/u/fuqingxu/mobius_overview_cluster') },
   ]
 
   const machineLines: string[] = []
@@ -322,10 +322,10 @@ export default function Welcome() {
         </div>
 
         {checkErr && (
-          <div className="mb-3 rounded-xl px-3 py-2 text-[12px]" style={{ background: 'var(--status-danger-soft)', border: '1px solid var(--status-danger-border)', color: 'var(--status-danger)' }}>{checkErr}</div>
+          <div className="mb-3 rounded-xl px-3 py-2 text-[12px]" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>{checkErr}</div>
         )}
 
-        <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface-raised)', border: '1px solid var(--border-default)' }}>
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           {options.filter(o => !o.hidden).map((o, i) => {
             const Icon = o.icon
             return (
@@ -452,7 +452,7 @@ function WelcomePathChoice({ path, onBack, onCreateNew, onReuseExisting }: {
             const Icon = choice.icon
             return (
               <button key={choice.key} type="button" onClick={choice.onClick}
-                className="group min-h-[192px] min-w-0 whitespace-normal rounded-2xl border border-[var(--border-default)] bg-[var(--surface-raised)] p-5 text-left transition-[background-color,border-color,box-shadow] duration-200 hover:border-[var(--accent-border)] hover:bg-[var(--surface-control-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2"
+                className="group min-h-[192px] min-w-0 whitespace-normal rounded-2xl border border-[var(--border-color)] bg-[var(--modal-bg)] p-5 text-left transition-[background-color,border-color,box-shadow] duration-200 hover:border-blue-500/40 hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:ring-offset-2"
                 style={{ '--tw-ring-offset-color': 'var(--bg-secondary)' } as React.CSSProperties}>
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--bg-hover)] text-blue-500 transition-colors duration-200 group-hover:bg-blue-500/10">
                   <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
@@ -584,7 +584,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
   }
 
   const visibilityOption = VISIBILITY_OPTIONS.find(o => o.value === visibility) || VISIBILITY_OPTIONS[0]
-  const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }
+  const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }
   const inputCls = 'w-full h-10 px-3 rounded-xl text-[13px] outline-none focus:border-blue-500/40 transition-colors'
 
   // 注意: 这里用 render function (renderLocalPathField()) 而非内部组件 (<LocalPathField/>).
@@ -592,7 +592,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
   const renderLocalPathField = () => (
     <div>
       <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-        本地路径{flow.localPathVisible ? <> <span style={{ color: 'var(--status-danger)' }}>*</span></> : null}
+        本地路径{flow.localPathVisible ? <> <span style={{ color: '#ef4444' }}>*</span></> : null}
         <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>· 本机工作目录, 不上传服务器</span>
       </label>
       <div className="flex gap-2">
@@ -622,10 +622,10 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
           <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page2Title}</h1>
         </div>
 
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface-raised)', border: '1px solid var(--border-default)' }}>
+        <div className="rounded-2xl p-5" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           <div className="space-y-4">
             <div>
-              <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目名称 <span style={{ color: 'var(--status-danger)' }}>*</span></label>
+              <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目名称 <span style={{ color: '#ef4444' }}>*</span></label>
               <input type="text" value={name} autoFocus
                 onChange={e => { setName(e.target.value); setErr('') }}
                 placeholder="例如：强化学习最新进展调研" className={inputCls} style={inputStyle} />
@@ -678,12 +678,12 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
                   </div>
                   <ToggleSwitch checked={researchEnabled}
                     onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
-                    className="flex items-start gap-3 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                    className="flex items-start gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
                     <span><span className="font-medium">启动研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
                   </ToggleSwitch>
                   {!researchEnabled && (
                     <ToggleSwitch checked={defaultUseWorktree} onChange={setDefaultUseWorktree}
-                      className="flex items-center gap-3 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                      className="flex items-center gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
                       <span>默认使用 git worktree（新建任务时开独立工作区）</span>
                     </ToggleSwitch>
                   )}
@@ -698,7 +698,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
             <button type="button" onClick={onBack}
               className="h-9 px-4 rounded-xl text-[13px] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
             <button type="button" onClick={next} disabled={loading}
-              className="h-9 px-5 rounded-xl text-[13px] font-semibold disabled:opacity-60 flex items-center gap-1.5 transition-[filter] hover:brightness-110" style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}>
+              className="h-9 px-5 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60 flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
               {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {loading ? '处理中…' : '下一步'}
             </button>
@@ -835,15 +835,13 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
       if (remaining > 0) await new Promise(r => window.setTimeout(r, remaining))
       window.clearInterval(timer); setProgress(100)
       const sid = s?.session_id
-      navigate(sid
-        ? `/u/${encodeURIComponent(user?.id || '')}/s/${encodeURIComponent(sid)}`
-        : `/u/${encodeURIComponent(user?.id || '')}/p/${encodeURIComponent(projectId)}/i/${encodeURIComponent(issueId)}`)
+      navigate(`/u/${user?.id}/p/${projectId}/i/${issueId}${sid ? `?session=${sid}` : ''}`)
     } catch (e) {
       window.clearInterval(timer); setSubmitting(false); setErr((e as Error)?.message || '创建失败')
     }
   }
 
-  const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }
+  const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }
   const inputCls = 'w-full h-10 px-3 rounded-xl text-[13px] outline-none focus:border-blue-500/40 transition-colors'
 
   // 提交进度态: 全屏进度条
@@ -856,7 +854,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
           <h2 className="text-[18px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>正在创建会话…</h2>
           <p className="text-[12px] mb-6" style={{ color: 'var(--text-muted)' }}>小莫正在准备您的工作区</p>
           <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--input-bg)' }}>
-            <div className="h-full rounded-full transition-[width] duration-150 ease-linear" style={{ width: `${progress}%`, background: 'var(--status-running)' }} />
+            <div className="h-full rounded-full transition-[width] duration-150 ease-linear" style={{ width: `${progress}%`, background: '#3b82f6' }} />
           </div>
           <p className="text-[11px] mt-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>{Math.floor(progress)}%</p>
         </div>
@@ -877,7 +875,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
           <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page3Title}</h1>
         </div>
 
-        <div className="rounded-2xl p-5" style={{ background: 'var(--surface-raised)', border: '1px solid var(--border-default)' }}>
+        <div className="rounded-2xl p-5" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           <div className="space-y-4">
             {/* session 目的: 可见, 必填, 复用附件上传/粘贴能力 */}
             <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }}
@@ -915,7 +913,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
                       disabled={!issueId} dark={dark} />
                   </div>
                   {isDesktop && (
-                    <PcTaskModeSection projectId={projectId} onModeChange={setWorkMode} onPathChange={setPcPath} />
+                    <PcTaskModeSection projectId={projectId} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
                   )}
                 </div>
               )}
@@ -928,7 +926,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
             <button type="button" onClick={onBack}
               className="h-9 px-4 rounded-xl text-[13px] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
             <button type="button" onClick={submit}
-              className="h-9 px-5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 transition-[filter] hover:brightness-110" style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}>
+              className="h-9 px-5 rounded-xl text-[13px] font-semibold text-white flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
               提交
             </button>
           </div>
@@ -994,12 +992,12 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
         )}
         {error && <div className="mb-3"><ErrBanner>{error}</ErrBanner></div>}
 
-        <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface-raised)', border: '1px solid var(--border-default)' }}>
+        <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
               <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
               <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索项目名称或描述…" autoFocus
-                className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: 'var(--text-primary)' }} />
+                className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
             </div>
           </div>
           {projects.loading && <div className="px-4 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中…</div>}
@@ -1017,9 +1015,9 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    {p.starred && <Star className="h-3 w-3 flex-shrink-0 fill-current" style={{ color: 'var(--status-waiting)' }} />}
+                    {p.starred && <Star className="h-3 w-3 flex-shrink-0 fill-current" style={{ color: '#f59e0b' }} />}
                     <span className="block text-[14px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
-                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[10px] flex-shrink-0" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>研究</span>}
+                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[10px] flex-shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>研究</span>}
                   </span>
                   <span className="mt-0.5 block text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{p.description || '无描述'}</span>
                 </span>

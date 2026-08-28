@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
-import { AdvancedInteractionBtn } from './advanced-interaction-btn'
-import { stripFileTargetLocation } from './code-artifacts/file-target'
+import { UnifiedButton } from './unified-button-group'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -99,17 +98,18 @@ function basenamePosix(relPath: string) {
   return normalized.split('/').filter(Boolean).pop() || normalized
 }
 
-// code-server 的 openFile payload 只可靠承诺打开文件，不可靠承诺 line/range 定位。
-// 因此先移除所有受支持的位置后缀，避免把它们误当成文件名的一部分。
-export function stripVscodeFileLocation(filePath: string): string {
-  return stripFileTargetLocation(filePath)
+// 剥掉路径末尾的 `:line` 或 `:line:col` 后缀 (markdown 行号语法, 如 `/abs/file.md:1`).
+// code-server 的 openFile payload 不会解析行号, 留着 `:1` 会被当成文件名一部分 → 找不到文件.
+function stripLineColSuffix(absPath: string): string {
+  if (!absPath.startsWith('/')) return absPath
+  const m = absPath.match(/^(.+):([0-9]+)(?::[0-9]+)?$/)
+  return m ? m[1] : absPath
 }
 
 // 构造 code-server URL.
 // folder 模式: <base>/?folder=<bindPath>
 // 文件模式: <base>/?folder=<bindPath>&payload=[["openFile","vscode-remote://<host>/<abs>"]]
-// 注: payload 在 code-server 上是惯例参数, 不同版本兼容性一般；这里只承诺打开文件，
-// 不把 line/range 写进 payload，也不向用户承诺跳行。失败时退回 folder.
+// 注: payload 在 code-server 上是惯例参数, 不同版本兼容性一般; 失败时退回 folder.
 // base 为相对反代路径 (/code-server/<u>__<p>) 时, 首次 navigate 必须带 ?_jwt=<token>
 // (cs_url_token_required), 代理校验后写 cookie 再 302 去掉它. 故拼上当前登录 token.
 export function buildVscodeUrl(base: string, bindPath: string, filePath?: string | null): string | null {
@@ -124,7 +124,7 @@ export function buildVscodeUrl(base: string, bindPath: string, filePath?: string
       const browserOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
       const u = new URL(trimmed, browserOrigin)
       const authority = u.host
-      const cleaned = stripVscodeFileLocation(filePath)
+      const cleaned = stripLineColSuffix(filePath)
       const fp = cleaned.startsWith('/') ? cleaned : '/' + cleaned
       const payload = JSON.stringify([['openFile', `vscode-remote://${authority}${fp}`]])
       url = `${trimmed}/?folder=${folder}&payload=${encodeURIComponent(payload)}`
@@ -256,7 +256,7 @@ export function OpenInVSCodeButton({
   const worktreeFolder = sub ? `${bindPath.replace(/\/+$/, '')}/${sub}` : bindPath
   const defaultFolder = vscodeWorkspacePath || bindPath
   const parentFolder = dirnamePosix(bindPath)
-  const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-[var(--accent-border)] text-[var(--accent-primary)] rounded-lg hover:bg-[var(--surface-control-hover)] transition-colors flex items-center gap-1.5'
+  const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/10 transition-colors flex items-center gap-1.5'
   const effectiveClassName = iconOnly
     ? (buttonClassName.replace(/\s+px-2\.5\s+/g, " ").replace(/\s+px-3\s+/g, " ").replace(/\s+text-\[11px\]\s+/g, " ").replace(/\s+text-\[12px\]\s+/g, " ").trim() + " px-2 w-9 justify-center")
     : buttonClassName
@@ -296,7 +296,7 @@ export function OpenInVSCodeButton({
             style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
           >
             <div className="px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
-              <svg className="w-4 h-4 text-[var(--accent-primary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
               <div className="min-w-0">
@@ -312,7 +312,7 @@ export function OpenInVSCodeButton({
               <button
                 type="button"
                 onClick={() => openFolder(defaultFolder)}
-                className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:border-[var(--accent-border)]"
+                className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-blue-500/10 hover:border-blue-500/30"
                 style={{ borderColor: 'var(--border-color)' }}
               >
                 <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -326,7 +326,7 @@ export function OpenInVSCodeButton({
                 <button
                   type="button"
                   onClick={() => openFolder(parentFolder)}
-                  className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:border-[var(--accent-border)]"
+                  className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-blue-500/10 hover:border-blue-500/30"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -341,7 +341,7 @@ export function OpenInVSCodeButton({
                 <button
                   type="button"
                   onClick={() => openFolder(worktreeFolder)}
-                  className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:border-[var(--accent-border)]"
+                  className="w-full min-h-[62px] px-3 py-2.5 rounded-lg border text-left bg-[var(--bg-primary)] transition-colors hover:bg-blue-500/10 hover:border-blue-500/30"
                   style={{ borderColor: 'var(--border-color)' }}
                 >
                   <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -361,6 +361,7 @@ export function OpenInVSCodeButton({
 }
 
 type ProjectPortEntryButtonProps = {
+  buttonId?: string
   projectId?: string | null
   subPath?: string | null
   className?: string
@@ -370,7 +371,7 @@ type ProjectPortEntryButtonProps = {
   onRequestRunProject?: (mainProjectPortPath: string) => void
 }
 
-export function ProjectPortEntryButton({ projectId, subPath, className, label, triggerVariant = 'default', advancedDisplayLabel = false, onRequestRunProject }: ProjectPortEntryButtonProps) {
+export function ProjectPortEntryButton({ buttonId, projectId, subPath, className, label, triggerVariant = 'default', advancedDisplayLabel = false, onRequestRunProject }: ProjectPortEntryButtonProps) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
   const [autoPort, setAutoPort] = useState<number | null>(null)
@@ -437,12 +438,14 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
   const buttonClassName = className || 'h-7 px-2.5 text-[11px] border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed'
   const buttonLabel = label || '进入项目端口'
   const renderAdvancedTrigger = (disabled: boolean, title: string, onClick?: () => void) => (
-    <AdvancedInteractionBtn
+    <UnifiedButton
+      kind="modal"
+      buttonId={buttonId}
       onClick={onClick}
       disabled={disabled}
       label={buttonLabel}
       tooltip={title}
-      accent="neutral"
+      accent="emerald"
       className={className}
       displayLabel={advancedDisplayLabel}
       icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorPlay className="h-4 w-4" />}
@@ -695,7 +698,7 @@ export function ProjectPortEntryButton({ projectId, subPath, className, label, t
               )}
 
               {error && (
-                <div className="workbench-status-danger rounded-lg border px-3 py-2 text-[12px]">
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
                   {error}
                 </div>
               )}
@@ -752,7 +755,7 @@ function UploadZipButton({ projectId, onImported, rootHasFiles }: {
         onClick={() => !busy && inputRef.current?.click()}
         disabled={busy}
         title="上传 ZIP 压缩包导入项目代码 (仅 Web 端)"
-        className="h-7 px-3 text-[11px] rounded bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] border border-[var(--accent-border)] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+        className="h-7 px-3 text-[11px] rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50"
       >
         {busy
           ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.8} />
@@ -882,7 +885,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
     <div data-tour="project-files-card" className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
       {/* 头部 */}
       <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
-        <svg className="w-4 h-4 text-[var(--accent-primary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
         </svg>
         <div className="flex-1 min-w-0">
@@ -905,7 +908,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
         {vscodeReady && (
           <button onClick={openProject}
             data-tour="project-files-vscode-open"
-            className="h-7 px-3 text-[11px] rounded bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] border border-[var(--accent-border)] transition-colors flex items-center gap-1.5">
+            className="h-7 px-3 text-[11px] rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
@@ -976,7 +979,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             className="w-full px-2 py-1.5 rounded-md text-left text-[12px] inline-flex items-center gap-2 hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-primary)' }}
           >
-            <FilePlus2 className="w-3.5 h-3.5 text-[var(--accent-primary)]" strokeWidth={1.8} />
+            <FilePlus2 className="w-3.5 h-3.5 text-blue-400" strokeWidth={1.8} />
             新建文件
           </button>
           <button
@@ -1005,7 +1008,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
               {createDialog.kind === 'dir'
                 ? <FolderPlus className="w-4 h-4 text-emerald-400" strokeWidth={1.8} />
-                : <FilePlus2 className="w-4 h-4 text-[var(--accent-primary)]" strokeWidth={1.8} />}
+                : <FilePlus2 className="w-4 h-4 text-blue-400" strokeWidth={1.8} />}
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {createDialog.kind === 'dir' ? '新建目录' : '新建文件'}
@@ -1032,7 +1035,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
               />
               {createDialog.error && (
-                <div className="workbench-status-danger rounded-lg border px-3 py-2 text-[12px]">
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
                   {createDialog.error}
                 </div>
               )}
@@ -1049,7 +1052,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
                 <button
                   type="submit"
                   disabled={createDialog.loading}
-                  className="h-8 px-3 rounded-lg bg-[var(--accent-primary)] text-[var(--text-on-accent)] text-[12px] transition-colors hover:opacity-90 disabled:opacity-60 inline-flex items-center gap-1.5"
+                  className="h-8 px-3 rounded-lg bg-blue-500 text-white text-[12px] transition-colors hover:bg-blue-600 disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   {createDialog.loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   创建
@@ -1133,7 +1136,7 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
   const state = dirs[relPath]
   if (!state) return null
   if (state.loading) return <div className="text-[11px] py-1 pl-4" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-  if (state.error) return <div className="text-[11px] py-1 pl-4 text-[var(--status-danger)]">{state.error}</div>
+  if (state.error) return <div className="text-[11px] py-1 pl-4 text-red-400">{state.error}</div>
   const entries = state.entries || []
   if (entries.length === 0) {
     return (
@@ -1258,7 +1261,6 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
               onClick={() => vscodeReady && onOpenFile(entry)}
               onContextMenu={ctxHandler(entry, childPath)}
               disabled={!vscodeReady}
-              aria-current={selected || undefined}
               title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
               className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
               style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { AlertTriangle, Check, Copy, Download, Eye, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { HelpHint } from './help-hint'
 import { ToggleSwitch } from '../toggle-switch'
@@ -21,7 +21,6 @@ import { ProjectTodosPanel } from './ProjectTodosPanel'
 import { ProjectTeamPanel } from './ProjectTeamPanel'
 import { ProjectOverflowTabs, type OverflowTab } from './ProjectOverflowTabs'
 import { ExpandableTextarea } from '../expandable-textarea'
-import { GitChangesViewer } from '../code-git/GitChangesViewer'
 import type { GitRepoDraft } from './types'
 import {
   FORGOTTEN_FLAG_BACKOFF_MAX,
@@ -180,7 +179,6 @@ function GitTrackingPanel({
   gitActionMessage,
   gitActionError,
   onGitAction,
-  onOpenReadonly,
   onDeployVersion,
   onHardResetVersion,
 }: {
@@ -200,7 +198,6 @@ function GitTrackingPanel({
   gitActionMessage?: string
   gitActionError?: string
   onGitAction?: (action: GitTrackingAction) => void
-  onOpenReadonly?: () => void
   onDeployVersion?: (commit: GitTrackingCommit) => void
   onHardResetVersion?: (commit: GitTrackingCommit) => void
 }) {
@@ -219,7 +216,7 @@ function GitTrackingPanel({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>版本追踪</h3>
             {data?.available && (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${data.dirty ? 'text-[var(--status-waiting)] bg-[var(--status-waiting-soft)] border-[var(--status-waiting-border)]' : 'text-[var(--status-success)] bg-[var(--status-success-soft)] border-[var(--status-success-border)]'}`}>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${data.dirty ? 'text-amber-400 bg-amber-500/10 border-amber-500/25' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'}`}>
                 {statusText}
               </span>
             )}
@@ -231,18 +228,8 @@ function GitTrackingPanel({
           </div>
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
-          {data?.available && onOpenReadonly && (
-            <button
-              type="button"
-              onClick={onOpenReadonly}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors hover:bg-[var(--accent-soft)]"
-              style={{ borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' }}
-            >
-              <Eye className="h-3.5 w-3.5" />只读查看
-            </button>
-          )}
           <button type="button" onClick={onRefresh} disabled={loading}
-            className="h-8 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] disabled:opacity-50">
+            className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50">
             {loading ? '刷新中...' : '刷新'}
           </button>
           {showGitActionMenu && (
@@ -261,7 +248,7 @@ function GitTrackingPanel({
                 title="Git 操作"
                 disabled={loading || gitActionBusy}
                 onClick={() => setGitMenuOpen((value) => !value)}
-                className="relative z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-primary)] transition-colors hover:bg-[var(--surface-active)] disabled:cursor-not-allowed disabled:opacity-50">
+                className="relative z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-400 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50">
                 <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
               </button>
               {gitMenuOpen && (
@@ -280,7 +267,7 @@ function GitTrackingPanel({
                         }}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-55"
                         style={{ color: 'var(--text-primary)' }}>
-                        {item.key === 'pull' ? <Download className="h-3.5 w-3.5 text-[var(--accent-primary)]" strokeWidth={1.8} /> : null}
+                        {item.key === 'pull' ? <Download className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} /> : null}
                         {item.key === 'push' ? <Upload className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.8} /> : null}
                         {item.key === 'stage' ? <Plus className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.8} /> : null}
                         <span className="min-w-0 flex-1">
@@ -304,31 +291,31 @@ function GitTrackingPanel({
       )}
 
       {!loading && error && (
-        <div className="workbench-status-danger text-[12px] px-3 py-2 rounded-lg border">
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {error}
         </div>
       )}
 
       {deployMessage && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-soft)] text-[var(--status-success)]">
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
           {deployMessage}
         </div>
       )}
 
       {deployError && (
-        <div className="workbench-status-danger text-[12px] px-3 py-2 rounded-lg border">
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {deployError}
         </div>
       )}
 
       {gitActionMessage && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-success-border)] bg-[var(--status-success-soft)] text-[var(--status-success)]">
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
           {gitActionMessage}
         </div>
       )}
 
       {gitActionError && (
-        <div className="workbench-status-danger whitespace-pre-wrap text-[12px] px-3 py-2 rounded-lg border">
+        <div className="whitespace-pre-wrap text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {gitActionError}
         </div>
       )}
@@ -352,7 +339,7 @@ function GitTrackingPanel({
             </div>
             <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>未提交</div>
-              <div className="text-[12px] truncate" style={{ color: data.dirty ? 'var(--status-waiting)' : 'var(--text-primary)' }}>
+              <div className="text-[12px] truncate" style={{ color: data.dirty ? '#f59e0b' : 'var(--text-primary)' }}>
                 {data.dirty_count || 0} 个文件
               </div>
             </div>
@@ -365,7 +352,7 @@ function GitTrackingPanel({
           )}
 
           {data.log_error && (
-            <div className="text-[12px] px-3 py-2 rounded-lg border border-[var(--status-waiting-border)] bg-[var(--status-waiting-soft)] text-[var(--status-waiting)]">
+            <div className="text-[12px] px-3 py-2 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-400">
               {data.log_error}
             </div>
           )}
@@ -396,13 +383,13 @@ function GitTrackingPanel({
                   <div className="flex flex-col items-start gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <code className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border font-mono"
-                        style={{ color: 'var(--accent-primary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                        style={{ color: '#60a5fa', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
                         title={commit.hash}>
                         {commit.short_hash}
                       </code>
                       {isCurrentVersion && (
                         <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border font-medium"
-                          style={{ color: 'var(--status-waiting)', borderColor: 'var(--status-waiting-border)', background: 'var(--status-waiting-soft)' }}>
+                          style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.38)', background: 'rgba(251,191,36,0.14)' }}>
                           当前版本
                         </span>
                       )}
@@ -411,7 +398,7 @@ function GitTrackingPanel({
                           type="button"
                           disabled={versionActionInProgress}
                           onClick={() => onDeployVersion?.(commit)}
-                          className="h-7 px-2.5 rounded-md text-[11px] border border-[var(--status-waiting-border)] bg-[var(--status-waiting-soft)] text-[var(--status-waiting)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                          className="h-7 px-2.5 rounded-md text-[11px] border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/18 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                           {deployingThisCommit ? '正在回退...' : '回退到此版本'}
                         </button>
                       )}
@@ -420,7 +407,7 @@ function GitTrackingPanel({
                           type="button"
                           disabled={versionActionInProgress}
                           onClick={() => onHardResetVersion?.(commit)}
-                          className="h-7 px-2.5 rounded-md text-[11px] border border-[var(--status-danger-border)] bg-[var(--status-danger-soft)] text-[var(--status-danger)] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                          className="h-7 px-2.5 rounded-md text-[11px] border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                           {hardResettingThisCommit ? '正在硬回退...' : '回退并撤销未来更改'}
                         </button>
                       )}
@@ -511,11 +498,11 @@ function LocalPcPathRow({ projectId }: { projectId: string }) {
       <button type="button" onClick={copy} disabled={!path}
         title={copied ? '已复制' : '复制路径'} aria-label={copied ? '已复制' : '复制路径'}
         className="h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] transition-colors border flex items-center justify-center disabled:opacity-40"
-        style={{ color: copied ? 'var(--status-success)' : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+        style={{ color: copied ? '#34d399' : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
         {copied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
       </button>
       <button type="button" onClick={edit} disabled={busy}
-        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
+        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
         <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
         <span>{busy ? '…' : path ? '更改' : '选择'}</span>
       </button>
@@ -608,7 +595,6 @@ export function ProjectSettingsPanel({
   const [gitActionRunning, setGitActionRunning] = useState<GitTrackingAction | ''>('')
   const [gitActionMessage, setGitActionMessage] = useState('')
   const [gitActionError, setGitActionError] = useState('')
-  const [gitReadonlyViewerOpen, setGitReadonlyViewerOpen] = useState(false)
   const [, setImportDemoRefreshKey] = useState(0)
   const [importUploadConfirmBusy, setImportUploadConfirmBusy] = useState(false)
   const [importCleanupBusy, setImportCleanupBusy] = useState(false)
@@ -658,10 +644,10 @@ export function ProjectSettingsPanel({
   const metaSaveStatusColor = !canManageProject
     ? 'var(--text-muted)'
     : savingMeta
-      ? 'var(--status-running)'
+      ? '#60a5fa'
       : metaDirty
-        ? 'var(--status-waiting)'
-        : 'var(--status-success)'
+        ? '#f59e0b'
+        : '#10b981'
 
   const loadGitTracking = async () => {
     if (!project?.id) return
@@ -743,7 +729,6 @@ export function ProjectSettingsPanel({
   useEffect(() => {
     let alive = true
     setGitTracking(null)
-    setGitReadonlyViewerOpen(false)
     setActivePane('settings')
     const run = async () => {
       if (!project?.id) return
@@ -935,7 +920,7 @@ export function ProjectSettingsPanel({
           style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
           这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
           名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
-          {project.disabled && <span style={{ color: 'var(--status-danger)' }}> [目录已消失, 但数据保留]</span>}
+          {project.disabled && <span style={{ color: '#f87171' }}> [目录已消失, 但数据保留]</span>}
           <span className="block mt-1">本项目所有会话必选 mobius-extension skill, 用于带上拓展开发的协议与目录规范.</span>
         </div>
       )}
@@ -1003,7 +988,6 @@ export function ProjectSettingsPanel({
             gitActionMessage={gitActionMessage}
             gitActionError={gitActionError}
             onGitAction={runGitTrackingAction}
-            onOpenReadonly={() => setGitReadonlyViewerOpen(true)}
             onDeployVersion={deployOtherVersion}
             onHardResetVersion={hardResetVersion}
           />
@@ -1011,7 +995,7 @@ export function ProjectSettingsPanel({
         <div className="w-full min-w-0 p-3 space-y-4">
           {!canManageProject && (
             <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
-              style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-soft)', color: 'var(--text-secondary)' }}>
+              style={{ borderColor: 'rgba(59,130,246,0.28)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)' }}>
               当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
             </div>
           )}
@@ -1027,14 +1011,14 @@ export function ProjectSettingsPanel({
                   <textarea value={editName} disabled={!canManageProject} onChange={e => setEditName(normalizeSingleLineText(e.target.value))}
                     onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
                     rows={2}
-                    className="w-full h-20 px-3 py-2 rounded-lg text-left text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                    className="w-full h-20 px-3 py-2 rounded-lg text-left text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>描述</label>
                   <ExpandableTextarea value={editDesc} disabled={!canManageProject} onValueChange={setEditDesc} rows={2}
                     overlayTitle="编辑项目描述"
-                    className="w-full h-20 px-3 py-2 rounded-lg text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                    className="w-full h-20 px-3 py-2 rounded-lg text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </div>
                 <div className="xl:col-span-2">
@@ -1045,10 +1029,10 @@ export function ProjectSettingsPanel({
                   >
                     <input id={`project-bind-path-${project.id}`} value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                       onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-[var(--accent-border)] disabled:cursor-default disabled:opacity-60 truncate"
+                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
-                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] font-medium bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
                       <FolderOpen className="h-4 w-4" strokeWidth={1.8} />
                       <span>选择路径</span>
                     </button>
@@ -1058,7 +1042,7 @@ export function ProjectSettingsPanel({
                         projectId={project.id}
                         mode="direct"
                         showWorktreeOption={false}
-                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-primary)] transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
+                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-blue-500/10 hover:text-blue-400 transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
                       />
                     )}
                     {editBindPath && (
@@ -1071,7 +1055,7 @@ export function ProjectSettingsPanel({
                           setBindPathCopied(false)
                         }
                       }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
-                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-[var(--status-success)]' : 'hover:bg-[var(--accent-soft)] hover:text-[var(--accent-primary)]'} transition-colors border flex items-center justify-center`}
+                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
                         style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                         {bindPathCopied ? <Check className="h-4 w-4" strokeWidth={2} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
                       </button>
@@ -1152,7 +1136,7 @@ export function ProjectSettingsPanel({
                       </a>
                     )}
                     {importDemoActiveForProject && importGuideMessage && (
-                      <div className="basis-full text-[11px] text-[var(--status-waiting)] leading-5">
+                      <div className="basis-full text-[11px] text-amber-500 leading-5">
                         {importGuideMessage}
                       </div>
                     )}
@@ -1173,7 +1157,7 @@ export function ProjectSettingsPanel({
                   data-text-redaction-ignore="true"
                   data-design-id="project-default-model-select"
                   onChange={e => setEditDefaultModel(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                  className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
                 >
                   <option value="">未指定（跟随系统默认）</option>
@@ -1192,7 +1176,7 @@ export function ProjectSettingsPanel({
             </SettingsCard>
           )}
 
-          {metaErr && <div className="text-[12px] text-[var(--status-danger)]">{metaErr}</div>}
+          {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
           {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
             <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
           </div> */}
@@ -1239,7 +1223,7 @@ export function ProjectSettingsPanel({
                   <button type="button"
                     disabled={!canManageProject}
                     onClick={() => setEditGitRepos([...editGitRepos, { url: '', name: '' }])}
-                    className="h-7 px-2.5 rounded-md text-[11px] bg-[var(--surface-active)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors border border-[var(--accent-border)] flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="h-7 px-2.5 rounded-md text-[11px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                     <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
                     添加仓库
                   </button>
@@ -1256,20 +1240,20 @@ export function ProjectSettingsPanel({
                           disabled={!canManageProject}
                           onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
                           placeholder="别名（可选）"
-                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                         <input value={repo.url}
                           disabled={!canManageProject}
                           onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, url: e.target.value } : r))}
                           placeholder="git@github.com:org/repo.git 或 https://..."
-                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                         <button type="button"
                           disabled={!canManageProject}
                           onClick={() => setEditGitRepos(editGitRepos.filter((_, i) => i !== idx))}
                           title="删除仓库"
                           aria-label="删除仓库"
-                          className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-[var(--status-danger-soft)] hover:text-[var(--status-danger)] transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                          className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-red-500/10 hover:text-red-400 transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
                           style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                           <X className="h-3.5 w-3.5" strokeWidth={1.9} />
                         </button>
@@ -1286,7 +1270,7 @@ export function ProjectSettingsPanel({
               <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
               <ExpandableTextarea value={editForgottenFlagMessage} disabled={!canManageProject} onValueChange={setEditForgottenFlagMessage} rows={4}
                 overlayTitle="编辑自动提醒消息"
-                className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
             <div>
@@ -1301,7 +1285,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagIssueInit}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssueInit(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
@@ -1310,7 +1294,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagIssueBackoff}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssueBackoff(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
@@ -1319,7 +1303,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagIssuePatience}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssuePatience(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                   </div>
@@ -1333,7 +1317,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagResearchInit}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchInit(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
@@ -1342,7 +1326,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagResearchBackoff}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchBackoff(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
@@ -1351,7 +1335,7 @@ export function ProjectSettingsPanel({
                         value={editForgottenFlagResearchPatience}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchPatience(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)] disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                   </div>
@@ -1363,9 +1347,9 @@ export function ProjectSettingsPanel({
 
           {canManageProject && project.kind !== 'extension' && (
             <section className="rounded-lg border overflow-hidden"
-              style={{ borderColor: 'var(--status-danger-border)', background: 'var(--bg-secondary)' }}>
-              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--status-danger-border)' }}>
-                <h3 className="text-[13px] font-semibold text-[var(--status-danger)]">危险操作</h3>
+              style={{ borderColor: 'rgba(239,68,68,0.38)', background: 'var(--bg-secondary)' }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(239,68,68,0.25)' }}>
+                <h3 className="text-[13px] font-semibold text-red-400">危险操作</h3>
               </div>
               <div className="p-4">
                 <div className="flex items-start gap-3">
@@ -1385,7 +1369,7 @@ export function ProjectSettingsPanel({
                     }}
                     title={canDeleteProject ? '删除项目（需要多重确认）' : '查看删除限制'}
                     data-tour="project-delete"
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--status-danger-border)] bg-[var(--status-danger-soft)] px-3 text-[12px] font-medium text-[var(--status-danger)] transition-colors hover:bg-[var(--status-danger)] hover:text-[var(--status-danger-foreground)]">
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                     删除项目
                   </button>
@@ -1394,8 +1378,8 @@ export function ProjectSettingsPanel({
                   <div
                     role="alert"
                     className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
-                    style={{ borderColor: 'var(--status-waiting-border)', background: 'var(--status-waiting-soft)', color: 'var(--text-secondary)' }}>
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-waiting)]" strokeWidth={1.8} />
+                    style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
                     <span>{deletePolicy?.denial_reason || '当前账号没有删除此项目的权限。请联系项目创建者或系统管理员处理。'}</span>
                   </div>
                 )}
@@ -1405,14 +1389,6 @@ export function ProjectSettingsPanel({
         </div>
         )}
       </div>
-      {gitReadonlyViewerOpen && project?.id && (
-        <GitChangesViewer
-          projectId={project.id}
-          initialView="history"
-          sourceLabel="项目设置 · 中枢"
-          onClose={() => setGitReadonlyViewerOpen(false)}
-        />
-      )}
     </section>
   )
 }

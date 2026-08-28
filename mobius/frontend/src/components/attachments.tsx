@@ -63,10 +63,11 @@ export function appendAttachmentsToDesc(desc: string, atts: Attachment[]): strin
 // 整合附件输入壳: 单一边框容器内依次放 [附件芯片] + children(文本框) + [上传工具条].
 // children 应是**无边框透明背景**的文本输入 (border-0 bg-transparent), 外边框由本组件统一提供.
 // 拖拽 / Ctrl+V 粘贴 / 点击上传三合一. 一个弹窗内只挂一个实例, 避免粘贴重复入列.
-export function AttachmentComposer({ attachments, setAttachments, projectId, children }: {
+export function AttachmentComposer({ attachments, setAttachments, projectId, dark, children }: {
   attachments: Attachment[]
   setAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>
   projectId?: string
+  dark: boolean
   children: ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -116,7 +117,7 @@ export function AttachmentComposer({ attachments, setAttachments, projectId, chi
       onDragLeave={() => setDragOver(false)}
       onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files) }}
       className="relative rounded-xl transition-colors focus-within:border-blue-500/40"
-      style={{ background: 'var(--input-bg)', border: `1px solid ${dragOver ? 'var(--accent-border)' : 'var(--input-border)'}` }}
+      style={{ background: 'var(--input-bg)', border: `1px solid ${dragOver ? 'rgba(59,130,246,0.6)' : 'var(--input-border)'}` }}
     >
       <input ref={fileRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = '' }} />
       {attachments.length > 0 && (
@@ -124,20 +125,19 @@ export function AttachmentComposer({ attachments, setAttachments, projectId, chi
           {attachments.map(a => (
             <div key={a.id} className="relative group flex-shrink-0" title={`${a.name}${a.size ? ` · ${formatFileSize(a.size)}` : ''}`}>
               {a.kind === 'image' && a.previewUrl ? (
-                <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--input-border)' }}>
+                <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)' }}>
                   <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
-                  {a.status === 'uploading' && <div className="absolute inset-0" style={{ background: 'var(--surface-scrim)' }} />}
-                  {a.status === 'error' && <div className="absolute inset-0 text-[9px] flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--status-danger) 68%, transparent)', color: 'var(--text-on-accent)' }}>失败</div>}
+                  {a.status === 'uploading' && <div className="absolute inset-0 bg-black/40" />}
+                  {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[9px] flex items-center justify-center">失败</div>}
                 </div>
               ) : (
                 <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[10px]"
-                  style={{ background: 'var(--surface-overlay)', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
+                  style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
                   <Paperclip className="w-3 h-3" /><span className="max-w-[80px] truncate">{a.name}</span>
                 </div>
               )}
               <button type="button" onClick={() => remove(a.id)}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: 'var(--status-danger)', color: 'var(--text-on-accent)' }}>
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <X className="w-2.5 h-2.5" strokeWidth={3} />
               </button>
             </div>

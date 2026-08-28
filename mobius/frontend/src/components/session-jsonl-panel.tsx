@@ -1,7 +1,6 @@
 import { lazy, memo, Suspense, type RefObject } from 'react'
 import { JsonlLiveTailCard, JsonlView } from './jsonl-view'
-import { CodeArtifactOpenProvider } from './code-artifacts/CodeArtifactOpenContext'
-import type { CodeArtifactOpenRequest } from './code-artifacts/file-target'
+import { VSCodeOpenProvider } from './jsonl-vscode-link'
 
 const EasyJsonlView = lazy(() => import('./easy-jsonl/EasyJsonlView'))
 
@@ -34,7 +33,6 @@ type SessionJsonlPanelProps = {
   onEasyRoundCountChange?: (count: number) => void
   easyExpandAllSignal?: number
   variant?: 'standard' | 'easy'
-  onOpenArtifact: (request: CodeArtifactOpenRequest) => void
 }
 
 function SessionJsonlPanelInner({
@@ -65,28 +63,24 @@ function SessionJsonlPanelInner({
   onEasyRoundCountChange,
   easyExpandAllSignal,
   variant = 'standard',
-  onOpenArtifact,
 }: SessionJsonlPanelProps) {
   const effectiveTotal = jsonlTotal > loadedJsonlCount
     ? jsonlTotal - (loadedJsonlCount - visibleJsonl.length)
     : undefined
 
   return (
-    <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-w-0 flex-1 flex-col">
       <div
-        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="flex-1 overflow-y-auto relative"
         ref={chatContainerRef}
-        tabIndex={0}
-        role="region"
-        aria-label="会话消息"
         onScroll={(e) => {
           const el = e.currentTarget
           const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
           onScrollPositionChange(distFromBottom > 200)
         }}
       >
-        <div className="px-5 py-5" style={variant === 'easy' ? { paddingBottom: 'var(--composer-overlay-height, 176px)' } : undefined}>
-          <CodeArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <div className="px-5 py-5" style={variant === 'easy' ? { paddingBottom: 176 } : undefined}>
+          <VSCodeOpenProvider projectId={currentProjectId}>
             {variant === 'easy' ? (
               <Suspense fallback={<div className="py-10 text-center text-[12px] text-[var(--text-muted)]">正在整理简易对话...</div>}>
                 <EasyJsonlView
@@ -131,12 +125,12 @@ function SessionJsonlPanelInner({
               />
             )}
             <div ref={endRef} />
-          </CodeArtifactOpenProvider>
+          </VSCodeOpenProvider>
         </div>
       </div>
       {hasNewMessages && (
         <div className="flex justify-center py-1 flex-shrink-0">
-          <button onClick={onJumpToBottom} className="px-4 py-1.5 text-[12px] bg-[var(--accent-primary)] text-[var(--text-on-accent)] rounded-full hover:opacity-90 transition-opacity shadow-md flex items-center gap-1.5">
+          <button onClick={onJumpToBottom} className="px-4 py-1.5 text-[12px] bg-blue-500/90 text-white rounded-full hover:bg-blue-500 transition-colors shadow-md flex items-center gap-1.5">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
             新消息
           </button>

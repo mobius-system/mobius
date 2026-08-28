@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>莫比乌斯AI</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="apple-touch-icon" href="/favicon-32.png">
+  <script>
+    (function () {
+      var DEFAULT = { hideLogo: false, systemNameZh: '莫比乌斯AI', systemNameEn: 'Mobius', hiddenFolderName: '.mobius', appDir: '' };
+      var branding = DEFAULT;
+      try {
+        var x = new XMLHttpRequest();
+        x.open('GET', '/api/auth/branding', false);
+        x.send();
+        if (x.status === 200) {
+          var j = JSON.parse(x.responseText);
+          branding = {
+            hideLogo: !!j.hideLogo,
+            systemNameZh: typeof j.systemNameZh === 'string' ? j.systemNameZh : DEFAULT.systemNameZh,
+            systemNameEn: typeof j.systemNameEn === 'string' ? j.systemNameEn : DEFAULT.systemNameEn,
+            hiddenFolderName: typeof j.hiddenFolderName === 'string' && j.hiddenFolderName ? j.hiddenFolderName : DEFAULT.hiddenFolderName,
+            appDir: typeof j.appDir === 'string' ? j.appDir : DEFAULT.appDir,
+          };
+        }
+      } catch (e) { /* 拉失败时回退默认值 */ }
+      window.__BRANDING__ = branding;
+      document.title = branding.systemNameZh || ' ';
+    })();
+  </script>
+</head>
+<body class="bg-bg-0 text-gray-100 antialiased">
+  <div id="root"></div>
+  <script defer src="/extension/_sdk/designer-eye/loader.js"></script>
+  <script type="module" src="/src/easy-native-main.tsx"></script>
+</body>
+</html>

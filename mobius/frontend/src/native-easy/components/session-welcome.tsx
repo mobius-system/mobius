@@ -1,0 +1,1438 @@
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Upload, X } from 'lucide-react'
+import { api } from '../store'
+import { DevPortsBar } from './dev-ports-bar'
+import { normalizeGithubSkillInput } from './skills'
+import { SkillMarketLink } from './skill-market-link'
+import { GitChangesViewer } from './code-git/GitChangesViewer'
+import type { CodeArtifactOpenRequest } from './code-artifacts/file-target'
+import { safeToolPathLabel, sanitizeToolError } from './session-tool-context'
+
+const TimeConsumePanel = lazy(() => import('./time-consume-panel'))
+
+const AUTO_CONFIRM_SECONDS = 4
+
+// =====================================================================
+// SessionStartModal — Session 还没有任何消息时, 进入对话界面就跳出
+// 一个居中弹窗, 直接展示 Session 元数据中的 name / description 作为
+// "目的 / 待解决的问题", 不需要用户再次输入:
+//   - 「立即执行!」 -> 触发 onConfirm(), 由 ChatArea 把元数据拼成消息发出去
+//   - 「暂不执行」 -> 触发 onDismiss(), 仅关闭弹窗, 保留欢迎屏供浏览
+// =====================================================================
+export function SessionStartModal({
+  sessionName,
+  sessionDescription,
+  onConfirm,
+  onDismiss,
+  autoConfirm = true,
+}: {
+  sessionName?: string
+  sessionDescription?: string
+  onConfirm: () => Promise<void> | void
+  onDismiss: () => void
+  autoConfirm?: boolean
+}) {
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [countdown, setCountdown] = useState(AUTO_CONFIRM_SECONDS)
+  const [autoPending, setAutoPending] = useState(autoConfirm)
+  const submittingRef = useRef(false)
+  const onConfirmRef = useRef(onConfirm)
+  onConfirmRef.current = onConfirm
+
+  const handleConfirm = useCallback(async () => {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setAutoPending(false)
+    setLoading(true); setErr('')
+    try {
+      await onConfirmRef.current()
+    } catch (e: any) {
+      setErr(e?.message || '发送失败')
+    } finally {
+      submittingRef.current = false
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!autoConfirm) {
+      setAutoPending(false)
+      return
+    }
+    if (!autoPending) return
+    setCountdown(AUTO_CONFIRM_SECONDS)
+    const startedAt = Date.now()
+    const interval = setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000)
+      setCountdown(Math.max(AUTO_CONFIRM_SECONDS - elapsedSeconds, 0))
+    }, 250)
+    const timer = setTimeout(() => {
+      setAutoPending(false)
+      void handleConfirm()
+    }, AUTO_CONFIRM_SECONDS * 1000)
+
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timer)
+    }
+  }, [autoConfirm, autoPending, handleConfirm])
+
+  const modalHint = loading
+    ? '正在发送开始执行指令'
+    : autoConfirm && autoPending
+      ? `本次会话的目的 / 待解决的问题如下, ${countdown} 秒后自动执行`
+      : '本次会话的目的 / 待解决的问题如下'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 msg-enter"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)' }}
+    >
+      <div
+        data-tour="session-start-modal"
+        className="rounded-2xl border max-w-md w-full p-6 shadow-2xl"
+        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>
+            <Rocket className="w-5 h-5" strokeWidth={1.75} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+              是否开始执行?
+            </div>
+            <div className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+              {modalHint}
+            </div>
+          </div>
+        </div>
+        <div
+          className="rounded-lg border p-3 mb-5 max-h-[40vh] overflow-auto"
+          style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}
+        >
+          {sessionName && (
+            <div className="mb-2">
+              <div
+                className="text-[12px] font-medium mb-1"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Session 目的
+              </div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                {sessionName}
+              </div>
+            </div>
+          )}
+          {sessionDescription ? (
+            <div className={sessionName ? 'mt-2 pt-2 border-t' : ''} style={{ borderColor: 'var(--border-color)' }}>
+              <div
+                className="text-[12px] font-medium mb-1"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                待解决的问题
+              </div>
+              <div className="text-[12.5px] whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+                {sessionDescription}
+              </div>
+            </div>
+          ) : (
+            !sessionName && (
+              <div className="text-[12px] italic" style={{ color: 'var(--text-muted)' }}>
+                当前 Session 暂未填写目的与描述
+              </div>
+            )
+          )}
+        </div>
+        {err && (
+          <div className="mb-3 text-[11.5px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {err}
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={loading}
+            className="px-4 py-2 text-[12.5px] rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+          >
+            暂不执行
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={loading}
+            data-tour="session-start-confirm"
+            className="px-5 py-2 text-[12.5px] font-medium rounded-full btn-primary transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
+          >
+            {loading ? '发送中...' : autoConfirm && autoPending ? `立即执行 (${countdown}s)` : '立即执行!'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// SessionWelcomeCards — Session 对话尚未开始时（无消息、未注入上下文）
+// 的欢迎屏：展示当前 Session 范围内可用的 Memory / Skill 列表，
+// 并标注每个条目属于 用户级、项目级还是内置。
+//
+// 数据来源:
+//   - 用户级 memory : GET /api/memories
+//   - 项目级 memory : GET /api/projects/<projectId>/memories
+//   - 用户级 skill  : GET /api/skills
+//   - 项目级 skill  : GET /api/projects/<projectId>/skills
+// 后端返回的列表项里已带 scope/owner_id 字段, 这里前端为安全起见再次标注.
+// =====================================================================
+
+type Scope = 'user' | 'project' | 'builtin' | 'issue'
+
+type Item = {
+  id: string
+  name: string
+  description?: string
+  scope?: Scope
+}
+
+const SCOPE_STYLE: Record<Scope, { label: string; color: string; bg: string; border: string }> = {
+  project: { label: '项目级', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)' },
+  user: { label: '用户级', color: '#60a5fa', bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.25)' },
+  builtin: { label: '内置', color: '#c084fc', bg: 'rgba(168,85,247,0.08)', border: 'rgba(168,85,247,0.25)' },
+  issue: { label: '任务级', color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' },
+}
+
+// 排序: 项目级 → 用户级 → 内置
+const scopeOrder = (s?: Scope) => (s === 'project' ? 0 : (s === 'user' ? 1 : 2))
+
+function ScopeBadge({ scope }: { scope: Scope }) {
+  const s = SCOPE_STYLE[scope] || SCOPE_STYLE.user
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 border"
+      style={{ color: s.color, background: s.bg, borderColor: s.border }}
+    >
+      {s.label}
+    </span>
+  )
+}
+
+function CardList({
+  title,
+  hint,
+  loading,
+  items,
+  emptyText,
+  icon,
+}: {
+  title: string
+  hint: string
+  loading: boolean
+  items: Item[]
+  emptyText: string
+  icon: React.ReactNode
+}) {
+  return (
+    <div
+      className="flex flex-col rounded-xl border overflow-hidden"
+      style={{ background: 'var(--bg-tertiary, rgba(255,255,255,0.02))', borderColor: 'var(--border-color)' }}
+    >
+      <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
+            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{hint}</div>
+          </div>
+        </div>
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+          style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}
+        >
+          {loading ? '...' : items.length}
+        </span>
+      </div>
+      <div className="flex-1 max-h-72 overflow-auto p-2 space-y-1.5">
+        {loading ? (
+          <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        ) : items.length === 0 ? (
+          <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+        ) : (
+          items.map((it) => (
+            <div
+              key={it.id}
+              className="p-2 rounded-lg border"
+              style={{ background: 'rgba(255,255,255,0.015)', borderColor: 'rgba(255,255,255,0.04)' }}
+            >
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                  {it.name}
+                </span>
+                <ScopeBadge scope={it.scope ?? 'user'} />
+              </div>
+              {it.description && (
+                <p className="text-[10.5px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                  {it.description}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// SessionSkillMemoryEditor — 右栏底部, 只读展示当前 session 创建时定型的
+// skill / memory 选择快照. 创建后不再读取全局列表计算勾选状态, 避免全局
+// Skill/Memory 后续变化导致本 Session 展示漂移.
+// =====================================================================
+type EditorItem = {
+  id: string
+  name: string
+  description?: string
+  scope: Scope
+  body?: string
+  enabled?: boolean
+}
+
+interface SelectionSnapshotResponse {
+  snapshot: {
+    skills?: EditorItem[]
+    memories?: EditorItem[]
+    all_skills?: EditorItem[]
+    all_memories?: EditorItem[]
+    totals?: { skills?: number; memories?: number }
+  }
+  snapshot_at?: string | null
+  source?: 'created' | 'context' | 'live'
+  legacy?: boolean
+}
+
+// =====================================================================
+// 非精简模式会话资源标签展开状态持久化 (localStorage).
+// 用户主动关闭或切换 tab 后, 下次进入任意会话侧栏按记忆恢复, 而非每次回到默认.
+// 'closed' 表示用户主动收起两个 tab (区别于"从未设置"的缺失键 → 走 initialPanel 默认).
+// 仅在 persistActivePanel=true 时读写; 精简模式弹窗由用户点哪个按钮决定, 不持久化.
+// =====================================================================
+const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
+
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time'
+
+function readStoredActivePanel(): null | SessionResourcePanel | undefined {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time') return value
+    if (value === 'closed') return null
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredActivePanel(panel: null | SessionResourcePanel): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(ACTIVE_PANEL_STORAGE_KEY, panel === null ? 'closed' : panel)
+  } catch {
+    /* 忽略隐私模式 / 配额满等写入失败 */
+  }
+}
+
+// 文件名安全化: 非 [A-Za-z0-9._-] 替为 '-', 兜底 'item'.
+function safeFilenamePart(name: string): string {
+  const s = (name || '').trim().replace(/[^A-Za-z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  return (s || 'item').slice(0, 64)
+}
+
+// 若 body 已以 YAML frontmatter 开头则原样返回, 否则补一行 `name: <name>` frontmatter.
+function ensureSkillFrontmatter(name: string, body: string): string {
+  const raw = body.replace(/\r\n/g, '\n')
+  if (/^\s*---\s*\n/.test(raw)) return raw
+  return `---\nname: ${name}\n---\n\n${raw}`
+}
+
+// =====================================================================
+// AddSkillMemoryBar — Skill/Memory 面板顶部的"快速添加"入口.
+// 收起态是一个 "+ 添加" 虚线按钮; 展开态是内联精简表单:
+//   - skill: ① 粘贴 SKILL.md (name + 正文, 可含 frontmatter) 或上传 .md/.zip
+//            ② 从 GitHub 装 (owner/repo -> 后端 npx skills add)
+//   - memory: 写一条 (name + 正文) 或上传 .md/.zip (memory 无 GitHub 分发概念)
+// 默认装到"用户级" (baseUrl 不带 projectId), 对当前用户所有任务可用.
+// 成功后调 onAdded() 触发外层重新拉取 selection-snapshot, 新条目立刻出现在下方列表,
+// 用户再点"追加/强调"即可注入当前会话 (对后续对话回合生效).
+// =====================================================================
+function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdded: () => void }) {
+  const isSkill = kind === 'skill'
+  const baseUrl = isSkill ? '/api/skills' : '/api/memories'
+  const accent = isSkill ? '#60a5fa' : '#22d3ee'
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'manual' | 'github'>('manual')
+  const [name, setName] = useState('')
+  const [body, setBody] = useState('')
+  const [ghName, setGhName] = useState('')
+  const [ghHint, setGhHint] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const reset = () => { setName(''); setBody(''); setGhName(''); setGhHint(''); setErr('') }
+
+  const submitManual = async () => {
+    const n = name.trim()
+    if (!n) { setErr('名称不能为空'); return }
+    if (isSkill && !body.trim()) { setErr('SKILL.md 正文不能为空'); return }
+    setErr(''); setBusy(true)
+    try {
+      if (isSkill) {
+        const content = ensureSkillFrontmatter(n, body)
+        await api(`${baseUrl}/import-file`, {
+          method: 'POST',
+          body: JSON.stringify({ name: n, content, filename: `${safeFilenamePart(n)}.md` }),
+        })
+      } else {
+        await api(baseUrl, { method: 'POST', body: JSON.stringify({ name: n, body }) })
+      }
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '添加失败')
+    } finally { setBusy(false) }
+  }
+
+  const submitGithub = async () => {
+    const n = ghName.trim()
+    if (!n) { setErr('请输入 owner/repo (如 vercel-labs/agent-skills)'); return }
+    setErr(''); setBusy(true)
+    try {
+      await api(baseUrl, { method: 'POST', body: JSON.stringify({ name: n }) })
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '安装失败 (若本机 GitHub 不通, 需先在 .env 配置 MOBIUS_SKILLS_PROXY)')
+    } finally { setBusy(false) }
+  }
+
+  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setErr(''); setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await api(`${baseUrl}/import-file`, { method: 'POST', body: fd })
+      reset(); setOpen(false); onAdded()
+    } catch (e: any) {
+      setErr(e?.message || '上传导入失败')
+    } finally { setBusy(false) }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        data-tour={isSkill ? 'session-skill-add' : 'session-memory-add'}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+        style={{ borderColor: 'var(--border-color-strong)', color: accent }}
+      >
+        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+        添加 {isSkill ? 'Skill' : 'Memory'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5 rounded-lg border p-2" style={{ borderColor: 'var(--border-color-strong)', background: 'rgba(255,255,255,0.02)' }}>
+      <div className="flex flex-wrap items-center gap-1">
+        {isSkill ? (
+          <>
+            <SegBtn active={mode === 'manual'} onClick={() => { setMode('manual'); setErr('') }} color={accent}>粘贴 / 上传</SegBtn>
+            <SegBtn active={mode === 'github'} onClick={() => { setMode('github'); setErr('') }} color={accent}>从 GitHub 装</SegBtn>
+          </>
+        ) : (
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>写一条 Memory 或上传文件</span>
+        )}
+        {isSkill && <SkillMarketLink className="ml-auto" />}
+        <button type="button" onClick={() => { reset(); setOpen(false) }} className={`${isSkill ? '' : 'ml-auto'} text-[10px] hover:underline`} style={{ color: 'var(--text-muted)' }}>收起</button>
+      </div>
+
+      {mode === 'github' && isSkill ? (
+        <>
+          <input
+            value={ghName}
+            onChange={e => {
+              const raw = e.target.value
+              const clean = normalizeGithubSkillInput(raw)
+              if (clean && clean !== raw.trim()) {
+                setGhName(clean)
+                setGhHint(`已从粘贴的命令 / URL 自动提取为: ${clean}`)
+              } else {
+                setGhName(raw)
+                setGhHint('')
+              }
+              setErr('')
+            }}
+            placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
+            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          {ghHint && (
+            <div className="break-words text-[9.5px] leading-snug" style={{ color: '#fbbf24' }}>{ghHint}</div>
+          )}
+          <div className="text-[9.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+            后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为用户级 Skill.
+          </div>
+        </>
+      ) : (
+        <>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={isSkill ? 'Skill 名称 (如 my-skill)' : 'Memory 名称'}
+            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            rows={isSkill ? 4 : 3}
+            placeholder={isSkill ? 'SKILL.md 正文 (可含 --- frontmatter ---, 否则自动补 name)' : 'Memory 正文'}
+            data-text-redaction-ignore="true"
+            className="w-full resize-y rounded border px-2 py-1 font-mono text-[11px] outline-none"
+            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            accept=".md,.markdown,.zip,.tar,.tar.gz,.tgz,.tbz,.tbz2,.tar.bz2,.txz,.tar.xz,application/zip,application/x-tar,application/gzip,text/markdown"
+            onChange={uploadFile}
+          />
+        </>
+      )}
+
+      {err && <div className="break-words text-[10px] text-red-400">{err}</div>}
+
+      <div className="flex items-center gap-1.5">
+        {mode === 'manual' && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[10.5px] disabled:opacity-50"
+            style={{ borderColor: 'var(--border-color-strong)', color: 'var(--text-secondary)' }}
+          >
+            <Upload className="h-3 w-3" strokeWidth={1.9} /> 上传文件
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={mode === 'github' ? submitGithub : submitManual}
+          className="btn-primary ml-auto rounded px-3 py-1 text-[10.5px] disabled:opacity-60"
+        >
+          {busy ? '处理中...' : (mode === 'github' ? '安装' : '添加')}
+        </button>
+      </div>
+      <div className="text-[9px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+        作为用户级添加 (对你所有任务可用). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.
+      </div>
+    </div>
+  )
+}
+
+function SegBtn({ active, onClick, color, children }: { active: boolean; onClick: () => void; color: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded border px-2 py-0.5 text-[10.5px] transition-colors"
+      style={{
+        color: active ? '#fff' : 'var(--text-secondary)',
+        borderColor: active ? color : 'var(--border-color)',
+        background: active ? color : 'transparent',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+type GitSource = {
+  id: string
+  kind: 'hub' | 'local' | 'remote'
+  label: string
+  available: boolean
+  branch?: string | null
+  head?: string | null
+  path: string
+  dirty?: boolean
+  dirty_count?: number
+  status?: string
+  hostname?: string
+  reason?: string
+  cache_expires_at?: number
+}
+
+// 资源 tab 图标的悬浮动效, 模仿 advanced-interaction-btn 的 tilt:
+// 悬浮/键盘聚焦时图标上移 0.5、旋转 -8°、放大 1.1 (transition-transform duration-200)。
+const RESOURCE_TAB_ICON_HOVER = 'inline-flex flex-shrink-0 items-center justify-center transition-transform duration-200 group-hover/resource-tab:-translate-y-0.5 group-hover/resource-tab:rotate-[-8deg] group-hover/resource-tab:scale-110 group-focus-visible/resource-tab:-translate-y-0.5 group-focus-visible/resource-tab:rotate-[-8deg] group-focus-visible/resource-tab:scale-110'
+
+// 资源 tab 按钮: 文字提示沿用 advanced-interaction-btn 的自定义 tooltip —— mouseenter 即时弹出,
+// 替代原生 title (浏览器自带约 1s 延迟); 定位 (下方优先 + 视口 clamp) 与样式与高级交互按钮同款。
+function ResourceTabButton({
+  label,
+  icon,
+  active,
+  activeClass,
+  idleClass,
+  onClick,
+  dataTour,
+  badge,
+}: {
+  label: string
+  icon: ReactNode
+  active: boolean
+  activeClass: string
+  idleClass: string
+  onClick: () => void
+  dataTour?: string
+  badge?: ReactNode
+}) {
+  const tooltipId = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  const [tooltipOpen, setTooltipOpen] = useState(false)
+  // tooltipPos 为 null 时 tooltip 以 visibility:hidden 渲染并测量; 测量后得到经视口 clamp 的最终坐标, 再可见.
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; placement: 'top' | 'bottom' } | null>(null)
+
+  const updateTooltipPosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button || typeof window === 'undefined') return
+    const rect = button.getBoundingClientRect()
+    const gap = 8
+    const margin = 8
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const tip = tooltipRef.current
+    const tw = tip ? tip.offsetWidth : 0
+    const th = tip ? tip.offsetHeight : 0
+    const approxH = th || 30
+    const placement = rect.bottom + gap + approxH <= vh - margin ? 'bottom' : (rect.top - gap - approxH >= margin ? 'top' : 'bottom')
+    const top = placement === 'bottom'
+      ? Math.min(rect.bottom + gap, vh - margin - approxH)
+      : Math.max(margin, rect.top - gap - approxH)
+    const center = rect.left + rect.width / 2
+    const minCenter = margin + tw / 2
+    const maxCenter = vw - margin - tw / 2
+    const left = tw > 0 ? Math.min(Math.max(center, minCenter), maxCenter) : Math.min(Math.max(center, margin), vw - margin)
+    setTooltipPos({ left, top, placement })
+  }, [])
+
+  useEffect(() => {
+    if (!tooltipOpen) return
+    updateTooltipPosition()
+    window.addEventListener('resize', updateTooltipPosition)
+    window.addEventListener('scroll', updateTooltipPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateTooltipPosition)
+      window.removeEventListener('scroll', updateTooltipPosition, true)
+    }
+  }, [tooltipOpen, updateTooltipPosition])
+
+  useLayoutEffect(() => {
+    if (tooltipOpen && tooltipPos === null) {
+      updateTooltipPosition()
+    }
+  }, [tooltipOpen, tooltipPos, updateTooltipPosition])
+
+  const hideTooltip = useCallback(() => {
+    setTooltipOpen(false)
+    setTooltipPos(null)
+  }, [])
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        aria-label={label}
+        aria-describedby={tooltipOpen ? tooltipId : undefined}
+        {...(dataTour ? { 'data-tour': dataTour } : {})}
+        onMouseEnter={() => setTooltipOpen(true)}
+        onMouseLeave={hideTooltip}
+        onFocus={() => setTooltipOpen(true)}
+        onBlur={hideTooltip}
+        className={`group/resource-tab min-h-9 w-full px-2 py-2 text-center text-[12px] leading-snug transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed inline-flex min-w-0 items-center justify-center gap-1.5 overflow-hidden border-b-2 ${active ? activeClass : idleClass}`}
+        style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}
+      >
+        <span className={RESOURCE_TAB_ICON_HOVER}>{icon}</span>
+        {badge}
+      </button>
+      {tooltipOpen && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            ref={tooltipRef}
+            id={tooltipId}
+            role="tooltip"
+            // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成后再可见.
+            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
+            style={
+              tooltipPos
+                ? {
+                  left: tooltipPos.left,
+                  top: tooltipPos.top,
+                  transform: tooltipPos.placement === 'bottom'
+                    ? 'translate(-50%, 0)'
+                    : 'translate(-50%, -100%)',
+                  visibility: 'visible',
+                }
+                : { left: 0, top: 0, visibility: 'hidden' }
+            }
+          >
+            {label}
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
+  )
+}
+
+export function SessionSkillMemoryEditor({
+  sessionId,
+  projectId,
+  initialPanel = null,
+  persistActivePanel = false,
+  snapshotOnly = false,
+  gitOnly = false,
+  onOpenArtifact,
+}: {
+  sessionId?: string
+  projectId?: string
+  initialPanel?: null | SessionResourcePanel
+  persistActivePanel?: boolean
+  snapshotOnly?: boolean
+  gitOnly?: boolean
+  onOpenArtifact?: (request: CodeArtifactOpenRequest) => void
+}) {
+  const [memories, setMemories] = useState<EditorItem[]>([])
+  const [skills, setSkills] = useState<EditorItem[]>([])
+  const [totals, setTotals] = useState({ skills: 0, memories: 0 })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  // 按钮三态: idle / sending / done. key = `${kind}:${itemId}`
+  const [emphasizeState, setEmphasizeState] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
+  const [gitSources, setGitSources] = useState<GitSource[]>([])
+  const [gitLoading, setGitLoading] = useState(false)
+  const [gitError, setGitError] = useState('')
+  const [gitRefreshKey, setGitRefreshKey] = useState(0)
+  const [gitScanMeta, setGitScanMeta] = useState<{ cached: boolean; scannedAt: string }>({ cached: false, scannedAt: '' })
+  const [selectedGitSourceId, setSelectedGitSourceId] = useState('')
+  const [gitViewerOpen, setGitViewerOpen] = useState(false)
+  const [activePanel, setActivePanel] = useState<null | SessionResourcePanel>(() => {
+    if (persistActivePanel) {
+      const stored = readStoredActivePanel()
+      if (stored !== undefined) return stored
+    }
+    return initialPanel
+  })
+  // 切换/收起 tab 时同步写回 localStorage (仅 persistActivePanel=true 的非精简侧栏).
+  const setActivePanelAndPersist = useCallback((next: null | SessionResourcePanel) => {
+    setActivePanel(next)
+    if (persistActivePanel) writeStoredActivePanel(next)
+  }, [persistActivePanel])
+
+  useEffect(() => {
+    if (activePanel !== 'git' || !projectId) return
+    let cancelled = false
+    setGitLoading(true)
+    setGitError('')
+    const desktop = typeof window !== 'undefined' ? (window as any).mobiusDesktop : null
+    const hubRequest = api(`/api/projects/${projectId}/git-sources${gitRefreshKey > 0 ? '?refresh=1' : ''}`)
+      .then((res: any) => ({
+        sources: (Array.isArray(res?.sources) ? res.sources as GitSource[] : []).filter((source) => (
+          source.kind !== 'remote'
+          || (Array.isArray(res?.registered_remote_names) && res.registered_remote_names.includes(source.label))
+        )),
+        cached: !!res?.cached,
+        scannedAt: typeof res?.scanned_at === 'string' ? res.scanned_at : '',
+      }))
+    const localRequest = desktop?.isDesktop && typeof desktop.getProjectGitStatus === 'function'
+      ? Promise.resolve(desktop.getProjectGitStatus(projectId)).then((local: any) => [{
+        id: `local:${projectId}`,
+        kind: 'local' as const,
+        available: !!local?.available,
+        label: 'Electron 本地',
+        branch: local?.branch || null,
+        head: local?.head || null,
+        path: local?.path || '',
+        dirty: !!local?.dirty,
+        dirty_count: Number(local?.dirty_count || 0),
+        reason: local?.reason || '',
+      }])
+      : Promise.resolve([] as GitSource[])
+    Promise.allSettled([hubRequest, localRequest])
+      .then(([hubResult, localResult]) => {
+        if (cancelled) return
+        const hubData = hubResult.status === 'fulfilled' ? hubResult.value : { sources: [], cached: false, scannedAt: '' }
+        const localSources = localResult.status === 'fulfilled' ? localResult.value : []
+        const nextSources = [...hubData.sources, ...localSources]
+        setGitSources(nextSources)
+        setSelectedGitSourceId(previous => {
+          if (nextSources.some(source => source.id === previous)) return previous
+          return nextSources.find(source => source.kind === 'hub' && source.available)?.id
+            || nextSources.find(source => source.available)?.id
+            || nextSources[0]?.id
+            || ''
+        })
+        setGitScanMeta({ cached: hubData.cached, scannedAt: hubData.scannedAt })
+        if (hubResult.status === 'rejected' && localResult.status === 'rejected') {
+          setGitError('中枢与 Electron 本机 Git 扫描均失败')
+        }
+      })
+      .finally(() => { if (!cancelled) setGitLoading(false) })
+    return () => { cancelled = true }
+  }, [activePanel, projectId, gitRefreshKey])
+  const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
+  // 添加 skill/memory 成功后: 先让后端用当前 live 数据重建该会话的 selection snapshot
+  // (会话快照在创建时已冻结, 不刷新则新装的条目既不进列表也不被注入), 再重新拉取.
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(async () => {
+    try {
+      if (sessionId) {
+        await api(`/api/sessions/${sessionId}/refresh-selection-snapshot`, { method: 'POST', body: '{}' })
+      }
+    } catch {
+      // 刷新失败不阻塞: 仍重新拉取一次, 兜底显示当前已持久化的快照.
+    }
+    setReloadKey(k => k + 1)
+  }, [sessionId])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!sessionId) {
+      setMemories([])
+      setSkills([])
+      setTotals({ skills: 0, memories: 0 })
+      setPreviewItem(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+    setLoading(true)
+    setError('')
+    api(`/api/sessions/${sessionId}/selection-snapshot`)
+      .then((res: SelectionSnapshotResponse) => {
+        if (cancelled) return
+        const snap = res.snapshot || {}
+        const skillSource = snapshotOnly
+          ? (snap.skills || [])
+          : (snap.all_skills && snap.all_skills.length > 0 ? snap.all_skills : snap.skills || [])
+        const memorySource = snapshotOnly
+          ? (snap.memories || [])
+          : (snap.all_memories && snap.all_memories.length > 0 ? snap.all_memories : snap.memories || [])
+        const skillItems = skillSource
+          .map((it) => ({ ...it, enabled: it.enabled !== false }))
+        const memoryItems = memorySource
+          .map((it) => ({ ...it, enabled: it.enabled !== false }))
+        const sortFn = (a: EditorItem, b: EditorItem) => {
+          if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1
+          if (a.scope !== b.scope) return scopeOrder(a.scope) - scopeOrder(b.scope)
+          return (a.name || '').localeCompare(b.name || '')
+        }
+        setSkills(skillItems.sort(sortFn))
+        setMemories(memoryItems.sort(sortFn))
+        setTotals({
+          skills: snap.totals?.skills ?? skillItems.length,
+          memories: snap.totals?.memories ?? memoryItems.length,
+        })
+      })
+      .catch((e: any) => {
+        if (cancelled) return
+        setError(e?.message || '加载失败')
+        setSkills([])
+        setMemories([])
+        setTotals({ skills: 0, memories: 0 })
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [sessionId, reloadKey, snapshotOnly])
+
+  const handleEmphasize = useCallback(async (kind: 'skill' | 'memory', itemId: string) => {
+    if (!sessionId) return
+    const key = `${kind}:${itemId}`
+    setEmphasizeState((prev) => ({ ...prev, [key]: 'sending' }))
+    try {
+      await api(`/api/sessions/${sessionId}/emphasize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, id: itemId }),
+      })
+      setEmphasizeState((prev) => ({ ...prev, [key]: 'done' }))
+      setTimeout(() => {
+        setEmphasizeState((prev) => {
+          if (prev[key] !== 'done') return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }, 1500)
+    } catch (e: any) {
+      setEmphasizeState((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      // 简单的错误提示: 不阻断其他按钮, 用 alert 兜底
+      window.alert?.(e?.message || '发送失败')
+    }
+  }, [sessionId])
+
+  const renderList = (
+    items: EditorItem[],
+    emptyText: string,
+    kind: 'skill' | 'memory',
+  ) => {
+    if (loading) return <div className="text-[11px] py-2 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+    if (error) return <div className="text-[11px] py-2 text-center text-red-400">{error}</div>
+    if (items.length === 0) return <div className="text-[11px] py-2 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+    return (
+      <div className="space-y-1">
+        {items.map(it => {
+          const enabled = it.enabled !== false
+          const scopeStyle = SCOPE_STYLE[it.scope] || SCOPE_STYLE.user
+          const stateKey = `${kind}:${it.id}`
+          const btnState = emphasizeState[stateKey] || 'idle'
+          const btnLabel = btnState === 'sending' ? '发送中...' : btnState === 'done' ? '✓' : (enabled ? '强调' : '追加')
+          const btnDisabled = !sessionId || btnState === 'sending' || btnState === 'done'
+          return (
+            <div key={it.id}
+              className="flex items-start gap-2 px-2 py-1.5 rounded border text-[11px]"
+              style={{
+                borderColor: 'var(--border-color)',
+                background: enabled ? 'rgba(255,255,255,0.02)' : 'transparent',
+              }}>
+              <div className={`min-w-0 flex-1 ${enabled ? '' : 'opacity-65'}`}>
+                <div className="flex items-start gap-2">
+                  {/* <input
+                    type="checkbox"
+                    checked={enabled}
+                    disabled
+                    readOnly
+                    className="mt-0.5 flex-shrink-0 accent-blue-500"
+                  /> */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
+                      <span
+                        className="text-[9px] px-1 py-px rounded flex-shrink-0 border"
+                        style={{
+                          color: scopeStyle.color,
+                          background: scopeStyle.bg,
+                          borderColor: scopeStyle.border,
+                        }}>
+                        {scopeStyle.label}
+                      </span>
+                    </div>
+                    {it.description && (
+                      <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem({ kind, item: it })}
+                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors inline-flex items-center gap-1 hover:bg-[var(--bg-card-hover)]"
+                style={{
+                  color: 'var(--text-secondary)',
+                  borderColor: 'var(--border-color-strong)',
+                  background: 'transparent',
+                }}
+                title={`浏览 ${it.name} 的快照正文`}
+                aria-label={`浏览 ${it.name} 的快照正文`}
+              >
+                <Eye className="h-3 w-3" strokeWidth={1.9} />
+              </button>
+              {!snapshotOnly && (
+                <button
+                  type="button"
+                  disabled={btnDisabled}
+                  onClick={() => handleEmphasize(kind, it.id)}
+                  className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
+                  style={{
+                    color: btnState === 'done' ? '#22c55e' : 'var(--text-primary)',
+                    borderColor: btnState === 'done' ? 'rgba(34,197,94,0.25)' : 'var(--border-color-strong)',
+                    background: btnState === 'done' ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)',
+                  }}
+                >
+                  {btnLabel}
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const enabledSkills = skills.filter(it => it.enabled !== false).length
+  const enabledMemories = memories.filter(it => it.enabled !== false).length
+  const skillTotal = totals.skills || skills.length
+  const memoryTotal = totals.memories || memories.length
+  const skillActive = activePanel === 'skill'
+  const memActive = activePanel === 'memory'
+  const gitActive = activePanel === 'git'
+  const portsActive = activePanel === 'ports'
+  const timeActive = activePanel === 'time'
+  const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
+  const selectedGitSource = gitSources.find(source => source.id === selectedGitSourceId) || null
+
+  return (
+    <>
+      <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-2">
+        {/* Tabs: 点击切换面板, 再次点击当前 tab 收起; 列表直接内联展示在下方, 不再弹窗.
+            五个 tab 始终保持单行并等分可用宽度; 激活态底部彩色下划线 + 主色加粗, 未激活弱化. */}
+        <div className={`session-resource-tabs grid ${snapshotOnly ? 'grid-cols-2' : gitOnly ? 'grid-cols-1' : 'grid-cols-[repeat(5,minmax(0,1fr))]'} items-stretch`}>
+          {!gitOnly && (
+            <>
+              <ResourceTabButton
+                label="Skill"
+                icon={<Puzzle className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
+                active={skillActive}
+                activeClass="border-blue-400 font-medium"
+                idleClass="border-transparent hover:bg-blue-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'skill' ? null : 'skill')}
+              />
+              <ResourceTabButton
+                label="Memory"
+                icon={<Brain className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.9} />}
+                active={memActive}
+                activeClass="border-cyan-400 font-medium"
+                idleClass="border-transparent hover:bg-cyan-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'memory' ? null : 'memory')}
+                dataTour="session-memory-toggle"
+              />
+            </>
+          )}
+          {!snapshotOnly && (
+            <>
+              <ResourceTabButton
+                label="Git"
+                icon={<GitBranch className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.9} />}
+                active={gitActive}
+                activeClass="border-amber-400 font-medium"
+                idleClass="border-transparent hover:bg-amber-500/10"
+                onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
+                dataTour="session-git-toggle"
+                badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
+              />
+              {!gitOnly && (
+                <>
+                  <ResourceTabButton
+                    label="端口"
+                    icon={<MonitorPlay className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.9} />}
+                    active={portsActive}
+                    activeClass="border-emerald-400 font-medium"
+                    idleClass="border-transparent hover:bg-emerald-500/10"
+                    onClick={() => setActivePanelAndPersist(activePanel === 'ports' ? null : 'ports')}
+                    dataTour="session-ports-toggle"
+                  />
+                  <ResourceTabButton
+                    label="耗时"
+                    icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
+                    active={timeActive}
+                    activeClass="border-sky-400 font-medium"
+                    idleClass="border-transparent hover:bg-sky-500/10"
+                    onClick={() => setActivePanelAndPersist(activePanel === 'time' ? null : 'time')}
+                    dataTour="session-time-toggle"
+                  />
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 内联菜单: 直接占据 tab 下方剩余空间, 无独立背景/边框/圆角, 无缝融入侧栏 */}
+        {activePanel && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* "快速添加"入口作为列表的第一项, 与列表项同处一个滚动容器、共用 space-y-1 间距,
+                风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
+                把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+              {resourceKind && !snapshotOnly && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
+              {skillActive ? renderList(skills, snapshotOnly ? '本会话未使用 Skill' : '暂无 Skill', 'skill')
+                : memActive ? renderList(memories, snapshotOnly ? '本会话未使用 Memory' : '暂无 Memory', 'memory')
+                  : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
+                    : timeActive ? (
+                      <Suspense fallback={<div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
+                        <TimeConsumePanel sessionId={sessionId} />
+                      </Suspense>
+                    )
+                    : (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 px-1 py-0.5">
+                        <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          {gitScanMeta.scannedAt ? `${gitScanMeta.cached ? '缓存' : '刚刚扫描'} · ${new Date(gitScanMeta.scannedAt).toLocaleTimeString()}` : '按需扫描中枢、本机与远端'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setGitRefreshKey(key => key + 1)}
+                          disabled={gitLoading}
+                          className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
+                          style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+                          title="刷新 Git 仓库状态"
+                          aria-label="刷新 Git 仓库状态"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${gitLoading ? 'animate-spin' : ''}`} strokeWidth={1.9} />
+                        </button>
+                      </div>
+                      {gitLoading && (
+                        <div className="flex items-center justify-center gap-2 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 扫描 Git 仓库...
+                        </div>
+                      )}
+                      {!gitLoading && gitError && <div className="py-4 text-center text-[11px] text-red-400">{gitError}</div>}
+                      {!gitLoading && !gitError && gitSources.length === 0 && (
+                        <div className="rounded-lg border border-dashed px-3 py-5 text-center text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                          当前中枢、本机和已登记远程计算机都没有检测到 Git 仓库
+                        </div>
+                      )}
+                      {!gitLoading && gitSources.length > 0 && (
+                        <>
+                          <div className="px-1 pt-1 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>选择 Git source</div>
+                          <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Git source selector">
+                            {gitSources.map(source => (
+                              <button
+                                key={source.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={selectedGitSourceId === source.id}
+                                onClick={() => setSelectedGitSourceId(source.id)}
+                                className={`git-source-selector__item${selectedGitSourceId === source.id ? ' git-source-selector__item--active' : ''}`}
+                              >
+                                <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
+                                <span className="min-w-0 flex-1 truncate text-left text-[11px] font-medium">{source.label}</span>
+                                <span className="git-source-selector__capability">{source.kind === 'hub' ? '变更与历史' : '仅状态'}</span>
+                              </button>
+                            ))}
+                          </div>
+                          {selectedGitSource && (() => {
+                            const source = selectedGitSource
+                            const dirtyFresh = !!source.dirty
+                              && (source.kind === 'local' || (
+                                typeof source.cache_expires_at === 'number'
+                                && source.cache_expires_at - Date.now() < 10 * 60 * 1000
+                              ))
+                            return (
+                              <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
+                                  {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{source.branch}</span>}
+                                  {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[10px] text-slate-300">无 Git 仓库</span>}
+                                  {source.available && source.kind !== 'hub' && <span className="git-source-selector__capability">仅状态</span>}
+                                  {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">游离 HEAD {source.head}</span>}
+                                </div>
+                                <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{source.path ? safeToolPathLabel(source.path) : '路径未知'}</div>
+                                <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `AIMUX 远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
+                                  {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
+                                  {source.status && <span>· {source.status}</span>}
+                                  {!source.available && source.reason && <span className="truncate text-slate-400">· {sanitizeToolError(source.reason, '仓库不可用')}</span>}
+                                  {source.available && !source.branch && !source.head && source.reason && <span className="truncate text-amber-300">· {sanitizeToolError(source.reason, '仓库状态不可用')}</span>}
+                                </div>
+                                {source.available && source.kind === 'hub' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setGitViewerOpen(true)}
+                                    className="workbench-control-md mt-2 inline-flex w-full items-center justify-center gap-1.5 border px-3 text-[11px] font-medium"
+                                    style={{ borderColor: 'var(--accent-border)', color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />查看变更与历史
+                                  </button>
+                                ) : source.available ? (
+                                  <p className="mt-2 text-[10px] leading-4 text-[var(--text-muted)]">此 source 当前只提供仓库状态；未提供 commit log/diff API。</p>
+                                ) : null}
+                              </div>
+                            )
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {previewItem && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center px-4" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭正文浏览"
+            onClick={() => setPreviewItem(null)}
+          />
+          <div
+            className="relative flex w-full max-w-[860px] flex-col overflow-hidden rounded-2xl shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 'min(760px, calc(100vh - 48px))' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {previewItem.kind === 'skill'
+                    ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                    : <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
+                  <h3 className="min-w-0 text-[15px] font-semibold leading-6 break-words" style={{ color: 'var(--text-primary)' }}>
+                    {previewItem.item.name}
+                  </h3>
+                  <ScopeBadge scope={previewItem.item.scope} />
+                  <span
+                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    {(previewItem.item.body || '').length} 字
+                  </span>
+                </div>
+                {previewItem.item.description && (
+                  <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {previewItem.item.description}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                aria-label="关闭正文浏览"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5">
+              <pre
+                className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[12px] leading-relaxed"
+                style={{
+                  background: 'var(--bg-primary)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace',
+                }}
+              >
+                {previewItem.item.body || '这个快照条目没有可浏览的正文。'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+      {gitViewerOpen && projectId && selectedGitSource?.kind === 'hub' && (
+        <GitChangesViewer
+          sessionId={sessionId}
+          projectId={projectId}
+          sourceLabel={selectedGitSource.label}
+          onClose={() => setGitViewerOpen(false)}
+          onOpenArtifact={onOpenArtifact}
+        />
+      )}
+    </>
+  )
+}
+
+export function SessionSkillMemoryModal({
+  sessionId,
+  projectId,
+  initialPanel,
+  onClose,
+  onManage,
+}: {
+  sessionId?: string
+  projectId?: string
+  initialPanel: 'skill' | 'memory' | 'git'
+  onClose: () => void
+  onManage?: (kind: 'skill' | 'memory') => void
+}) {
+  const snapshotKind = initialPanel === 'skill' || initialPanel === 'memory' ? initialPanel : null
+  const title = initialPanel === 'skill' ? '本会话 Skill 快照' : initialPanel === 'memory' ? '本会话 Memory 快照' : '当前项目 Git'
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        aria-label="关闭 Skill / Memory 弹窗"
+        onClick={onClose}
+      />
+      <div
+        className="relative flex h-[min(680px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+        onClick={event => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 items-center gap-2">
+            {initialPanel === 'skill'
+              ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+              : initialPanel === 'memory'
+                ? <Brain className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
+                : <GitBranch className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.9} />}
+            <h3 className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+            aria-label="关闭 Skill / Memory 弹窗"
+            title="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+        {snapshotKind && (
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-2.5 text-[11px]" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-secondary)' }}>
+            <span className="min-w-0 flex-1">这里只显示创建本 Session 时定型的快照；管理变更只用于后续新会话。</span>
+            {onManage && (
+              <button
+                type="button"
+                onClick={() => onManage(snapshotKind)}
+                className="workbench-control-md flex-shrink-0 border px-3 text-[11px] font-medium transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ borderColor: 'var(--border-default)', color: 'var(--accent-primary)' }}
+              >
+                在 Settings 管理 {snapshotKind === 'skill' ? 'Skills' : 'Memory'}
+              </button>
+            )}
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <SessionSkillMemoryEditor
+            key={initialPanel}
+            sessionId={sessionId}
+            projectId={projectId}
+            initialPanel={initialPanel}
+            snapshotOnly={!!snapshotKind}
+            gitOnly={initialPanel === 'git'}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function SessionWelcomeCards({ projectId }: { projectId?: string }) {
+  const [memories, setMemories] = useState<Item[]>([])
+  const [skills, setSkills] = useState<Item[]>([])
+  const [memLoading, setMemLoading] = useState(true)
+  const [skillLoading, setSkillLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setMemLoading(true)
+    const memReqs: Promise<Item[]>[] = [
+      api('/api/memories').then((arr: any[]) =>
+        (Array.isArray(arr) ? arr : []).map((x) => ({ ...x, scope: 'user' as const })),
+      ).catch(() => []),
+    ]
+    if (projectId) {
+      memReqs.push(
+        api(`/api/projects/${projectId}/memories`).then((arr: any[]) =>
+          (Array.isArray(arr) ? arr : []).map((x) => ({ ...x, scope: 'project' as const })),
+        ).catch(() => []),
+      )
+    }
+    Promise.all(memReqs).then((lists) => {
+      if (cancelled) return
+      const merged = lists.flat()
+      merged.sort((a, b) => {
+        if (a.scope !== b.scope) return a.scope === 'project' ? -1 : 1
+        return (a.name || '').localeCompare(b.name || '')
+      })
+      setMemories(merged)
+      setMemLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    let cancelled = false
+    setSkillLoading(true)
+    const skillReqs: Promise<Item[]>[] = [
+      api('/api/skills').then((arr: any[]) =>
+        (Array.isArray(arr) ? arr : []).map((x) => ({ ...x, scope: 'user' as const })),
+      ).catch(() => []),
+    ]
+    if (projectId) {
+      skillReqs.push(
+        api(`/api/projects/${projectId}/skills`).then((arr: any[]) =>
+          (Array.isArray(arr) ? arr : []).map((x) => ({ ...x, scope: 'project' as const })),
+        ).catch(() => []),
+      )
+    }
+    Promise.all(skillReqs).then((lists) => {
+      if (cancelled) return
+      const merged = lists.flat()
+      merged.sort((a, b) => {
+        if (a.scope !== b.scope) return a.scope === 'project' ? -1 : 1
+        return (a.name || '').localeCompare(b.name || '')
+      })
+      setSkills(merged)
+      setSkillLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  return (
+    <div className="msg-enter">
+      <div className="mb-4 text-center">
+        <div className="text-[13px] font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+          Session 尚未开始
+        </div>
+        <div className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+          发送第一条消息后, 以下 Memory 与 Skill 将随上下文一起注入到 prompt
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <CardList
+          title="可用 Memory"
+          hint="记忆片段 — 持久化的上下文与个人笔记"
+          loading={memLoading}
+          items={memories}
+          emptyText="暂无 Memory"
+          icon={
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          }
+        />
+        <CardList
+          title="可用 Skill"
+          hint="技能包 — 注入 SKILL.md 供智能体调用"
+          loading={skillLoading}
+          items={skills}
+          emptyText="暂无 Skill"
+          icon={
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          }
+        />
+      </div>
+    </div>
+  )
+}

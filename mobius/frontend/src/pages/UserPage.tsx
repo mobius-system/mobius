@@ -1,11 +1,8 @@
-import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
-import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Activity,
   Brain,
-  CheckCircle2,
-  Check,
-  ChevronDown,
   CircleDot,
   Database,
   Eye,
@@ -15,10 +12,8 @@ import {
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
-  Paperclip,
   Plus,
   Search,
-  Send,
   Settings,
   Sparkles,
   Star,
@@ -34,32 +29,6 @@ import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
 import { SearchMatchText } from '../components/search-match-text'
-import { useLayoutMode } from '../services/layout-mode'
-import { useComposerInputLayout, useComposerMobileLayout } from '../components/useComposerInputLayout'
-import { HomeModelHarnessSelect } from '../components/home-model-harness-select'
-import { HomeComposerAttachments, useHomeComposerAttachments } from '../components/home-composer-attachments'
-import {
-  readLastHomeModel,
-  readLastHomeProjectId,
-  rememberLastHomeModel,
-  rememberLastHomeProjectId,
-} from '../services/home-composer-preferences'
-import {
-  ConversationCreationError,
-  createDefaultConversation,
-  type ConversationCreationCheckpoint,
-} from '../services/create-conversation'
-import { logUiEvent } from '../services/ui-observability'
-import {
-  homePath,
-  issuePath,
-  navigateToWorkbenchObject,
-  prepareWorkbenchObjectNavigation,
-  projectPath,
-  researchPath,
-  sessionNavigation,
-  workbenchLocationPath,
-} from '../services/workbench-navigation'
 import {
   effectiveProjectCardBorderTheme,
   projectCardHeaderStyle,
@@ -172,19 +141,17 @@ function HierarchyHitRow({
   hit,
   query,
   variant,
-  returnTo,
 }: {
   project: any
   hit: ProjectHierarchyHit
   query: string
   variant: 'sidebar' | 'card'
-  returnTo: string
 }) {
   const isSession = hit.kind === 'session' || hit.kind === 'research_agent'
   const descriptionMatched = hit.matched_fields.includes('description') && !!hit.description
   return (
     <LinklessNav
-      to={hierarchyHitUrl(project, hit, { returnTo })}
+      to={hierarchyHitUrl(project, hit)}
       data-project-hierarchy-hit={variant === 'sidebar' ? hit.id : undefined}
       data-project-card-hierarchy-hit={variant === 'card' ? hit.id : undefined}
       title={`${hierarchyHitLabel(hit.kind)}：${hit.title}`}
@@ -200,7 +167,7 @@ function HierarchyHitRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <span
             className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] leading-none"
-            style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}
+            style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)' }}
           >
             {hierarchyHitLabel(hit.kind)}
           </span>
@@ -223,555 +190,14 @@ function HierarchyHitRow({
   )
 }
 
-function defaultProjectPath(workDir: string | null | undefined, name: string) {
-  const root = String(workDir || '').trim().replace(/\/+$/, '')
-  if (!root) return ''
-  const slug = name.trim().toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 36) || 'project'
-  return `${root}/${slug}-${Date.now().toString(36)}`
-}
-
-function MinimalProjectCreate({ onCreated }: { onCreated: (project: any) => void }) {
-  const { user } = useStore()
-  const navigate = useNavigate()
-  const [name, setName] = useState('')
-  const [localPath, setLocalPath] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!name.trim()) { setError('请输入项目名称'); return }
-    const bindPath = localPath.trim() || defaultProjectPath(user?.work_dir, name)
-    if (!bindPath) { setError('当前账号没有默认工作目录，请填写本地目录'); return }
-    setLoading(true)
-    setError('')
-    try {
-      const project = await api('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: name.trim(),
-          description: '',
-          bindPath,
-          bindPathManual: !!localPath.trim(),
-          visibility: 'private',
-          defaultUseWorktree: false,
-          researchEnabled: false,
-          members: [],
-        }),
-      })
-      if (!project?.id) throw new Error(project?.error || '服务未返回项目 ID')
-      logUiEvent('project_created', { project_id: project.id, source: 'home' })
-      onCreated(project)
-    } catch (reason: any) {
-      setError(reason?.message || '创建项目失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-6" style={{ background: 'var(--surface-messages)' }}>
-      <form onSubmit={submit} className="workbench-panel w-full max-w-md border p-5" style={{ background: 'var(--surface-card)', borderColor: 'var(--border-default)' }}>
-        <div className="mb-5">
-          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-strong)' }}>创建第一个项目</h1>
-          <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>给项目起个名字，随后就可以直接告诉 Mobius 你想完成什么。</p>
-        </div>
-        <label className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-          项目名称
-          <input autoFocus value={name} onChange={event => { setName(event.target.value); setError('') }} maxLength={80}
-            className="workbench-control-md mt-1.5 w-full px-3 text-[13px] outline-none"
-            style={{ color: 'var(--text-primary)', background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }} />
-        </label>
-        <label className="mt-4 block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-          本地目录 <span className="font-normal" style={{ color: 'var(--text-muted)' }}>（可选）</span>
-          <input value={localPath} onChange={event => { setLocalPath(event.target.value); setError('') }} placeholder="留空则在默认工作目录创建"
-            className="workbench-control-md mt-1.5 w-full px-3 text-[13px] outline-none"
-            style={{ color: 'var(--text-primary)', background: 'var(--surface-control)', border: '1px solid var(--border-strong)' }} />
-        </label>
-        {error && <div className="workbench-status-danger mt-3 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">{error}</div>}
-        <button type="submit" disabled={loading} className="workbench-control-md btn-primary mt-5 w-full text-[12px] font-medium disabled:opacity-60">
-          {loading ? '正在创建…' : '创建第一个项目'}
-        </button>
-        <button type="button" onClick={() => navigate('/welcome')} className="mt-3 w-full text-center text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }}>
-          连接已有本地项目或导入资料
-        </button>
-      </form>
-    </div>
-  )
-}
-
-function HomeSurface() {
+export default function UserPage() {
   const params = useParams()
-  const navigate = useNavigate()
-  const [homeSearch, setHomeSearch] = useSearchParams()
-  const {
-    user, projects, setProjects, currentProject, setCurrentProject,
-    setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask,
-  } = useStore()
-  const userParam = params.user || user?.id || ''
-  const [loadingProjects, setLoadingProjects] = useState(true)
-  const [selectedProjectId, setSelectedProjectId] = useState('')
-  const [selectedModel, setSelectedModel] = useState('')
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  const [projectQuery, setProjectQuery] = useState('')
-  const [showNewProject, setShowNewProject] = useState(false)
-  const [lastRememberedProjectId, setLastRememberedProjectId] = useState(readLastHomeProjectId)
-  const [lastRememberedModel, setLastRememberedModel] = useState(readLastHomeModel)
-  const [prompt, setPrompt] = useState('')
-  const [sending, setSending] = useState(false)
-  const [submissionQueued, setSubmissionQueued] = useState(false)
-  const [sendError, setSendError] = useState('')
-  const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
-  const composerRef = useRef<HTMLTextAreaElement | null>(null)
-  const projectMenuRef = useRef<HTMLDivElement | null>(null)
-  const projectMenuButtonRef = useRef<HTMLButtonElement | null>(null)
-  const projectSearchRef = useRef<HTMLInputElement | null>(null)
-  const invalidateComposerCheckpoint = useCallback(() => {
-    setSendError('')
-    setCheckpoint(null)
-  }, [])
-  const {
-    attachments,
-    readyAttachments,
-    anyUploading,
-    isDraggingFiles,
-    fileInputRef,
-    openFilePicker,
-    handleFileInputChange,
-    handlePaste,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-    retryAttachment,
-    removeAttachment,
-    clearAttachments,
-  } = useHomeComposerAttachments({
-    projectId: selectedProjectId,
-    onAttachmentsChanged: invalidateComposerCheckpoint,
-  })
-  const isComposerMobile = useComposerMobileLayout()
-  const homeComposerLayout = useComposerInputLayout({
-    textareaRef: composerRef,
-    value: prompt,
-    expanded: false,
-    isMobile: isComposerMobile,
-  })
-
-  useEffect(() => {
-    logUiEvent('home_arrived', { user_id: userParam })
-    setCurrentIssue(null)
-    setCurrentResearch(null)
-    setCurrentSession(null)
-    setCurrentTask(null)
-  }, [userParam])
-
-  const prepareNewConversation = useCallback(() => {
-    setPrompt('')
-    setSendError('')
-    setCheckpoint(null)
-    setSubmissionQueued(false)
-    clearAttachments()
-    window.setTimeout(() => composerRef.current?.focus(), 0)
-  }, [clearAttachments])
-
-  useEffect(() => {
-    window.addEventListener('mobius:new-conversation', prepareNewConversation)
-    return () => window.removeEventListener('mobius:new-conversation', prepareNewConversation)
-  }, [prepareNewConversation])
-
-  useEffect(() => {
-    if (!projectMenuOpen) return
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!projectMenuRef.current?.contains(event.target as Node)) setProjectMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setProjectMenuOpen(false)
-      setProjectQuery('')
-      projectMenuButtonRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', closeOnOutsidePointer)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePointer)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [projectMenuOpen])
-
-  useEffect(() => {
-    if (!projectMenuOpen) {
-      setProjectQuery('')
-      return
-    }
-    window.requestAnimationFrame(() => projectSearchRef.current?.focus())
-  }, [projectMenuOpen])
-
-  useEffect(() => {
-    let cancelled = false
-    setLoadingProjects(true)
-    api('/api/projects?all=true')
-      .then((result: any) => {
-        if (cancelled) return
-        const list = sortProjectsForDisplay(Array.isArray(result) ? result : (result?.projects || []))
-        setProjects(list)
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoadingProjects(false) })
-    return () => { cancelled = true }
-  }, [setProjects])
-
-  const usableProjects = useMemo(() => projects.filter((project: any) => project.kind !== 'extension' && !project.hidden && !project.disabled), [projects])
-  const filteredProjects = useMemo(() => {
-    const query = projectQuery.trim().toLowerCase()
-    if (!query) return usableProjects
-    return usableProjects.filter((project: any) => (
-      String(project.name || '').toLowerCase().includes(query)
-      || String(project.description || '').toLowerCase().includes(query)
-      || String(project.id || '').toLowerCase().includes(query)
-    ))
-  }, [projectQuery, usableProjects])
-  const selectedProject = useMemo(
-    () => usableProjects.find((project: any) => project.id === selectedProjectId) || null,
-    [selectedProjectId, usableProjects],
-  )
-  useEffect(() => {
-    const requestedProjectId = homeSearch.get('project') || ''
-    const next = requestedProjectId && usableProjects.some((project: any) => project.id === requestedProjectId)
-      ? requestedProjectId
-      : lastRememberedProjectId && usableProjects.some((project: any) => project.id === lastRememberedProjectId)
-        ? lastRememberedProjectId
-        : currentProject && usableProjects.some((project: any) => project.id === currentProject.id)
-          ? currentProject.id
-          : usableProjects[0]?.id || ''
-    if (selectedProjectId !== next) setSelectedProjectId(next)
-  }, [usableProjects, currentProject?.id, homeSearch, lastRememberedProjectId, selectedProjectId])
-
-  useEffect(() => {
-    setCurrentProject(selectedProject)
-  }, [selectedProject, setCurrentProject])
-
-  const onProjectCreated = (project: any) => {
-    setShowNewProject(false)
-    setProjects(sortProjectsForDisplay([project, ...projects.filter((item: any) => item.id !== project.id)]))
-    setSelectedProjectId(project.id)
-    setLastRememberedProjectId(project.id)
-    rememberLastHomeProjectId(project.id)
-    setHomeSearch({ project: project.id }, { replace: true })
-    setCurrentProject(project)
-    window.setTimeout(() => composerRef.current?.focus(), 60)
-  }
-
-  const onPromptChange = (value: string) => {
-    setPrompt(value)
-    setSendError('')
-    setCheckpoint(null)
-  }
-
-  const send = async () => {
-    if (!selectedProjectId || sending) return
-    if (anyUploading) {
-      setSendError('附件仍在上传，请稍候…')
-      return
-    }
-    if (!prompt.trim() && readyAttachments.length === 0) return
-    if (!selectedModel) {
-      setSendError('模型与 Harness 组合仍在加载或暂无可用组合')
-      return
-    }
-    const submittedPrompt = prompt
-    setSending(true)
-    setSubmissionQueued(true)
-    setSendError('')
-    setPrompt('')
-    try {
-      const created = await createDefaultConversation({
-        projectId: selectedProjectId,
-        prompt,
-        attachments: readyAttachments.map(attachment => ({ kind: attachment.kind, path: attachment.remotePath || '' })),
-        model: selectedModel,
-        checkpoint,
-      })
-      logUiEvent('first_message_submitted', {
-        project_id: selectedProjectId,
-        issue_id: created.issueId,
-        session_id: created.sessionId,
-        model: selectedModel,
-      })
-      window.dispatchEvent(new CustomEvent('mobius:refresh-conversation-rail'))
-      navigateToWorkbenchObject(navigate, sessionNavigation(userParam, created.sessionId))
-    } catch (reason) {
-      setPrompt(previous => previous || submittedPrompt)
-      setSubmissionQueued(false)
-      if (reason instanceof ConversationCreationError) {
-        setCheckpoint(reason.checkpoint)
-        setSendError(reason.message)
-      } else {
-        setSendError(reason instanceof Error ? reason.message : '创建会话失败')
-      }
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const selectHomeProject = (nextProjectId: string) => {
-    prepareWorkbenchObjectNavigation()
-    setProjectMenuOpen(false)
-    setSelectedProjectId(nextProjectId)
-    setLastRememberedProjectId(nextProjectId)
-    rememberLastHomeProjectId(nextProjectId)
-    setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
-    clearAttachments()
-    setCheckpoint(null)
-    setSendError('')
-    window.requestAnimationFrame(() => composerRef.current?.focus())
-  }
-
-  const selectHomeModel = useCallback((model: string) => {
-    setSelectedModel(model)
-    setLastRememberedModel(model)
-    rememberLastHomeModel(model)
-  }, [])
-
-  useEffect(() => {
-    if (!anyUploading && sendError === '附件仍在上传，请稍候…') setSendError('')
-  }, [anyUploading, sendError])
-
-  const hasSendableContent = !!prompt.trim() || readyAttachments.length > 0
-  const canRequestSend = hasSendableContent && !anyUploading
-
-  return loadingProjects ? (
-          <div className="flex min-w-0 flex-1 items-center justify-center" style={{ color: 'var(--text-muted)', background: 'var(--surface-messages)' }}>加载项目…</div>
-        ) : usableProjects.length === 0 ? (
-          <MinimalProjectCreate onCreated={onProjectCreated} />
-        ) : (
-          <div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-8" style={{ background: 'var(--surface-messages)' }}>
-            <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col justify-center py-8">
-              <div className="mb-6 text-center">
-                <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-strong)' }}>想让 Mobius 做什么？</h1>
-                <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
-              </div>
-              <div
-                className="workbench-composer relative px-3 py-2.5"
-                onPaste={handlePaste}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                {isDraggingFiles && (
-                  <div className="pointer-events-none absolute inset-0 z-20 rounded-[var(--radius-composer,22px)] p-1" style={{ background: 'var(--surface-composer)' }}>
-                    <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-active)' }}>
-                      <span className="text-[12px] font-medium">松开以添加附件</span>
-                    </div>
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileInputChange}
-                />
-                <HomeComposerAttachments attachments={attachments} onRemove={removeAttachment} onRetry={retryAttachment} />
-                <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} disabled={sending} onChange={event => onPromptChange(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                      event.preventDefault()
-                      void send()
-                    }
-                  }}
-                  placeholder="描述你的任务…"
-                  className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-[1.5] outline-none"
-                  style={{
-                    height: homeComposerLayout.height,
-                    minHeight: homeComposerLayout.minHeight,
-                    maxHeight: homeComposerLayout.maxHeight,
-                    overflowY: homeComposerLayout.overflowY,
-                    color: 'var(--text-primary)',
-                  }} />
-                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <div ref={projectMenuRef} className="relative min-w-0">
-                      <button
-                        ref={projectMenuButtonRef}
-                        type="button"
-                        onClick={() => setProjectMenuOpen(open => !open)}
-                        aria-haspopup="menu"
-                        aria-expanded={projectMenuOpen}
-                        className="home-composer-project-select workbench-control-md flex min-w-0 max-w-[260px] items-center gap-2 px-2.5 text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                        style={{ color: 'var(--text-secondary)', background: 'var(--surface-control)' }}
-                        title={selectedProject?.name || '选择项目'}
-                      >
-                        <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{selectedProject?.name || '选择项目'}</span>
-                        <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${projectMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-                      </button>
-                      {projectMenuOpen && (
-                        <div
-                          role="menu"
-                          aria-label="选择项目"
-                          className="workbench-popover absolute left-0 top-[calc(100%+8px)] z-40 w-[300px] max-w-[calc(100vw-48px)] overflow-hidden p-2"
-                          style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
-                        >
-                          <div role="search" className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
-                            <Search className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} aria-hidden="true" />
-                            <input
-                              ref={projectSearchRef}
-                              value={projectQuery}
-                              onChange={event => setProjectQuery(event.target.value)}
-                              onKeyDown={event => {
-                                if (event.key === 'Escape') {
-                                  event.preventDefault()
-                                  setProjectMenuOpen(false)
-                                  setProjectQuery('')
-                                  projectMenuButtonRef.current?.focus()
-                                }
-                              }}
-                              placeholder="搜索项目名称、描述或 ID"
-                              aria-label="搜索项目"
-                              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] outline-none placeholder:text-[var(--text-muted)]"
-                              style={{ color: 'var(--text-primary)' }}
-                            />
-                            {projectQuery && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProjectQuery('')
-                                  projectSearchRef.current?.focus()
-                                }}
-                                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                                aria-label="清空项目搜索"
-                                title="清空搜索"
-                                style={{ color: 'var(--text-muted)' }}
-                              >
-                                <X className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                            )}
-                          </div>
-                          <div className="mt-2 max-h-[240px] overflow-y-auto">
-                            {filteredProjects.length === 0 ? (
-                              <div className="px-3 py-7 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
-                            ) : filteredProjects.map((project: any) => {
-                              const active = project.id === selectedProjectId
-                              return (
-                                <button
-                                  key={project.id}
-                                  type="button"
-                                  role="menuitemradio"
-                                  aria-checked={active}
-                                  onClick={() => selectHomeProject(project.id)}
-                                  className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]"
-                                  style={{ color: active ? 'var(--accent-primary)' : 'var(--text-primary)', background: active ? 'var(--surface-active)' : undefined }}
-                                  title={project.name}
-                                >
-                                  <Folder className="h-3.5 w-3.5 flex-shrink-0" />
-                                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{project.name}</span>
-                                  {active && <Check className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden="true" />}
-                                </button>
-                              )
-                            })}
-                          </div>
-                          <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-default)' }}>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setProjectMenuOpen(false)
-                                setProjectQuery('')
-                                setShowNewProject(true)
-                              }}
-                              className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]"
-                              style={{ color: 'var(--text-primary)' }}
-                            >
-                              <Plus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden="true" />
-                              新建项目
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <HomeModelHarnessSelect
-                      projectId={selectedProjectId}
-                      userId={user?.id || userParam}
-                      lastRememberedModel={lastRememberedModel}
-                      projectDefaultModel={selectedProject?.default_model}
-                      value={selectedModel}
-                      onChange={selectHomeModel}
-                      disabled={sending || !!checkpoint?.sessionId}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      data-home-composer-attachment-button
-                      onClick={openFilePicker}
-                      disabled={sending}
-                      className="composer-icon-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40"
-                      aria-label="选择附件"
-                      title="添加附件"
-                    >
-                      <Paperclip className="h-4 w-4" strokeWidth={1.8} />
-                    </button>
-                    <button type="button" onClick={() => void send()} disabled={!canRequestSend || !selectedModel || sending}
-                      aria-label={sending ? '正在开始会话' : anyUploading ? '附件仍在上传' : '发送'}
-                      title={sending ? '正在开始会话' : anyUploading ? '附件仍在上传，请稍候' : '发送'}
-                      className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">
-                      {submissionQueued ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {submissionQueued && (
-                <div className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--status-running)' }} aria-hidden="true" />
-                  已提交，正在打开会话…
-                </div>
-              )}
-              {sendError && (
-                <div className="workbench-status-danger mt-3 flex items-center justify-between gap-3 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
-                  <span>{sendError}</span>
-                  {checkpoint && <button type="button" onClick={() => void send()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>}
-                </div>
-              )}
-              <section className="mt-10">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>最近项目</h2>
-                  <button type="button" onClick={() => navigate(`/u/${userParam}?view=projects`)} className="text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }}>全部项目 →</button>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {usableProjects.slice(0, 3).map((project: any) => (
-                    <button key={project.id} type="button" onClick={() => selectHomeProject(project.id)}
-                      className="home-recent-project workbench-panel min-w-0 border px-3 py-3 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
-                      style={{ borderColor: project.id === selectedProjectId ? 'var(--border-strong)' : 'var(--border-default)', background: project.id === selectedProjectId ? 'var(--surface-active)' : 'var(--surface-card)' }}>
-                      <span className="block truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
-                      <span className="mt-1 block text-[10px]" style={{ color: 'var(--text-muted)' }}>最近活跃 {timeAgo(project.last_session_activity_at || project.last_active)}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </div>
-            {showNewProject && (
-              <NewProjectModal
-                onClose={() => setShowNewProject(false)}
-                onCreated={onProjectCreated}
-              />
-            )}
-          </div>
-        )
-}
-
-export function AllProjectsView() {
-  const params = useParams()
-  const location = useLocation()
   const navigate = useNavigate()
   const {
     user, projects, setProjects, setCurrentProject, setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask,
     mutedProjectIds, setMutedProjectIds,
   } = useStore()
   const userParam = params.user || user?.id || ''
-  const homeReturnTo = workbenchLocationPath(location, homePath(userParam, { view: 'projects' }))
 
   const [showNew, setShowNew] = useState(false)
   // 用户主页改为「左侧导航 + 右侧单视图」: 项目 / 记忆 / 技能 / 数据 / 监控 / 配置. 记忆/技能源自原 Z3 右栏.
@@ -779,8 +205,6 @@ export function AllProjectsView() {
   const USER_VIEWS: UserView[] = ['projects', 'memory', 'skills', 'data', 'monitor', 'config']
   const [activeView, setActiveView] = useState<UserView>(() => {
     try {
-      const requested = new URLSearchParams(window.location.search).get('panel')
-      if ((USER_VIEWS as string[]).includes(requested || '')) return requested as UserView
       const v = localStorage.getItem('mobius:ui:user-page:view')
       return (USER_VIEWS as string[]).includes(v as string) ? (v as UserView) : 'projects'
     } catch { return 'projects' }
@@ -1162,7 +586,7 @@ export function AllProjectsView() {
             ) : (
               <button key={item.key} type="button" data-user-nav-key={item.key}
                 onClick={() => ((item as any).action ? (item as any).action() : setActiveView(item.key as UserView))}
-                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${activeView === item.key ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-hover)]'}`}
+                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${activeView === item.key ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`}
                 style={activeView === item.key ? undefined : { color: 'var(--text-secondary)' }}>
                 {item.icon}{item.label}
               </button>
@@ -1183,21 +607,20 @@ export function AllProjectsView() {
               </div>
 
               {/* 搜索、筛选与屏蔽入口集中为一条紧凑工具栏，窄屏自动换行。 */}
-              <div className="mt-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap"
-                style={{ background: 'color-mix(in srgb, var(--bg-primary) 42%, transparent)', borderColor: 'var(--border-color)' }}>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap">
                 <div className="relative min-w-0 flex-1 sm:min-w-[240px]">
-                  <Search className="absolute left-2.5 top-[9px] h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                  <Search className="absolute left-2.5 top-3 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
                   <input value={search} onChange={e => setSearch(e.target.value)}
                     maxLength={200}
                     data-project-hierarchy-search
                     placeholder="搜索项目、任务或会话..."
-                    className="h-8 w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-[var(--accent-border)]"
+                    className="h-[38px] w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                   {hierarchySearchLoading ? (
-                    <LoaderCircle className="absolute right-2.5 top-[9px] h-3.5 w-3.5 animate-spin" style={{ color: 'var(--status-running)' }} />
+                    <LoaderCircle className="absolute right-2.5 top-3 h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
                   ) : search ? (
                     <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setSearch('')}
-                      className="absolute right-1.5 top-1 flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
+                      className="absolute right-1.5 top-[7px] flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)' }}>
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1205,13 +628,13 @@ export function AllProjectsView() {
                 </div>
                 <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <button type="button" onClick={() => setProjectFilters([])} title="显示全部未屏蔽项目"
-                    className={`h-7 rounded-md px-3 text-[11px] transition-colors ${projectFilters.length === 0 ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                    className={`h-7 rounded-md px-3 text-[11px] transition-colors ${projectFilters.length === 0 ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
                     style={projectFilters.length !== 0 ? { color: 'var(--text-muted)' } : undefined}>全部</button>
                   {PROJECT_FILTERS.map((item) => {
                     const active = projectFilters.includes(item.key)
                     return (
                       <button key={item.key} type="button" onClick={() => toggleProjectFilter(item.key)} title={item.title}
-                        className={`h-7 rounded-md px-3 text-[11px] transition-colors ${active ? 'bg-[var(--surface-active)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                        className={`h-7 rounded-md px-3 text-[11px] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
                         style={!active ? { color: 'var(--text-muted)' } : undefined}>{item.label}</button>
                     )
                   })}
@@ -1219,13 +642,13 @@ export function AllProjectsView() {
                 {mutedProjectIds.length > 0 && (
                   <button type="button" onClick={() => { setShowMutedPanel((v) => !v); if (!showMutedPanel) refreshMutedProjects() }}
                     className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ borderColor: showMutedPanel ? 'var(--accent-border)' : 'var(--border-color)', background: showMutedPanel ? 'var(--surface-active)' : 'var(--bg-card)', color: showMutedPanel ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: showMutedPanel ? '#60a5fa' : 'var(--text-muted)' }}>
                     <EyeOff className="h-3.5 w-3.5" /> 已屏蔽项目
-                    <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--surface-control)' }}>{mutedProjectIds.length}</span>
+                    <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'rgba(255,255,255,0.06)' }}>{mutedProjectIds.length}</span>
                   </button>
                 )}
               </div>
-              {hierarchySearchError && <div className="mt-2 text-[10px]" style={{ color: 'var(--status-danger)' }}>{hierarchySearchError}</div>}
+              {hierarchySearchError && <div className="mt-2 text-[10px]" style={{ color: '#f87171' }}>{hierarchySearchError}</div>}
               <div className="mt-4 flex min-h-8 flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
                   <span className="text-[12px]">
@@ -1249,7 +672,7 @@ export function AllProjectsView() {
             </div>
 
             {showMutedPanel && (
-              <div className="mb-6 rounded-lg border px-3 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--surface-card)' }}>
+              <div className="mb-6 rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(248,113,113,0.30)', background: 'rgba(248,113,113,0.04)' }}>
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>已屏蔽项目</div>
@@ -1265,7 +688,7 @@ export function AllProjectsView() {
                   <div className="mt-3 space-y-2">
                     {mutedProjects.map((p: any) => (
                       <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
-                        <LinklessNav to={projectPath(p.created_by, p.id, { returnTo: homeReturnTo })} className="min-w-0 flex-1">
+                        <LinklessNav to={`/u/${p.created_by}/p/${p.id}`} className="min-w-0 flex-1">
                           <div className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
                           <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{p.kind === 'extension' ? '拓展项目' : '普通项目'}</div>
                         </LinklessNav>
@@ -1274,7 +697,7 @@ export function AllProjectsView() {
                           onClick={(e) => unmuteProject(e, p)}
                           disabled={mutedBusyId === p.id}
                           className="inline-flex h-7 items-center gap-1 rounded-full border px-3 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
-                          style={{ color: 'var(--accent-primary)', borderColor: 'var(--accent-border)' }}>
+                          style={{ color: '#60a5fa', borderColor: 'rgba(59,130,246,0.35)' }}>
                           <Eye className="h-3.5 w-3.5" />
                           恢复显示
                         </button>
@@ -1292,12 +715,12 @@ export function AllProjectsView() {
                 ) : <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>{emptyProjectText}</div>}
                 {!hierarchySearchLoading && projectFilters.length > 0 ? (
                   <button onClick={() => setProjectFilters([])}
-                    className="h-9 px-4 rounded-lg text-[13px] text-[var(--accent-primary)] bg-[var(--accent-soft)] hover:bg-[var(--surface-active)] transition-colors">
+                    className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     清空筛选
                   </button>
                 ) : !hierarchySearchLoading && !normalizedSearch ? (
                   <button onClick={() => setShowNew(true)} data-tour="user-empty-create-project"
-                    className="h-9 px-4 rounded-lg text-[13px] text-[var(--accent-primary)] bg-[var(--accent-soft)] hover:bg-[var(--surface-active)] transition-colors">
+                    className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     创建第一个项目
                   </button>
                 ) : null}
@@ -1343,14 +766,14 @@ export function AllProjectsView() {
                       <div className="px-4 py-3 border-b" style={projectCardHeaderStyle(cardTheme)}>
                         <div className="flex items-center gap-2 min-w-0">
                           <svg className="w-4 h-4 flex-shrink-0" style={{ color: cardTheme.iconColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                          <LinklessNav to={projectPath(p.created_by, p.id, { returnTo: homeReturnTo })}
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
                             className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
                             <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
                           {isMuted && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)', border: '1px solid var(--border-color)' }}>已屏蔽</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           )}
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
@@ -1358,7 +781,7 @@ export function AllProjectsView() {
                               disabled={starringProjectId === p.id}
                               title={p.starred ? '取消关注' : '关注项目'}
                               className={`h-7 w-7 flex items-center justify-center rounded-lg transition-all disabled:opacity-50 ${p.starred ? 'opacity-100' : 'opacity-60 group-hover:opacity-100 hover:bg-[var(--bg-hover)]'}`}
-                              style={{ color: p.starred ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
+                              style={{ color: p.starred ? '#fbbf24' : 'var(--text-muted)' }}>
                               <Star className="w-4 h-4" fill={p.starred ? 'currentColor' : 'none'} strokeWidth={1.8} />
                             </button>
                             {p.can_manage && (
@@ -1380,7 +803,7 @@ export function AllProjectsView() {
                                 {openProjectMenuId === p.id && (
                                   <div
                                     className="absolute right-0 top-8 z-20 w-44 rounded-xl border p-1 shadow-xl"
-                                    style={{ background: 'var(--surface-overlay)', borderColor: 'var(--border-strong)' }}
+                                    style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     {p.kind !== 'extension' ? (
@@ -1397,7 +820,7 @@ export function AllProjectsView() {
                                         }}
                                         disabled={mutedBusyId === p.id}
                                         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
-                                        style={{ color: isMuted ? 'var(--accent-primary)' : 'var(--text-secondary)' }}
+                                        style={{ color: isMuted ? '#60a5fa' : '#f87171' }}
                                       >
                                         {isMuted ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                                         {isMuted ? '恢复显示' : '屏蔽项目'}
@@ -1422,13 +845,13 @@ export function AllProjectsView() {
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
                           {p.is_self_develop && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
-                              style={{ color: 'var(--status-waiting)', background: 'var(--status-waiting-soft)', border: '1px solid var(--status-waiting-border)' }}>
+                              style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.30)' }}>
                               自进化
                             </span>
                           )}
                           {p.kind === 'extension' && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                              style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}
+                              style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.10)' }}
                               title={p.disabled ? '拓展目录已消失, 数据保留中' : '由 mobius/extension/ 自动同步'}>
                               {p.disabled ? '拓展(失效)' : '拓展'}
                             </span>
@@ -1464,7 +887,7 @@ export function AllProjectsView() {
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (p.disabled) return; window.open(`/extension/${p.extension_name}/`, '_blank') }}
                             title={p.disabled ? '拓展目录已删除' : `打开新 tab 进入 ${p.name}`}
                             className="h-7 px-3 rounded text-[12px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            style={{ color: p.disabled ? 'var(--text-muted)' : 'var(--text-on-accent)', background: p.disabled ? 'var(--surface-control)' : 'var(--accent-primary)' }}>
+                            style={{ color: '#fff', background: p.disabled ? '#475569' : '#6366f1' }}>
                             进入 →
                           </button>
                         </div>
@@ -1477,12 +900,12 @@ export function AllProjectsView() {
                             <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
                               命中内容 {searchGroup?.total_matches || searchMatches.length}
                             </span>
-                            <LinklessNav to={projectPath(p.created_by, p.id, { returnTo: homeReturnTo })}
-                              className="workbench-link text-[11px] text-[var(--accent-primary)] transition-colors">进入项目 →</LinklessNav>
+                            <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                              className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">进入项目 →</LinklessNav>
                           </div>
                           <div className="min-w-0 space-y-0.5">
                             {searchMatches.slice(0, 5).map((hit) => (
-                              <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" returnTo={homeReturnTo} />
+                              <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
                             ))}
                             {(searchGroup?.total_matches || 0) > 5 && (
                               <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1495,8 +918,8 @@ export function AllProjectsView() {
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{overviewLabel}</span>
-                          <LinklessNav to={projectPath(p.created_by, p.id, { returnTo: homeReturnTo })}
-                            className="workbench-link text-[11px] text-[var(--accent-primary)] transition-colors">查看全部 →</LinklessNav>
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
                         {overviewItems.length === 0 ? (
                           overviewLoading ? (
@@ -1507,20 +930,18 @@ export function AllProjectsView() {
                         ) : (
                           <div className="space-y-1 min-w-0">
                             {overviewItems.slice(0, 5).map(({ item, kind }) => (
-                              <LinklessNav key={`${kind}:${item.id}`} to={kind === 'research'
-                                ? researchPath(p.created_by, p.id, item.id, { returnTo: homeReturnTo })
-                                : issuePath(p.created_by, p.id, item.id, { returnTo: homeReturnTo })}
+                              <LinklessNav key={`${kind}:${item.id}`} to={`/u/${p.created_by}/p/${p.id}/${kind === 'research' ? 'r' : 'i'}/${item.id}`}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
-                                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: kind === 'research' ? 'var(--status-success)' : 'var(--accent-primary)' }} />
+                                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70'}`} />
                                 <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
-                                  style={kind === 'research' ? { color: 'var(--status-success)', background: 'var(--status-success-soft)' } : { color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+                                  style={kind === 'research' ? { color: '#34d399', background: 'rgba(52,211,153,0.10)' } : { color: '#60a5fa', background: 'rgba(96,165,250,0.10)' }}>
                                   {kind === 'research' ? '研究' : '任务'}
                                 </span>
                                 <span className="text-[12px] truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>
                                   {item.title}
                                 </span>
                                 {item.session_count > 0 && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}>{item.session_count}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{item.session_count}</span>
                                 )}
                               </LinklessNav>
                             ))}
@@ -1554,20 +975,20 @@ export function AllProjectsView() {
                   {searchMutedProjects.map((p: any) => (
                     <div key={p.id} data-tour="user-muted-hit-card"
                       className="rounded-xl border overflow-hidden flex flex-col group transition-all"
-                      style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color-strong)' }}>
-                      <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                      style={{ background: 'var(--bg-primary)', borderColor: 'rgba(248,113,113,0.45)' }}>
+                      <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(248,113,113,0.30)' }}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <LinklessNav to={projectPath(p.created_by, p.id, { returnTo: homeReturnTo })}
-                            className="workbench-link text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors"
+                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                            className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
                             style={{ color: 'var(--text-primary)' }} title={p.name}>
                             <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)', border: '1px solid var(--border-color)' }}>已屏蔽</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           <button onClick={(e) => unmuteProject(e, p)} disabled={mutedBusyId === p.id}
                             title="恢复显示"
                             aria-label="恢复显示"
                             className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-[var(--bg-hover)] transition-all disabled:opacity-50"
-                            style={{ color: 'var(--accent-primary)' }}>
+                            style={{ color: '#f87171' }}>
                             <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
                           </button>
                         </div>
@@ -1578,7 +999,7 @@ export function AllProjectsView() {
                       {(hierarchyGroupByProject.get(String(p.id))?.matches.length || 0) > 0 && (
                         <div className="px-3 py-2">
                           {hierarchyGroupByProject.get(String(p.id))!.matches.slice(0, 5).map((hit) => (
-                            <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" returnTo={homeReturnTo} />
+                            <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
                           ))}
                           {hierarchyGroupByProject.get(String(p.id))!.total_matches > 5 && (
                             <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1627,7 +1048,7 @@ export function AllProjectsView() {
 
       {showNew && <NewProjectModal onClose={() => setShowNew(false)} onCreated={(p: any) => {
         setShowNew(false); refresh()
-        if (p?.id && p?.created_by) navigate(projectPath(p.created_by, p.id, { returnTo: homeReturnTo }))
+        if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`)
       }} />}
       {editingProject && <ProjectSettingsModal project={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(updated: any) => { setEditingProject(null); setProjects(sortProjectsForDisplay(projects.map((pp: any) => pp.id === updated.id ? { ...pp, ...updated } : pp))) }} />}
@@ -1635,7 +1056,7 @@ export function AllProjectsView() {
         title="屏蔽项目"
         message={`屏蔽「${hidingProject.name}」后，它会从你的项目列表和侧边栏隐藏，但不会删除。可在已屏蔽项目中恢复显示。`}
         confirmText="确认屏蔽"
-        confirmClass="bg-[var(--accent-primary)] !text-[var(--text-on-accent)] hover:opacity-90"
+        confirmClass="bg-blue-500 hover:bg-blue-600"
         onConfirm={confirmHideProject}
         onClose={() => setHidingProject(null)}
       />}
@@ -1656,12 +1077,4 @@ function PlaceholderView({ icon, title, desc }: { icon: ReactNode; title: string
       </div>
     </div>
   )
-}
-
-export default function UserPage() {
-  const [searchParams] = useSearchParams()
-  const layoutMode = useLayoutMode()
-  return layoutMode === 'easy_mode' && searchParams.get('view') !== 'projects'
-    ? <HomeSurface />
-    : <AllProjectsView />
 }

@@ -38,7 +38,7 @@ export function ProjectTabList({ children, className = '', style, vertical = fal
 
 export function ProjectTabButton({
   active = false,
-  activeClassName = 'bg-[var(--surface-active)] text-[var(--accent-primary)]',
+  activeClassName = 'bg-blue-500/15 text-blue-400',
   inactiveColor = 'var(--text-muted)',
   className = '',
   style,

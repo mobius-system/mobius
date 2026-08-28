@@ -1,0 +1,6066 @@
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { CODE_MARKDOWN_COMPONENTS } from './code-artifacts/CodeMarkdownComponents'
+import { CodeArtifactOpenProvider } from './code-artifacts/CodeArtifactOpenContext'
+import { FilePreviewLayer } from './code-artifacts/FilePreviewLayer'
+import { targetFromTrustedPath, type CodeArtifactOpenRequest, type CodeArtifactTarget } from './code-artifacts/file-target'
+import { GitChangesViewer } from './code-git/GitChangesViewer'
+import { DiffRows as UnifiedDiffRows, parseUnifiedDiff, unifiedDiffNoHunkMessage } from './code-git/DiffRows'
+import {
+  GIT_DIFF_MODE_LABELS,
+  SESSION_FEATURE_FILES_TIMEOUT_MS,
+  sessionFileMatches,
+  type GitDiffMode,
+  type SessionFileFeature,
+  type SessionGitDiff,
+} from './code-git/types'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
+import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
+import { timeAgo, isRecentlyActive } from './shell'
+import { AgentStatusDot } from './AgentStatusDot'
+import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
+import { NewSessionModal } from './modals'
+import { LayoutModeSwitch } from './layout-mode-switch'
+import { FileTreeLevel, OpenInVSCodeButton, type DirState, type Entry } from './project-files'
+import { WebTerminalModal, WebTerminalSurface, type WebTerminalMode } from './web-terminal-modal'
+import { SessionJsonlPanel } from './session-jsonl-panel'
+import { useVisibleJsonl } from './session-jsonl-filter'
+import { JsonlCopyButton } from './viewer/JsonlCopyButton'
+import { SessionStatusChip } from './session-status-chip'
+import { AimuxLinkIndicator } from './aimux-link-indicator'
+import { AnnouncePcButton } from './announce-pc-button'
+import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
+import { readJsonlCacheSync, readJsonlCacheFromIdb, writeJsonlCache } from '../services/session-jsonl-cache'
+import { MobiusLogo } from './mobius-logo'
+import { PlanningEditor } from './planning-editor'
+import { KnowledgeEditorModal } from './knowledge-editor-modal'
+import { RemoteComputeMemoryModal } from './memories'
+import { AdvancedInteractionBtn } from './advanced-interaction-btn'
+import { AdvancedSessionActions } from './advanced-session-actions'
+import { blurFocusInsideHiddenLayer, useComposerOverlayHeight } from './chat-pane'
+import { useComposerInputLayout, useComposerMobileLayout } from './useComposerInputLayout'
+import { SESSION_TOOL_TAB_LABELS, SessionToolDrawer, type SessionToolTab } from './session-tool-drawer'
+import {
+  safeToolDirectoryLabel,
+  safeToolPathLabel,
+  sanitizeToolError,
+  sessionToolOriginLabel,
+  type SessionToolObjectContext,
+  type SessionToolOrigin,
+} from './session-tool-context'
+import { WorkbenchShellPortal } from './workbench-shell'
+import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import { extensionAppUrlForProject } from '../services/extension-entry'
+import { isFireAndForgetSession } from '../services/session-start-policy'
+import {
+  navigateToWorkbench,
+  navigateToWorkbenchObject,
+  researchGraphNavigation,
+  sessionNavigation,
+  sessionPath,
+  WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT,
+  WORKBENCH_EXIT_CENTER_TOOL_EVENT,
+} from '../services/workbench-navigation'
+import {
+  formatVoiceSeconds,
+  permissionErrorMessage,
+  recordingFileExtension,
+  supportedVoiceMimeType,
+  type VoiceInputState,
+  type VoiceTranscribeResponse,
+  VOICE_RECORDING_MAX_MS,
+} from '../services/assistant-voice'
+
+const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
+const CHAT_INPUT_SPLIT_STORAGE_KEY = 'mobius:ui:split:chat-input'
+// 回车自动加急开关持久化 key: '1'=开启, 其他=关闭.
+const AUTO_URGENT_ENTER_STORAGE_KEY = 'mobius:ui:auto-urgent-enter'
+const CHAT_INPUT_DEFAULT_RATIO = 0.32
+const CHAT_INPUT_MIN_RATIO = 0.14
+const CHAT_INPUT_MIN_WIDTH = 224
+const CHAT_INPUT_MAX_WIDTH = 720
+const CHAT_HISTORY_MIN_WIDTH = 360
+
+function clampChatInputRatio(value: number) {
+  if (!Number.isFinite(value)) return CHAT_INPUT_DEFAULT_RATIO
+  return Math.max(CHAT_INPUT_MIN_RATIO, Math.min(0.6, value))
+}
+
+function readChatInputRatio() {
+  try {
+    const stored = Number(localStorage.getItem(CHAT_INPUT_SPLIT_STORAGE_KEY))
+    return stored > 0 ? clampChatInputRatio(stored) : CHAT_INPUT_DEFAULT_RATIO
+  } catch {
+    return CHAT_INPUT_DEFAULT_RATIO
+  }
+}
+
+function clampChatInputWidth(value: number, bodyWidth: number) {
+  const dynamicMax = Math.max(
+    CHAT_INPUT_MIN_WIDTH,
+    Math.min(CHAT_INPUT_MAX_WIDTH, bodyWidth - CHAT_HISTORY_MIN_WIDTH),
+  )
+  return Math.round(Math.max(CHAT_INPUT_MIN_WIDTH, Math.min(dynamicMax, value)))
+}
+
+function isChatInputWidthLimit(value: number, bodyWidth: number) {
+  const dynamicMax = Math.max(
+    CHAT_INPUT_MIN_WIDTH,
+    Math.min(CHAT_INPUT_MAX_WIDTH, bodyWidth - CHAT_HISTORY_MIN_WIDTH),
+  )
+  return value <= CHAT_INPUT_MIN_WIDTH || value >= dynamicMax
+}
+
+function sessionModelLabel(model?: string | null, explicitLabel?: string | null) {
+  if (explicitLabel) return explicitLabel
+  if (!model) return ''
+  const labels: Record<string, string> = {
+    opus: 'Opus',
+    'opus-4.8': 'Opus',
+    codex: 'GPT-5.5 Codex',
+    'gpt-5.5': 'GPT-5.5 Codex',
+  }
+  return labels[model] || model
+}
+
+function sessionProxyUsesProxy(useProxy?: any) {
+  return !(useProxy === 0 || useProxy === false || useProxy === '0' || useProxy === 'false')
+}
+
+function sessionProxyTitle(useProxy?: any, model?: string) {
+  const on = sessionProxyUsesProxy(useProxy)
+  const isCodex = model === 'codex' || model === 'gpt-5.5'
+  if (isCodex) return on ? 'Plus 官方订阅（codex_fqx）' : 'Rightcode 国内中转（codex）'
+  return on ? '使用代理网络' : '不使用代理网络'
+}
+
+function sessionProxyLabel(useProxy?: any, model?: string) {
+  if (useProxy === undefined || useProxy === null) return ''
+  const isCodex = model === 'codex' || model === 'gpt-5.5'
+  if (isCodex) {
+    return sessionProxyUsesProxy(useProxy) ? 'Plus' : 'Rightcode'
+  }
+  return sessionProxyUsesProxy(useProxy) ? '代理' : '直连'
+}
+
+function buildProjectKnowledgePrompt(knowledgePath: string) {
+  const safePath = knowledgePath.replace(/`/g, '\\`')
+  return `完成当前任务后，请把本次工作中对未来会话有长期复用价值的知识，分别沉淀到对应的知识文件。请先读取并合并更新已有内容，不要覆盖有效信息：如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制），写入 \`${safePath}\`；如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`/home/tianyi/imac-test/.imac/issue_knowledge/dca1dadf/issue_knowledge.md\`。不要记录一次性过程、重复内容、个人信息或凭据；如果没有新的可复用知识，不要修改文件。`
+}
+
+function continueSessionName(session: any) {
+  const base = String(session?.name || '').trim() || '未命名会话'
+  return `${base} - 更换模型`
+}
+
+// 会话标题中间省略: 末尾形如 " YYYY-MM-DD HH:MM" 的时间戳(由 formatDefaultSessionName 拼接)钉在结尾,
+// 其余正文过长时正文 span 自身 truncate 出现 …, 整体呈「开头…结尾」; 无时间戳的标题整体回退普通尾部省略.
+function splitTitleForMiddleTruncate(name?: string | null): { head: string; tail: string | null } {
+  const fullName = String(name || '')
+  const m = fullName.match(/^(.*?)(\s+\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?::\d{2})?)\s*$/)
+  if (m) return { head: m[1].trimEnd(), tail: m[2].trim().replace(/\s+/g, ' ') }
+  return { head: fullName, tail: null }
+}
+
+function SessionTitle({ name, theme }: { name?: string | null; theme: string }) {
+  const { head, tail } = splitTitleForMiddleTruncate(name)
+  const full = String(name || '')
+  return (
+    <h2
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[14px]"
+      style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
+      title={full || undefined}
+    >
+      <span className="min-w-0 truncate">{head}</span>
+      {tail ? <span className="flex-shrink-0 whitespace-nowrap">{tail}</span> : null}
+    </h2>
+  )
+}
+
+function makeSendRequestId() {
+  return `send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function permissionReplyText(value: string) {
+  const normalized = String(value || '').trim()
+  if (normalized === 'perm:allow' || normalized === 'allow') return 'allow'
+  if (normalized === 'perm:deny' || normalized === 'deny') return 'deny'
+  if (normalized === 'perm:allow_all' || normalized === 'allow_all' || normalized === 'allow all') return 'allow all'
+  return ''
+}
+
+// =====================================================================
+// 附件 (粘贴 / 拖放 / 上传按钮 三入口共用)
+// =====================================================================
+type AttachmentStatus = 'uploading' | 'done' | 'error'
+type Attachment = {
+  id: string
+  name: string
+  size: number
+  kind: 'image' | 'file'
+  sourceFile?: File        // 仅保留在当前页面，用于上传失败后原位重试
+  previewUrl?: string      // 仅 image: 本地 ObjectURL, 用作缩略图
+  status: AttachmentStatus
+  remotePath?: string      // 上传成功后的服务端绝对路径 (用于 prompt 拼接)
+  error?: string
+}
+
+type AttachmentImagePreview = {
+  id: string
+  name: string
+  src: string
+}
+
+type SessionInputEntry = {
+  id: string
+  session_id?: string
+  input_text?: string
+  content?: string
+  created_at?: string
+  request_id?: string | null
+  turn_number?: number | null
+}
+
+type FailedSendAttempt = {
+  sessionId: string
+  draft: string
+  content: string
+  inputText: string
+  requestId: string
+  urgent: boolean
+  mentions: any[]
+  attachmentIds: string[]
+}
+
+type SessionBashCommand = {
+  id: string
+  timestamp?: string | null
+  command: string
+  description?: string | null
+  cwd?: string | null
+  source?: string | null
+}
+
+function makeAttachmentId() {
+  return `att-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function attachmentKindOf(file: File): 'image' | 'file' {
+  return file.type.startsWith('image/') ? 'image' : 'file'
+}
+
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+// 多种常见扩展名 → 简短分类标签 (用于无缩略图的文件芯片)
+function fileExtBadge(name: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  if (!ext || ext === name.toLowerCase()) return 'FILE'
+  return ext.slice(0, 4).toUpperCase()
+}
+
+// 上传单个文件到 /api/upload (multer 接收 field 名 'file').
+// 不能复用 store 里的 api(), 它默认设了 Content-Type: application/json — FormData 必须留空 Content-Type.
+async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ path: string; name: string; size: number }> {
+  const token = localStorage.getItem('cc-token') || ''
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const url = projectId ? `/api/upload?project_id=${encodeURIComponent(projectId)}` : '/api/upload'
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  })
+  const data = await res.json().catch(() => ({} as any))
+  if (!res.ok) throw new Error(data?.error || `上传失败 (HTTP ${res.status})`)
+  return { path: data.path, name: data.name, size: data.size }
+}
+
+// 输入框内的紧凑附件芯片. 图片缩略图 / 文件短标签 + 删除按钮 + 上传状态.
+function AttachmentChip({ att, onRemove, onRetry, onPreview }: {
+  att: Attachment
+  onRemove: () => void
+  onRetry: () => void
+  onPreview?: (preview: AttachmentImagePreview) => void
+}) {
+  const isImage = att.kind === 'image' && att.previewUrl
+  const baseStyle: React.CSSProperties = {
+    background: 'var(--surface-base)',
+    border: '1px solid var(--border-strong)',
+  }
+  const fileLabel = fileExtBadge(att.name).slice(0, 2)
+  return (
+    <div className="group relative flex flex-shrink-0 items-center gap-1" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
+      {isImage ? (
+        <button
+          type="button"
+          onClick={() => onPreview?.({ id: att.id, name: att.name, src: att.previewUrl! })}
+          className="w-6 h-6 rounded-[var(--radius-control)] overflow-hidden relative block text-left cursor-zoom-in"
+          style={baseStyle}
+          title={`${att.name} · 点击预览`}
+          aria-label={`预览图片 ${att.name}`}>
+          <img src={att.previewUrl} alt={att.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/35 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity inline-flex items-center justify-center">
+            <ZoomIn className="w-3 h-3" strokeWidth={2.2} />
+          </div>
+          {att.status === 'uploading' && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+              <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+              </svg>
+            </div>
+          )}
+          {att.status === 'error' && (
+            <div className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>
+              失败
+            </div>
+          )}
+        </button>
+      ) : (
+        <div
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[9px] font-semibold leading-none"
+          style={{ ...baseStyle, color: 'var(--accent-primary)' }}>
+          <span>{fileLabel}</span>
+            {att.status === 'uploading' && (
+              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-black/50">
+                <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+                </svg>
+              </div>
+            )}
+            {att.status === 'error' && (
+              <div className="absolute inset-0 rounded-md flex items-center justify-center text-[8px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>
+                !
+              </div>
+            )}
+        </div>
+      )}
+      {att.status === 'error' && (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onRetry() }}
+          className="workbench-control-sm inline-flex items-center gap-1 border px-1.5 text-[10px] font-medium transition-colors hover:bg-[var(--status-danger-soft)]"
+          style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)' }}
+          title={`${att.error || '上传失败'}，点击重试`}
+          aria-label={`重试上传 ${att.name}`}
+        >
+          <RefreshCw className="h-3 w-3" strokeWidth={2} />
+          重试
+        </button>
+      )}
+      <button type="button" onClick={(e) => { e.stopPropagation(); onRemove() }}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ color: 'var(--text-primary)', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
+        title="移除">
+        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+function AttachmentImagePreviewModal({ preview, onClose }: {
+  preview: AttachmentImagePreview
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
+      <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
+      <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
+        <div className="min-w-0 text-[13px] font-medium truncate">{preview.name}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          aria-label="关闭"
+          className="h-8 w-8 rounded-full inline-flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
+          <X className="w-4 h-4" strokeWidth={2} />
+        </button>
+      </div>
+      <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6 pointer-events-none">
+        <img
+          src={preview.src}
+          alt={preview.name}
+          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-auto"
+          onClick={(event) => event.stopPropagation()}
+        />
+      </div>
+    </div>
+  )
+}
+
+const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建会话。'
+
+function isTuiContactTimeoutText(text: string) {
+  return text === TUI_CONTACT_TIMEOUT_MESSAGE || /TUI was not ready within \d+ms/i.test(text || '')
+}
+
+function normalizeTuiContactTimeoutMessage(text: string) {
+  return isTuiContactTimeoutText(text) ? TUI_CONTACT_TIMEOUT_MESSAGE : text
+}
+
+function formatSendError(msg: any) {
+  const body = normalizeTuiContactTimeoutMessage(msg?.message || '发送失败')
+  return msg?.log_path ? `${body}\n日志: ${msg.log_path}` : body
+}
+
+function formatBackendFailureMessage(reason: string) {
+  const body = normalizeTuiContactTimeoutMessage((reason || '').trim())
+  if (!body) return ''
+  return body.startsWith('任务失败') ? body : `任务失败：${body}`
+}
+
+function replayTextOf(entry: SessionInputEntry) {
+  const typed = typeof entry.input_text === 'string' ? entry.input_text : ''
+  return typed.trim() ? typed : (entry.content || '')
+}
+
+function previewTextOf(entry: SessionInputEntry) {
+  const text = replayTextOf(entry).trim()
+  return text || '(空输入)'
+}
+
+function formatFeatureTime(value?: string | null) {
+  if (!value) return '未知时间'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+async function copyTextToClipboard(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fall through to the textarea fallback below
+  }
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.setAttribute('readonly', 'true')
+    el.style.position = 'fixed'
+    el.style.left = '-9999px'
+    el.style.top = '0'
+    document.body.appendChild(el)
+    el.focus()
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+// =====================================================================
+// Avatar
+// =====================================================================
+export function Avatar({ role }: { role: string }) {
+  if (role === 'user') return (
+    <div className="w-8 h-8 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center flex-shrink-0">
+      <svg className="w-4 h-4 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+    </div>
+  )
+  return (
+    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/15 flex items-center justify-center flex-shrink-0">
+      <Bot className="w-4 h-4 text-emerald-300" strokeWidth={1.75} />
+    </div>
+  )
+}
+
+// =====================================================================
+// 消息工具按钮
+// =====================================================================
+export function ActionButton({ icon, label, onClick, active, color }: { icon: React.ReactNode; label: string; onClick: (e: React.MouseEvent) => void; active?: boolean; color?: string }) {
+  return (
+    <button onClick={onClick} title={label}
+      className={`p-1.5 rounded-md transition-all ${active ? 'bg-yellow-500/15 text-yellow-400' : `hover:bg-[var(--bg-hover)] ${color || 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}`}>
+      {icon}
+    </button>
+  )
+}
+
+function SessionInputReplayModal({ sessionId, onPick, onClose }: {
+  sessionId: string
+  onPick: (text: string) => void
+  onClose: () => void
+}) {
+  const { theme } = useStore()
+  const [entries, setEntries] = useState<SessionInputEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [copyError, setCopyError] = useState('')
+  const [query, setQuery] = useState('')
+  const [copiedEntryKey, setCopiedEntryKey] = useState('')
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const textMuted = theme !== 'light' ? '#94a3b8' : '#64748b'
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    setCopyError('')
+    setEntries([])
+    api(`/api/sessions/${sessionId}/inputs`)
+      .then((data: any) => {
+        if (cancelled) return
+        setEntries(Array.isArray(data?.entries) ? data.entries : [])
+      })
+      .catch((e: any) => {
+        if (cancelled) return
+        setError(e?.message || '读取输入回放失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [sessionId])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    }
+  }, [])
+
+  const filteredEntries = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return entries
+    return entries.filter((entry) => replayTextOf(entry).toLowerCase().includes(q))
+  }, [entries, query])
+
+  const copyEntry = async (key: string, text: string) => {
+    if (!text) return
+    const ok = await copyTextToClipboard(text)
+    if (!ok) {
+      setCopyError('复制失败，请手动选择文本复制')
+      return
+    }
+    setCopyError('')
+    setCopiedEntryKey(key)
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    copyResetTimer.current = setTimeout(() => setCopiedEntryKey(''), 1500)
+  }
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[720px] max-w-[92vw] max-h-[78vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <History className="w-4 h-4 text-[var(--accent-primary)] flex-shrink-0" strokeWidth={1.8} />
+            <span className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>回放输入</span>
+            <span className="text-[11px] font-normal flex-shrink-0" style={{ color: 'var(--text-muted)' }}>· {entries.length} 条</span>
+          </div>
+          <button onClick={onClose}
+            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>关闭</button>
+        </div>
+
+        <div className="px-5 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <input value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="搜索输入内容"
+            className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+          {copyError && <div className="mt-2 text-[11px] text-[var(--status-danger)]">{copyError}</div>}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>加载中...</div>
+          )}
+          {!loading && error && (
+            <pre className="workbench-status-danger text-[12px] whitespace-pre-wrap break-words rounded-lg border p-3">{error}</pre>
+          )}
+          {!loading && !error && entries.length === 0 && (
+            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>暂无可回放输入</div>
+          )}
+          {!loading && !error && entries.length > 0 && filteredEntries.length === 0 && (
+            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>没有匹配的输入</div>
+          )}
+          {!loading && !error && filteredEntries.length > 0 && (
+            <div className="space-y-2">
+              {filteredEntries.map((entry, index) => {
+                const replayText = replayTextOf(entry)
+                const entryKey = entry.id || `${entry.created_at || 'input'}-${index}`
+                const copied = copiedEntryKey === entryKey
+                return (
+                  <div key={entryKey}
+                    className="rounded-xl border px-3.5 py-3 transition-colors hover:bg-[var(--bg-card-hover)]"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-[11px] flex-1 min-w-0 truncate" style={{ color: textMuted }}>
+                            {entry.created_at ? timeAgo(entry.created_at) : '未知时间'}
+                          </span>
+                          {entry.turn_number ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                              style={{ color: textMuted, background: 'var(--bg-card-hover)' }}>
+                              turn {entry.turn_number}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-[13px] leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap break-words select-text pr-1"
+                          style={{ color: 'var(--text-primary)' }}>
+                          {previewTextOf(entry)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => copyEntry(entryKey, replayText)}
+                          disabled={!replayText}
+                          title={copied ? '已复制' : '复制输入'}
+                          aria-label={copied ? '已复制' : '复制输入'}
+                          className="h-8 w-8 rounded-lg border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg-card-hover)]"
+                          style={{ color: copied ? 'var(--status-success)' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
+                          {copied ? <Check className="w-3.5 h-3.5" strokeWidth={2} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.9} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onPick(replayText)}
+                          disabled={!replayText}
+                          title="替换当前输入"
+                          aria-label="替换当前输入"
+                          className="h-8 w-8 rounded-lg border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--accent-soft)]"
+                          style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
+                          <Replace className="w-3.5 h-3.5" strokeWidth={1.9} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CompactContextConfirmModal({ onConfirm, onClose }: {
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="workbench-modal relative w-[360px] max-w-[calc(100vw-32px)] p-6"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}>
+        <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>压缩上文</h3>
+        <p className="text-[13px] leading-relaxed mb-5" style={{ color: 'var(--text-secondary)' }}>
+          是否继续，将消耗一段时间压缩上文；压缩期间，您可以继续发送后续指令，但响应会延后。期间点击“终止”可以打断压缩。
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="workbench-control-md flex-1 border text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}>
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="workbench-control-md flex-1 text-[13px] font-medium transition-opacity hover:opacity-90"
+            style={{ color: 'var(--accent-foreground)', background: 'var(--accent-primary)' }}>
+            继续
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SessionFilesDrawerSurface({
+  files,
+  selectedPath,
+  loading,
+  error,
+  showDiffHint = false,
+  onReload,
+  onSelect,
+}: {
+  files: SessionFileFeature[]
+  selectedPath: string
+  loading: boolean
+  error: string
+  showDiffHint?: boolean
+  onReload: () => void
+  onSelect: (path: string) => void
+}) {
+  return (
+    <section className="flex min-h-0 flex-col" aria-label="本 Session 文件修改">
+      <div className="mb-1 flex items-center gap-2 px-1">
+        {showDiffHint
+          ? <p className="min-w-0 flex-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>点选后在中心看 Diff</p>
+          : <span className="min-w-0 flex-1" />}
+        <button type="button" onClick={onReload} disabled={loading} className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-control)] hover:bg-[var(--surface-control-hover)] disabled:opacity-50" aria-label="重新扫描文件修改" title="重新扫描">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+      {error && (
+        <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border p-2 text-[11px]" role="alert">
+          <div>{error}</div>
+          <button type="button" onClick={onReload} disabled={loading} className="mt-1 inline-flex items-center gap-1 font-medium hover:underline disabled:opacity-50">
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />重新扫描
+          </button>
+        </div>
+      )}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-8 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 扫描中…
+        </div>
+      ) : files.length === 0 && !error ? (
+        <div className="px-3 py-8 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          暂无文件修改记录
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {files.map(file => {
+            const active = file.path === selectedPath || file.display_path === selectedPath
+            const fullPath = file.display_path || file.path
+            const basename = fullPath.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || fullPath
+            const timeLabel = formatFeatureTime(file.last_timestamp)
+            return (
+              <button
+                key={file.path}
+                type="button"
+                onClick={() => onSelect(file.path)}
+                className="flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] px-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ background: active ? 'var(--surface-active)' : undefined, boxShadow: active ? 'inset 2px 0 var(--accent-primary)' : undefined }}
+                aria-current={active ? 'true' : undefined}
+                title={`${fullPath} · ${timeLabel}`}
+              >
+                <FileText className="h-3.5 w-3.5 flex-shrink-0" aria-hidden style={{ color: 'var(--text-muted)' }} />
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-primary)' }}>{basename}</span>
+                <span className="flex-shrink-0 text-[9px] tabular-nums" style={{ color: 'var(--text-muted)' }} aria-label={`${file.count} 次改动`}>{file.count}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function SessionDiffCenterSurface({
+  file,
+  requestedPath,
+  sourceLabel,
+  diff,
+  mode,
+  loading,
+  error,
+  onModeChange,
+  onRetry,
+  onOpenArtifact,
+}: {
+  file: SessionFileFeature | null
+  requestedPath: string
+  sourceLabel: string
+  diff: SessionGitDiff | null
+  mode: GitDiffMode
+  loading: boolean
+  error: string
+  onModeChange: (mode: GitDiffMode) => void
+  onRetry: () => void
+  onOpenArtifact: (request: CodeArtifactOpenRequest) => void
+}) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const diffModel = useMemo(
+    () => diff?.diff ? parseUnifiedDiff(diff.diff, file?.path || '') : null,
+    [diff?.diff, file?.path],
+  )
+
+  useLayoutEffect(() => {
+    headingRef.current?.focus({ preventScroll: true })
+  }, [file?.display_path])
+
+  return (
+    <CodeArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+    <section className="session-center-diff flex h-full min-h-0 flex-1 flex-col" aria-label="文件 Diff" data-workbench-diff-layer data-tool-source={sourceLabel}>
+      <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-4" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+        <FileDiff className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
+        <h2 ref={headingRef} tabIndex={-1} className="min-w-0 flex-1 truncate font-mono text-[11px] outline-none" title={file?.display_path} style={{ color: 'var(--text-primary)' }}>{file?.display_path || safeToolPathLabel(requestedPath) || '文件 Diff'}</h2>
+        <span className="git-changes-viewer__badge flex-shrink-0">{sourceLabel}</span>
+        <div className="flex gap-1" role="tablist" aria-label="当前 Git diff source">
+          {(['unstaged', 'staged'] as GitDiffMode[]).map(item => (
+            <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => onModeChange(item)} className={`git-changes-viewer__source-tab flex-none px-2${mode === item ? ' git-changes-viewer__source-tab--active' : ''}`}>
+              {GIT_DIFF_MODE_LABELS[item]}
+            </button>
+          ))}
+        </div>
+        {loading && <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent-primary)' }} />}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {!loading && !file && (
+          <div className="m-4 rounded-[var(--radius-control)] border p-4" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }} role="status">
+            <strong className="text-[13px] text-[var(--text-primary)]">{requestedPath ? '当前对象不在本会话变更清单' : '当前会话没有可定位的文件变更'}</strong>
+            {requestedPath && <code className="mt-2 block text-[11px] text-[var(--text-secondary)]">{safeToolPathLabel(requestedPath)}</code>}
+            <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)]">不会扩大文件范围或回退到提交历史；可原地重新扫描。</p>
+            <button type="button" onClick={onRetry} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="h-3.5 w-3.5" />重试扫描
+            </button>
+          </div>
+        )}
+        {file && error && (
+          <div className="workbench-status-danger m-4 rounded-[var(--radius-control)] border p-3 text-[12px]" role="alert">
+            <pre className="whitespace-pre-wrap">{error}</pre>
+            <button type="button" onClick={onRetry} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}>
+              <RefreshCw className="h-3.5 w-3.5" />重试当前 Diff
+            </button>
+          </div>
+        )}
+        {file && !loading && !error && (!diff || !diff.diff) && (
+          <div className="border-b px-4 py-3 text-[11px] leading-relaxed" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)', background: 'var(--surface-base)' }}>
+            <strong className="text-[var(--text-primary)]">本会话改过，但当前工作树无该 diff。</strong>
+            <span className="ml-1">当前来源为「{GIT_DIFF_MODE_LABELS[mode]}」，不会自动回退到最近 commit。</span>
+            <button type="button" onClick={onRetry} className="workbench-control-md ml-3 inline-flex items-center gap-1 border px-2 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="h-3 w-3" />重试
+            </button>
+          </div>
+        )}
+        {file && !loading && !error && diff?.fallback_content != null && <pre className="min-w-max whitespace-pre p-4 font-mono text-[11px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>{diff.fallback_content || ' '}</pre>}
+        {file && !loading && !error && diffModel && !diffModel.hasHunks && (
+          <div className="border-b px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>{unifiedDiffNoHunkMessage(diffModel)}</div>
+        )}
+        {file && !error && diffModel && <UnifiedDiffRows model={diffModel} fallbackPath={file.path} />}
+      </div>
+    </section>
+    </CodeArtifactOpenProvider>
+  )
+}
+
+function SessionBashCommandsModal({ sessionId, onClose }: {
+  sessionId: string
+  onClose: () => void
+}) {
+  const [commands, setCommands] = useState<SessionBashCommand[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [copiedId, setCopiedId] = useState('')
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const loadCommands = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await api(`/api/sessions/${sessionId}/features/bash`)
+      setCommands(Array.isArray(data?.commands) ? data.commands : [])
+    } catch (e: any) {
+      setError(e?.message || '读取 Bash 命令失败')
+      setCommands([])
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    void loadCommands()
+  }, [loadCommands])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    }
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return commands
+    return commands.filter(command => (
+      command.command.toLowerCase().includes(q)
+      || (command.description || '').toLowerCase().includes(q)
+      || (command.cwd || '').toLowerCase().includes(q)
+    ))
+  }, [commands, query])
+
+  const copyCommand = async (command: SessionBashCommand) => {
+    const ok = await copyTextToClipboard(command.command)
+    if (!ok) return
+    setCopiedId(command.id)
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    copyResetTimer.current = setTimeout(() => setCopiedId(''), 1500)
+  }
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} data-tour="session-bash-overlay" />
+      <div className="relative flex h-[80vh] w-[min(920px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.8} />
+            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话 Bash 命令</span>
+            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {commands.length} 条</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadCommands()}
+            disabled={loading}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            style={{ color: 'var(--text-secondary)' }}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCompare className="h-3.5 w-3.5" />}
+            重新扫描
+          </button>
+          <button onClick={onClose}
+            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>关闭</button>
+        </div>
+
+        <div className="border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="搜索命令、描述或工作目录"
+            className="h-9 w-full rounded-lg px-3 text-[13px] focus:outline-none focus:border-[var(--accent-border)]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              扫描中...
+            </div>
+          )}
+          {!loading && error && (
+            <pre className="workbench-status-danger whitespace-pre-wrap break-words rounded-lg border p-3 text-[12px]">{error}</pre>
+          )}
+          {!loading && !error && commands.length === 0 && (
+            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无 Bash 命令记录</div>
+          )}
+          {!loading && !error && commands.length > 0 && filtered.length === 0 && (
+            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>没有匹配的命令</div>
+          )}
+          {!loading && !error && filtered.length > 0 && (
+            <div className="space-y-3">
+              {filtered.map((command, index) => {
+                const copied = copiedId === command.id
+                return (
+                  <div key={command.id || index} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                    <div className="mb-2 flex min-w-0 items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span>{formatFeatureTime(command.timestamp)}</span>
+                          {command.timestamp && <span>· {timeAgo(command.timestamp)}</span>}
+                          {command.source && <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>{command.source}</span>}
+                        </div>
+                        {command.description && (
+                          <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{command.description}</div>
+                        )}
+                        {command.cwd && (
+                          <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{command.cwd}</div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyCommand(command)}
+                        className="h-8 w-8 flex-shrink-0 rounded-lg border inline-flex items-center justify-center transition-colors hover:bg-[var(--bg-card-hover)]"
+                        title={copied ? '已复制' : '复制命令'}
+                        aria-label={copied ? '已复制' : '复制命令'}
+                        style={{ color: copied ? 'var(--status-success)' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
+                        {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} />}
+                      </button>
+                    </div>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
+                      style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                      {command.command}
+                    </pre>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 读取并展示当前 Claude Code 会话所属项目目录下的活跃定时任务 (durable scheduled tasks).
+// 数据来自后端 /api/sessions/:id/features/scheduled-tasks (读 <bind_path>/.claude/scheduled_tasks.json + .lock).
+function SessionScheduledTasksModal({ sessionId, onClose }: {
+  sessionId: string
+  onClose: () => void
+}) {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const d = await api(`/api/sessions/${sessionId}/features/scheduled-tasks`)
+      setData(d)
+    } catch (e: any) {
+      setError(e?.message || '读取定时任务失败')
+      setData(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId])
+
+  useEffect(() => { void load() }, [load])
+
+  const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : []
+  const sessionTasks: any[] = Array.isArray(data?.session_tasks) ? data.session_tasks : []
+  const lock = data?.lock || null
+  const schedulerAlive = !!data?.scheduler_alive
+  const available = data?.available !== false
+
+  return (
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative flex h-[80vh] w-[min(860px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
+            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
+            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {tasks.length + sessionTasks.length} 个</span>
+          </div>
+          <button type="button" onClick={() => void load()} disabled={loading}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            style={{ color: 'var(--text-secondary)' }}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            刷新
+          </button>
+          <button onClick={onClose}
+            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>关闭</button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+              <Loader2 className="h-4 w-4 animate-spin" /> 读取中...
+            </div>
+          )}
+          {!loading && error && (
+            <pre className="workbench-status-danger whitespace-pre-wrap break-words rounded-lg border p-3 text-[12px]">{error}</pre>
+          )}
+          {!loading && !error && !available && (
+            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
+          )}
+          {!loading && !error && available && (
+            <>
+              <div className="mb-3 rounded-xl border px-3.5 py-3 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? 'var(--status-running)' : 'var(--status-waiting)') : 'var(--status-unknown)' }} />
+                  <span>
+                    {lock
+                      ? (schedulerAlive ? '调度器运行中' : '锁文件存在但持锁进程未运行 (任务休眠, 下个 Claude Code 会话接管后恢复)')
+                      : '无活跃调度器 (当前没有 Claude Code 会话在此项目持锁)'}
+                  </span>
+                </div>
+                {lock && (
+                  <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    持锁 session: {lock.sessionId || '-'} · pid: {lock.pid || '-'}{lock.acquiredAt ? ` · 接管于 ${formatFeatureTime(lock.acquiredAt)}` : ''}
+                  </div>
+                )}
+                {data?.root && (
+                  <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={String(data.root)}>
+                    读取目录{data?.worktree ? ' (worktree)' : ''}: {String(data.root)}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  durable 任务持久化在 <code className="font-mono">.claude/scheduled_tasks.json</code>, 由持锁会话触发 (创建者 ≠ 触发者)。session-only 任务 (durable:false) 只存在于本会话内存、Claude 退出即消失, 从会话转录重建, 下方以「仅本会话」标记列出。
+                </div>
+              </div>
+
+              {tasks.length === 0 && sessionTasks.length === 0 ? (
+                <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无活跃定时任务</div>
+              ) : (
+                <div className="space-y-3">
+                  {[...tasks.map((t: any) => ({ t, sessionOnly: false })), ...sessionTasks.map((t: any) => ({ t, sessionOnly: true }))].map(({ t, sessionOnly }, i: number) => {
+                    const created = t.createdAt ? formatFeatureTime(t.createdAt) : '-'
+                    const recurring = t.recurring === true
+                    const permanent = t.permanent === true
+                    const promptStr = typeof t.prompt === 'string' ? t.prompt : ''
+                    return (
+                      <div key={(t.id || '') + '-' + i} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: sessionOnly ? 'rgba(251,191,36,0.35)' : 'var(--border-color)' }}>
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className="rounded px-1.5 py-0.5 font-mono" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>{t.id || '?'}</span>
+                          <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{t.cron || '-'}</span>
+                          {sessionOnly
+                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--status-waiting-soft)', color: 'var(--status-waiting)' }}>仅本会话</span>
+                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>durable</span>}
+                          {recurring
+                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>循环</span>
+                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>一次性</span>}
+                          {permanent && <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>永久</span>}
+                          {!sessionOnly && created !== '-' && <span>· 创建于 {created}</span>}
+                          {t.lastFiredAt && <span>· 上次触发 {formatFeatureTime(t.lastFiredAt)}</span>}
+                        </div>
+                        {promptStr && (
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
+                            style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                            {promptStr}
+                          </pre>
+                        )}
+                        {sessionOnly
+                          ? <div className="mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>session-only: 只存在于本会话内存, Claude 退出即消失</div>
+                          : (t.createdBySessionId && <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>创建 session: {t.createdBySessionId}{t.createdByPid ? ` · pid ${t.createdByPid}` : ''}</div>)}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// HeaderActionButton — 顶栏操作按钮统一元件.
+// 尺寸/圆角/字号与 SessionStatusChip 严格对齐 (text-[11px] + py-0.5 + rounded-full),
+// 让 终止 / 新会话 / 打开应用 / 更多 等不再比 [执行中] 状态 chip 高出一截.
+// tone 复刻各按钮原有的语义色; iconOnly 用于纯图标按钮 (如 [...] 菜单触发器).
+// =====================================================================
+type HeaderActionTone = 'red' | 'emerald' | 'violet' | 'blue' | 'neutral'
+
+const HEADER_ACTION_TONE_CLASS: Record<HeaderActionTone, string> = {
+  red:     'border-[var(--status-danger-border)] text-[var(--status-danger)] hover:bg-[var(--status-danger-soft)]',
+  emerald: 'border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10',
+  violet:  'border-violet-500/25 text-violet-400 hover:bg-violet-500/10',
+  blue:    'border-[var(--accent-border)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)]',
+  neutral: 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)]',
+}
+
+type HeaderActionButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
+  tone?: HeaderActionTone
+  icon?: ReactNode
+  iconOnly?: boolean
+  className?: string
+}
+
+function HeaderActionButton({
+  tone = 'neutral',
+  icon,
+  iconOnly = false,
+  className = '',
+  children,
+  ...rest
+}: HeaderActionButtonProps) {
+  return (
+    <button
+      type="button"
+      className={[
+        'text-[11px] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:opacity-45 disabled:cursor-not-allowed',
+        iconOnly ? 'h-[22px] w-[22px] p-0' : 'px-2.5 py-0.5',
+        HEADER_ACTION_TONE_CLASS[tone],
+        className,
+      ].filter(Boolean).join(' ')}
+      {...rest}
+    >
+      {icon}
+      {!iconOnly && children}
+    </button>
+  )
+}
+
+// =====================================================================
+// ChatHeaderOverflowMenu — 把次要 chat 头部按钮收纳进 `…` 菜单
+// (原始数据 / 隐藏次要 / 显示时间与序号)
+// =====================================================================
+function ChatHeaderOverflowMenu({
+  jsonlCount, minorCount, hideMinor, onToggleHideMinor, onOpenRaw,
+  showJsonlMeta, onToggleShowJsonlMeta,
+  autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
+  onStop, canStop,
+  onViewScheduledTasks,
+  onCopySessionLink, sessionLinkCopied,
+}: {
+  jsonlCount: number
+  minorCount: number
+  hideMinor: boolean
+  onToggleHideMinor: () => void
+  onOpenRaw: () => void
+  showJsonlMeta: boolean
+  onToggleShowJsonlMeta: () => void
+  autoUrgentOnEnter: boolean
+  onToggleAutoUrgentOnEnter: () => void
+  onStop: () => void
+  canStop: boolean
+  onViewScheduledTasks: () => void
+  onCopySessionLink: () => void
+  sessionLinkCopied: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+  // 统一到顶栏「新建」下拉风格 (global-create): py-1.5 / hover var(--bg-hover) / gap-2.
+  // 保留 justify-between — 本菜单项含右侧计数徽标需两端对齐.
+  const itemClass = "w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center justify-between gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+  return (
+    <div className="relative">
+      <HeaderActionButton
+        tone="neutral"
+        iconOnly
+        title="更多操作"
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v) }}
+        icon={<MoreHorizontal className="w-4 h-4" strokeWidth={1.75} />}
+      />
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-0 top-9 z-50 min-w-[200px] rounded-lg shadow-xl py-1"
+          style={{
+            background: 'var(--menu-bg)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-primary)',
+          }}>
+          {/* 移动端: 顶栏终止按钮已隐藏, 终止收纳进此菜单 (md:hidden = 仅移动端显示) */}
+          <button className={`${itemClass} md:hidden`} style={{ color: 'var(--status-danger)' }}
+            disabled={!canStop}
+            onClick={() => { setOpen(false); onStop() }}>
+            <span>终止当前操作</span>
+          </button>
+          <button className={itemClass} disabled={jsonlCount === 0}
+            onClick={() => { setOpen(false); onOpenRaw() }}>
+            <span>原始 JSONL 数据</span>
+            {jsonlCount > 0 && <span className="text-[10px] text-[var(--text-muted)]">{jsonlCount}</span>}
+          </button>
+          <button className={itemClass} disabled={jsonlCount === 0}
+            onClick={() => { setOpen(false); onToggleHideMinor() }}>
+            <span>{hideMinor ? '显示次要条目' : '隐藏次要条目'}</span>
+            {minorCount > 0 && <span className="text-[10px] text-[var(--text-muted)]">{minorCount}</span>}
+          </button>
+          <button className={itemClass}
+            onClick={() => { setOpen(false); onToggleAutoUrgentOnEnter() }}>
+            <span>{autoUrgentOnEnter ? '关闭回车自动加急' : '启动回车自动加急'}</span>
+            {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: 'var(--status-waiting)' }}>已开启</span>}
+          </button>
+          <button className={itemClass}
+            onClick={() => { setOpen(false); onViewScheduledTasks() }}>
+            <span>查看定时任务</span>
+          </button>
+          <button className={itemClass} disabled={!canStop}
+            onClick={() => { setOpen(false); onCopySessionLink() }}>
+            <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
+          </button>
+          <button className={itemClass} disabled={jsonlCount === 0}
+            onClick={() => { setOpen(false); onToggleShowJsonlMeta() }}>
+            <span>{showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// =====================================================================
+// 消息气泡
+// =====================================================================
+export function MessageBubble({
+  message: m,
+  onQuote,
+  onEdit,
+  onBookmark,
+  variant = 'default',
+  assistantAvatar,
+  assistantLabel = '助手',
+}: {
+  message: any
+  onQuote?: (m: any) => void
+  onEdit?: (m: any) => void
+  onBookmark?: (m: any) => void
+  variant?: 'default' | 'mo'
+  assistantAvatar?: React.ReactNode
+  assistantLabel?: string
+}) {
+  const [copied, setCopied] = useState(false)
+  const { theme } = useStore()
+  const isDark = theme !== 'light'
+  const isMoVariant = variant === 'mo'
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(m.content || '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+  }
+
+  if (m.role === 'system') return (
+    <div className="msg-enter flex justify-center"><span className={`text-[11px] px-3 py-1 rounded-full border ${isDark ? 'text-gray-400 bg-white/[0.03] border-white/[0.05]' : 'text-gray-500 bg-black/[0.02] border-black/[0.06]'}`}>{m.content}</span></div>
+  )
+  // v2 兜底: 未知 SDK 事件(raw role). 不像 Claude 气泡, 折成一行紫色小标. 默认折叠.
+  if (m.role === 'raw') {
+    const sdkType = (() => {
+      try { return JSON.parse(m.raw_event || '{}').type || 'unknown' } catch { return 'unknown' }
+    })()
+    return (
+      <div className="msg-enter flex justify-center">
+        <details className="group max-w-[78%]">
+          <summary className="text-[11px] px-3 py-1 rounded-full border cursor-pointer flex items-center gap-1.5"
+            style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.08)', borderColor: 'rgba(167,139,250,0.25)' }}>
+            <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            🔬 SDK 事件 · {sdkType}
+          </summary>
+          <pre className="mt-1.5 px-3 py-2 rounded-lg text-[10px] font-mono overflow-x-auto max-h-48 leading-snug"
+            style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+            {m.raw_event || m.content}
+          </pre>
+        </details>
+      </div>
+    )
+  }
+  if (m.role === 'thinking' && isMoVariant) {
+    const thinkingContent = m.content?.slice(0, 1200) || '暂无思考内容。'
+    return (
+      <div className="msg-enter assistant-process-bubble-row assistant-process-bubble-row--thinking">
+        <div className="assistant-process-bubble-avatar assistant-process-bubble-avatar--thinking" aria-hidden="true">
+          {assistantAvatar || <Avatar role="assistant" />}
+        </div>
+        <details className="assistant-process-thinking-card group">
+          <summary>
+            <span className="assistant-process-thinking-card__dot" aria-hidden="true" />
+            <span className="assistant-process-thinking-card__title">思考过程</span>
+            <span className="assistant-process-thinking-card__hint">展开查看</span>
+          </summary>
+          <div className="assistant-process-thinking-card__body">{thinkingContent}</div>
+        </details>
+      </div>
+    )
+  }
+  if (m.role === 'thinking') return (
+    <div className="msg-enter ml-11">
+      <details className="group">
+        <summary className="text-[11px] text-indigo-400/60 cursor-pointer hover:text-indigo-400/80 flex items-center gap-1">
+          <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          思考过程
+        </summary>
+        <div className={`border-l-2 border-indigo-500/20 rounded-r-lg px-4 py-2 mt-1 text-[12px] italic max-h-40 overflow-y-auto ${isDark ? 'bg-[#0d1117] text-gray-500' : 'bg-gray-100 text-gray-500'}`}>{m.content?.slice(0, 500)}</div>
+      </details>
+    </div>
+  )
+  if (m.role === 'tool') return (
+    <div className="msg-enter ml-11 group/tool relative">
+      <details className={`rounded-2xl overflow-hidden group ${isDark ? 'bg-white/[0.015] border border-white/[0.04]' : 'bg-gray-50 border border-black/[0.06]'}`}>
+        <summary className={`px-3 py-1.5 cursor-pointer text-[12px] flex items-center gap-1.5 transition-colors ${isDark ? 'text-gray-500 hover:text-gray-400 hover:bg-white/[0.02]' : 'text-gray-500 hover:text-gray-600 hover:bg-black/[0.02]'}`}>
+          <svg className="w-3 h-3 transition-transform group-open:rotate-90 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          <Wrench className="w-3 h-3 flex-shrink-0" strokeWidth={1.75} />
+          <span className="truncate">{m.tool_summary || '工具调用'}</span>
+        </summary>
+        <pre className={`px-3 py-2 text-[10px] overflow-x-auto font-mono max-h-48 ${isDark ? 'text-gray-600 border-t border-white/[0.03] bg-[#0a0e14]' : 'text-gray-500 border-t border-black/[0.04] bg-gray-100'}`}>{m.content?.slice(0, 2000)}</pre>
+      </details>
+      <div className="absolute -right-10 top-0 opacity-0 group-hover/tool:opacity-100 transition-opacity">
+        <ActionButton icon={copied
+          ? <svg className="w-3.5 h-3.5 text-[var(--status-success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+        } label="复制" onClick={copy} />
+      </div>
+    </div>
+  )
+
+  const isUser = m.role === 'user'
+  const isMoAssistant = isMoVariant && !isUser
+  const isBookmarked = m.bookmarked === 1
+  const sessionMentions = isUser && Array.isArray(m.session_mentions) ? m.session_mentions : []
+  const formatMentionContextTime = (value: any) => {
+    if (!value) return ''
+    const date = new Date(value)
+    return Number.isFinite(date.getTime()) ? date.toLocaleString() : String(value)
+  }
+  // ChatGPT 风格: 用户用中性灰色 pill 气泡, assistant 完全无气泡 (纯文本流).
+  // 气泡四角对称, 不再有指向头像的"尾巴"那一边变小的 rounded-tr-md / rounded-tl-md.
+  const userBubbleClass = isDark
+    ? 'bg-[#2f2f2f] text-gray-100'
+    : 'bg-[#f4f4f4] text-gray-900'
+
+  const renderContent = () => {
+    const content = m.content || ''
+    const quoteMatch = content.match(/^((?:> .*\n?)+)\n(.+)/s)
+    if (quoteMatch && !isUser) {
+      const quoted = quoteMatch[1].replace(/^> /gm, '')
+      const rest = quoteMatch[2]
+      return (
+        <>
+          <div className="border-l-2 border-[var(--text-dimmed)] pl-3 mb-2 text-[12px] italic line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{quoted}</div>
+          <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={CODE_MARKDOWN_COMPONENTS}>{rest}</ReactMarkdown></div>
+        </>
+      )
+    }
+    if (isUser) {
+      if (quoteMatch) {
+        const quoted = quoteMatch[1].replace(/^> /gm, '')
+        const rest = quoteMatch[2]
+        return (
+          <>
+            <div className="border-l-2 pl-3 mb-2 text-[12px] italic line-clamp-2"
+              style={{ borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}>{quoted}</div>
+            <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{rest}</p>
+          </>
+        )
+      }
+      return <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{content}</p>
+    }
+    return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={CODE_MARKDOWN_COMPONENTS}>{content}</ReactMarkdown></div>
+  }
+
+  return (
+    <div className={`msg-enter flex items-start gap-3 group/msg ${isUser ? 'flex-row-reverse' : ''}${isMoAssistant ? ' assistant-process-bubble-row assistant-process-bubble-row--assistant' : ''}`}>
+      {isUser ? (
+        <Avatar role={m.role} />
+      ) : isMoAssistant ? (
+        <div className="assistant-process-bubble-avatar assistant-process-bubble-avatar--mo" aria-hidden="true">
+          {assistantAvatar || <Avatar role="assistant" />}
+        </div>
+      ) : (
+        <div className="w-1 flex-shrink-0" />
+      )}
+      <div className={`relative ${isUser
+        ? `max-w-[78%] rounded-2xl px-4 py-2.5 ${userBubbleClass}`
+        : isMoAssistant
+          ? 'assistant-process-assistant-bubble'
+          : 'flex-1 min-w-0 py-1'}`}>
+        {isMoAssistant && (
+          <div className="assistant-process-assistant-bubble__meta">
+            <span>{assistantLabel}</span>
+            <small>回复</small>
+          </div>
+        )}
+        {isBookmarked && (
+          <div className={`absolute -top-1.5 ${isUser ? '-right-1.5' : '-left-1.5'}`}>
+            <Bookmark className="w-3 h-3 fill-amber-400 text-amber-400" strokeWidth={1.5} />
+          </div>
+        )}
+        {sessionMentions.length > 0 && (
+          <div className="mb-2 space-y-1 border-b pb-2 text-[10px] leading-relaxed"
+            style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)', color: isDark ? 'rgba(255,255,255,0.62)' : 'rgba(0,0,0,0.58)' }}>
+            {sessionMentions.map((mention: any) => (
+              <div key={`${mention.session_id}:${mention.mode || 'read_only'}`} className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="font-medium">{mention.mode === 'bidirectional' ? '交流 Session' : '引用了 Session'}</span>
+                  <span className="font-mono">{mention.name || mention.session_id}</span>
+                  <span className="font-mono opacity-75">({mention.session_id})</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2 opacity-80">
+                  {mention.project_name && <span>项目：{mention.project_name}</span>}
+                  {mention.scope_title && <span>{mention.scope_type === 'research' ? 'Research' : 'Issue'}：{mention.scope_title}</span>}
+                  {mention.context_at && <span>上下文：{formatMentionContextTime(mention.context_at)}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {renderContent()}
+      </div>
+      <div className={`flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity self-start mt-1 rounded-xl px-1 py-0.5 ${isDark ? 'bg-[#1a1f2e] border border-white/[0.08]' : 'bg-white border border-black/10'}`}
+        style={{ boxShadow: isDark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 4px 16px rgba(0,0,0,0.08)' }}>
+        {isUser && onEdit && (
+          <ActionButton label="编辑" onClick={(e) => { e.stopPropagation(); onEdit(m) }}
+            icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>} />
+        )}
+        {!isUser && onQuote && (
+          <ActionButton label="引用" onClick={(e) => { e.stopPropagation(); onQuote(m) }}
+            icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>} />
+        )}
+        <ActionButton label={copied ? '已复制' : '复制'} onClick={copy}
+          icon={copied
+            ? <svg className="w-3.5 h-3.5 text-[var(--status-success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+          } />
+        {onBookmark && (
+          <ActionButton label={isBookmarked ? '取消书签' : '书签'} active={isBookmarked}
+            onClick={(e) => { e.stopPropagation(); onBookmark(m) }}
+            icon={<svg className="w-3.5 h-3.5" fill={isBookmarked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
+// Session 列表行
+// =====================================================================
+export function isSessionNameMuted(_agentStatus?: string | null) {
+  return false
+}
+
+function runtimeStatusForSessionList(r: any) {
+  if (r?.failed === true) return 'failed'
+  if (r?.alive && r?.working) return 'running'
+  if (r?.alive) return 'waiting'
+  if (r?.job_accomplished === true) return 'completed'
+  return 'idle'
+}
+
+export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pinnedIds, onTogglePinned, dataTour }: {
+  session: any; isSelected: boolean; onSelect: (s: any) => void;
+  onEdit?: (s: any) => void; onDelete?: (s: any) => void;
+  pinnedIds?: Set<string>; onTogglePinned?: (s: any) => void;
+  dataTour?: string
+}) {
+  const { theme } = useStore()
+  const textPrimary = theme !== 'light' ? '#f1f5f9' : '#1e293b'
+  const textMuted = theme !== 'light' ? '#6b7280' : '#94a3b8'
+  const modelLabel = sessionModelLabel(session.model, session.model_label)
+  const proxyLabel = sessionProxyLabel(session.use_proxy, session.model)
+  const nameMuted = isSessionNameMuted(session.agent_status)
+
+  return (
+    <div onClick={() => onSelect(session)}
+      data-tour={dataTour}
+      className={`group flex h-[54px] items-center gap-1.5 overflow-hidden px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-colors ${
+        isSelected ? 'bg-[var(--surface-active)] border border-[var(--accent-border)]' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
+      } ${nameMuted ? 'opacity-75' : ''}`}>
+      <div className="flex-shrink-0">
+        <AgentStatusDot agentStatus={session.agent_status} />
+      </div>
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
+        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{session.message_count} 消息 · {timeAgo(session.last_active)}</div>
+      </div>
+      <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-end gap-1 overflow-hidden opacity-100 transition-opacity group-hover:opacity-0">
+          {modelLabel && (
+            <span className="min-w-0 max-w-[82px] truncate rounded px-1.5 py-[1px] text-[9px] leading-4 border"
+              title={`模型: ${modelLabel}`}
+              style={{
+                color: 'var(--accent-primary)',
+                background: 'var(--accent-soft)',
+                borderColor: 'var(--accent-border)',
+              }}>
+              {modelLabel}
+            </span>
+          )}
+          {session.research_role && (
+            <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
+              title={`研究角色: ${session.research_role}`}
+              style={{
+                color: session.research_role === 'chief_researcher' ? '#34d399' : '#a78bfa',
+                background: session.research_role === 'chief_researcher' ? 'rgba(52,211,153,0.10)' : 'rgba(167,139,250,0.10)',
+                borderColor: session.research_role === 'chief_researcher' ? 'rgba(52,211,153,0.24)' : 'rgba(167,139,250,0.24)',
+              }}>
+              {session.research_role === 'chief_researcher' ? 'chief' : 'assistant'}
+            </span>
+          )}
+        </div>
+        <div className="absolute inset-0 flex items-center justify-end gap-0.5 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100">
+          {onEdit && <button onClick={e => { e.stopPropagation(); onEdit(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title="重命名">
+            <svg className="w-3 h-3 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          </button>}
+          {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title="删除">
+            <svg className="w-3 h-3 text-[var(--status-danger)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>}
+          {pinnedIds && onTogglePinned && <button onClick={e => { e.stopPropagation(); onTogglePinned(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title={pinnedIds.has(session.session_id) ? '取消置顶' : '置顶'}>
+            <svg className="w-3 h-3" style={{ color: pinnedIds.has(session.session_id) ? '#f59e0b' : textMuted }} fill={pinnedIds.has(session.session_id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+          </button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type RemoteFileSource = {
+  name: string
+  status: string
+  remote_path: string
+  hostname?: string
+  hardware?: string
+}
+
+type MentionFileSource = {
+  key: string
+  kind: 'hub' | 'local' | 'remote'
+  name: string
+  status?: string
+  remote_path?: string
+}
+
+type AgentMentionMode = 'read_only' | 'bidirectional'
+
+type MentionAgentSession = {
+  session_id: string
+  name: string
+  description?: string
+  model?: string
+  model_label?: string
+  backend?: string
+  agent_status?: string
+  research_role?: string | null
+  scope_type?: 'issue' | 'research'
+  last_active?: string
+  message_count?: number
+  project_name?: string
+  issue_title?: string
+  research_title?: string
+  group?: 'same_scope' | 'same_project' | 'other_project'
+  can_communicate?: boolean
+}
+
+type ChatDesktopFileBridge = {
+  isDesktop?: boolean
+  listProjectLocalFiles?: (projectId: string, path: string) => Promise<{
+    ok?: boolean
+    error?: string
+    bind_path?: string
+    entries?: Entry[]
+  }>
+}
+
+function getChatDesktopFileBridge(): ChatDesktopFileBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  return (window as { mobiusDesktop?: ChatDesktopFileBridge }).mobiusDesktop
+}
+
+function RemoteFileMentionDrawer({
+  projectId,
+  issueId,
+  researchId,
+  currentSessionId,
+  open,
+  initialTab,
+  query,
+  onClose,
+  onPickPath,
+  onPickAgent,
+}: {
+  projectId: string
+  issueId?: string
+  researchId?: string
+  currentSessionId?: string
+  open: boolean
+  initialTab?: 'files' | 'agents'
+  query?: string
+  onClose: () => void
+  onPickPath: (path: string) => void
+  onPickAgent?: (agent: MentionAgentSession, mode: AgentMentionMode) => void
+}) {
+  const [activeTab, setActiveTab] = useState<'files' | 'agents'>(issueId || researchId ? 'agents' : 'files')
+  const [sources, setSources] = useState<RemoteFileSource[]>([])
+  const [selectedSourceKey, setSelectedSourceKey] = useState('hub')
+  const [sourcesLoading, setSourcesLoading] = useState(false)
+  const [sourcesError, setSourcesError] = useState('')
+  const [agentSessions, setAgentSessions] = useState<MentionAgentSession[]>([])
+  const [agentLoading, setAgentLoading] = useState(false)
+  const [agentError, setAgentError] = useState('')
+  const [agentMode, setAgentMode] = useState<AgentMentionMode>('read_only')
+  const [agentSearch, setAgentSearch] = useState('')
+  const [dirs, setDirs] = useState<Record<string, DirState>>({})
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
+
+  const sourceOptions = useMemo<MentionFileSource[]>(() => {
+    const options: MentionFileSource[] = [{ key: 'hub', kind: 'hub', name: '中枢（local）' }]
+    const desktop = getChatDesktopFileBridge()
+    if (desktop?.isDesktop && desktop.listProjectLocalFiles) {
+      options.push({ key: 'local', kind: 'local', name: '本机（local）' })
+    }
+    for (const source of sources) {
+      options.push({
+        key: `remote:${source.name}`,
+        kind: 'remote',
+        name: source.name,
+        status: source.status,
+        remote_path: source.remote_path,
+      })
+    }
+    return options
+  }, [sources])
+
+  const loadSources = useCallback(async () => {
+    if (!projectId) return
+    setSourcesLoading(true)
+    setSourcesError('')
+    try {
+      const data = await api(`/api/projects/${projectId}/remote-file-sources`)
+      const next = Array.isArray(data?.remotes) ? data.remotes as RemoteFileSource[] : []
+      setSources(next)
+      const desktop = getChatDesktopFileBridge()
+      setSelectedSourceKey(current => {
+        if (current === 'hub') return current
+        if (current === 'local' && desktop?.isDesktop && desktop.listProjectLocalFiles) return current
+        return next.some(source => `remote:${source.name}` === current) ? current : 'hub'
+      })
+    } catch (error: any) {
+      setSources([])
+      setSelectedSourceKey('hub')
+      setSourcesError(error?.message || '加载远程文件来源失败')
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [projectId])
+
+  const agentScopeUrl = useMemo(() => {
+    if (!currentSessionId) return ''
+    return `/api/sessions/mention-targets?session_id=${encodeURIComponent(currentSessionId)}`
+  }, [currentSessionId])
+
+  useEffect(() => {
+    if (!open) return
+    setActiveTab(initialTab || (currentSessionId ? 'agents' : 'files'))
+    setAgentMode('read_only')
+    setAgentSearch(String(query || '').trim())
+  }, [currentSessionId, initialTab, open, query])
+
+  const loadAgentSessions = useCallback(async () => {
+    if (!agentScopeUrl) {
+      setAgentSessions([])
+      return
+    }
+    setAgentLoading(true)
+    setAgentError('')
+    try {
+      const normalizedQuery = String(agentSearch || '').trim()
+      const suffix = normalizedQuery ? `&q=${encodeURIComponent(normalizedQuery)}` : ''
+      const data = await api(`${agentScopeUrl}${suffix}`)
+      const list = Array.isArray(data?.targets) ? data.targets as MentionAgentSession[] : []
+      setAgentSessions(list.filter(item => item.session_id !== currentSessionId))
+    } catch (error: any) {
+      setAgentSessions([])
+      setAgentError(error?.message || '加载智能体列表失败')
+    } finally {
+      setAgentLoading(false)
+    }
+  }, [agentScopeUrl, currentSessionId, agentSearch])
+
+  useEffect(() => {
+    if (!open) return
+    void loadSources()
+  }, [open, loadSources])
+
+  useEffect(() => {
+    if (!open || activeTab !== 'agents') return
+    const timer = window.setTimeout(() => { void loadAgentSessions() }, String(agentSearch || '').trim() ? 160 : 0)
+    return () => window.clearTimeout(timer)
+  }, [open, activeTab, loadAgentSessions, agentSearch])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  const loadDir = useCallback(async (relPath: string) => {
+    if (!projectId || !selectedSourceKey) return
+    const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
+    if (!selectedSource) return
+    setDirs(previous => ({ ...previous, [relPath]: { ...previous[relPath], loading: true, error: undefined } }))
+    try {
+      const desktop = getChatDesktopFileBridge()
+      const data = selectedSource.kind === 'hub'
+        ? await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
+        : selectedSource.kind === 'local'
+          ? await desktop?.listProjectLocalFiles?.(projectId, relPath)
+          : await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(selectedSource.name)}&path=${encodeURIComponent(relPath)}`)
+      if (selectedSource.kind === 'local' && !data?.ok) throw new Error(data?.error || '加载本机文件失败')
+      setDirs(previous => ({ ...previous, [relPath]: { loading: false, entries: Array.isArray(data?.entries) ? data.entries : [] } }))
+    } catch (error: any) {
+      setDirs(previous => ({ ...previous, [relPath]: { loading: false, error: error?.message || '加载文件目录失败' } }))
+    }
+  }, [projectId, selectedSourceKey, sourceOptions])
+
+  useEffect(() => {
+    if (!open) return
+    if (activeTab !== 'files') return
+    setDirs({})
+    setExpanded(new Set(['/']))
+    if (selectedSourceKey) void loadDir('/')
+  }, [open, activeTab, selectedSourceKey, loadDir])
+
+  const toggleDir = useCallback((relPath: string) => {
+    setExpanded(previous => {
+      const next = new Set(previous)
+      if (next.has(relPath)) next.delete(relPath)
+      else {
+        next.add(relPath)
+        if (!dirs[relPath]) void loadDir(relPath)
+      }
+      return next
+    })
+  }, [dirs, loadDir])
+
+  const pickFile = useCallback((entry: Entry) => {
+    if (entry.abs_path) onPickPath(entry.abs_path)
+  }, [onPickPath])
+
+  const copyPath = useCallback((entry: Entry) => {
+    if (entry.abs_path) void copyTextToClipboard(entry.abs_path)
+  }, [])
+
+  const pickAgent = useCallback((agent: MentionAgentSession) => {
+    if (!onPickAgent) return
+    const mode = agentMode === 'bidirectional' && agent.can_communicate === false ? 'read_only' : agentMode
+    onPickAgent(agent, mode)
+    onClose()
+  }, [agentMode, onClose, onPickAgent])
+
+  const filteredAgents = useMemo(() => {
+    // 后端已按「精确搜索 → 同 Scope → 同项目 → 运行态 → 最近活跃」稳定排序；
+    // 前端不要再按运行态二次排序，否则会把精确 ID/名称命中挤到列表后面。
+    return agentSessions
+  }, [agentSessions])
+
+  const compactAgents = activeTab === 'agents'
+  const agentPanelRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!open || !compactAgents) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && agentPanelRef.current?.contains(target)) return
+      onClose()
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [open, compactAgents, onClose])
+
+  if (!open) return null
+  const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
+  const rootState = dirs['/']
+  const activeLabel = activeTab === 'agents' ? (researchId ? 'Research 智能体' : 'Issue 智能体') : '项目文件'
+  const activeHint = activeTab === 'agents'
+    ? '选择一个 Session，并明确使用只读引用或开启交流'
+    : '选择文件，把绝对路径插入输入框'
+
+  return (
+    <div className={compactAgents ? 'workbench-layer-popover pointer-events-none fixed inset-0' : 'workbench-layer-drawer fixed inset-0'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
+      {!compactAgents && <button
+        type="button"
+        className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
+        aria-label="关闭 @ 弹层"
+        onClick={onClose}
+      />}
+      <aside
+        data-testid="remote-file-mention-drawer"
+        ref={agentPanelRef}
+        className={compactAgents
+          ? 'workbench-panel pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden transition-transform ease-out sm:right-6'
+          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col transition-transform ease-out'}
+        style={compactAgents
+          ? { background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-overlay)', transitionDuration: 'var(--dur-normal)' }
+          : { background: 'var(--surface-overlay)', borderRight: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-overlay)', transitionDuration: 'var(--dur-slow)' }}
+      >
+        <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-default)' }}>
+          <div className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center" style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
+            <AtSign className="h-4 w-4" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{activeLabel}</div>
+            <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{activeHint}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="workbench-control-md inline-flex w-8 items-center justify-center transition-colors hover:bg-[var(--surface-control-hover)]"
+            style={{ color: 'var(--text-muted)' }}
+            title="关闭"
+            aria-label="关闭 @ 弹层"
+          >
+            <X className="h-4 w-4" strokeWidth={1.9} />
+          </button>
+        </div>
+
+        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-default)' }}>
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('files')}
+              className="workbench-control-md inline-flex flex-1 items-center justify-center gap-1.5 border px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
+              style={{
+                borderColor: activeTab === 'files' ? 'var(--accent-border)' : 'var(--border-default)',
+                background: activeTab === 'files' ? 'var(--surface-active)' : 'var(--surface-base)',
+                color: activeTab === 'files' ? 'var(--accent-primary)' : 'var(--text-muted)',
+              }}
+            >
+              <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+              文件
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('agents')}
+              className="workbench-control-md inline-flex flex-1 items-center justify-center gap-1.5 border px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
+              style={{
+                borderColor: activeTab === 'agents' ? 'var(--accent-border)' : 'var(--border-default)',
+                background: activeTab === 'agents' ? 'var(--surface-active)' : 'var(--surface-base)',
+                color: activeTab === 'agents' ? 'var(--accent-primary)' : 'var(--text-muted)',
+              }}
+            >
+              <Bot className="h-3.5 w-3.5" strokeWidth={1.8} />
+              智能体
+            </button>
+          </div>
+          {activeTab === 'files' ? (
+            <>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>文件来源</span>
+                <button
+                  type="button"
+                  onClick={() => void loadSources()}
+                  disabled={sourcesLoading}
+                  className="workbench-control-sm inline-flex items-center gap-1 px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-50"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <RefreshCw className={`h-3 w-3 ${sourcesLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+                  刷新
+                </button>
+              </div>
+              {sourcesLoading && sources.length === 0 ? (
+                <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />加载文件来源…
+                </div>
+              ) : (
+                <>
+                  {sourcesError && <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">远程来源加载失败：{sourcesError}</div>}
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {sourceOptions.map(source => {
+                      const active = source.key === selectedSourceKey
+                      return (
+                        <button
+                          key={source.key}
+                          type="button"
+                          onClick={() => setSelectedSourceKey(source.key)}
+                          className="workbench-panel min-w-[150px] border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                          style={{ borderColor: active ? 'var(--accent-border)' : 'var(--border-default)', background: active ? 'var(--surface-active)' : 'var(--surface-base)' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: source.kind !== 'remote' || source.status === 'reachable' ? 'var(--status-success)' : 'var(--status-waiting)' }} />
+                            <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
+                            {active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} strokeWidth={2} />}
+                          </div>
+                          <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
+                            {source.kind === 'hub' ? '项目绑定路径' : source.kind === 'local' ? 'Electron 本机路径' : (source.remote_path || '默认登录目录')}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  {agentScopeUrl ? '按相关性排序的 Session' : '无可用范围'}
+                </span>
+                <div className="flex items-center gap-1 rounded-[var(--radius-control)] border p-0.5" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAgentMode('read_only')}
+                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+                    style={{
+                      background: agentMode === 'read_only' ? 'var(--surface-active)' : 'transparent',
+                      color: agentMode === 'read_only' ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    只读引用
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentMode('bidirectional')}
+                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+                    style={{
+                      background: agentMode === 'bidirectional' ? 'var(--surface-active)' : 'transparent',
+                      color: agentMode === 'bidirectional' ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    开启交流
+                  </button>
+                </div>
+              </div>
+              <div className="mb-2 flex items-center gap-2">
+                <label className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    value={agentSearch}
+                    onChange={(event) => setAgentSearch(event.target.value)}
+                    placeholder="搜索名称、Session ID、项目、Issue、消息或模型"
+                    className="workbench-control-md w-full border bg-transparent pl-8 pr-8 text-[11px] outline-none"
+                    style={{ borderColor: 'var(--border-strong)', color: 'var(--text-primary)', background: 'var(--surface-control)' }}
+                    aria-label="搜索 Session"
+                  />
+                  {agentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAgentSearch('')}
+                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--surface-control-hover)]"
+                      style={{ color: 'var(--text-muted)' }}
+                      aria-label="清空 Session 搜索"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void loadAgentSessions()}
+                  disabled={agentLoading}
+                  className="workbench-control-sm inline-flex items-center gap-1 px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-50"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <RefreshCw className={`h-3 w-3 ${agentLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
+                  <span className="sr-only">刷新</span>
+                </button>
+              </div>
+              {agentLoading && agentSessions.length === 0 ? (
+                <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  <Loader2 className="h-4 w-4 animate-spin" />加载智能体…
+                </div>
+              ) : (
+                <>
+                  {agentError && <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">智能体加载失败：{agentError}</div>}
+                  {!agentScopeUrl ? (
+                    <div className="workbench-panel border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                      当前会话没有 issue / research 范围，无法 @ 其他智能体。
+                    </div>
+                  ) : filteredAgents.length === 0 ? (
+                    <div className="workbench-panel border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                      没有找到可 @ 的智能体。
+                    </div>
+                  ) : (
+                    <div className={`${compactAgents ? 'max-h-[260px]' : 'max-h-[calc(100vh-330px)]'} space-y-2 overflow-y-auto pr-1`}>
+                      {filteredAgents.map(agent => {
+                        const active = agent.agent_status === 'running'
+                        const modelLabel = sessionModelLabel(agent.model, agent.model_label)
+                        const relationLabel = agent.group === 'same_scope'
+                          ? (agent.scope_type === 'research' ? '同 Research' : '同 Issue')
+                          : agent.group === 'same_project' ? '同项目' : '其他项目'
+                        const selectedModeLabel = agentMode === 'bidirectional' && agent.can_communicate === false
+                          ? '只读权限' : agentMode === 'bidirectional' ? '开启交流' : '只读引用'
+                        return (
+                          <button
+                            key={agent.session_id}
+                            type="button"
+                            onClick={() => pickAgent(agent)}
+                            className="workbench-panel w-full border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                            style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: active ? 'var(--status-running)' : 'var(--status-unknown)' }} />
+                              <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {agent.name || agent.session_id}
+                              </span>
+                              <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                                {selectedModeLabel}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              <span className="truncate">{agent.session_id}</span>
+                              <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{relationLabel}</span>
+                              {modelLabel && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{modelLabel}</span>}
+                              {agent.backend && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{agent.backend}</span>}
+                              {agent.research_role && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{agent.research_role}</span>}
+                            </div>
+                            <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                              {agent.project_name && <span className="truncate">{agent.project_name}</span>}
+                              {(agent.research_title || agent.issue_title) && <span className="truncate">· {agent.research_title || agent.issue_title}</span>}
+                              {agent.last_active && <span className="ml-auto flex-shrink-0">{timeAgo(agent.last_active)}</span>}
+                            </div>
+                            {agent.description && (
+                              <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                {agent.description}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {activeTab === 'files' ? (
+          <>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                <FolderOpen className="h-3.5 w-3.5" style={{ color: 'var(--accent-primary)' }} strokeWidth={1.8} />
+                <span className="truncate">{selectedSource?.name || '未选择来源'}</span>
+                {selectedSource && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
+                <span className="truncate font-mono">{selectedSource?.kind === 'hub' ? '项目绑定路径' : selectedSource?.kind === 'local' ? 'Electron 本机路径' : (selectedSource?.remote_path || (selectedSource ? '默认登录目录' : ''))}</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+                {!selectedSource ? null : !rootState ? (
+                  <div className="flex h-28 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                    <Loader2 className="h-4 w-4 animate-spin" />加载文件…
+                  </div>
+                ) : (
+                  <FileTreeLevel
+                    relPath="/"
+                    depth={0}
+                    dirs={dirs}
+                    expanded={expanded}
+                    onToggleDir={toggleDir}
+                    onOpenFile={pickFile}
+                    onCopyPath={copyPath}
+                    vscodeReady
+                    fileActionLabel="插入绝对路径"
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+              <FileText className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
+              点击文件后会替换当前的 <code className="rounded bg-[var(--surface-control)] px-1 py-0.5">@</code> 并回到输入框
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+            <ArrowLeftRight className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
+            选择智能体后会插入当前输入框，并把其上下文或双向桥接语义一起发送给后端
+          </div>
+        )}
+      </aside>
+    </div>
+  )
+}
+
+// =====================================================================
+// 主对话区（基于 currentSession）
+// =====================================================================
+// 默认使用低干扰工作台形态；'default' 仅保留给旧高级页兼容，'stacked' 用于窄工具栏。
+// 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
+// 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
+type EasyProjectOption = {
+  id: string
+  name: string
+  count?: number
+  runningCount?: number
+}
+
+type WorkspaceEditorControl = {
+  available: boolean
+  loading: boolean
+  open: boolean
+  unavailableReason: string
+  /** CodeConversation 可接收 target；VSCode iframe 等不可靠定位实现不声明 supportsFileLocation。 */
+  onOpen: (target?: CodeArtifactTarget) => void
+  supportsFileLocation?: boolean
+}
+
+export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeActive = true, toolOrigin = 'session', onNewSession, easyProjectControl, workspaceEditor }: {
+  layout?: 'default' | 'stacked' | 'easy'
+  chrome?: 'inline' | 'shell'
+  shellChromeActive?: boolean
+  toolOrigin?: Exclude<SessionToolOrigin, 'message'>
+  onNewSession?: () => void
+  easyProjectControl?: {
+    selectedProjectId?: string
+    selectedProjectName?: string
+    projects: EasyProjectOption[]
+    onSelectProject: (projectId: string | null) => void
+    onCreateProject: () => void
+  }
+  workspaceEditor?: WorkspaceEditorControl
+} = {}) {
+  const { user, currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const navigate = useNavigate()
+  // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const matchUuid = searchParams.get('match')
+  const matchTs = searchParams.get('ts')
+  const hasMatchTarget = !!(matchUuid || matchTs)
+  const matchTargetActiveRef = useRef(hasMatchTarget)
+  matchTargetActiveRef.current = hasMatchTarget
+  // 跳转到位后清掉 URL 里的 match/ts (replace, 不留历史), 避免刷新/切会话重复触发.
+  const onMatchScrollResolved = useCallback(() => {
+    setSearchParams((prev) => {
+      if (!prev.get('match') && !prev.get('ts')) return prev
+      const next = new URLSearchParams(prev)
+      next.delete('match')
+      next.delete('ts')
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [inputExpanded, setInputExpanded] = useState(false)
+  const [inputMenuOpen, setInputMenuOpen] = useState(false)
+  const [easyToolsOpen, setEasyToolsOpen] = useState(false)
+  const [sessionLinkCopied, setSessionLinkCopied] = useState(false)
+  const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
+  const [easyProjectQuery, setEasyProjectQuery] = useState('')
+  // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
+  // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
+  const [attachmentsBySession, setAttachmentsBySession] = useState<Record<string, Attachment[]>>({})
+  const [attachmentImagePreview, setAttachmentImagePreview] = useState<AttachmentImagePreview | null>(null)
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [remoteFileDrawerInitialTab, setRemoteFileDrawerInitialTab] = useState<'files' | 'agents'>('agents')
+  const inputMenuRef = useRef<HTMLDivElement | null>(null)
+  const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const easyToolsRef = useRef<HTMLDivElement | null>(null)
+  const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectMenuRef = useRef<HTMLDivElement | null>(null)
+  const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const chatBodyRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLDivElement>(null)
+  const chatSplitHandleRef = useRef<HTMLDivElement>(null)
+  const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
+  const chatSplitDragRef = useRef<{
+    startX: number
+    startWidth: number
+    currentWidth: number
+  } | null>(null)
+  useComposerOverlayHeight(chatBodyRef, chatInputRef, layout === 'easy')
+
+  const copySessionLink = useCallback(async () => {
+    const activeSessionId = currentSession?.session_id || currentTask?.session_id
+    if (!user?.id || !activeSessionId) return
+    const path = sessionPath(user.id, activeSessionId)
+    const link = typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
+    if (await copyTextToClipboard(link)) {
+      setSessionLinkCopied(true)
+      window.setTimeout(() => setSessionLinkCopied(false), 1500)
+    }
+  }, [user?.id, currentSession?.session_id, currentTask?.session_id])
+
+  useEffect(() => {
+    if (!easyToolsOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyToolsRef.current?.contains(event.target as Node)) setEasyToolsOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setEasyToolsOpen(false)
+    }
+    window.requestAnimationFrame(() => {
+      easyToolsPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    })
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyToolsOpen])
+
+  useEffect(() => {
+    if (!easyProjectMenuOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!easyProjectMenuRef.current?.contains(event.target as Node)) setEasyProjectMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setEasyProjectMenuOpen(false)
+      easyProjectButtonRef.current?.focus()
+    }
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [easyProjectMenuOpen])
+
+  useEffect(() => {
+    setEasyProjectMenuOpen(false)
+    setEasyProjectQuery('')
+  }, [currentSession?.session_id])
+
+  const easyFilteredProjects = useMemo(() => {
+    const query = easyProjectQuery.trim().toLocaleLowerCase('zh-CN')
+    if (!query) return easyProjectControl?.projects || []
+    return (easyProjectControl?.projects || []).filter(project => (
+      project.name.toLocaleLowerCase('zh-CN').includes(query)
+      || project.id.toLocaleLowerCase('zh-CN').includes(query)
+    ))
+  }, [easyProjectControl?.projects, easyProjectQuery])
+
+  // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
+  // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
+  useLayoutEffect(() => {
+    const input = chatInputRef.current
+    if (!input) return
+    if (layout === 'default') input.style.width = `${chatInputRatio * 100}%`
+    else input.style.removeProperty('width')
+  }, [chatInputRatio, layout])
+
+  const persistChatInputRatio = useCallback((ratio: number) => {
+    try {
+      localStorage.setItem(CHAT_INPUT_SPLIT_STORAGE_KEY, String(ratio))
+    } catch {
+      /* localStorage 不可用时保留本次页面内调整 */
+    }
+  }, [])
+
+  const handleChatSplitMouseMove = useCallback((event: MouseEvent) => {
+    const drag = chatSplitDragRef.current
+    const body = chatBodyRef.current
+    const input = chatInputRef.current
+    if (!drag || !body || !input) return
+    event.preventDefault()
+    const bodyWidth = body.getBoundingClientRect().width
+    // 右栏手柄向左拖时右栏增宽，向右拖时右栏缩窄。
+    const candidateWidth = drag.startWidth + drag.startX - event.clientX
+    const nextWidth = clampChatInputWidth(candidateWidth, bodyWidth)
+    drag.currentWidth = nextWidth
+    input.style.width = `${nextWidth}px`
+    chatSplitHandleRef.current?.classList.toggle(
+      'mobius-resizable-handle--limit',
+      isChatInputWidthLimit(candidateWidth, bodyWidth),
+    )
+  }, [])
+
+  const handleChatSplitMouseUp = useCallback(() => {
+    const drag = chatSplitDragRef.current
+    const body = chatBodyRef.current
+    const input = chatInputRef.current
+    if (!drag || !body || !input) return
+    const bodyWidth = body.getBoundingClientRect().width
+    const ratio = clampChatInputRatio(drag.currentWidth / bodyWidth)
+    // 先直接恢复为比例宽度；即便比例与旧 state 恰好相同，也不会残留 px 宽度。
+    input.style.width = `${ratio * 100}%`
+    chatSplitDragRef.current = null
+    document.removeEventListener('mousemove', handleChatSplitMouseMove)
+    document.removeEventListener('mouseup', handleChatSplitMouseUp)
+    document.body.classList.remove('mobius-resizing')
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
+    setChatInputRatio(ratio)
+    persistChatInputRatio(ratio)
+  }, [handleChatSplitMouseMove, persistChatInputRatio])
+
+  const resetChatInputWidth = useCallback(() => {
+    const input = chatInputRef.current
+    if (input) input.style.width = `${CHAT_INPUT_DEFAULT_RATIO * 100}%`
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
+    setChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+    persistChatInputRatio(CHAT_INPUT_DEFAULT_RATIO)
+  }, [persistChatInputRatio])
+
+  const handleChatSplitMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || layout !== 'default') return
+    // body.mobius-resizing 会在第一次按下后暂时禁用命中测试，部分浏览器因此不会再派发
+    // dblclick；第二次 mousedown 的 detail 更早且稳定，用它保证双击复位一定生效。
+    if (event.detail >= 2) {
+      event.preventDefault()
+      resetChatInputWidth()
+      return
+    }
+    const input = chatInputRef.current
+    if (!input) return
+    event.preventDefault()
+    chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
+    chatSplitDragRef.current = {
+      startX: event.clientX,
+      startWidth: input.getBoundingClientRect().width,
+      currentWidth: input.getBoundingClientRect().width,
+    }
+    document.body.classList.add('mobius-resizing')
+    document.addEventListener('mousemove', handleChatSplitMouseMove)
+    document.addEventListener('mouseup', handleChatSplitMouseUp)
+  }, [handleChatSplitMouseMove, handleChatSplitMouseUp, layout, resetChatInputWidth])
+
+  useEffect(() => {
+    return () => {
+      if (!chatSplitDragRef.current) return
+      document.removeEventListener('mousemove', handleChatSplitMouseMove)
+      document.removeEventListener('mouseup', handleChatSplitMouseUp)
+      document.body.classList.remove('mobius-resizing')
+      chatSplitHandleRef.current?.classList.remove('mobius-resizable-handle--limit')
+      chatSplitDragRef.current = null
+    }
+  }, [handleChatSplitMouseMove, handleChatSplitMouseUp])
+  // 当组件卸载时回收所有 image preview ObjectURL, 防止内存泄漏.
+  useEffect(() => {
+    return () => {
+      Object.values(attachmentsBySession).forEach(list => {
+        list.forEach(a => { if (a.previewUrl) { try { URL.revokeObjectURL(a.previewUrl) } catch {} } })
+      })
+      if (voiceStopTimerRef.current !== null) window.clearTimeout(voiceStopTimerRef.current)
+      if (voiceTickTimerRef.current !== null) window.clearInterval(voiceTickTimerRef.current)
+      if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
+      const recorder = mediaRecorderRef.current
+      try {
+        if (recorder && recorder.state !== 'inactive') recorder.stop()
+      } catch {}
+      const stream = mediaStreamRef.current
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          try { track.stop() } catch {}
+        })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // JSONL 视图: 直接展示当前 backend 的原始 entries (Claude 或 Codex).
+  // jsonl_history 覆盖, jsonl_entry 追加. 切 session 时 clear.
+  const [jsonlEntries, setJsonlEntries] = useState<any[]>([])
+  // count-then-tail: 后端先发 jsonl_meta {total}, 再回灌末尾窗口. 这里存服务端 total,
+  // 用作 "加载全部" 按钮的判断和标题显示, 不依赖 entries.length.
+  const [jsonlTotal, setJsonlTotal] = useState<number>(0)
+  // 后端在 jsonl_meta 里附带的真实 jsonl 文件绝对路径, 用于原始数据弹窗标题展示.
+  const [jsonlPath, setJsonlPath] = useState<string | null>(null)
+  const [jsonlInitialLoading, setJsonlInitialLoading] = useState(false)
+  const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
+  const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
+  const pendingJsonlEntriesRef = useRef<any[]>([])
+  const pendingJsonlTotalIncrementRef = useRef(0)
+  const pendingJsonlFlushTimerRef = useRef<number | null>(null)
+  // JSONL 浏览器缓存 (stale-while-revalidate): 切 session 时先秒开缓存里的尾部.
+  // 最新值镜像 ref: switch effect 的 cleanup 在离开 session 时写回缓存, 但 cleanup 闭包
+  // 捕获的是进入时的旧值, 必须从 ref 取最新. 每次渲染同步刷新.
+  const jsonlEntriesRef = useRef<any[]>([])
+  jsonlEntriesRef.current = jsonlEntries
+  const jsonlTotalRef = useRef(0)
+  jsonlTotalRef.current = jsonlTotal
+  const jsonlPathRef = useRef<string | null>(null)
+  jsonlPathRef.current = jsonlPath
+  // 当前 session 是否已收到 SSE 权威 jsonl_history (reset). true 后缓存兜底不再覆盖, 避免用旧值盖掉新值.
+  const freshHistoryReceivedRef = useRef(false)
+  const [showRaw, setShowRaw] = useState(false)
+  const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
+  const [inputReplayOpen, setInputReplayOpen] = useState(false)
+  const [artifactOpenRequest, setArtifactOpenRequest] = useState<CodeArtifactOpenRequest | null>(null)
+  const [artifactAboveChanges, setArtifactAboveChanges] = useState(false)
+  const [fileChangesRequest, setFileChangesRequest] = useState<{
+    target?: CodeArtifactTarget
+    trigger?: HTMLElement | null
+    returnToPreview?: boolean
+    previewRequest?: CodeArtifactOpenRequest | null
+  } | null>(null)
+  const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
+  const [scheduledTasksOpen, setScheduledTasksOpen] = useState(false)
+  const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
+  const [continueModalOpen, setContinueModalOpen] = useState(false)
+  const [cooperablePcOpen, setCooperablePcOpen] = useState(false)
+  const [skillMemoryModal, setSkillMemoryModal] = useState<null | 'skill' | 'memory' | 'git'>(null)
+  // 会话内 Web 终端弹窗 (issue session / research agent 共用 ChatArea, 一处入口覆盖两类会话).
+  const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalMode, setTerminalMode] = useState<WebTerminalMode>('cwd')
+  const [toolDrawerOpen, setToolDrawerOpen] = useState(false)
+  const [activeToolTab, setActiveToolTab] = useState<SessionToolTab>('files')
+  const [toolObjectContext, setToolObjectContext] = useState<SessionToolObjectContext>({
+    origin: toolOrigin,
+    originLabel: '',
+    target: null,
+    trigger: null,
+  })
+  const [centerDiffOpen, setCenterDiffOpen] = useState(false)
+  const [terminalDockOpen, setTerminalDockOpen] = useState(false)
+  const [toolFiles, setToolFiles] = useState<SessionFileFeature[]>([])
+  const [toolFilesReady, setToolFilesReady] = useState(false)
+  const [toolFilesLoading, setToolFilesLoading] = useState(false)
+  const [toolFilesError, setToolFilesError] = useState('')
+  const [toolWorkspaceError, setToolWorkspaceError] = useState('')
+  const toolFilesRequestTokenRef = useRef(0)
+  const toolFilesAbortRef = useRef<AbortController | null>(null)
+  const [selectedToolFilePath, setSelectedToolFilePath] = useState('')
+  const [toolDiff, setToolDiff] = useState<SessionGitDiff | null>(null)
+  const [toolDiffMode, setToolDiffMode] = useState<GitDiffMode>('unstaged')
+  const [toolDiffLoading, setToolDiffLoading] = useState(false)
+  const [toolDiffError, setToolDiffError] = useState('')
+  const [toolDiffReloadKey, setToolDiffReloadKey] = useState(0)
+  const [terminalContextLoading, setTerminalContextLoading] = useState(false)
+  const [terminalContextReady, setTerminalContextReady] = useState(false)
+  const [terminalContextError, setTerminalContextError] = useState('')
+  const [terminalContextReloadKey, setTerminalContextReloadKey] = useState(0)
+  const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
+  const [messageSubmitting, setMessageSubmitting] = useState(false)
+  // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"修改模型并继续").
+  const [modelAvailable, setModelAvailable] = useState(true)
+  const modelAvailableRef = useRef(true)
+  const [voiceState, setVoiceState] = useState<VoiceInputState>('idle')
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
+  const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [bridgeQueueNotice, setBridgeQueueNotice] = useState<string | null>(null)
+  const bridgeQueueNoticeTimerRef = useRef<number | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
+  const voiceRecordFailedRef = useRef(false)
+  const voiceStopTimerRef = useRef<number | null>(null)
+  const voiceTickTimerRef = useRef<number | null>(null)
+  // 默认隐藏次要条目 (last-prompt / title / agent-name / permission / 连续重复 entry / 连续等摘要 entry / task_started 生命周期事件)
+  const [hideMinorJsonl, setHideMinorJsonl] = useState(true)
+  // 默认隐藏 jsonl 卡片标题里的"序号 + 时间"前缀; 开启后才显示 #序号 和 MM-DD HH:MM:SS.
+  const [showJsonlMeta, setShowJsonlMeta] = useState(false)
+  // Cursor 式工具调用展示: 工具卡显示状态图标 (⏳/✅/❌) + 连续探索类自动聚合为 "已探索 N 个工具". 默认开启.
+  const [cursorStyleTools, setCursorStyleTools] = useState(true)
+  // 回车自动加急: 开启后, 输入框按 Enter 发送时自动带 urgent=true (打断当前输出并立即发送). 持久化到 localStorage.
+  const [autoUrgentOnEnter, setAutoUrgentOnEnter] = useState<boolean>(() => {
+    try { return localStorage.getItem(AUTO_URGENT_ENTER_STORAGE_KEY) === '1' } catch { return false }
+  })
+  const toggleAutoUrgentOnEnter = useCallback(() => {
+    setAutoUrgentOnEnter(prev => {
+      const next = !prev
+      try { localStorage.setItem(AUTO_URGENT_ENTER_STORAGE_KEY, next ? '1' : '0') } catch { /* localStorage 不可用时仅本次生效 */ }
+      return next
+    })
+  }, [])
+  const sessionId = currentSession?.session_id || currentTask?.task_id || ''
+  useLayoutEffect(() => {
+    toolFilesRequestTokenRef.current += 1
+    toolFilesAbortRef.current?.abort()
+    toolFilesAbortRef.current = null
+    setEasyToolsOpen(false)
+    setEasyExpandAllSignal(0)
+    setArtifactOpenRequest(null)
+    setArtifactAboveChanges(false)
+    setFileChangesRequest(null)
+    setToolDrawerOpen(false)
+    setActiveToolTab('files')
+    setToolObjectContext({ origin: toolOrigin, originLabel: '', target: null, trigger: null })
+    setCenterDiffOpen(false)
+    setTerminalDockOpen(false)
+    setToolFiles([])
+    setToolFilesReady(false)
+    setToolFilesLoading(false)
+    setToolFilesError('')
+    setToolWorkspaceError('')
+    setSelectedToolFilePath('')
+    setToolDiff(null)
+    setToolDiffMode('unstaged')
+    setToolDiffError('')
+    setToolDiffReloadKey(0)
+    setTerminalContextReady(false)
+    setTerminalContextError('')
+    setTerminalContextReloadKey(0)
+  }, [sessionId, toolOrigin])
+  const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
+  const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
+  const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
+  // 规划模式: 当前 Issue 是 is_planning 时, 隐藏执行控件 + 嵌入规划编辑器.
+  const isPlanningSession = !!(currentIssue as any)?.is_planning
+  const projectForSession = currentProject?.id === currentProjectId
+    ? currentProject
+    : projects.find((p: any) => p.id === currentProjectId)
+  const toolOriginEntityLabel = toolOrigin === 'issue'
+    ? String((currentIssue as any)?.title || '')
+    : toolOrigin === 'research'
+      ? String((currentResearch as any)?.title || '')
+      : ''
+  const currentPageToolSourceLabel = sessionToolOriginLabel(toolOrigin, toolOriginEntityLabel)
+  const toolSourceLabel = toolObjectContext.originLabel
+    || sessionToolOriginLabel(toolObjectContext.origin, toolOriginEntityLabel)
+  const toolObjectLabel = toolObjectContext.target?.path
+    ? safeToolPathLabel(toolObjectContext.target.path)
+    : ''
+  const terminalObjectDirectory = safeToolDirectoryLabel(toolObjectContext.target)
+  const terminalWorkingDirectoryLabel = [projectForSession?.name || '当前项目', terminalObjectDirectory]
+    .filter(Boolean)
+    .join(' · ')
+  const extensionAppUrl = extensionAppUrlForProject(projectForSession)
+  const currentModelLabel = sessionModelLabel(
+    (currentSession as any)?.model || (currentTask as any)?.model,
+    (currentSession as any)?.model_label || (currentTask as any)?.model_label,
+  )
+  const currentProxyLabel = sessionProxyLabel((currentSession as any)?.use_proxy ?? (currentTask as any)?.use_proxy, (currentSession as any)?.model ?? (currentTask as any)?.model)
+  const voiceBusy = voiceState === 'recording' || voiceState === 'transcribing'
+  const voiceTip = voiceState === 'recording'
+    ? `停止录音并发送 ${formatVoiceSeconds(recordingSeconds)}`
+    : voiceState === 'transcribing'
+      ? '正在转写并发送语音'
+      : '语音输入'
+
+  const openToolTab = useCallback((tab: SessionToolTab) => {
+    setActiveToolTab(tab)
+    setToolDrawerOpen(true)
+    setEasyToolsOpen(false)
+  }, [])
+
+  const captureCurrentToolSource = useCallback(() => {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setToolObjectContext(previous => ({
+      ...previous,
+      origin: toolOrigin,
+      originLabel: currentPageToolSourceLabel,
+      trigger,
+    }))
+  }, [currentPageToolSourceLabel, toolOrigin])
+
+  const rememberArtifactSource = useCallback((request: CodeArtifactOpenRequest) => {
+    setToolObjectContext({
+      origin: 'message',
+      originLabel: sessionToolOriginLabel('message'),
+      target: request.target,
+      trigger: request.trigger || null,
+    })
+  }, [])
+
+  const restoreToolSourceFocus = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      if (toolObjectContext.trigger?.isConnected) toolObjectContext.trigger.focus()
+      else inputRef.current?.focus()
+    })
+  }, [toolObjectContext.trigger])
+
+  const closeToolWorkspace = useCallback(() => {
+    setToolDrawerOpen(false)
+    setTerminalDockOpen(false)
+    setCenterDiffOpen(false)
+    restoreToolSourceFocus()
+  }, [restoreToolSourceFocus])
+
+  const openToolFromCurrentSource = useCallback((tab: SessionToolTab) => {
+    captureCurrentToolSource()
+    if (tab === 'diff') setCenterDiffOpen(true)
+    openToolTab(tab)
+  }, [captureCurrentToolSource, openToolTab])
+
+  const loadToolFiles = useCallback(async () => {
+    if (!sessionId) return
+    toolFilesAbortRef.current?.abort()
+    const controller = new AbortController()
+    toolFilesAbortRef.current = controller
+    const token = ++toolFilesRequestTokenRef.current
+    const timeout = window.setTimeout(() => controller.abort(), SESSION_FEATURE_FILES_TIMEOUT_MS)
+    setToolFilesReady(false)
+    setToolFilesLoading(true)
+    setToolFilesError('')
+    try {
+      const data = await api(`/api/sessions/${sessionId}/features/files`, { signal: controller.signal })
+      if (token !== toolFilesRequestTokenRef.current) return
+      const nextFiles = Array.isArray(data?.files) ? data.files : []
+      setToolFiles(nextFiles)
+      setToolWorkspaceError(typeof data?.workspace_error === 'string'
+        ? sanitizeToolError(data.workspace_error, '当前工作目录不可用')
+        : '')
+      setSelectedToolFilePath(current => {
+        const requested = current || toolObjectContext.target?.path || ''
+        if (!requested) return ''
+        const matched = nextFiles.find((file: SessionFileFeature) => sessionFileMatches(file, requested))
+        return matched?.path || requested
+      })
+    } catch (reason: any) {
+      if (token !== toolFilesRequestTokenRef.current) return
+      setToolFiles([])
+      setToolFilesError(controller.signal.aborted
+        ? '扫描超时，请稍后重试'
+        : sanitizeToolError(reason, '读取文件修改清单失败'))
+    } finally {
+      window.clearTimeout(timeout)
+      if (token !== toolFilesRequestTokenRef.current) return
+      setToolFilesLoading(false)
+      setToolFilesReady(true)
+    }
+  }, [sessionId, toolObjectContext.target?.path])
+
+  useEffect(() => {
+    if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff')) return
+    // 空列表也是一次有效的扫描结果。若只用 files.length 判断，空 Session 会在
+    // loading 结束后立刻再次请求，形成永不结束的“扫描中…”循环。
+    if (toolFilesReady || toolFilesLoading || toolFilesError) return
+    void loadToolFiles()
+  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFilesError, toolFilesLoading, toolFilesReady])
+
+  const selectedToolFile = useMemo(
+    () => toolFiles.find(file => sessionFileMatches(file, selectedToolFilePath)) || null,
+    [selectedToolFilePath, toolFiles],
+  )
+
+  const selectToolFile = useCallback((path: string) => {
+    setSelectedToolFilePath(path)
+    setCenterDiffOpen(true)
+    setActiveToolTab('diff')
+    const target = targetFromTrustedPath(path, { intent: 'diff', source: 'diff' })
+    if (target) setToolObjectContext(previous => ({ ...previous, target }))
+  }, [])
+
+  useEffect(() => {
+    if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff') || !toolFilesReady || toolFilesLoading) return
+    if (activeToolTab === 'diff') setCenterDiffOpen(true)
+    if (selectedToolFilePath) return
+    const contextual = toolObjectContext.target?.path
+      ? toolFiles.find(file => sessionFileMatches(file, toolObjectContext.target!.path))
+      : null
+    const next = contextual || toolFiles[0]
+    if (!next) return
+    setSelectedToolFilePath(next.path)
+    const target = targetFromTrustedPath(next.path, { intent: 'diff', source: 'diff' })
+    if (target) setToolObjectContext(previous => ({ ...previous, target }))
+  }, [activeToolTab, selectedToolFilePath, toolDrawerOpen, toolFiles, toolFilesLoading, toolFilesReady, toolObjectContext.target?.path])
+
+  useEffect(() => {
+    if (!selectedToolFilePath || !sessionId || (toolFilesReady && !selectedToolFile)) {
+      setToolDiff(null)
+      setToolDiffError('')
+      setToolDiffLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setToolDiffLoading(true)
+    setToolDiffError('')
+    api(`/api/sessions/${sessionId}/features/git-diff?file=${encodeURIComponent(selectedToolFilePath)}&mode=${toolDiffMode}`, { signal: controller.signal })
+      .then((data: any) => {
+        if (controller.signal.aborted) return
+        const first = Array.isArray(data?.diffs) ? data.diffs[0] : null
+        setToolDiff(first || null)
+        if (first && first.ok === false && !first.fallback_content) setToolDiffError(sanitizeToolError(first.error, '读取 Diff 失败'))
+      })
+      .catch((reason: any) => {
+        if (controller.signal.aborted) return
+        setToolDiff(null)
+        setToolDiffError(sanitizeToolError(reason, '读取 Diff 失败'))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setToolDiffLoading(false)
+      })
+    return () => controller.abort()
+  }, [selectedToolFile, selectedToolFilePath, sessionId, toolDiffMode, toolDiffReloadKey, toolFilesReady])
+
+  useEffect(() => {
+    if ((!toolDrawerOpen || activeToolTab !== 'terminal') && !terminalDockOpen) return
+    const controller = new AbortController()
+    setTerminalContextLoading(true)
+    setTerminalContextReady(false)
+    setTerminalContextError('')
+    void (async () => {
+      try {
+        if (!sessionId) throw new Error('当前没有活动会话，终端不可用')
+        if (!currentProjectId) throw new Error('当前会话没有所属项目，终端不可用')
+        if ((projectForSession?.bind_path || '').trim()) {
+          setTerminalContextReady(true)
+          return
+        }
+        const data = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/files?path=/`, { signal: controller.signal })
+        if (!String(data?.bind_path || '').trim()) throw new Error('当前项目未绑定工作目录，终端不可用')
+        setTerminalContextReady(true)
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        setTerminalContextError(sanitizeToolError(reason, '终端上下文不可用'))
+      } finally {
+        if (!controller.signal.aborted) setTerminalContextLoading(false)
+      }
+    })()
+    return () => controller.abort()
+  }, [activeToolTab, currentProjectId, projectForSession?.bind_path, sessionId, terminalContextReloadKey, terminalDockOpen, toolDrawerOpen])
+
+  const centerMode: 'chat' | 'diff' = centerDiffOpen ? 'diff' : 'chat'
+  const returnToChat = useCallback(() => {
+    setCenterDiffOpen(false)
+    restoreToolSourceFocus()
+  }, [restoreToolSourceFocus])
+
+  useEffect(() => {
+    if (centerMode !== 'diff') return
+    blurFocusInsideHiddenLayer(chatBodyRef.current)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"], .workbench-popover, .workbench-layer-modal')) return
+      event.preventDefault()
+      returnToChat()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [centerMode, returnToChat])
+
+  useEffect(() => {
+    const exitCenterTool = () => {
+      setToolDrawerOpen(false)
+      setTerminalDockOpen(false)
+      setCenterDiffOpen(false)
+    }
+    const clearObjectSelection = () => {
+      setSelectedToolFilePath('')
+      setToolDiff(null)
+      setToolDiffError('')
+      setActiveToolTab('files')
+      setCenterDiffOpen(false)
+    }
+    window.addEventListener(WORKBENCH_EXIT_CENTER_TOOL_EVENT, exitCenterTool)
+    window.addEventListener(WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT, clearObjectSelection)
+    return () => {
+      window.removeEventListener(WORKBENCH_EXIT_CENTER_TOOL_EVENT, exitCenterTool)
+      window.removeEventListener(WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT, clearObjectSelection)
+    }
+  }, [])
+
+  // 次要条目过滤: 普通 SSE append 走增量快路径; 切 session / 加载全部 / 切过滤开关时完整重算.
+  const { visibleJsonl, minorCount } = useVisibleJsonl(jsonlEntries, hideMinorJsonl)
+
+  // 状态唯一真相源: 后端 GET /api/sessions/:id/status.
+  //   alive   = hub.isAlive       — 进程存活 (TUI 可接收输入)
+  //   working = hub.isWorking     — 智能体正在执行 (生成回复 / 跑工具调用 / 等首条输出)
+  // 不再从 jsonl 前端派生, 不再读 sessions_v2.agent_status, 不再相信 stream 推的 typing.
+  // 2s 轮询. 乐观 pending: send 出去到下次轮询前显示 "执行中 (待确认)".
+  type AgentStatus = 'pending' | 'running' | 'waiting' | 'idle'
+  const [backendAlive, setBackendAlive] = useState<boolean | null>(null)
+  const [backendWorking, setBackendWorking] = useState<boolean | null>(null)
+  // job_accomplished: running.flag 已被 agent 删 → true (任务已结束); flag 还在 → false (未完成).
+  const [backendJobDone, setBackendJobDone] = useState<boolean | null>(null)
+  // failed: failed.flag 存在 → true (任务失败). 与 job_accomplished 正交.
+  const [backendJobFailed, setBackendJobFailed] = useState<boolean | null>(null)
+  // 失败原因: 取自 failed.flag 的 reason 行 (经 /status 轮询返回). 持久, 刷新/切换会话后仍在.
+  const [backendFailedReason, setBackendFailedReason] = useState('')
+  const [backendFailedAt, setBackendFailedAt] = useState('')
+  const [backendPid, setBackendPid] = useState<number | null>(null)
+  // agent TUI 实时状态行 (如 "✻ Propagating… (7m 44s · ↓ 24.1k tokens)"), 给 LIVE 卡片.
+  // 非 claude-code / 非 working 时为 "". 由 /status 轮询返回.
+  const [backendRealTimeInfo, setBackendRealTimeInfo] = useState('')
+  const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
+  // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
+  // 故加急时跳过该条件 (只靠 !alive / 8s 兜底). ref 不参与渲染, 无需进 deps.
+  const pendingUrgentRef = useRef(false)
+  // 终止乐观更新抑制窗: 点"终止"后 ~3s 内忽略轮询回写, 让 isAlive/isWorking/agent_status
+  // 立即落定为"空闲". 否则软停 (C-c × 3) 期间下一个 2s 轮询仍读到 alive=true, 会把状态弹回"执行中".
+  const stopSuppressedUntilRef = useRef<number>(0)
+  // 发送阶段提示: 自发送瞬间起计时, 按耗时显示黄字阶段 (正在发送 / 正在唤醒中 / 唤醒超时).
+  // pendingSendAt 与 messageSubmitting 全部解除 (发送按钮恢复) 时置回 null, 还原原提示.
+  const [sendingHint, setSendingHint] = useState<string | null>(null)
+  const [backendWorktreeIgnored, setBackendWorktreeIgnored] = useState(false)
+  const [lastSendError, setLastSendError] = useState('')
+  const [failedSendAttempt, setFailedSendAttempt] = useState<FailedSendAttempt | null>(null)
+  const [dismissedBackendFailureKeys, setDismissedBackendFailureKeys] = useState<Record<string, string>>({})
+  const [hiddenBackendFailureBefore, setHiddenBackendFailureBefore] = useState<Record<string, number>>({})
+  const guidedCompletionNotifiedRef = useRef<Set<string>>(new Set())
+  const backendFailureMessage = useMemo(() => formatBackendFailureMessage(backendFailedReason), [backendFailedReason])
+  const backendFailureKey = backendJobFailed === true
+    ? (backendFailedAt || backendFailedReason || backendFailureMessage || 'failed')
+    : ''
+  const backendFailureAtMs = backendFailedAt ? Date.parse(backendFailedAt) : NaN
+  const backendFailureRef = useRef({ sessionId: '', key: '', failedAt: '' })
+
+  useEffect(() => {
+    backendFailureRef.current = { sessionId, key: backendFailureKey, failedAt: backendFailedAt }
+  }, [sessionId, backendFailureKey, backendFailedAt])
+
+  const hideBackendFailure = useCallback((targetSessionId?: string) => {
+    const sid = targetSessionId || backendFailureRef.current.sessionId
+    if (!sid) return
+    const key = sid === backendFailureRef.current.sessionId ? backendFailureRef.current.key : ''
+    const now = Date.now()
+    if (key) {
+      setDismissedBackendFailureKeys(prev => (
+        prev[sid] === key ? prev : { ...prev, [sid]: key }
+      ))
+    }
+    setHiddenBackendFailureBefore(prev => (
+      prev[sid] && prev[sid] >= now ? prev : { ...prev, [sid]: now }
+    ))
+  }, [])
+
+  useEffect(() => {
+    if (!sessionId || backendJobFailed !== false) return
+    setDismissedBackendFailureKeys(prev => {
+      if (!prev[sessionId]) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
+    setHiddenBackendFailureBefore(prev => {
+      if (!prev[sessionId]) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
+  }, [sessionId, backendJobFailed])
+
+  useEffect(() => {
+    stopSuppressedUntilRef.current = 0
+    if (!sessionId) { setBackendAlive(null); setBackendWorking(null); setBackendJobDone(null); setBackendJobFailed(null); setBackendFailedReason(''); setBackendFailedAt(''); setBackendPid(null); setBackendWorktreeIgnored(false); setBackendRealTimeInfo(''); return }
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleNext = (delayMs: number) => {
+      if (cancelled) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(poll, delayMs)
+    }
+    const nextDelayFor = (r: any) => {
+      if (pendingSendAt) return 2000
+      if (r?.alive && r?.working) return 2000
+      if (r?.alive) return 5000
+      return 15000
+    }
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return
+      let nextDelay = 5000
+      try {
+        const r = await api(`/api/sessions/${sessionId}/status`)
+        if (cancelled) return
+        // 终止乐观更新: 抑制窗内忽略后端回写, 强制 空闲 (alive/working=false),
+        // 避免软停 (C-c × 3) 期间后端仍报 alive=true 把状态弹回"执行中".
+        const suppressed = Date.now() < stopSuppressedUntilRef.current
+        setBackendAlive(suppressed ? false : !!r?.alive)
+        setBackendWorking(suppressed ? false : !!r?.working)
+        setBackendJobDone(typeof r?.job_accomplished === 'boolean' ? r.job_accomplished : null)
+        setBackendJobFailed(typeof r?.failed === 'boolean' ? r.failed : null)
+        setBackendFailedReason(typeof r?.failed_reason === 'string' ? r.failed_reason : '')
+        setBackendFailedAt(typeof r?.failed_at === 'string' ? r.failed_at : '')
+        setBackendWorktreeIgnored(!!r?.worktree_ignored)
+        // 模型可用性: 管理员删除该模型后 false → 前端进入只读, 禁用发送 + 弹"更换模型".
+        const _modelOk = typeof r?.model_available === 'boolean' ? r.model_available : true
+        setModelAvailable(_modelOk)
+        modelAvailableRef.current = _modelOk
+        setBackendPid(r?.pid ?? null)
+        setBackendRealTimeInfo(typeof r?.real_time_info === 'string' ? r.real_time_info : '')
+        const liveAgentStatus = suppressed ? 'idle' : runtimeStatusForSessionList(r)
+        const store = useStore.getState()
+        const selectedSession = store.currentSession
+        if (selectedSession?.session_id === sessionId && selectedSession.agent_status !== liveAgentStatus) {
+          store.setCurrentSession({ ...selectedSession, agent_status: liveAgentStatus })
+        }
+        const selectedTask = store.currentTask as any
+        if (selectedTask?.task_id === sessionId && selectedTask.agent_status !== liveAgentStatus) {
+          store.setCurrentTask({ ...selectedTask, agent_status: liveAgentStatus })
+        }
+        const listKey = (selectedSession as any)?.issue_id || (selectedSession as any)?.research_id || currentIssueId
+        if (listKey) {
+          const list = store.sessionsMap[listKey] || []
+          if (list.some((s: any) => s.session_id === sessionId && s.agent_status !== liveAgentStatus)) {
+            store.setSessionsMap(listKey, list.map((s: any) => (
+              s.session_id === sessionId ? { ...s, agent_status: liveAgentStatus } : s
+            )))
+          }
+        }
+        if (r?.job_accomplished === true && isGuidedDemoSession(sessionId) && !guidedCompletionNotifiedRef.current.has(sessionId)) {
+          guidedCompletionNotifiedRef.current.add(sessionId)
+          patchGuidedDemoSessionCompleted(sessionId)
+          window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
+        }
+        // pending 清除条件 (任意一个满足):
+        //   ① 后端确认 working=true   (agent 已开始干) — 但加急发送时 session 本来就在 working,
+        //      此信号无效会过早清掉 pending (发送阶段提示来不及显示), 故加急时跳过本条.
+        //   ② 后端确认 alive=false    (进程死了, 早就不用等了)
+        //   ③ pending 已超 8s         (agent 在 sub-2s 内跑完一整轮, 我们 poll 没赶上 — 兜底)
+        if (pendingSendAt && ((!pendingUrgentRef.current && r?.working) || !r?.alive || (Date.now() - pendingSendAt > 8000))) {
+          setPendingSendAt(null)
+        }
+        nextDelay = nextDelayFor(r)
+      } catch { /* 网络抖动忽略, 下次再来 */ }
+      if (!cancelled) scheduleNext(nextDelay)
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        if (timer) clearTimeout(timer)
+        timer = null
+        return
+      }
+      poll()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    poll()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [sessionId, pendingSendAt])
+
+  // 发送阶段黄字提示: 发送按钮灰着 (pendingSendAt 或 messageSubmitting 任一为真) 期间,
+  // 按自发送瞬间起的耗时显示三阶段文字; 两者都解除 (按钮恢复) 瞬间 setSendingHint(null) 还原原提示.
+  useEffect(() => {
+    if (!pendingSendAt && !messageSubmitting) {
+      setSendingHint(null)
+      return
+    }
+    const start = pendingSendAt ?? Date.now()
+    const tick = () => {
+      const elapsed = Date.now() - start
+      if (elapsed < 3000) setSendingHint('正在发送')
+      else if (elapsed < 10000) setSendingHint('正在唤醒中')
+      else setSendingHint('唤醒时间长于预期，可能上下文过长，或网络不通畅。')
+    }
+    tick()
+    const id = window.setInterval(tick, 250)
+    return () => window.clearInterval(id)
+  }, [pendingSendAt, messageSubmitting])
+
+  useEffect(() => {
+    setStopFeedbackActive(false)
+    if (stopFeedbackTimerRef.current) {
+      clearTimeout(stopFeedbackTimerRef.current)
+      stopFeedbackTimerRef.current = null
+    }
+    return () => {
+      if (stopFeedbackTimerRef.current) {
+        clearTimeout(stopFeedbackTimerRef.current)
+        stopFeedbackTimerRef.current = null
+      }
+    }
+  }, [sessionId])
+
+  const derivedStatus: AgentStatus =
+    pendingSendAt ? 'pending'
+    : (backendAlive && backendWorking) ? 'running'
+    : backendAlive ? 'waiting'
+    : 'idle'
+  const currentVscodeSubPath = (currentIssue as any)?.use_worktree && !backendWorktreeIgnored
+    ? ((currentIssue as any)?.worktree_branch || (currentIssue as any)?.id)
+    : null
+  // 空会话占位文案: pending(刚发消息等创建进程) / running(agent 在跑等首条输出) 时给 loading 文案,
+  // 由 JsonlView 配 spinner 显示; idle/waiting(终态空, 不会有数据自动到来) 时留空,
+  // 让 JsonlView 走静态"暂无对话内容"而非永久 spinner 误导用户"稍等就有".
+  const jsonlEmptyLoadingText = jsonlEntries.length === 0
+    ? (derivedStatus === 'pending'
+        ? (backendAlive ? '智能体进程已创建，联络中' : '正在创建智能体进程，请稍等')
+        : derivedStatus === 'running' ? '智能体工作中，等待输出…' : '')
+    : ''
+  const hiddenBackendFailureAt = sessionId ? hiddenBackendFailureBefore[sessionId] : 0
+  const backendFailureHiddenByKey = !!(sessionId && backendFailureKey && dismissedBackendFailureKeys[sessionId] === backendFailureKey)
+  const backendFailureHiddenByTime = !!(
+    hiddenBackendFailureAt
+    && (!Number.isFinite(backendFailureAtMs) || backendFailureAtMs <= hiddenBackendFailureAt)
+  )
+  const showBackendFailureBanner = !lastSendError
+    && backendJobFailed === true
+    && !!backendFailureMessage
+    && !backendFailureHiddenByKey
+    && !backendFailureHiddenByTime
+
+  useEffect(() => {
+    if (!sessionId) return
+    setDrafts(prev => {
+      if (Object.prototype.hasOwnProperty.call(prev, sessionId)) return prev
+      const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
+      if (!saved?.input) return prev
+      return { ...prev, [sessionId]: saved.input }
+    })
+  }, [sessionId])
+
+  const input = drafts[sessionId] || ''
+  const setInput = (val: string | ((prev: string) => string)) => {
+    if (!sessionId) return
+    setDrafts(prev => {
+      const next = typeof val === 'function' ? val(prev[sessionId] || '') : val
+      draftSave(`session-input:${sessionId}`, { input: next }, { minChars: 1 })
+      return {
+        ...prev,
+        [sessionId]: next,
+      }
+    })
+  }
+
+  useEffect(() => {
+    if (!sessionId) return
+    draftSave(`session-input:${sessionId}`, { input }, { minChars: 1 })
+  }, [sessionId, input])
+
+  // F6: 规划编辑器 3s 静止后, 预填一条"通知 Agent 已更新规划"的草稿, 避免用户来回切换.
+  // 仅在事件 detail.sessionId === 当前 session 时生效, 防止跨 session 串扰.
+  useEffect(() => {
+    function onPrefill(e: Event) {
+      const detail = (e as CustomEvent).detail || {}
+      if (detail.sessionId !== sessionId) return
+      const cur = drafts[sessionId] || ''
+      const draft = '我刚更新了 project_knowledge.md 中的规划，请读取后据此调整你的工作计划。'
+      if (cur.trim()) return
+      setInput(draft)
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        try { inputRef.current?.setSelectionRange(draft.length, draft.length) } catch {}
+      })
+    }
+    window.addEventListener('mobius:planning-prefill', onPrefill as EventListener)
+    return () => window.removeEventListener('mobius:planning-prefill', onPrefill as EventListener)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, drafts])
+
+  // F7: "通知 Agent" 按钮同样预填草稿 (跳过 3s 静止等待, 立即触发).
+  useEffect(() => {
+    function onNotify(e: Event) {
+      const detail = (e as CustomEvent).detail || {}
+      if (detail.sessionId !== sessionId) return
+      const draft = '请读取当前 project_knowledge.md，确认最新规划后开始执行。'
+      setInput(draft)
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        try { inputRef.current?.setSelectionRange(draft.length, draft.length) } catch {}
+      })
+    }
+    window.addEventListener('mobius:planning-notify-agent', onNotify as EventListener)
+    return () => window.removeEventListener('mobius:planning-notify-agent', onNotify as EventListener)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  const clearSessionInputDraft = useCallback((sid: string, expectedInput?: string) => {
+    if (!sid) return
+    setDrafts(prev => {
+      if (!Object.prototype.hasOwnProperty.call(prev, sid)) return prev
+      if (typeof expectedInput === 'string' && (prev[sid] || '') !== expectedInput) return prev
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
+    const saved = draftLoad<{ input?: string }>(`session-input:${sid}`)
+    if (typeof expectedInput !== 'string' || !saved?.input || saved.input === expectedInput) {
+      draftClear(`session-input:${sid}`)
+    }
+  }, [])
+
+  const restoreSessionInputDraft = useCallback((sid: string, sentInput: string) => {
+    if (!sid || !sentInput) return
+    setDrafts(prev => {
+      const current = prev[sid] || ''
+      if (current.trim()) return prev
+      draftSave(`session-input:${sid}`, { input: sentInput }, { minChars: 1 })
+      return { ...prev, [sid]: sentInput }
+    })
+  }, [])
+
+  const applyReplayedInput = useCallback((text: string) => {
+    setInput(text)
+    setInputReplayOpen(false)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      try { inputRef.current?.setSelectionRange(text.length, text.length) } catch {}
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // ↑ 召回历史输入: 仅当输入框为空时按 ↑ 召回最近一条; 2 秒内连按 ↑ 逐条回退到更早输入,
+  // 每次按下刷新 2 秒冷却; 冷却过后 ↑ 回归普通作用, 待输入框再次为空才可从头召回.
+  // 历史输入与"回放输入"弹窗同源 (/api/sessions/:id/inputs, newest-first → entries[0] 即"上一次").
+  const inputRecallRef = useRef<{
+    active: boolean
+    index: number
+    entries: SessionInputEntry[]
+    timer: ReturnType<typeof setTimeout> | null
+    fetching: boolean
+  }>({ active: false, index: -1, entries: [], timer: null, fetching: false })
+
+  // 切换 session 时重置召回状态 (历史输入按 session 隔离).
+  useEffect(() => {
+    const st = inputRecallRef.current
+    if (st.timer) { clearTimeout(st.timer); st.timer = null }
+    st.active = false
+    st.index = -1
+    st.entries = []
+    st.fetching = false
+  }, [sessionId])
+
+  const handleInputArrowUp = useCallback(async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const st = inputRecallRef.current
+    if (st.active) {
+      // 已在召回序列中: 2 秒内连按, 逐条回退到更早输入; 到最早一条后停在原地并续命冷却.
+      const nextIndex = st.index + 1
+      if (nextIndex < st.entries.length) {
+        st.index = nextIndex
+        const text = replayTextOf(st.entries[nextIndex])
+        setInput(text)
+        requestAnimationFrame(() => {
+          const el = inputRef.current
+          if (el) { try { el.setSelectionRange(text.length, text.length) } catch {} }
+        })
+      }
+      if (st.timer) clearTimeout(st.timer)
+      st.timer = setTimeout(() => {
+        const cur = inputRecallRef.current
+        cur.active = false
+        cur.index = -1
+        cur.timer = null
+      }, 2000)
+      e.preventDefault()
+      return
+    }
+    // 召回序列未激活: 仅当输入框为空时从头触发.
+    const currentInput = inputRef.current?.value ?? ''
+    if (currentInput.trim()) return
+    if (!sessionId) return
+    if (st.fetching) return
+    st.fetching = true
+    e.preventDefault()
+    try {
+      const data = await api(`/api/sessions/${sessionId}/inputs`)
+      const entries = (Array.isArray(data?.entries) ? data.entries : [])
+        .filter((en: SessionInputEntry) => replayTextOf(en).trim().length > 0)
+      if (entries.length === 0) return
+      st.entries = entries
+      st.index = 0
+      st.active = true
+      const text = replayTextOf(entries[0])
+      setInput(text)
+      requestAnimationFrame(() => {
+        const el = inputRef.current
+        if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} }
+      })
+      if (st.timer) clearTimeout(st.timer)
+      st.timer = setTimeout(() => {
+        const cur = inputRecallRef.current
+        cur.active = false
+        cur.index = -1
+        cur.timer = null
+      }, 2000)
+    } catch {
+      // 拉取失败则不进入召回序列, ↑ 维持普通作用.
+    } finally {
+      st.fetching = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  const attachments = attachmentsBySession[sessionId] || []
+  const closeAttachmentImagePreview = useCallback(() => setAttachmentImagePreview(null), [])
+  const openAttachmentImagePreview = useCallback((preview: AttachmentImagePreview) => {
+    setAttachmentImagePreview(preview)
+  }, [])
+  useEffect(() => {
+    if (!attachmentImagePreview) return
+    const stillAvailable = attachments.some(a => a.id === attachmentImagePreview.id && a.previewUrl === attachmentImagePreview.src)
+    if (!stillAvailable) setAttachmentImagePreview(null)
+  }, [attachmentImagePreview, attachments])
+
+  const setSessionAttachments = (
+    sid: string,
+    updater: Attachment[] | ((prev: Attachment[]) => Attachment[])
+  ) => {
+    setAttachmentsBySession(prev => {
+      const cur = prev[sid] || []
+      const next = typeof updater === 'function' ? (updater as any)(cur) : updater
+      return { ...prev, [sid]: next }
+    })
+  }
+
+  // 将一批 File 加入当前 session 的附件列表, 并触发上传.
+  // 不去重 (同名文件可能内容不同, 让后端用 originalname 落盘即可).
+  const enqueueFiles = useCallback((files: FileList | File[]) => {
+    if (!sessionId) return
+    const arr = Array.from(files || [])
+    if (arr.length === 0) return
+    const newAtts: Attachment[] = arr.map(f => ({
+      id: makeAttachmentId(),
+      name: f.name || 'file',
+      size: f.size || 0,
+      kind: attachmentKindOf(f),
+      sourceFile: f,
+      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
+      status: 'uploading',
+    }))
+    setSessionAttachments(sessionId, prev => [...prev, ...newAtts])
+    newAtts.forEach((att, i) => {
+      uploadAttachmentFile(arr[i], currentProjectId)
+        .then(res => {
+          setSessionAttachments(sessionId, prev => prev.map(a =>
+            a.id === att.id ? { ...a, status: 'done', remotePath: res.path, size: res.size || a.size } : a
+          ))
+        })
+        .catch(err => {
+          setSessionAttachments(sessionId, prev => prev.map(a =>
+            a.id === att.id ? { ...a, status: 'error', error: err?.message || '上传失败' } : a
+          ))
+        })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  const retryAttachment = useCallback((id: string) => {
+    if (!sessionId) return
+    const target = (attachmentsBySession[sessionId] || []).find(att => att.id === id)
+    if (!target?.sourceFile || target.status !== 'error') return
+    setSessionAttachments(sessionId, prev => prev.map(att => (
+      att.id === id ? { ...att, status: 'uploading', error: undefined } : att
+    )))
+    uploadAttachmentFile(target.sourceFile, currentProjectId)
+      .then(res => {
+        setSessionAttachments(sessionId, prev => prev.map(att => (
+          att.id === id
+            ? { ...att, status: 'done', remotePath: res.path, size: res.size || att.size, error: undefined }
+            : att
+        )))
+      })
+      .catch(error => {
+        setSessionAttachments(sessionId, prev => prev.map(att => (
+          att.id === id ? { ...att, status: 'error', error: error?.message || '上传失败' } : att
+        )))
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, currentProjectId, attachmentsBySession])
+
+  const removeAttachment = useCallback((id: string) => {
+    if (!sessionId) return
+    setAttachmentImagePreview(prev => prev?.id === id ? null : prev)
+    setSessionAttachments(sessionId, prev => {
+      const target = prev.find(a => a.id === id)
+      if (target?.previewUrl) { try { URL.revokeObjectURL(target.previewUrl) } catch {} }
+      return prev.filter(a => a.id !== id)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  const clearAttachments = useCallback(() => {
+    if (!sessionId) return
+    setAttachmentImagePreview(null)
+    setSessionAttachments(sessionId, prev => {
+      prev.forEach(a => { if (a.previewUrl) { try { URL.revokeObjectURL(a.previewUrl) } catch {} } })
+      return []
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // 容器级粘贴, 兼容 ChatGPT: 剪贴板里有文件就吃掉默认行为, 转成附件;
+  // 否则让浏览器把文字正常粘进 textarea. 同时认 items + files 两条路,
+  // 避免某些浏览器 (Chrome/Edge on macOS) 只把图片塞进 files 不进 items.
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLElement>) => {
+    const cd = e.clipboardData
+    if (!cd) return
+    const files: File[] = []
+    if (cd.files && cd.files.length > 0) {
+      for (let i = 0; i < cd.files.length; i++) files.push(cd.files[i])
+    } else if (cd.items && cd.items.length > 0) {
+      for (let i = 0; i < cd.items.length; i++) {
+        const it = cd.items[i]
+        if (it.kind === 'file') {
+          const f = it.getAsFile()
+          if (f) files.push(f)
+        }
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault()
+      enqueueFiles(files)
+    }
+  }, [enqueueFiles])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault()
+      setIsDraggingFile(true)
+    }
+  }, [])
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget === e.target) setIsDraggingFile(false)
+  }, [])
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    setIsDraggingFile(false)
+    const files = e.dataTransfer?.files
+    if (!files || files.length === 0) return
+    e.preventDefault()
+    enqueueFiles(files)
+  }, [enqueueFiles])
+
+  const openFilePicker = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) enqueueFiles(files)
+    // 同名文件再选一次也要触发 change
+    e.target.value = ''
+  }, [enqueueFiles])
+
+  const anyUploading = attachments.some(a => a.status === 'uploading')
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
+  const endRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const isComposerMobile = useComposerMobileLayout()
+  const easyComposerLayout = useComposerInputLayout({
+    textareaRef: inputRef,
+    value: input,
+    expanded: inputExpanded,
+    isMobile: isComposerMobile,
+    enabled: layout === 'easy',
+  })
+  const insertArtifactReference = useCallback((reference: string) => {
+    setArtifactOpenRequest(null)
+    setArtifactAboveChanges(false)
+    setFileChangesRequest(null)
+    window.requestAnimationFrame(() => {
+      const textarea = inputRef.current
+      const currentValue = textarea?.value ?? input
+      const start = textarea?.selectionStart ?? currentValue.length
+      const end = textarea?.selectionEnd ?? start
+      const before = currentValue.slice(0, start)
+      const after = currentValue.slice(end)
+      const leading = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+      const trailing = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+      const insertion = `${leading}${reference}${trailing}`
+
+      if (textarea) {
+        textarea.focus()
+        textarea.setSelectionRange(start, end)
+        // insertText participates in the textarea's native undo stack. The
+        // controlled onChange path persists the resulting session draft.
+        try {
+          if (document.execCommand('insertText', false, insertion)) return
+        } catch {
+          /* Fall through to the controlled-state path below. */
+        }
+      }
+
+      const nextValue = `${before}${insertion}${after}`
+      setInput(nextValue)
+      window.requestAnimationFrame(() => {
+        const nextTextarea = inputRef.current
+        if (!nextTextarea) return
+        const caret = start + insertion.length
+        nextTextarea.focus()
+        try { nextTextarea.setSelectionRange(caret, caret) } catch {}
+      })
+    })
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, sessionId])
+  const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
+  const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{
+    sessionId: string
+    name: string
+    mode: AgentMentionMode
+    projectName?: string
+    scopeType?: 'issue' | 'research' | null
+    scopeTitle?: string
+    contextAt?: string | null
+  }>>([])
+  // IME 合成状态守卫: macOS 系统拼音输入法打字母时(合成进行中)按回车, 本意是确认候选字/上屏
+  // 字母, 不应触发发送. Chromium on macOS 合成中的 keydown(Enter) 其 isComposing===true,
+  // 但原代码 onKeyDown 没检查 isComposing, 直接 preventDefault+send() 抢在 IME 前面发送了
+  // (Mac 中招). Windows IME 合成期 keydown 的 key 是 "Process"≠"Enter", 被 e.key!=='Enter'
+  // 侥幸挡掉(Windows 不中招). 自维护 composingRef 独立于浏览器对 isComposing 的时序处理,
+  // 与事件自带 isComposing / keyCode 229 三重守卫, 合成中按回车交给 IME 处理(字上屏, 不发送).
+  const composingRef = useRef(false)
+  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [hasNewMessages, setHasNewMessages] = useState(false)
+  const [replyTo, setReplyTo] = useState<any>(null)
+  const [editingMsg, setEditingMsg] = useState<any>(null)
+  const [runProjectPrompt, setRunProjectPrompt] = useState('')
+  const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(false)
+  const isNewConversation = messages.length === 0 && (((currentSession as any)?.message_count || 0) === 0)
+  const inputPlaceholder = editingMsg
+    ? '编辑消息后按 Enter 重新发送...'
+    : isNewConversation
+      ? '今天有什么计划？'
+      : '发送指令（Shift+Enter 换行 · Ctrl/⌘+V 粘贴文件 · ↑键回溯）...'
+
+  const handleChatInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.target.value
+    const caret = event.target.selectionStart ?? nextValue.length
+    setInput(nextValue)
+    const beforeCaret = nextValue.slice(0, caret)
+    const copiedSessionMatch = beforeCaret.match(/(?:^|\s)(@?session=([^\s]*)?)$/i)
+    const mentionMatch = copiedSessionMatch ? null : beforeCaret.match(/@([^\s@]*)$/)
+    if ((!mentionMatch && !copiedSessionMatch) || !sessionId) {
+      remoteMentionRangeRef.current = null
+      setMentionQuery('')
+      setRemoteFileDrawerOpen(false)
+      return
+    }
+    const start = mentionMatch
+      ? beforeCaret.lastIndexOf('@')
+      : Math.max(0, beforeCaret.toLowerCase().lastIndexOf('session=') - (beforeCaret[beforeCaret.toLowerCase().lastIndexOf('session=') - 1] === '@' ? 1 : 0))
+    remoteMentionRangeRef.current = { start, end: caret }
+    setMentionQuery(mentionMatch ? (mentionMatch[1] || '') : (copiedSessionMatch?.[2] || ''))
+    setRemoteFileDrawerInitialTab('agents')
+    setRemoteFileDrawerOpen(true)
+  }
+
+  const insertRemoteFilePath = useCallback((absolutePath: string) => {
+    const range = remoteMentionRangeRef.current
+    const currentValue = inputRef.current?.value ?? input
+    const start = range?.start ?? (inputRef.current?.selectionStart ?? currentValue.length)
+    const end = range?.end ?? start
+    const suffix = currentValue.slice(end)
+    const trailingSpace = suffix && !/^\s/.test(suffix) ? ' ' : ''
+    const nextValue = `${currentValue.slice(0, start)}${absolutePath}${trailingSpace}${suffix}`
+    const caret = start + absolutePath.length + trailingSpace.length
+    setInput(nextValue)
+    remoteMentionRangeRef.current = null
+    setMentionQuery('')
+    setRemoteFileDrawerOpen(false)
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current
+      if (!textarea) return
+      textarea.focus()
+      try { textarea.setSelectionRange(caret, caret) } catch {}
+    })
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, sessionId])
+
+  const insertAgentMention = useCallback((agent: MentionAgentSession, mode: AgentMentionMode) => {
+    const range = remoteMentionRangeRef.current
+    const currentValue = inputRef.current?.value ?? input
+    const start = range?.start ?? (inputRef.current?.selectionStart ?? currentValue.length)
+    const end = range?.end ?? start
+    const label = `@${agent.name || agent.session_id}`
+    const suffix = currentValue.slice(end)
+    const trailingSpace = suffix && !/^\s/.test(suffix) ? ' ' : ''
+    const nextValue = `${currentValue.slice(0, start)}${label}${trailingSpace}${suffix}`
+    const caret = start + label.length + trailingSpace.length
+    setInput(nextValue)
+    setSelectedAgentMentions((current) => {
+      const selected = {
+        sessionId: agent.session_id,
+        name: agent.name || agent.session_id,
+        mode,
+        projectName: agent.project_name,
+        scopeType: agent.scope_type || null,
+        scopeTitle: agent.scope_type === 'research' ? agent.research_title : agent.issue_title,
+        contextAt: agent.last_active || null,
+      }
+      const existingIndex = current.findIndex((item) => item.sessionId === agent.session_id)
+      if (existingIndex < 0) return [...current, selected]
+      return current.map((item, index) => index === existingIndex ? selected : item)
+    })
+    remoteMentionRangeRef.current = null
+    setMentionQuery('')
+    setRemoteFileDrawerOpen(false)
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current
+      if (!textarea) return
+      textarea.focus()
+      try { textarea.setSelectionRange(caret, caret) } catch {}
+    })
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, sessionId])
+
+  useEffect(() => {
+    remoteMentionRangeRef.current = null
+    setMentionQuery('')
+    setSelectedAgentMentions([])
+    setRemoteFileDrawerOpen(false)
+  }, [sessionId])
+  const loadHistoryRef = useRef<() => void>(() => {})
+  const postSessionMessage = useCallback(async ({
+    content,
+    inputText,
+    requestId,
+    urgent = false,
+    mentions,
+  }: {
+    content: string
+    inputText?: string
+    requestId: string
+    urgent?: boolean
+    mentions?: any[]
+  }) => {
+    if (!sessionId) throw new Error('当前没有可发送消息的会话')
+    const payload: Record<string, any> = { content, request_id: requestId }
+    if (typeof inputText === 'string') payload.input_text = inputText
+    if (urgent) payload.urgent = true
+    if (Array.isArray(mentions) && mentions.length > 0) payload.mentions = mentions
+    try {
+      const resp = await api(`/api/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setLastSendError('')
+      hideBackendFailure(sessionId)
+      return resp
+    } catch (e: any) {
+      const text = e?.message || '发送失败'
+      setTyping(false)
+      setStreamContent('')
+      setPendingSendAt(null)
+      setLastSendError(text)
+      addMessage({ role: 'system', content: `❌ ${text}` })
+      setTimeout(() => loadHistoryRef.current(), 500)
+      throw e
+    }
+  }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure])
+
+  const clearVoiceTimers = useCallback(() => {
+    if (voiceStopTimerRef.current !== null) {
+      window.clearTimeout(voiceStopTimerRef.current)
+      voiceStopTimerRef.current = null
+    }
+    if (voiceTickTimerRef.current !== null) {
+      window.clearInterval(voiceTickTimerRef.current)
+      voiceTickTimerRef.current = null
+    }
+  }, [])
+
+  const stopVoiceStream = useCallback(() => {
+    const stream = mediaStreamRef.current
+    mediaStreamRef.current = null
+    if (!stream) return
+    stream.getTracks().forEach(track => {
+      try { track.stop() } catch {}
+    })
+  }, [])
+
+  const submitVoiceBlob = useCallback(async (blob: Blob) => {
+    if (!blob || blob.size === 0) {
+      setVoiceState('error')
+      setLastSendError('录音内容为空，请重新录制一段清晰语音。')
+      return
+    }
+    if (!sessionId || messageSubmitting) return
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 125_000)
+    const mimeType = blob.type || 'audio/webm'
+    const form = new FormData()
+    form.append('audio', blob, `session-voice-${Date.now()}.${recordingFileExtension(mimeType)}`)
+
+    setVoiceState('transcribing')
+    setLastSendError('')
+    try {
+      const result = await api('/api/assistant/transcribe', {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      }) as VoiceTranscribeResponse
+      const text = String(result.text || '').trim()
+      if (!text) {
+        setVoiceState('error')
+        setLastSendError('没有识别到有效语音，请靠近麦克风并重新录制。')
+        return
+      }
+      const requestId = makeSendRequestId()
+      setVoiceState('idle')
+      setLastSendError('')
+      addMessage({ role: 'user', content: text })
+      setPendingSendAt(Date.now())
+      setMessageSubmitting(true)
+      setTyping(true)
+      await postSessionMessage({ content: text, inputText: text, requestId })
+      clearSessionInputDraft(sessionId, text)
+      inputRef.current?.focus()
+      setTimeout(() => loadHistoryRef.current(), 500)
+    } catch (error: any) {
+      setVoiceState('error')
+      setTyping(false)
+      setStreamContent('')
+      setPendingSendAt(null)
+      setLastSendError(error?.name === 'AbortError'
+        ? '语音转写网络超时，请稍后重试。'
+        : (error?.message || '语音转写失败，请稍后重试。'))
+    } finally {
+      window.clearTimeout(timeout)
+      setMessageSubmitting(false)
+    }
+  }, [addMessage, clearSessionInputDraft, messageSubmitting, postSessionMessage, sessionId, setStreamContent, setTyping])
+
+  const stopVoiceRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') return
+    try { recorder.requestData() } catch {}
+    try { recorder.stop() } catch {}
+  }, [])
+
+  const startVoiceRecording = useCallback(async () => {
+    if (messageSubmitting || voiceState === 'transcribing') return
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceState('error')
+      setLastSendError('当前浏览器不支持录音，请换用支持 MediaRecorder 的浏览器。')
+      return
+    }
+
+    setLastSendError('')
+    setRecordingSeconds(0)
+    voiceChunksRef.current = []
+    voiceRecordFailedRef.current = false
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+      const mimeType = supportedVoiceMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = event => {
+        if (event.data && event.data.size > 0) voiceChunksRef.current.push(event.data)
+      }
+      recorder.onerror = () => {
+        voiceRecordFailedRef.current = true
+        clearVoiceTimers()
+        stopVoiceStream()
+        setVoiceState('error')
+        setLastSendError('浏览器录音失败，请重新录制。')
+        try {
+          if (recorder.state !== 'inactive') recorder.stop()
+        } catch {}
+      }
+      recorder.onstop = () => {
+        clearVoiceTimers()
+        stopVoiceStream()
+        mediaRecorderRef.current = null
+        if (voiceRecordFailedRef.current) return
+        const type = recorder.mimeType || mimeType || 'audio/webm'
+        const blob = new Blob(voiceChunksRef.current, { type })
+        voiceChunksRef.current = []
+        void submitVoiceBlob(blob)
+      }
+
+      recorder.start(250)
+      setVoiceState('recording')
+      voiceTickTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds(value => value + 1)
+      }, 1000)
+      voiceStopTimerRef.current = window.setTimeout(() => {
+        stopVoiceRecording()
+      }, VOICE_RECORDING_MAX_MS)
+    } catch (error: any) {
+      clearVoiceTimers()
+      stopVoiceStream()
+      mediaRecorderRef.current = null
+      setVoiceState('error')
+      setLastSendError(permissionErrorMessage(error, '会话输入'))
+    }
+  }, [clearVoiceTimers, messageSubmitting, stopVoiceRecording, stopVoiceStream, submitVoiceBlob, voiceState])
+
+  const toggleVoiceRecording = useCallback(() => {
+    if (voiceState === 'recording') {
+      stopVoiceRecording()
+      return
+    }
+    void startVoiceRecording()
+  }, [startVoiceRecording, stopVoiceRecording, voiceState])
+
+  // 每个 turn 的折叠状态. undefined/true = 展开(默认全展开), false = 折叠.
+  // 折叠时只显示该 turn 最后一条 assistant; 展开时显示该 turn 全部 non-user segment.
+  const [turnExpanded, setTurnExpanded] = useState<Record<number, boolean>>({})
+  const toggleTurn = useCallback((tn: number) => {
+    setTurnExpanded(prev => {
+      const currentExpanded = prev[tn] !== false
+      return { ...prev, [tn]: !currentExpanded }
+    })
+  }, [])
+  // 权限请求卡片: 用户点过按钮后乐观 dismiss(等服务端 turn 继续就会被自然过滤掉)
+  const [dismissedPermId, setDismissedPermId] = useState<number | null>(null)
+  // 计算当前待响应的 permission(最后一条 system+buttons, 其后无 assistant/tool, 且未被本地 dismiss).
+  // 返回索引(用于主流过滤) + 消息对象(用于底部卡片).
+  const { idx: pendingPermIdx, msg: pendingPermissionMsg } = useMemo(() => {
+    let idx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m: any = messages[i]
+      if (m.role === 'system' && Array.isArray(m.buttons) && m.buttons.length > 0) {
+        idx = i
+        break
+      }
+    }
+    if (idx < 0) return { idx: -1, msg: null }
+    for (let i = idx + 1; i < messages.length; i++) {
+      if (messages[i].role === 'assistant' || messages[i].role === 'tool') {
+        return { idx: -1, msg: null }
+      }
+    }
+    const m: any = messages[idx]
+    if (m.id && m.id === dismissedPermId) return { idx: -1, msg: null }
+    return { idx, msg: m }
+  }, [messages, dismissedPermId])
+  // 用户点权限按钮: 乐观 dismiss 当前卡片, 同时按普通消息发送选择.
+  const handlePermissionClick = useCallback((value: string) => {
+    if (pendingPermissionMsg?.id) setDismissedPermId(pendingPermissionMsg.id)
+    const content = permissionReplyText(value)
+    if (!content || !sessionId) return
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId }).catch(() => {})
+  }, [pendingPermissionMsg, sessionId, addMessage, setTyping, postSessionMessage])
+  const [inputHeight, setInputHeight] = useState(60)
+  const toggleInputExpanded = useCallback(() => {
+    setInputExpanded(prev => !prev)
+    if (layout === 'easy') requestAnimationFrame(() => inputRef.current?.focus())
+  }, [layout])
+  const toggleInputMenu = useCallback(() => {
+    setInputMenuOpen(prev => !prev)
+  }, [])
+  const expandedInputRef = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    if (!inputExpanded || layout === 'easy') return
+    const id = requestAnimationFrame(() => expandedInputRef.current?.focus())
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setInputExpanded(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      cancelAnimationFrame(id)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [inputExpanded, layout])
+
+  useEffect(() => {
+    if (!inputMenuOpen) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (inputMenuRef.current?.contains(target)) return
+      if (inputMenuButtonRef.current?.contains(target)) return
+      setInputMenuOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInputMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [inputMenuOpen])
+
+  useEffect(() => {
+    if (layout === 'easy') return
+    const el = inputRef.current
+    if (!el) return
+    const syncHeight = () => {
+      const minHeight = 60
+      const maxHeight = Math.floor(window.innerHeight * 0.7)
+      el.style.height = 'auto'
+      el.style.maxHeight = `${maxHeight}px`
+      const nextHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight))
+      el.style.height = `${nextHeight}px`
+      setInputHeight(prev => prev === nextHeight ? prev : nextHeight)
+    }
+    syncHeight()
+    window.addEventListener('resize', syncHeight)
+    return () => window.removeEventListener('resize', syncHeight)
+  }, [input, layout, sessionId])
+
+  const resolveProjectBindPath = useCallback(async () => {
+    if (!currentProjectId) throw new Error('当前会话没有所属项目, 无法写入项目知识沉淀')
+    const cached = (projectForSession?.bind_path || '').trim()
+    if (cached) return cached
+
+    const arr = await api('/api/projects')
+    if (Array.isArray(arr)) {
+      setProjects(arr)
+      const p = arr.find((item: any) => item.id === currentProjectId)
+      const bindPath = (p?.bind_path || '').trim()
+      if (bindPath) return bindPath
+    }
+    throw new Error(`当前项目未绑定路径, 无法定位 ${HIDDEN_FOLDER_NAME}/project_knowledge.md`)
+  }, [currentProjectId, projectForSession?.bind_path, setProjects])
+
+  const messageSignature = (items: any[]) => items.map(m => [
+    m.id ?? 'local',
+    m.role,
+    m.bookmarked ?? 0,
+    m.content?.length ?? 0,
+    JSON.stringify(m.buttons || []),
+    JSON.stringify(m.session_mentions || []),
+    (m.content || '').slice(-48),
+  ].join(':')).join('|')
+
+  const normalizeMessages = (items: any[]) => items.map((m: any) => {
+    if (!m.metadata) return m
+    try {
+      const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata
+      return {
+        ...m,
+        ...(meta?.buttons ? { buttons: meta.buttons } : {}),
+        ...(Array.isArray(meta?.session_mentions) ? { session_mentions: meta.session_mentions } : {}),
+      }
+    } catch {
+      return m
+    }
+  })
+
+  const flushPendingJsonlEntries = useCallback(() => {
+    if (pendingJsonlFlushTimerRef.current !== null) {
+      window.clearTimeout(pendingJsonlFlushTimerRef.current)
+      pendingJsonlFlushTimerRef.current = null
+    }
+    if (pendingJsonlEntriesRef.current.length === 0) return
+    const batch = pendingJsonlEntriesRef.current
+    const totalIncrement = pendingJsonlTotalIncrementRef.current
+    pendingJsonlEntriesRef.current = []
+    pendingJsonlTotalIncrementRef.current = 0
+    setJsonlEntries(prev => prev.concat(batch))
+    if (totalIncrement > 0) setJsonlTotal(prev => prev + totalIncrement)
+  }, [])
+
+  const clearPendingJsonlEntries = useCallback(() => {
+    if (pendingJsonlFlushTimerRef.current !== null) {
+      window.clearTimeout(pendingJsonlFlushTimerRef.current)
+      pendingJsonlFlushTimerRef.current = null
+    }
+    pendingJsonlEntriesRef.current = []
+    pendingJsonlTotalIncrementRef.current = 0
+  }, [])
+
+  const enqueueJsonlEntry = useCallback((entry: any) => {
+    pendingJsonlEntriesRef.current.push(entry)
+    pendingJsonlTotalIncrementRef.current += 1
+    if (pendingJsonlFlushTimerRef.current !== null) return
+    pendingJsonlFlushTimerRef.current = window.setTimeout(flushPendingJsonlEntries, 50)
+  }, [flushPendingJsonlEntries])
+
+  const connectEventStream = useCallback((sid: string) => {
+    // sid 必须有效: 防止 subscribe {task_id: undefined} 触发后端 "session undefined 不存在或不属于你".
+    if (!sid) return
+    const token = localStorage.getItem('cc-token')
+    if (!token) return
+    // 开新连接前先关掉可能残留的旧连接, 避免两个 stream 并存把别的 session 数据混进来.
+    if (eventSourceRef.current) { try { eventSourceRef.current.close() } catch {} eventSourceRef.current = null }
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(sid)}/events?token=${encodeURIComponent(token)}`)
+    eventSourceRef.current = source
+    setConnectionStatus('connecting')
+    source.onopen = () => {
+      // 期间已被切到别的 session → 这条 socket 作废, 不再 subscribe.
+      if (source !== eventSourceRef.current) { try { source.close() } catch {} ; return }
+      setConnectionStatus('connected')
+    }
+
+    const handleStreamMessage = (e: MessageEvent) => {
+      // 切换 session 后, 旧 stream 仍可能投递缓冲消息. 非当前 stream 的消息一律丢弃,
+      // 否则旁边 session 的 jsonl_history / jsonl_entry / history 会污染当前视图.
+      if (source !== eventSourceRef.current) return
+      try {
+        const msg = JSON.parse(e.data)
+        if (msg.event === 'message' || msg.event === 'card' || msg.event === 'update') {
+          setTyping(false); setStreamContent('')
+          loadHistoryRef.current()
+        }
+        else if (msg.event === 'typing') { setTyping(msg.active) }
+        else if (msg.event === 'subscribed') { /* 不再读 msg.agent_status — 由 jsonl 派生 */ }
+        else if (msg.event === 'history') {
+          const history = normalizeMessages(msg.messages || [])
+          // 不再截断: 主对话框展示全部 segment (按 turn 分组 + 折叠/展开).
+          setMessages(history)
+          setHistoryLoaded(true)
+        }
+        else if (msg.event === 'stream') setStreamContent(msg.content || '')
+        else if (msg.event === 'buttons') {
+          addMessage({ role: 'system', content: msg.text || '权限请求', buttons: msg.buttons || [] } as any)
+          loadHistoryRef.current()
+        }
+        else if (msg.event === 'stopped') { setTyping(false); setStreamContent(''); loadHistoryRef.current() }
+        else if (msg.event === 'jsonl_meta') {
+          // count-then-tail: 后端 cheap count, 优先显示这个 total.
+          if (msg.session_id && msg.session_id !== sid) return
+          const total = Number(msg.total)
+          if (Number.isFinite(total)) setJsonlTotal(total)
+          if (typeof msg.jsonl_path === 'string') setJsonlPath(msg.jsonl_path)
+        }
+        else if (msg.event === 'jsonl_history') {
+          // SSE 建连时分块回灌 jsonl 历史: reset=true 的第一块覆盖, 后续块追加.
+          // 兼容旧后端: 没有 reset/chunk_index 时仍按一次性回灌覆盖处理.
+          if (msg.session_id && msg.session_id !== sid) return
+          const entries = Array.isArray(msg.entries) ? msg.entries : []
+          const isChunked = typeof msg.chunk_index === 'number' || typeof msg.done === 'boolean'
+          if (!isChunked) {
+            clearPendingJsonlEntries()
+            setJsonlEntries(entries)
+            setJsonlInitialLoading(false)
+            freshHistoryReceivedRef.current = true
+          } else if (msg.reset) {
+            clearPendingJsonlEntries()
+            setJsonlEntries(entries)
+            setJsonlInitialLoading(false)
+            freshHistoryReceivedRef.current = true
+          } else if (entries.length > 0) {
+            setJsonlEntries(prev => prev.concat(entries))
+            setJsonlInitialLoading(false)
+          }
+          // 兼容老后端: 没有先发 jsonl_meta 时, 用 msg.total / entries.length 回退.
+          const fallbackTotal = Number(msg.total)
+          if (Number.isFinite(fallbackTotal) && fallbackTotal > 0) {
+            setJsonlTotal(prev => (fallbackTotal > prev ? fallbackTotal : prev))
+          }
+        }
+        else if (msg.event === 'jsonl_entry') {
+          // backend 写入新 entry, 追加. 后端带 session_id, 与本 stream 订阅的 sid 不符则丢弃 (双保险).
+          if (msg.session_id && msg.session_id !== sid) return
+          if (typeof msg.entry === 'undefined') return
+          setJsonlInitialLoading(false)
+          // live 增量合批写入 state: 高频工具输出时避免一条 entry 触发一次 React render.
+          enqueueJsonlEntry(msg.entry)
+        }
+        else if (msg.event === 'error') {
+          setJsonlInitialLoading(false)
+          const text = formatSendError(msg)
+          setLastSendError(text)
+          addMessage({ role: 'system', content: `❌ ${text}` })
+        }
+      } catch {}
+    }
+
+    ;['subscribed', 'history', 'stream', 'buttons', 'stopped', 'jsonl_meta', 'jsonl_history', 'jsonl_entry', 'typing', 'server_error']
+      .forEach(eventName => source.addEventListener(eventName, handleStreamMessage as EventListener))
+
+    source.onerror = () => {
+      if (source !== eventSourceRef.current) return
+      setTyping(false)
+      setJsonlInitialLoading(false)
+      setConnectionStatus('disconnected')
+    }
+  }, [addMessage, clearPendingJsonlEntries, enqueueJsonlEntry])
+
+  // 标记当前 session 的历史消息是否已成功从后端取回过 (至少一次).
+  // 用来防止 SessionStartModal 在切换 session / 首次进入的清空-加载窗口期
+  // 误判 "messages 为空 -> 弹窗", 造成闪烁体验.
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  const loadHistory = useCallback(() => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid) return
+    // 不带 limit -> 后端返回全部 messages (按 id ASC).
+    api(`/api/tasks/${sid}/messages`).then(data => {
+      // 切换 session 后, 旧 session 的请求可能晚于切换才返回. 若已不是当前 session, 丢弃,
+      // 否则会把旧 session 的消息覆盖到新 session 的视图.
+      const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+      if (sid !== activeSid) return
+      const msgs = normalizeMessages(Array.isArray(data) ? data : (data.messages || []))
+      const current = useStore.getState().messages
+      const displayMsgs = msgs
+      const pendingLocal = current.filter((m: any) =>
+        !m.id && m.role === 'user' && !displayMsgs.some((dbMsg: any) => dbMsg.role === 'user' && dbMsg.content === m.content)
+      )
+      const nextMsgs = [...displayMsgs, ...pendingLocal]
+      if (messageSignature(nextMsgs) !== messageSignature(current)) {
+        setMessages(nextMsgs)
+      }
+      setHistoryLoaded(true)
+    }).catch(() => {})
+  }, [currentSession?.session_id, currentTask?.task_id])
+
+  useEffect(() => { loadHistoryRef.current = loadHistory }, [loadHistory])
+
+  // count-then-tail: "加载全部" 时, 用 REST 拉缺失的头部 entries 并 prepend.
+  // 服务端按 0..total 排好序; 当前 entries 已经是末尾 N 条, 我们拉 [0, total - entries.length)
+  // 然后 prepend 到本地 entries. 全部加载完后 hasRemoteMore 自动变 false (entries.length 追上 total).
+  const handleLoadAllJsonl = useCallback(async () => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid) return
+    flushPendingJsonlEntries()
+    if (jsonlLoadingMore) return
+    if (jsonlTotal <= jsonlEntries.length) return
+    setJsonlLoadingMore(true)
+    try {
+      const missing = jsonlTotal - jsonlEntries.length
+      // 限制单次请求 ≤ 5000; 超过的会被后端 clip, 但我们就拿到能拿的部分.
+      const data = await api(`/api/sessions/${sid}/jsonl-history?from=0&limit=${Math.max(missing, 1)}`)
+      const head = Array.isArray(data?.entries) ? data.entries : []
+      if (!head.length) return
+      // 切换 session 防御: 加载期间用户切了 session, 丢弃结果.
+      const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+      if (sid !== activeSid) return
+      setJsonlEntries(prev => head.concat(prev))
+      if (Number.isFinite(Number(data?.total))) setJsonlTotal(Number(data.total))
+    } catch (e) {
+      console.warn('[jsonl] load all failed:', e)
+    } finally {
+      setJsonlLoadingMore(false)
+    }
+  }, [currentSession?.session_id, currentTask?.task_id, flushPendingJsonlEntries, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
+
+  useLayoutEffect(() => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid) return
+    clearPendingJsonlEntries()
+    freshHistoryReceivedRef.current = false
+    setStreamContent('')
+    setTyping(false)
+    setMessages([])
+    setJsonlInitialLoading(true)
+    // stale-while-revalidate: 先同步读内存缓存, 命中则立刻展示上次尾部 (零延迟秒开);
+    // 未命中再异步兜底 IndexedDB (跨刷新), 仍命中则在 SSE 权威数据到达前补上.
+    // SSE jsonl_history (reset) 到达后会覆盖, 是唯一真相源.
+    const cachedSync = readJsonlCacheSync(sid)
+    if (cachedSync && cachedSync.entries.length > 0) {
+      setJsonlEntries(cachedSync.entries)
+      setJsonlTotal(cachedSync.total || cachedSync.entries.length)
+      setJsonlPath(cachedSync.path)
+    } else {
+      setJsonlEntries([])
+      setJsonlTotal(0)
+      setJsonlPath(null)
+      readJsonlCacheFromIdb(sid).then((snap) => {
+        // 仍停留在同一个 session, 且 SSE 权威历史还没到, 才用缓存兜底, 避免旧值盖新值.
+        const stillActive = useStore.getState().currentSession?.session_id === sid
+          || useStore.getState().currentTask?.task_id === sid
+        if (!snap || !stillActive || freshHistoryReceivedRef.current) return
+        if (snap.entries.length === 0) return
+        setJsonlEntries(snap.entries)
+        setJsonlTotal(snap.total || snap.entries.length)
+        setJsonlPath(snap.path)
+      }).catch(() => {})
+    }
+    setJsonlLoadingMore(false)
+    setHistoryLoaded(false)
+    loadHistory()
+    connectEventStream(sid)
+    return () => {
+      clearPendingJsonlEntries()
+      // 离开当前 session: 把最新尾部写回浏览器缓存, 下次切回秒开 (只缓存尾部窗口).
+      const leavingSid = sid
+      const latest = jsonlEntriesRef.current
+      if (leavingSid && latest.length > 0) {
+        writeJsonlCache(leavingSid, latest, jsonlTotalRef.current, jsonlPathRef.current)
+      }
+      eventSourceRef.current?.close(); eventSourceRef.current = null; setConnectionStatus('disconnected')
+    }
+  }, [currentSession?.session_id, currentTask?.task_id, clearPendingJsonlEntries, loadHistory, connectEventStream])
+
+  // 卡片数量变化 (jsonlEntries.length) 时自动滚到末尾, 同时也覆盖原有 messages/stream/typing 触发.
+  // userScrolledUp=true 时不抢滚条, 改在顶部显示"新消息"按钮.
+  // 用 instant scroll (而非 smooth) + RAF: smooth 期间会持续触发 onScroll, 中间帧 distFromBottom>200
+  // 会误把 userScrolledUp 翻成 true, 导致下一次 entry 抵达时不再自动滚.
+  useEffect(() => {
+    // 搜索结果跳转进行中时不抢滚条, 让 JsonlView 的 scrollToKey 把视图钉到命中卡片.
+    if (matchTargetActiveRef.current) return
+    if (userScrolledUp) {
+      setHasNewMessages(true)
+    } else {
+      requestAnimationFrame(() => {
+        const el = chatContainerRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      })
+    }
+  }, [messages, streamContent, isTyping, jsonlEntries.length])
+
+  const handleJsonlScrollPositionChange = useCallback((nextUserScrolledUp: boolean) => {
+    if (nextUserScrolledUp) {
+      setUserScrolledUp(true)
+    } else {
+      setUserScrolledUp(false)
+      setHasNewMessages(false)
+    }
+  }, [])
+
+  const jumpToJsonlBottom = useCallback(() => {
+    const el = chatContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+    setUserScrolledUp(false)
+    setHasNewMessages(false)
+  }, [])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      // 用当前真实选中的 session id. 注意: currentTask 可能被赋值为 Session 对象,
+      // 其 task_id 为 undefined, 直接用它重连会发出 subscribe {task_id: undefined},
+      // 触发后端 "session undefined 不存在或不属于你".
+      const sid = currentSession?.session_id || currentTask?.task_id
+      if (!sid) return
+      loadHistory()
+      if (!eventSourceRef.current || eventSourceRef.current.readyState === EventSource.CLOSED) {
+        connectEventStream(sid)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [currentSession?.session_id, currentTask?.task_id, loadHistory, connectEventStream])
+
+  const sendCompactCommand = useCallback(() => {
+    const content = '/compact'
+    setCompactConfirmOpen(false)
+    if (!sessionId) {
+      setLastSendError('当前没有可发送指令的会话')
+      return
+    }
+
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId })
+      .then(() => setTimeout(() => loadHistoryRef.current(), 500))
+      .catch(() => {})
+  }, [sessionId, addMessage, setTyping, postSessionMessage])
+
+  const send = useCallback((urgent = false) => {
+    // 模型被管理员移除 → 会话只读, 拦截发送并打开与底部按钮一致的"修改模型并继续"流程.
+    if (!modelAvailableRef.current) {
+      setLastSendError('因之前使用的模型被管理员移除，本次会话不能继续。修改模型会新建 Session，不会热切当前会话。')
+      setContinueModalOpen(true)
+      return
+    }
+    const text = input.trim()
+    const readyAtts = attachments.filter(a => a.status === 'done' && a.remotePath)
+    // 必须有文本或至少一个已上传完成的附件
+    if (!text && readyAtts.length === 0) return
+    if (voiceState === 'recording' || voiceState === 'transcribing') return
+    if (messageSubmitting) return
+    if (anyUploading) {
+      // 还在上传, 给用户一个非阻塞提示
+      setLastSendError('附件仍在上传, 请稍候...')
+      return
+    }
+    // 把附件路径作为前缀拼到消息里, 让 agent 能直接读到绝对路径.
+    // 格式参照常见做法: [附件] 块在最前, 用户文本在后.
+    const attachLines = readyAtts.map(a =>
+      a.kind === 'image' ? `- [图片] ${a.remotePath}` : `- [文件] ${a.remotePath}`
+    )
+    const attachBlock = attachLines.length > 0 ? `[附件]\n${attachLines.join('\n')}` : ''
+    let content = [attachBlock, text].filter(Boolean).join('\n\n')
+    if (replyTo) {
+      const quoted = (replyTo.content || '').split('\n').slice(0, 3).map((l: string) => `> ${l}`).join('\n')
+      content = `${quoted}\n\n${content}`
+      setReplyTo(null)
+    }
+    const sentSessionId = sessionId
+    const sentInput = input
+    const requestId = makeSendRequestId()
+    const mentionPayload = selectedAgentMentions.map((mention) => ({
+          kind: 'agent',
+          session_id: mention.sessionId,
+          mode: mention.mode,
+          name: mention.name,
+        }))
+    const optimisticSessionMentions = selectedAgentMentions.map((mention) => ({
+      session_id: mention.sessionId,
+      name: mention.name,
+      mode: mention.mode,
+      project_name: mention.projectName,
+      scope_type: mention.scopeType,
+      scope_title: mention.scopeTitle,
+      context_at: mention.contextAt || new Date().toISOString(),
+    }))
+    setLastSendError('')
+    setFailedSendAttempt(null)
+    addMessage({ role: 'user', content, session_mentions: optimisticSessionMentions })
+    pendingUrgentRef.current = urgent
+    setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
+    setTyping(true)
+    // 发送瞬间立即清空输入框, 给用户即时反馈. 原来放在 .then() 里,
+    // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
+    clearSessionInputDraft(sentSessionId, sentInput)
+    postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
+      .then((resp) => {
+        const queued = Array.isArray(resp?.external_messages_queued)
+          ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
+          : []
+        if (queued.length > 0) {
+          const queuedIds = new Set(queued.map((item: any) => String(item.target_session_id || '')))
+          const queuedNames = selectedAgentMentions.filter((item) => queuedIds.has(item.sessionId)).map((item) => item.name)
+          const targetLabel = queuedNames.length <= 2 ? queuedNames.join('、') : `${queuedNames.slice(0, 2).join('、')} 等 ${queuedNames.length} 个 Session`
+          setBridgeQueueNotice(`已通知 ${targetLabel || `${queued.length} 个 Session`}，等待目标空闲后投递`)
+          if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
+          bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
+            setBridgeQueueNotice(null)
+            bridgeQueueNoticeTimerRef.current = null
+          }, 5000)
+        }
+        setEditingMsg(null)
+        setFailedSendAttempt(null)
+        clearAttachments()
+        setSelectedAgentMentions([])
+        inputRef.current?.focus()
+        setTimeout(() => loadHistoryRef.current(), 500)
+      })
+      .catch(() => {
+        restoreSessionInputDraft(sentSessionId, sentInput)
+        setFailedSendAttempt({
+          sessionId: sentSessionId,
+          draft: sentInput,
+          content,
+          inputText: text,
+          requestId,
+          urgent,
+          mentions: mentionPayload,
+          attachmentIds: readyAtts.map(att => att.id),
+        })
+        inputRef.current?.focus()
+      })
+      .finally(() => setMessageSubmitting(false))
+  }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, restoreSessionInputDraft, voiceState, selectedAgentMentions])
+
+  const retryFailedSend = useCallback(async () => {
+    const attempt = failedSendAttempt
+    if (!attempt || attempt.sessionId !== sessionId || messageSubmitting) return
+    setLastSendError('')
+    pendingUrgentRef.current = attempt.urgent
+    setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
+    setTyping(true)
+    try {
+      const data = await api(`/api/sessions/${encodeURIComponent(attempt.sessionId)}/inputs`)
+      const entries = Array.isArray(data?.entries) ? data.entries as SessionInputEntry[] : []
+      const originalWasRecorded = entries.some(entry => entry.request_id === attempt.requestId)
+      if (originalWasRecorded) {
+        // 后端已记录原用户消息时只发送一条重试指令，避免把原文重复写入 Session。
+        const retryContent = '请重试上一条未完成的请求。'
+        addMessage({ role: 'user', content: retryContent })
+        await postSessionMessage({
+          content: retryContent,
+          inputText: retryContent,
+          requestId: makeSendRequestId(),
+        })
+      } else {
+        // 原请求未到达后端时复用 payload；本地已有乐观消息，不再追加第二条原文。
+        await postSessionMessage({
+          content: attempt.content,
+          inputText: attempt.inputText,
+          requestId: attempt.requestId,
+          urgent: attempt.urgent,
+          mentions: attempt.mentions,
+        })
+      }
+      setFailedSendAttempt(null)
+      clearSessionInputDraft(attempt.sessionId, attempt.draft)
+      const attemptedAttachmentIds = new Set(attempt.attachmentIds)
+      setSessionAttachments(attempt.sessionId, current => {
+        current.forEach(att => {
+          if (attemptedAttachmentIds.has(att.id) && att.previewUrl) {
+            try { URL.revokeObjectURL(att.previewUrl) } catch {}
+          }
+        })
+        return current.filter(att => !attemptedAttachmentIds.has(att.id))
+      })
+      const attemptedMentionIds = new Set(attempt.mentions.map(mention => String(mention.session_id || '')))
+      setSelectedAgentMentions(current => current.filter(mention => !attemptedMentionIds.has(mention.sessionId)))
+      inputRef.current?.focus()
+      setTimeout(() => loadHistoryRef.current(), 500)
+    } catch (error: any) {
+      restoreSessionInputDraft(attempt.sessionId, attempt.draft)
+      setPendingSendAt(null)
+      setTyping(false)
+      setLastSendError(error?.message || '重试失败，请检查连接后再试。')
+      inputRef.current?.focus()
+    } finally {
+      setMessageSubmitting(false)
+    }
+  // setSessionAttachments is intentionally session-scoped and recreated with the active state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addMessage, clearSessionInputDraft, failedSendAttempt, messageSubmitting, postSessionMessage, restoreSessionInputDraft, sessionId, setTyping])
+
+  const sendProjectKnowledgePrompt = useCallback(async () => {
+    if (!sessionId || projectKnowledgeSending) return
+    setProjectKnowledgeSending(true)
+    try {
+      const bindPath = await resolveProjectBindPath()
+      const normalizedBindPath = bindPath.replace(/\/+$/, '') || '/'
+      const knowledgePath = normalizedBindPath === '/'
+        ? `/${HIDDEN_FOLDER_NAME}/project_knowledge.md`
+        : `${normalizedBindPath}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`
+      const content = buildProjectKnowledgePrompt(knowledgePath)
+
+      const requestId = makeSendRequestId()
+      setLastSendError('')
+      addMessage({ role: 'user', content })
+      setPendingSendAt(Date.now())
+      setTyping(true)
+      await postSessionMessage({ content, requestId })
+      setTimeout(() => loadHistoryRef.current(), 500)
+    } catch (e: any) {
+      alert(e?.message || '发送项目知识沉淀指令失败')
+    } finally {
+      setProjectKnowledgeSending(false)
+    }
+  }, [sessionId, projectKnowledgeSending, resolveProjectBindPath, addMessage, setTyping, postSessionMessage])
+
+  // 桌面端「向当前 session 发送一条预制指令」的通用回调: 调用方 (告知本电脑的存在按钮 /
+  // aimux 工作模式切换菜单) 把拼好的消息内容传进来, 作为一条 user 消息发出. 复用
+  // postSessionMessage, 与"发送项目知识沉淀"同链路 (addMessage 立即显示 + setTyping + 轮询回写).
+  const handleAnnouncePc = useCallback((content: string) => {
+    if (!sessionId || !content) return
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId })
+      .then(() => setTimeout(() => loadHistoryRef.current(), 500))
+      .catch(() => {})
+  }, [sessionId, addMessage, setTyping, postSessionMessage])
+
+  const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
+    if (!sessionId) {
+      setLastSendError('当前没有可发送指令的会话')
+      return
+    }
+    // mainProjectPortPath 是旧的单端口 txt 路径; 新协议改为写同目录下的多端口 ports.json,
+    // 供"端口预览栏"显示前端/后端等多个可点 chip. 保留入参名以兼容 ProjectPortEntryButton 调用.
+    const portsJsonPath = mainProjectPortPath
+      ? mainProjectPortPath.replace(/main_project_port\.txt$/, 'ports.json')
+      : ''
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+    const hostHint = hostname
+      ? `如果是 Vite 项目，你需要向 server.allowedHosts 中添加 ${hostname}；如果是其他更新颖的前端框架，如果有必要，也需要将 ${hostname} 加白。`
+      : '如果是 Vite 项目，你需要向 server.allowedHosts 中添加当前前端访问 hostname；如果是其他更新颖的前端框架，如果有必要，也需要将当前 hostname 加白。'
+    const target = portsJsonPath || '<项目bind_path>/.mobius/port_forward/ports.json'
+    const content = `[这条消息来自系统而不是用户] 如果当前项目是一个有对外端口服务的项目，请现在开始运行项目的全部服务（自行选择合适的端口与运行模式），等待每个服务都启动成功后，把所有对外可访问的端口写入 ${target}。文件格式必须是 JSON：{"ports":[{"port":8080,"label":"前端","kind":"frontend"},{"port":28000,"label":"后端","kind":"backend"}]}，每个端口一项，port 为整数（必填），label 是中文短标签（如 前端/后端/认证中心/API/数据库），kind 是英文小写（frontend/backend/api/db/admin/auth 等）。前端、后端以及任何对外可访问的服务端口都要写全，不要只写一个。${hostHint}`
+    setRunProjectPrompt(content)
+  }, [sessionId])
+
+  const confirmSendRunProjectPortPrompt = useCallback(() => {
+    const content = runProjectPrompt.trim()
+    if (!content) return
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    setRunProjectPrompt('')
+    addMessage({ role: 'system', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId })
+      .then(() => setTimeout(() => loadHistoryRef.current(), 500))
+      .catch(() => {})
+  }, [runProjectPrompt, addMessage, setTyping, postSessionMessage])
+
+  const handleContinueSessionCreated = useCallback((created: any) => {
+    setContinueModalOpen(false)
+    if (!created?.session_id) return
+    if (currentIssueId) {
+      const currentList = sessionsMap[currentIssueId] || []
+      const withoutDup = currentList.filter((s: any) => s.session_id !== created.session_id)
+      setSessionsMap(currentIssueId, [created, ...withoutDup])
+    }
+    setCurrentSession(created)
+    setCurrentTask(created as any)
+    window.dispatchEvent(new CustomEvent('mobius:refresh-conversation-rail'))
+    if (user?.id) navigateToWorkbenchObject(navigate, sessionNavigation(user.id, created.session_id))
+  }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap, navigate, user?.id])
+
+  // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
+  // (name / description) 拼成第一条消息发出去, 不需要用户再输入.
+  const startSession = useCallback(async (): Promise<void> => {
+    if (!currentSession) throw new Error('当前会话未加载')
+    const name = (currentSession.name || '').trim()
+    const description = ((currentSession as any).description || '').trim()
+    const content = [name, description].filter(Boolean).join('\n\n')
+    if (!content) throw new Error('会话名称和描述都为空, 无内容可发送')
+
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    setPendingSendAt(Date.now())
+    setTyping(true)
+    setTimeout(() => loadHistoryRef.current(), 500)
+    await postSessionMessage({ content, requestId })
+  }, [currentSession, addMessage, setTyping, postSessionMessage])
+
+  // 哪些 session 的"开始执行?"弹窗已被本地 dismiss(立即执行/暂不执行均算).
+  // 用 Set<sessionId> 保证切换其它 session 时不会重复弹, 同一 session 内
+  // 操作过后也不再弹.
+  const [startDismissed, setStartDismissed] = useState<Set<string>>(new Set())
+  const dismissStartModal = useCallback((sid: string) => {
+    setStartDismissed(prev => {
+      if (prev.has(sid)) return prev
+      const next = new Set(prev)
+      next.add(sid)
+      return next
+    })
+  }, [])
+
+  const handleQuote = useCallback((m: any) => {
+    setReplyTo(m); setEditingMsg(null); inputRef.current?.focus()
+  }, [])
+
+  const handleEdit = useCallback((m: any) => {
+    setEditingMsg(m); setReplyTo(null); setInput(m.content || ''); inputRef.current?.focus()
+  }, [])
+
+  const handleBookmark = useCallback(async (m: any) => {
+    if (!m.id) return
+    try {
+      const res = await api(`/api/messages/${m.id}/bookmark`, { method: 'PATCH' })
+      setMessages(messages.map(msg => msg.id === m.id ? { ...msg, bookmarked: res.bookmarked } : msg))
+    } catch {}
+  }, [messages])
+
+  const handleStopSession = useCallback(() => {
+    if (!sessionId) return
+    setStopFeedbackActive(true)
+    if (stopFeedbackTimerRef.current) clearTimeout(stopFeedbackTimerRef.current)
+    stopFeedbackTimerRef.current = setTimeout(() => {
+      setStopFeedbackActive(false)
+      stopFeedbackTimerRef.current = null
+    }, 1800)
+    setPendingSendAt(null)
+    // 乐观更新: 立即落定为"空闲" (isWorking=false, isAlive=false), 不等 2s 轮询.
+    // 同步把列表/标题用的 agent_status 也置 idle, 抑制窗 (3s) 内忽略轮询回写, 避免软停期间被弹回.
+    stopSuppressedUntilRef.current = Date.now() + 3000
+    setBackendAlive(false)
+    setBackendWorking(false)
+    const store = useStore.getState()
+    const sel = store.currentSession
+    if (sel?.session_id === sessionId && sel.agent_status !== 'idle') {
+      store.setCurrentSession({ ...sel, agent_status: 'idle' })
+    }
+    const task = store.currentTask as any
+    if (task?.task_id === sessionId && task.agent_status !== 'idle') {
+      store.setCurrentTask({ ...task, agent_status: 'idle' })
+    }
+    const listKey = (sel as any)?.issue_id || (sel as any)?.research_id || currentIssueId
+    if (listKey) {
+      const list = store.sessionsMap[listKey] || []
+      if (list.some((s: any) => s.session_id === sessionId && s.agent_status !== 'idle')) {
+        store.setSessionsMap(listKey, list.map((s: any) => (
+          s.session_id === sessionId ? { ...s, agent_status: 'idle' } : s
+        )))
+      }
+    }
+    api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
+      .then(() => {
+        setTyping(false)
+        setStreamContent('')
+        loadHistoryRef.current()
+      })
+      .catch((e: any) => {
+        setLastSendError(e?.message || '终止失败')
+        setStopFeedbackActive(false)
+      })
+  }, [sessionId, setTyping, setStreamContent, currentIssueId])
+
+  if (!currentSession && !currentTask) return (
+    <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}>
+      <div className="text-center max-w-md">
+        <MobiusLogo size={40} className="mx-auto mb-4" />
+        <h2 className="mb-1 text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>开始工作</h2>
+        <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>选择历史会话，或新建会话后描述目标。</p>
+      </div>
+    </div>
+  )
+
+  const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu' | 'editor' | 'overflow') => (
+    <AdvancedSessionActions
+      variant={variant}
+      sessionId={currentSession?.session_id || sessionId}
+      projectId={currentProjectId}
+      issueId={currentIssueId}
+      researchId={currentResearchId || undefined}
+      vscodeSubPath={currentVscodeSubPath}
+      jsonlEntryCount={jsonlEntries.length}
+      showJsonlMeta={showJsonlMeta}
+      connectionReady={connectionStatus === 'connected'}
+      projectKnowledgeSending={projectKnowledgeSending}
+      onOpenProjectFiles={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') {
+          openToolTab('files')
+          return
+        }
+        captureCurrentToolSource()
+        remoteMentionRangeRef.current = null
+        setMentionQuery('')
+        setRemoteFileDrawerInitialTab('files')
+        setRemoteFileDrawerOpen(true)
+      }}
+      onOpenFileChanges={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') {
+          setCenterDiffOpen(true)
+          openToolTab('diff')
+          return
+        }
+        captureCurrentToolSource()
+        setFileChangesRequest({
+          trigger: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+        })
+      }}
+      onOpenBashCommands={() => { setEasyToolsOpen(false); setBashCommandsOpen(true) }}
+      onOpenInputReplay={() => { setEasyToolsOpen(false); setInputReplayOpen(true) }}
+      onToggleJsonlMeta={() => { setEasyToolsOpen(false); setShowJsonlMeta(value => !value) }}
+      onRequestRunProject={(path) => { setEasyToolsOpen(false); sendRunProjectPortPrompt(path) }}
+      onOpenTerminal={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('terminal')
+        else {
+          captureCurrentToolSource()
+          setTerminalChoiceOpen(true)
+        }
+      }}
+      onOpenCooperablePc={() => { setEasyToolsOpen(false); setCooperablePcOpen(true) }}
+      onOpenKnowledge={() => { setEasyToolsOpen(false); setKnowledgeEditorOpen(true) }}
+      onOpenResearchGraph={user?.id && currentProjectId && currentResearchId && sessionId
+        ? () => {
+          setEasyToolsOpen(false)
+          navigateToWorkbench(navigate, researchGraphNavigation(user.id, currentProjectId, currentResearchId, sessionId))
+        }
+        : undefined}
+      onSendProjectKnowledge={() => { setEasyToolsOpen(false); return sendProjectKnowledgePrompt() }}
+      onContinueWithModel={() => { setEasyToolsOpen(false); setContinueModalOpen(true) }}
+      onOpenSkill={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('skill')
+        else setSkillMemoryModal('skill')
+      }}
+      onOpenMemory={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('memory')
+        else setSkillMemoryModal('memory')
+      }}
+      onOpenGit={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('git')
+        else {
+          captureCurrentToolSource()
+          setSkillMemoryModal('git')
+        }
+      }}
+      onOpenEditor={workspaceEditor
+        ? () => {
+          setEasyToolsOpen(false)
+          setToolDrawerOpen(false)
+          workspaceEditor.onOpen()
+        }
+        : undefined}
+      editorAvailable={workspaceEditor?.available}
+      editorLoading={workspaceEditor?.loading}
+      editorOpen={workspaceEditor?.open}
+      editorUnavailableReason={workspaceEditor?.unavailableReason}
+      onOpenExtensionApp={extensionAppUrl
+        ? () => { setEasyToolsOpen(false); window.open(extensionAppUrl, '_blank', 'noopener,noreferrer') }
+        : undefined}
+    />
+  )
+  const showEasyStop = Boolean(
+    sessionId && (pendingSendAt || (backendAlive && backendWorking) || stopFeedbackActive),
+  )
+
+  const easySessionChrome = (
+    <div className="easy-session-context workbench-session-topbar flex flex-shrink-0 items-center gap-2 px-3" data-testid="easy-session-context" data-workbench-session-topbar>
+      {chrome === 'shell' && centerMode === 'diff' && (
+        <button type="button" onClick={returnToChat} className="workbench-control-md inline-flex flex-shrink-0 items-center gap-1 px-2 text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }} aria-label="返回对话">
+          <ChevronLeft className="h-3.5 w-3.5" /> 返回对话
+        </button>
+      )}
+      {chrome === 'shell' && (
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-history'))} className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center border xl:hidden" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }} aria-label="历史" title="历史">
+          <History className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <SessionStatusChip
+        connected={connectionStatus === 'connected'}
+        failed={backendJobFailed === true}
+        pending={!!pendingSendAt}
+        working={!!(backendAlive && backendWorking)}
+        waiting={!!(backendAlive && !backendWorking)}
+        done={backendJobDone === true && !backendAlive}
+        onNextAction={backendAlive && !backendWorking ? () => inputRef.current?.focus() : undefined}
+        nextActionLabel={backendAlive && !backendWorking ? '点击继续输入' : undefined}
+      />
+      <div className="flex min-w-0 flex-1 items-center text-[12px]" aria-label="当前会话标题">
+        <strong
+          className="min-w-0 truncate font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+          title={[projectForSession?.name || currentProjectId, currentSession?.name || currentTask?.name || sessionId].filter(Boolean).join(' · ')}
+        >
+          {currentSession?.name || currentTask?.name || sessionId}
+        </strong>
+      </div>
+      {/* 会话顶栏接管工作台全局顶栏时，保留内容搜索与布局切换两个高频入口。 */}
+      <HeaderActionButton
+        tone="neutral"
+        data-tour="session-header-search"
+        data-testid="session-header-search"
+        title="搜索所有会话内容"
+        aria-label="搜索所有会话内容"
+        onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-search'))}
+        icon={<Search className="h-3.5 w-3.5" strokeWidth={2} />}
+      >
+        <span className="hidden sm:inline">搜索</span>
+      </HeaderActionButton>
+      <div data-tour="session-header-layout-mode" data-testid="session-header-layout-mode" className="flex-shrink-0">
+        <LayoutModeSwitch />
+      </div>
+      {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
+        <button
+          type="button"
+          className="easy-session-overflow workbench-control-md"
+          aria-label="展开全部会话记录"
+          title="展开全部会话记录"
+          disabled={jsonlLoadingMore}
+          onClick={() => {
+            setEasyExpandAllSignal(value => value + 1)
+            if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
+          }}
+        >
+          {jsonlLoadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      <div className="easy-session-tools relative flex-shrink-0" ref={easyToolsRef}>
+        <button
+          type="button"
+          onClick={() => {
+            if (chrome === 'shell') {
+              if (toolDrawerOpen) closeToolWorkspace()
+              else openToolFromCurrentSource(activeToolTab)
+            } else setEasyToolsOpen(value => !value)
+          }}
+          aria-label="工具"
+          title="工具"
+          aria-controls={chrome === 'shell' ? 'session-tool-drawer' : 'easy-session-tools-panel'}
+          aria-expanded={chrome === 'shell' ? toolDrawerOpen : easyToolsOpen}
+          className="workbench-control-md inline-flex w-8 cursor-pointer items-center justify-center p-0 transition-colors hover:bg-[var(--surface-control-hover)]"
+          style={{
+            color: 'var(--text-secondary)',
+            background: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--surface-active)' : undefined,
+          }}
+        >
+          <Wrench className="h-3.5 w-3.5" />
+        </button>
+        {chrome !== 'shell' && easyToolsOpen && (
+          <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="workbench-popover absolute right-0 top-9 max-h-[calc(100vh-80px)] overflow-y-auto p-1" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }} onKeyDown={(event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            setEasyToolsOpen(false)
+          }}>
+            <button type="button" onClick={() => { setEasyToolsOpen(false); void copySessionLink() }} className="workbench-control-md mb-1 flex w-full items-center gap-2 px-2 text-left text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
+              {sessionLinkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
+            </button>
+            {renderAdvancedSessionActions('menu')}
+          </div>
+        )}
+      </div>
+      {showEasyStop && (
+        <HeaderActionButton tone="red" title="终止当前智能体正在执行的操作" aria-live="polite" onClick={handleStopSession} className={`session-stop-button ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
+          <span className="session-stop-button__square inline-block h-1.5 w-1.5 rounded-sm bg-current opacity-90" />
+          <span>{stopFeedbackActive ? '已触发' : '停止'}</span>
+        </HeaderActionButton>
+      )}
+    </div>
+  )
+
+  const toolDrawerContent = (() => {
+    if (activeToolTab === 'files') {
+      return (
+        <>
+          {toolObjectContext.target && (
+            <div className="mb-1 flex min-w-0 items-center gap-2 px-1 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }} data-session-tool-object>
+              <div className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]" title={toolObjectLabel}>
+                {toolObjectLabel.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || toolObjectLabel}
+              </div>
+              <button
+                type="button"
+                onClick={(event) => setArtifactOpenRequest({ target: { ...toolObjectContext.target!, intent: 'preview' }, trigger: event.currentTarget })}
+                className="flex-shrink-0 font-medium hover:underline"
+                style={{ color: 'var(--accent-primary)' }}
+              >
+                预览
+              </button>
+            </div>
+          )}
+          <button type="button" onClick={() => {
+            remoteMentionRangeRef.current = null
+            setMentionQuery('')
+            setRemoteFileDrawerInitialTab('files')
+            setRemoteFileDrawerOpen(true)
+          }} className="mb-1 flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
+            <FolderOpen className="h-3.5 w-3.5" /> 浏览项目文件 / 引用
+          </button>
+          <SessionFilesDrawerSurface
+            files={toolFiles}
+            selectedPath={selectedToolFilePath}
+            loading={toolFilesLoading}
+            error={toolFilesError || toolWorkspaceError}
+            onReload={() => void loadToolFiles()}
+            onSelect={selectToolFile}
+          />
+        </>
+      )
+    }
+    if (activeToolTab === 'diff') {
+      return (
+        <SessionFilesDrawerSurface
+          files={toolFiles}
+          selectedPath={selectedToolFilePath}
+          loading={toolFilesLoading}
+          error={toolFilesError || toolWorkspaceError}
+          showDiffHint
+          onReload={() => void loadToolFiles()}
+          onSelect={selectToolFile}
+        />
+      )
+    }
+    if (activeToolTab === 'terminal') {
+      return (
+        <div className="flex h-full min-h-[360px] flex-col gap-2">
+          <div className="truncate px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }} title={`工作目录 · ${terminalWorkingDirectoryLabel}`}>
+            工作目录 · {terminalWorkingDirectoryLabel}
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {(['cwd', 'agent'] as WebTerminalMode[]).map(mode => (
+              <button key={mode} type="button" onClick={() => setTerminalMode(mode)} className="workbench-control-md text-[10px] hover:bg-[var(--surface-control-hover)]" style={{ color: terminalMode === mode ? 'var(--accent-primary)' : 'var(--text-muted)', background: terminalMode === mode ? 'var(--surface-active)' : undefined }}>
+                {mode === 'cwd' ? '当前目录' : 'Agent 后台'}
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={() => setTerminalDockOpen(value => !value)} disabled={!terminalContextReady} className="workbench-control-md border px-2 text-[10px] hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+            {terminalDockOpen ? '收回到工具抽屉' : '展开到底部坞'}
+          </button>
+          {terminalContextLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3.5 w-3.5 animate-spin" />正在定位工作目录…</div>
+          ) : terminalContextError ? (
+            <div className="workbench-status-danger rounded-[var(--radius-control)] border p-3 text-[11px]" role="alert">
+              <div>{terminalContextError}</div>
+              <button type="button" onClick={() => setTerminalContextReloadKey(key => key + 1)} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}>
+                <RefreshCw className="h-3.5 w-3.5" />重试终端
+              </button>
+            </div>
+          ) : terminalDockOpen ? (
+            <div className="flex flex-1 items-center justify-center text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>终端已在底部坞展开，Chat 草稿和滚动保持不变。</div>
+          ) : terminalContextReady ? (
+            <div className="min-h-0 flex-1"><WebTerminalSurface key={`${sessionId}:${terminalMode}:drawer`} sessionId={sessionId} mode={terminalMode} workingDirectoryLabel={terminalWorkingDirectoryLabel} variant="drawer" /></div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-[11px]" style={{ color: 'var(--text-muted)' }}>终端上下文尚未就绪</div>
+          )}
+        </div>
+      )
+    }
+    if (activeToolTab === 'editor') {
+      return (
+        <div className="flex min-h-0 flex-col gap-2" data-workbench-editor-tool>
+          <div className="truncate px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }} title="按需在当前会话旁打开；关闭后保留编辑状态">
+            按需在会话旁打开，关闭后保留状态
+          </div>
+          {renderAdvancedSessionActions('editor')}
+        </div>
+      )
+    }
+    if (activeToolTab === 'skill' || activeToolTab === 'memory') {
+      return (
+        <div className="flex min-h-0 flex-col">
+          <div className="mb-1 flex min-w-0 items-center gap-2 px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <span className="min-w-0 flex-1 truncate" title="本会话创建时定型的只读快照；管理变更仅用于后续会话">本会话只读快照</span>
+            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-settings', { detail: { section: 'context', resource: activeToolTab } }))} className="flex-shrink-0 font-medium hover:underline" style={{ color: 'var(--accent-primary)' }}>
+              在设置中管理
+            </button>
+          </div>
+          <SessionSkillMemoryEditor key={activeToolTab} sessionId={sessionId} projectId={currentProjectId || undefined} initialPanel={activeToolTab} snapshotOnly />
+        </div>
+      )
+    }
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2" data-session-git-context>
+        <div className="min-w-0 px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>
+          <div className="truncate" title={`${toolSourceLabel} · ${projectForSession?.name || '当前项目'}`}>{toolSourceLabel} · {projectForSession?.name || '当前项目'}</div>
+          {toolObjectContext.target && (
+            <button type="button" onClick={() => selectToolFile(toolObjectContext.target!.path)} className="block max-w-full truncate font-mono font-medium hover:underline" style={{ color: 'var(--accent-primary)' }} title={toolObjectLabel}>
+              查看对象改动 · {toolObjectLabel}
+            </button>
+          )}
+        </div>
+        <SessionSkillMemoryEditor key="git" sessionId={sessionId} projectId={currentProjectId || undefined} initialPanel="git" gitOnly />
+      </div>
+    )
+  })()
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" style={{ background: 'var(--surface-messages)' }}>
+      <RemoteFileMentionDrawer
+        projectId={currentProjectId}
+        issueId={currentIssueId || undefined}
+        researchId={(currentSession as any)?.research_id || (currentTask as any)?.research_id || undefined}
+        currentSessionId={sessionId || undefined}
+        open={remoteFileDrawerOpen}
+        initialTab={remoteFileDrawerInitialTab}
+        query={mentionQuery}
+        onClose={() => setRemoteFileDrawerOpen(false)}
+        onPickPath={insertRemoteFilePath}
+        onPickAgent={insertAgentMention}
+      />
+      {attachmentImagePreview && (
+        <AttachmentImagePreviewModal preview={attachmentImagePreview} onClose={closeAttachmentImagePreview} />
+      )}
+      {runProjectPrompt && (
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="run-project-port-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            aria-label="取消发送运行前端命令"
+            onClick={() => setRunProjectPrompt('')}
+          />
+          <div
+            className="workbench-modal relative w-full max-w-[640px] overflow-hidden"
+            style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-default)' }}>
+              <div className="min-w-0">
+                <div id="run-project-port-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  确认发送运行前端命令
+                </div>
+                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  下面的消息将发送给当前会话
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRunProjectPrompt('')}
+                className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}
+                aria-label="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <div
+                className="workbench-panel max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words border p-3 text-[12px] leading-relaxed"
+                style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-secondary)' }}
+              >
+                {runProjectPrompt}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRunProjectPrompt('')}
+                  className="workbench-control-md border px-4 text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
+                  style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmSendRunProjectPortPrompt}
+                  className="workbench-control-md px-4 text-[13px] font-medium transition-opacity hover:opacity-90"
+                  style={{ color: 'var(--accent-foreground)', background: 'var(--accent-primary)' }}
+                >
+                  确认发送
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {knowledgeEditorOpen && currentProjectId && currentIssueId && (
+        <KnowledgeEditorModal
+          projectId={currentProjectId}
+          issueId={currentIssueId}
+          onClose={() => setKnowledgeEditorOpen(false)}
+        />
+      )}
+      {layout === 'easy' && skillMemoryModal && (
+        <SessionSkillMemoryModal
+          sessionId={currentSession?.session_id || sessionId}
+          projectId={currentProjectId || undefined}
+          initialPanel={skillMemoryModal}
+          onClose={() => setSkillMemoryModal(null)}
+          onManage={(kind) => {
+            setSkillMemoryModal(null)
+            window.dispatchEvent(new CustomEvent('mobius:open-settings', {
+              detail: { section: 'context', resource: kind },
+            }))
+          }}
+        />
+      )}
+      {/* 声明可合作计算机: 勾选 aimux remote → 生成声明文本作为消息发给当前会话 agent (不写 Memory) */}
+      {cooperablePcOpen && (
+        <RemoteComputeMemoryModal
+          baseUrl={`/api/projects/${currentProjectId}/memories`}
+          mode="announce"
+          onClose={() => setCooperablePcOpen(false)}
+          onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
+        />
+      )}
+      {layout === 'easy' && shellChromeActive && (
+        chrome === 'shell'
+          ? <WorkbenchShellPortal slot="topbar">{easySessionChrome}</WorkbenchShellPortal>
+          : easySessionChrome
+      )}
+
+      {layout === 'easy' && chrome === 'shell' && shellChromeActive && (
+        <WorkbenchShellPortal slot="right">
+          <SessionToolDrawer
+            open={toolDrawerOpen}
+            activeTab={activeToolTab}
+            sourceLabel={toolSourceLabel}
+            objectLabel={toolObjectLabel}
+            overflow={renderAdvancedSessionActions('overflow')}
+            onSelectTab={openToolTab}
+            onCollapse={closeToolWorkspace}
+          >
+            {toolDrawerContent}
+          </SessionToolDrawer>
+        </WorkbenchShellPortal>
+      )}
+
+      {layout === 'easy' && chrome === 'shell' && shellChromeActive && terminalDockOpen && (
+        <WorkbenchShellPortal slot="dock">
+          <div className="flex h-full min-h-0 flex-col" data-terminal-dock>
+            <div className="flex h-8 flex-shrink-0 items-center gap-2 border-b px-3 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <Terminal className="h-3.5 w-3.5" />
+              <span className="flex-1">{terminalMode === 'agent' ? 'Agent 后台' : '当前目录'}终端</span>
+              <button type="button" onClick={() => setTerminalDockOpen(false)} className="workbench-control-sm inline-flex w-7 items-center justify-center hover:bg-[var(--surface-control-hover)]" aria-label="收起终端底坞"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {terminalContextError ? (
+                <div className="workbench-status-danger m-3 rounded-[var(--radius-control)] border p-3 text-[11px]" role="alert">
+                  <div>{terminalContextError}</div>
+                  <button type="button" onClick={() => setTerminalContextReloadKey(key => key + 1)} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}><RefreshCw className="h-3.5 w-3.5" />重试终端</button>
+                </div>
+              ) : terminalContextReady ? (
+                <WebTerminalSurface key={`${sessionId}:${terminalMode}:dock`} sessionId={sessionId} mode={terminalMode} workingDirectoryLabel={terminalWorkingDirectoryLabel} variant="dock" />
+              ) : (
+                <div className="flex h-full items-center justify-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3.5 w-3.5 animate-spin" />正在定位工作目录…</div>
+              )}
+            </div>
+          </div>
+        </WorkbenchShellPortal>
+      )}
+
+      {/* 旧高级布局保留完整会话标题栏；默认工作台使用上方轻量上下文与监督栏。 */}
+      {layout !== 'easy' && <div data-tour="session-chat-header" className="h-9 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="min-w-0 flex items-center gap-2">
+            <SessionStatusChip
+              connected={connectionStatus === 'connected'}
+              failed={backendJobFailed === true}
+              pending={!!pendingSendAt}
+              working={!!(backendAlive && backendWorking)}
+              waiting={!!(backendAlive && !backendWorking)}
+              done={backendJobDone === true && !backendAlive}
+              onNextAction={backendAlive && !backendWorking ? () => inputRef.current?.focus() : undefined}
+              nextActionLabel={backendAlive && !backendWorking ? '点击继续输入' : undefined}
+            />
+            <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
+            {/* {currentModelLabel && (
+              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
+                title={`模型: ${currentModelLabel}`}
+                style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
+                {currentModelLabel}
+              </span>
+            )} */}
+            <AimuxLinkIndicator
+              session={currentSession ?? currentTask}
+              sessionId={sessionId}
+              projectId={currentProjectId}
+              onSend={handleAnnouncePc}
+            />
+            {/* 桌面端 + 非 PC client session 时, AimuxLinkIndicator 不显示; 此按钮补位,
+                让用户一键告知当前 agent 本电脑可作为 aimux 远程对象连接. 两者互斥, 各自内部判可见. */}
+            <AnnouncePcButton
+              session={currentSession ?? currentTask}
+              sessionId={sessionId}
+              projectId={currentProjectId}
+              onSend={handleAnnouncePc}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Stop: 终止当前 turn — 独立于发送按钮, 保持常驻可见. */}
+          <HeaderActionButton
+            tone="red"
+            title="终止当前智能体正在执行的操作"
+            disabled={!sessionId}
+            aria-live="polite"
+            onClick={handleStopSession}
+            className={`session-stop-button hidden md:inline-flex ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
+            {stopFeedbackActive && (
+              <>
+                <span className="session-stop-button__shock" />
+                <span className="session-stop-button__ring session-stop-button__ring--one" />
+                <span className="session-stop-button__ring session-stop-button__ring--two" />
+              </>
+            )}
+            <span className="session-stop-button__square inline-block w-1.5 h-1.5 rounded-sm bg-current opacity-90" />
+            <span className="relative z-10 whitespace-nowrap">{stopFeedbackActive ? '已触发' : '终止'}</span>
+          </HeaderActionButton>
+          {onNewSession && (
+            <HeaderActionButton
+              tone="emerald"
+              data-tour="session-header-new-session"
+              title="新建会话"
+              className="hidden md:inline-flex"
+              onClick={onNewSession}
+              icon={<Plus className="h-3.5 w-3.5" strokeWidth={2} />}
+            >
+              <span>新会话</span>
+            </HeaderActionButton>
+          )}
+          {extensionAppUrl && (
+            <HeaderActionButton
+              tone="violet"
+              data-tour="session-extension-open"
+              title={`打开 ${projectForSession?.name || '拓展应用'}`}
+              className="hidden md:inline-flex"
+              onClick={() => window.open(extensionAppUrl, '_blank', 'noopener,noreferrer')}
+              icon={<ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />}
+            >
+              <span>打开应用</span>
+            </HeaderActionButton>
+          )}
+          {currentProjectId && (
+            <OpenInVSCodeButton
+              projectId={currentProjectId}
+              subPath={currentVscodeSubPath}
+              showWorktreeOption={!!currentVscodeSubPath}
+              className="text-[11px] rounded-full px-2.5 py-0.5 border border-[var(--accent-border)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+            />
+          )}
+          {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目" 收纳进来 */}
+          <ChatHeaderOverflowMenu
+            jsonlCount={jsonlEntries.length}
+            minorCount={minorCount}
+            hideMinor={hideMinorJsonl}
+            onToggleHideMinor={() => setHideMinorJsonl(v => !v)}
+            onOpenRaw={() => setShowRaw(true)}
+            showJsonlMeta={showJsonlMeta}
+            onToggleShowJsonlMeta={() => setShowJsonlMeta(v => !v)}
+            autoUrgentOnEnter={autoUrgentOnEnter}
+            onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
+            onStop={handleStopSession}
+            canStop={!!sessionId}
+            onViewScheduledTasks={() => setScheduledTasksOpen(true)}
+            onCopySessionLink={() => { void copySessionLink() }}
+            sessionLinkCopied={sessionLinkCopied}
+          />
+        </div>
+      </div>}
+
+      {stopFeedbackActive && (
+        <div className="workbench-layer-toast pointer-events-none fixed left-1/2 top-16 -translate-x-1/2">
+          <div className="session-stop-toast flex items-center gap-2 rounded-[var(--radius-panel)] border px-4 py-2 text-[13px] font-semibold shadow-[var(--shadow-overlay)]" style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--surface-overlay)' }}>
+            <span className="session-stop-toast__icon inline-flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)]" style={{ background: 'var(--status-danger-soft)' }}>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--status-danger)' }} />
+            </span>
+            终止指令已发送
+          </div>
+        </div>
+      )}
+
+      {bridgeQueueNotice && (
+        <div className="workbench-layer-toast pointer-events-none fixed right-4 top-16 max-w-[min(360px,calc(100vw-2rem))]">
+          <div className="workbench-panel flex items-center gap-2 border px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-[var(--shadow-overlay)]" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-overlay)' }}>
+            <Clock className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--status-waiting)' }} strokeWidth={1.8} />
+            <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
+          </div>
+        </div>
+      )}
+
+      {lastSendError && (
+        <div className="workbench-status-danger mx-5 mt-3 flex flex-shrink-0 items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
+          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{lastSendError}</div>
+          {failedSendAttempt?.sessionId === sessionId && (
+            <button
+              type="button"
+              onClick={retryFailedSend}
+              disabled={messageSubmitting}
+              className="workbench-control-sm flex-shrink-0 border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-wait disabled:opacity-55"
+              style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--surface-overlay)' }}
+              aria-label="重试发送上一条消息"
+            >
+              {messageSubmitting ? '重试中…' : '重试'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (backendJobFailed === true || isTuiContactTimeoutText(lastSendError)) hideBackendFailure()
+              setLastSendError('')
+              setFailedSendAttempt(null)
+            }}
+            className="flex-shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            title="关闭错误提示">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* 持久失败横幅: 取自 failed.flag 的 reason, 可手动关闭; 成功继续对话后也会隐藏. */}
+      {showBackendFailureBanner && (
+        <div className="workbench-status-danger mx-5 mt-3 flex flex-shrink-0 items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
+          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{backendFailureMessage}</div>
+          <button
+            type="button"
+            onClick={() => hideBackendFailure()}
+            className="flex-shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            title="关闭错误提示">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
+          窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
+          layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
+      <div
+        ref={chatBodyRef}
+        className={`workbench-center-layer mobius-chat-body flex min-h-0 flex-1 overflow-hidden${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
+        aria-hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
+        {...(layout === 'easy' && chrome === 'shell' && centerMode === 'diff' ? { inert: '' } : {}) as any}
+        data-workbench-chat-layer
+      >
+        {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。 */}
+        <SessionJsonlPanel
+          currentProjectId={currentProjectId}
+          chatContainerRef={chatContainerRef}
+          endRef={endRef}
+          visibleJsonl={visibleJsonl}
+          loadedJsonlCount={jsonlEntries.length}
+          jsonlTotal={jsonlTotal}
+          jsonlEmptyLoadingText={jsonlEmptyLoadingText}
+          jsonlInitialLoading={jsonlInitialLoading}
+          jsonlLoadingMore={jsonlLoadingMore}
+          showJsonlMeta={showJsonlMeta}
+          cursorStyleTools={cursorStyleTools}
+          backendAlive={backendAlive}
+          backendWorking={backendWorking}
+          backendPid={backendPid}
+          realTimeInfo={backendRealTimeInfo}
+          lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
+          hasNewMessages={hasNewMessages}
+          onLoadAllJsonl={handleLoadAllJsonl}
+          onScrollPositionChange={handleJsonlScrollPositionChange}
+          onJumpToBottom={jumpToJsonlBottom}
+          scrollToEntryUuid={matchUuid}
+          scrollToMatchTs={matchTs}
+          onMatchScrollResolved={onMatchScrollResolved}
+          onMatchScrollUnresolved={handleLoadAllJsonl}
+          easyExpandAllSignal={easyExpandAllSignal}
+          variant={layout === 'easy' ? 'easy' : 'standard'}
+          onOpenArtifact={(request) => {
+            rememberArtifactSource(request)
+            if (request.target.intent === 'diff') {
+              if (chrome === 'shell') {
+                setSelectedToolFilePath(request.target.path)
+                setCenterDiffOpen(true)
+                openToolTab('diff')
+                return
+              }
+              setFileChangesRequest({ target: request.target, trigger: request.trigger })
+              return
+            }
+            setArtifactOpenRequest(request)
+          }}
+        />
+
+        {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}
+        <div ref={chatInputRef} className="mobius-chat-input relative flex flex-shrink-0 flex-col border-l" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-composer)' }}>
+          {layout === 'default' && (
+            <div
+              ref={chatSplitHandleRef}
+              className="mobius-resizable-handle mobius-chat-split-handle"
+              data-design-id="chat-input-resize-handle"
+              data-testid="chat-input-resize-handle"
+              onMouseDown={handleChatSplitMouseDown}
+              onDoubleClick={resetChatInputWidth}
+              title="拖拽调整宽度 · 双击恢复默认"
+            />
+          )}
+          {/* 输入区 */}
+          <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
+            <div>
+          {replyTo && (
+            <div className="workbench-panel mb-2 flex items-center gap-2 border px-4 py-2" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)' }}>
+              <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+              <div className="flex-1 min-w-0 text-[12px] text-[var(--text-secondary)] truncate">
+                引用 {replyTo.role === 'assistant' ? '智能体' : '你'}: {(replyTo.content || '').slice(0, 100)}
+              </div>
+              <button onClick={() => setReplyTo(null)} className="text-[var(--text-dimmed)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
+          {editingMsg && (
+            <div className="workbench-panel mb-2 flex items-center gap-2 border px-4 py-2" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)' }}>
+              <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              <div className="flex-1 min-w-0 text-[12px]" style={{ color: 'var(--text-secondary)' }}>编辑消息 (将作为新消息重新发送)</div>
+              <button onClick={() => { setEditingMsg(null); setInput('') }} className="text-[var(--text-dimmed)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
+          <div
+            data-tour="session-chat-input"
+            className={layout === 'easy'
+              ? 'workbench-composer relative transition-colors'
+              : 'relative rounded-lg transition-all focus-within:ring-2 focus-within:ring-blue-500/15'}
+            style={layout === 'easy' ? undefined : {
+              background: 'var(--input-bg)',
+              border: '1px solid var(--input-border)',
+              boxShadow: theme !== 'light'
+                ? '0 2px 12px rgba(0,0,0,0.35)'
+                : '0 2px 12px rgba(0,0,0,0.06)',
+            }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onPaste={handlePaste}>
+            {isDraggingFile && (
+              <div className="pointer-events-none absolute inset-0 z-20 p-1" style={{ background: 'var(--surface-control)', borderRadius: 'var(--radius-panel)' }}>
+                <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed"
+                  style={{ background: 'var(--surface-active)', borderColor: 'var(--accent-border)' }}>
+                  <div className="text-[12px] font-medium" style={{ color: 'var(--accent-primary)' }}>松开以添加文件</div>
+                </div>
+              </div>
+            )}
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
+            <div className="px-3 pt-3 pb-2.5">
+              {!modelAvailable && (
+                <div className="mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] leading-snug"
+                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+                  <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续。修改模型会新建 Session，不会热切当前会话。</span>
+                  <button type="button" onClick={() => setContinueModalOpen(true)}
+                    disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
+                    className="btn-label workbench-control-md shrink-0 border px-2.5 text-[12px] font-medium hover:bg-[var(--surface-control-hover)]"
+                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                    修改模型并继续（新建 Session）
+                  </button>
+                </div>
+              )}
+              {attachments.length > 0 && (
+                <div className="mb-2 flex max-h-20 flex-wrap items-start gap-1.5 overflow-y-auto pr-1">
+                  {attachments.map(att => (
+                    <AttachmentChip
+                      key={att.id}
+                      att={att}
+                      onRemove={() => removeAttachment(att.id)}
+                      onRetry={() => retryAttachment(att.id)}
+                      onPreview={openAttachmentImagePreview}
+                    />
+                  ))}
+                </div>
+              )}
+              {selectedAgentMentions.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {selectedAgentMentions.map((mention) => (
+                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] border px-2 py-1.5 text-[12px]" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-primary)' }}>
+                      <Bot className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} strokeWidth={1.8} />
+                      <span className="max-w-48 truncate">@{mention.name}</span>
+                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                        {mention.mode === 'bidirectional' ? '双向' : '只读'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAgentMentions((current) => current.filter((item) => item.sessionId !== mention.sessionId))}
+                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--surface-control-hover)]"
+                        style={{ color: 'var(--text-muted)' }}
+                        aria-label={`移除智能体 ${mention.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <textarea ref={inputRef} data-workbench-composer value={input} onChange={handleChatInputChange}
+                onCompositionStart={() => { composingRef.current = true }}
+                onCompositionEnd={() => { composingRef.current = false }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                    handleInputArrowUp(e)
+                    return
+                  }
+                  if (e.key !== 'Enter') return
+                  // IME 合成守卫(三重): 合成中按回车交给 IME 处理(字上屏), 不发送.
+                  // composingRef 自维护合成态; isComposing/keyCode 229 兼容浏览器原生标记.
+                  const nativeEvent = e.nativeEvent as KeyboardEvent
+                  if (composingRef.current || (e as any).isComposing || nativeEvent.isComposing ||
+                      nativeEvent.keyCode === 229) {
+                    return
+                  }
+                  if (e.shiftKey) return
+                  if (e.altKey) {
+                    e.preventDefault()
+                    const el = inputRef.current
+                    if (el) {
+                      const s = el.selectionStart, en = el.selectionEnd
+                      setInput(input.slice(0, s) + '\n' + input.slice(en))
+                      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = s + 1 })
+                    }
+                    return
+                  }
+                  e.preventDefault()
+                  send(autoUrgentOnEnter)
+                }}
+                placeholder={inputPlaceholder}
+                className="w-full resize-none border-0 bg-transparent px-0 pb-1 pt-0 text-[14px] leading-[1.5] placeholder:!text-[var(--placeholder-color)] focus:outline-none"
+                style={{
+                  height: layout === 'easy' ? easyComposerLayout.height : inputHeight,
+                  minHeight: layout === 'easy' ? easyComposerLayout.minHeight : 60,
+                  maxHeight: layout === 'easy' ? easyComposerLayout.maxHeight : '70vh',
+                  overflowY: layout === 'easy' ? easyComposerLayout.overflowY : 'auto',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </div>
+            <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
+              {layout === 'easy' && chrome === 'shell' && (
+                <div className="easy-composer-metabar mr-auto flex min-w-0 items-center gap-1.5 text-[10px]" data-composer-metabar style={{ color: 'var(--text-muted)' }}>
+                  <span className="max-w-[110px] truncate" title={currentModelLabel || '当前模型'}>{currentModelLabel || '当前模型'}</span>
+                  {currentProxyLabel && <span aria-hidden="true">·</span>}
+                  {currentProxyLabel && <span>{currentProxyLabel}</span>}
+                  <span aria-hidden="true">·</span>
+                  <span className="max-w-[140px] truncate" title={projectForSession?.name || currentProjectId}>{projectForSession?.name || currentProjectId || '当前 Project'}</span>
+                  <button type="button" onClick={() => setContinueModalOpen(true)} disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)} className="ml-1 flex-shrink-0 hover:underline disabled:opacity-40" style={{ color: 'var(--accent-primary)' }}>
+                    修改模型并继续
+                  </button>
+                </div>
+              )}
+              {layout === 'easy' && easyProjectControl && (
+                <div className="easy-input-project-row relative mr-auto flex min-w-0 items-center" ref={easyProjectMenuRef}>
+                  <button
+                    ref={easyProjectButtonRef}
+                    type="button"
+                    onClick={() => setEasyProjectMenuOpen(value => !value)}
+                    aria-haspopup="menu"
+                    aria-expanded={easyProjectMenuOpen}
+                    className="easy-input-project-trigger workbench-control-md inline-flex max-w-[320px] min-w-0 cursor-pointer items-center gap-2 px-3 text-[12px] font-medium transition-colors"
+                    style={{ background: 'var(--surface-control)', color: 'var(--text-secondary)' }}
+                    title={easyProjectControl.selectedProjectName || '所有项目'}
+                  >
+                    <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                    <span className="min-w-0 truncate">{easyProjectControl.selectedProjectName || '所有项目'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${easyProjectMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {easyProjectMenuOpen && (
+                    <div
+                      role="menu"
+                      aria-label="选择项目"
+                      className="easy-input-project-menu workbench-popover absolute bottom-11 left-0 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden p-2"
+                      style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
+                    >
+                      <label className="flex h-8 items-center gap-2 rounded-md px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+                        <Search className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                        <input
+                          value={easyProjectQuery}
+                          onChange={event => setEasyProjectQuery(event.target.value)}
+                          placeholder="搜索项目"
+                          aria-label="搜索项目"
+                          autoFocus
+                          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] outline-none placeholder:text-[var(--text-muted)]"
+                          style={{ color: 'var(--text-primary)' }}
+                        />
+                        {easyProjectQuery && (
+                          <button type="button" onClick={() => setEasyProjectQuery('')} className="workbench-control-sm inline-flex w-7 items-center justify-center hover:bg-[var(--surface-control-hover)]" aria-label="清空项目搜索">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </label>
+
+                      <div className="mt-2 max-h-[260px] overflow-y-auto">
+                        {easyFilteredProjects.length === 0 ? (
+                          <div className="px-3 py-7 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
+                        ) : easyFilteredProjects.map(project => {
+                          const active = project.id === easyProjectControl.selectedProjectId
+                          return (
+                            <button
+                              key={project.id}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              onClick={() => {
+                                easyProjectControl.onSelectProject(project.id)
+                                setEasyProjectMenuOpen(false)
+                                setEasyProjectQuery('')
+                              }}
+                              className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                              style={{ background: active ? 'var(--surface-active)' : undefined, color: active ? 'var(--accent-primary)' : 'var(--text-primary)' }}
+                            >
+                              <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
+                              {project.runningCount ? <span className="text-[10px]" style={{ color: 'var(--status-running)' }}>运行 {project.runningCount}</span> : null}
+                              {active && <Check className="h-4 w-4 flex-shrink-0" strokeWidth={2} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-default)' }}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setEasyProjectMenuOpen(false)
+                            easyProjectControl.onCreateProject()
+                          }}
+                          className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)]"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
+                          新建项目
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            easyProjectControl.onSelectProject(null)
+                            setEasyProjectMenuOpen(false)
+                            setEasyProjectQuery('')
+                          }}
+                          className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          <X className="h-4 w-4" strokeWidth={1.8} />
+                          不限项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <AdvancedInteractionBtn
+                onClick={openFilePicker}
+                label="添加附件"
+                tooltip="添加附件"
+                accent="neutral"
+                motion="breathe"
+                buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                iconClassName="h-[17px] w-[17px]"
+                className="assistant-session-input__attachment"
+                style={{ color: 'var(--text-secondary)' }}
+                icon={<Paperclip className="h-[17px] w-[17px]" strokeWidth={1.8} />}
+              />
+              <div className="relative">
+                <AdvancedInteractionBtn
+                  ref={inputMenuButtonRef}
+                  onClick={toggleInputMenu}
+                  aria-haspopup="menu"
+                  aria-expanded={inputMenuOpen}
+                  label="更多输入功能"
+                  tooltip="更多输入功能"
+                  accent="neutral"
+                  motion="breathe"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                  iconClassName="h-[17px] w-[17px]"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    background: inputMenuOpen ? 'var(--surface-active)' : undefined,
+                  }}
+                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={1.8} />}
+                />
+                {inputMenuOpen && (
+                  <div
+                    ref={inputMenuRef}
+                    role="menu"
+                    className="workbench-popover absolute bottom-11 left-0 min-w-[200px] py-1"
+                    style={{
+                      background: 'var(--surface-overlay)',
+                      border: '1px solid var(--border-strong)',
+                    }}
+                  >
+                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setCompactConfirmOpen(true) }}
+                      disabled={!sessionId}
+                      className="flex min-h-[var(--control-height-md)] w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                      style={{ color: 'var(--text-primary)' }}>
+                      <Archive className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+                      <span>压缩上文</span>
+                    </button>
+                    {layout !== 'easy' && (
+                      <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
+                        className="flex min-h-[var(--control-height-md)] w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        style={{ color: 'var(--text-primary)' }}>
+                        {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
+                        <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {layout === 'easy' && (
+                <AdvancedInteractionBtn
+                  onClick={toggleInputExpanded}
+                  aria-pressed={inputExpanded}
+                  data-composer-expand-toggle
+                  label={inputExpanded ? '收起输入框' : '展开输入框'}
+                  tooltip={inputExpanded ? '收起输入框' : '展开输入框'}
+                  accent="neutral"
+                  motion="breathe"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                  iconClassName="h-[17px] w-[17px]"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    background: inputExpanded ? 'var(--surface-active)' : undefined,
+                  }}
+                  icon={inputExpanded ? <ChevronDown className="h-[17px] w-[17px]" /> : <ChevronUp className="h-[17px] w-[17px]" />}
+                />
+              )}
+              {(layout !== 'easy' || voiceState !== 'idle') && (
+                <AdvancedInteractionBtn
+                  onClick={toggleVoiceRecording}
+                  disabled={messageSubmitting || voiceState === 'transcribing'}
+                  aria-pressed={voiceState === 'recording'}
+                  label={voiceTip}
+                  tooltip={voiceTip}
+                  accent="neutral"
+                  motion="breathe"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                  iconClassName="h-[17px] w-[17px]"
+                  className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
+                  style={{
+                    color: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running)' : 'var(--text-secondary)',
+                    background: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running-soft)' : undefined,
+                  }}
+                  icon={voiceState === 'recording' ? (
+                    <Square className="w-[17px] h-[17px]" fill="currentColor" />
+                  ) : voiceState === 'transcribing' ? (
+                    <RefreshCw className="w-[17px] h-[17px] animate-spin" />
+                  ) : (
+                    <Mic className="w-[17px] h-[17px]" />
+                  )}
+                />
+              )}
+              {(() => {
+                // 硬约束: 发送按钮永远只执行 send, 不允许根据 agentActive / running / pending
+                // 切换成 "停止生成" 或任何终止语义. 终止必须使用上方独立的 "终止" 按钮.
+                const sendDisabled = (!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy || !modelAvailable
+                const sendBg = sendDisabled
+                  ? 'var(--surface-control)'
+                  : 'var(--text-primary)'
+                const sendFg = sendDisabled
+                  ? 'var(--text-dimmed)'
+                  : 'var(--bg-primary)'
+                return (
+                  <>
+                    {layout !== 'easy' && (
+                      <AdvancedInteractionBtn onClick={() => send(true)} disabled={sendDisabled}
+                        data-tour="session-chat-send-urgent"
+                        label="加急发送"
+                        tooltip="发送（加急）— 打断当前输出并立即发送"
+                        accent="neutral"
+                        motion="breathe"
+                        buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                        iconClassName="h-[17px] w-[17px]"
+                        style={{ color: 'var(--text-secondary)' }}
+                        icon={<Zap className="w-[17px] h-[17px]" />}
+                      />
+                    )}
+                    <AdvancedInteractionBtn onClick={() => send()} disabled={sendDisabled}
+                      data-tour="session-chat-send"
+                      label="发送"
+                      tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
+                      accent="neutral"
+                      motion="breathe"
+                      buttonClassName="composer-send-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
+                      iconClassName="h-[18px] w-[18px]"
+                      className="transition-all active:scale-95 hover:brightness-95"
+                      style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}
+                      icon={anyUploading || voiceState === 'transcribing' ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <SendHorizontal className="w-[18px] h-[18px]" strokeWidth={2.4} />
+                      )}
+                    />
+                  </>
+                )
+              })()}
+            </div>
+            <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
+              {sendingHint ?? ''}
+            </div>
+          </div>
+        </div>
+      </div>
+          {/* 标准/堆叠布局的下方操作区: 普通会话展示快捷按钮 + Skill/Memory 快照;
+              规划模式展示项目知识编辑器。简易模式不重复挂载隐藏侧区，避免端口按钮重复请求。 */}
+          {layout !== 'easy' && (isPlanningSession && currentProjectId ? (
+            <div className="mobius-chat-input-side flex-1 overflow-y-auto p-3">
+              <PlanningEditor projectId={currentProjectId} sessionId={sessionId} />
+            </div>
+          ) : (
+            <div className="mobius-chat-input-side flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pt-0">
+              {renderAdvancedSessionActions('default')}
+                <SessionSkillMemoryEditor
+                  sessionId={currentSession?.session_id || sessionId}
+                  projectId={currentProjectId || undefined}
+                  initialPanel="memory"
+                  persistActivePanel
+                />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {layout === 'easy' && chrome === 'shell' && centerMode === 'diff' && (
+        <div className="workbench-center-layer min-h-0 flex-1" data-center-mode="diff">
+          <SessionDiffCenterSurface
+            file={selectedToolFile}
+            requestedPath={selectedToolFilePath}
+            sourceLabel={toolSourceLabel}
+            diff={toolDiff}
+            mode={toolDiffMode}
+            loading={toolDiffLoading || toolFilesLoading}
+            error={toolDiffError || toolFilesError || toolWorkspaceError}
+            onModeChange={setToolDiffMode}
+            onRetry={() => {
+              if (!selectedToolFile) void loadToolFiles()
+              else setToolDiffReloadKey(key => key + 1)
+            }}
+            onOpenArtifact={(request) => {
+              setToolObjectContext(previous => ({ ...previous, target: request.target }))
+              setArtifactOpenRequest(request)
+            }}
+          />
+        </div>
+      )}
+
+      {inputExpanded && layout !== 'easy' && (
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭长文本编辑"
+            onClick={() => setInputExpanded(false)}
+          />
+          <div
+            className="workbench-modal relative flex h-[min(760px,calc(100vh-32px))] w-[min(920px,calc(100vw-32px))] flex-col p-4"
+            style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>长文本编辑</h3>
+              <button
+                type="button"
+                onClick={() => setInputExpanded(false)}
+                title="收起编辑区"
+                className="workbench-control-md inline-flex items-center gap-1.5 border px-2.5 text-[12px] transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
+              >
+                <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.9} />
+                收起
+              </button>
+            </div>
+            <textarea
+              ref={expandedInputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onPaste={handlePaste}
+              placeholder={inputPlaceholder}
+              className="min-h-0 flex-1 w-full resize-none rounded-[var(--radius-panel)] px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
+              style={{
+                background: 'var(--surface-control)',
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-primary)',
+              }}
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                Enter 发送 · Shift+Enter 换行 · Esc 收起
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecording}
+                  disabled={messageSubmitting || voiceState === 'transcribing'}
+                  title={voiceTip}
+                  aria-label={voiceTip}
+                  aria-pressed={voiceState === 'recording'}
+                  className={`assistant-session-input__utility assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {voiceState === 'recording' ? (
+                    <Square className="w-[17px] h-[17px]" fill="currentColor" />
+                  ) : voiceState === 'transcribing' ? (
+                    <RefreshCw className="w-[17px] h-[17px] animate-spin" />
+                  ) : (
+                    <Mic className="w-[17px] h-[17px]" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputExpanded(false)
+                    send()
+                  }}
+                  disabled={(!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy}
+                  title={voiceBusy ? voiceTip : '发送'}
+                  aria-label="发送"
+                  className="assistant-session-input__send disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {anyUploading || voiceState === 'transcribing' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <SendHorizontal className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {inputReplayOpen && sessionId && (
+        <SessionInputReplayModal
+          sessionId={sessionId}
+          onPick={applyReplayedInput}
+          onClose={() => setInputReplayOpen(false)}
+        />
+      )}
+
+      {artifactOpenRequest && currentProjectId && (
+        <FilePreviewLayer
+          projectId={currentProjectId}
+          request={artifactOpenRequest}
+          suspended={!!fileChangesRequest && !artifactAboveChanges}
+          fallbackFocusRef={chatContainerRef}
+          onClose={() => {
+            if (artifactAboveChanges && fileChangesRequest) {
+              setArtifactOpenRequest(fileChangesRequest.previewRequest || null)
+              setArtifactAboveChanges(false)
+              return
+            }
+            setArtifactOpenRequest(null)
+          }}
+          onViewDiff={(target, trigger) => {
+            setToolObjectContext(previous => ({ ...previous, target }))
+            if (artifactAboveChanges && fileChangesRequest) {
+              setFileChangesRequest({ ...fileChangesRequest, target, trigger })
+              setArtifactOpenRequest(fileChangesRequest.previewRequest || null)
+              setArtifactAboveChanges(false)
+              return
+            }
+            setFileChangesRequest({ target, trigger, returnToPreview: true, previewRequest: artifactOpenRequest })
+          }}
+          onOpenEditor={workspaceEditor?.available && workspaceEditor.supportsFileLocation
+            ? (target) => {
+              setToolObjectContext(previous => ({ ...previous, target }))
+              workspaceEditor.onOpen(target)
+              setArtifactOpenRequest(null)
+              setArtifactAboveChanges(false)
+            }
+            : undefined}
+          onInsertReference={insertArtifactReference}
+        />
+      )}
+
+      {fileChangesRequest && sessionId && (
+        <GitChangesViewer
+          sessionId={sessionId}
+          projectId={currentProjectId}
+          initialPath={fileChangesRequest.target?.path}
+          initialLine={fileChangesRequest.target?.line}
+          endLine={fileChangesRequest.target?.endLine}
+          trigger={fileChangesRequest.trigger}
+          sourceLabel={toolSourceLabel}
+          suspended={artifactAboveChanges}
+          fallbackFocusRef={chatContainerRef}
+          onReturnToPreview={fileChangesRequest.returnToPreview ? () => {
+            setArtifactOpenRequest(fileChangesRequest.previewRequest || artifactOpenRequest)
+            setArtifactAboveChanges(false)
+            setFileChangesRequest(null)
+          } : undefined}
+          onClose={() => {
+            setArtifactAboveChanges(false)
+            setFileChangesRequest(null)
+          }}
+          onOpenArtifact={(request) => {
+            setToolObjectContext(previous => ({ ...previous, target: request.target }))
+            setArtifactOpenRequest(request)
+            setArtifactAboveChanges(true)
+          }}
+        />
+      )}
+
+      {bashCommandsOpen && sessionId && (
+        <SessionBashCommandsModal
+          sessionId={sessionId}
+          onClose={() => setBashCommandsOpen(false)}
+        />
+      )}
+
+      {scheduledTasksOpen && sessionId && (
+        <SessionScheduledTasksModal
+          sessionId={sessionId}
+          onClose={() => setScheduledTasksOpen(false)}
+        />
+      )}
+
+      {compactConfirmOpen && (
+        <CompactContextConfirmModal
+          onConfirm={sendCompactCommand}
+          onClose={() => setCompactConfirmOpen(false)}
+        />
+      )}
+
+      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
+        <NewSessionModal
+          issueId={currentIssueId || undefined}
+          researchId={(currentSession as any)?.research_id || undefined}
+          onClose={() => setContinueModalOpen(false)}
+          onCreated={handleContinueSessionCreated}
+          defaultName={continueSessionName(currentSession)}
+          defaultDescription={(currentSession as any).description || ''}
+          defaultModel={projectForSession?.default_model ?? null}
+          projectKind={projectForSession?.kind}
+          modalTitle="修改模型并继续（新建 Session）"
+          continueFromSessionId={currentSession.session_id}
+          modalZIndexClass="workbench-layer-modal"
+        />
+      )}
+
+      {terminalChoiceOpen && (
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            aria-label="关闭终端打开方式选择"
+            onClick={() => { setTerminalChoiceOpen(false); restoreToolSourceFocus() }}
+          />
+          <div
+            className="relative flex w-[min(420px,calc(100vw-32px))] flex-col gap-3 rounded-2xl p-4 shadow-2xl"
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+              <h3 className="min-w-0 flex-1 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>打开终端</h3>
+              <button
+                type="button"
+                onClick={() => { setTerminalChoiceOpen(false); restoreToolSourceFocus() }}
+                title="关闭"
+                className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+              >
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </div>
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTerminalMode('cwd')
+                  setTerminalChoiceOpen(false)
+                  setTerminalOpen(true)
+                }}
+                className="flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">在当前目录打开终端</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前会话所属项目目录</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTerminalMode('agent')
+                  setTerminalChoiceOpen(false)
+                  setTerminalOpen(true)
+                }}
+                className="flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <Bot className="h-4 w-4 flex-shrink-0 text-[var(--accent-primary)]" strokeWidth={1.9} />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
+                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {terminalOpen && (
+        <WebTerminalModal
+          key={`${sessionId}:${terminalMode}`}
+          sessionId={sessionId}
+          mode={terminalMode}
+          workingDirectoryLabel={terminalWorkingDirectoryLabel}
+          onClose={() => { setTerminalOpen(false); restoreToolSourceFocus() }}
+        />
+      )}
+
+      {showRaw && (
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-[90vw] max-w-[1100px] h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+            <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+              <span className="text-[14px] font-semibold flex-1 min-w-0 flex items-baseline gap-2" style={{ color: 'var(--text-primary)' }}>
+                <span className="flex-shrink-0">原始 JSONL <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>· {jsonlEntries.length} 条</span></span>
+                {jsonlPath && (
+                  <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
+                )}
+              </span>
+              <JsonlCopyButton
+                copied={rawJsonlCopied}
+                title="复制全部 JSONL 到剪贴板"
+                copiedTitle="JSONL 已复制"
+                onClick={async () => {
+                  // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾窗口,
+                  // 且 REST 单次最多 5000 条. 这里分页拉满全量, 不省略不截断.
+                  try {
+                    const sid = currentSession?.session_id || currentTask?.task_id
+                    let entriesToCopy = jsonlEntries
+                    if (sid && jsonlTotal > jsonlEntries.length) {
+                      const collected: any[] = []
+                      let from = 0
+                      const pageSize = 5000
+                      let total = jsonlTotal
+                      while (from < total) {
+                        const data = await api(`/api/sessions/${sid}/jsonl-history?from=${from}&limit=${pageSize}`)
+                        const slice = Array.isArray(data?.entries) ? data.entries : []
+                        if (slice.length === 0) break
+                        collected.push(...slice)
+                        from += slice.length
+                        if (Number.isFinite(Number(data?.total))) total = Number(data.total)
+                        if (slice.length < pageSize) break
+                      }
+                      if (collected.length > 0) {
+                        const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+                        if (sid === activeSid) {
+                          entriesToCopy = collected
+                          setJsonlEntries(collected)
+                          if (collected.length === total) setJsonlTotal(total)
+                        }
+                      }
+                    }
+                    await navigator.clipboard.writeText(entriesToCopy.map(e => JSON.stringify(e)).join('\n'))
+                    setRawJsonlCopied(true)
+                    setTimeout(() => setRawJsonlCopied(false), 1000)
+                  } catch {}
+                }}
+              />
+              <button onClick={() => setShowRaw(false)}
+                className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+                style={{ color: 'var(--text-secondary)' }}>关闭</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {jsonlEntries.length === 0 ? (
+                <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
+              ) : (
+                <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  {jsonlEntries.map((e, i) => `// #${i + 1}\n${JSON.stringify(e, null, 2)}`).join('\n\n')}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session 尚未开始时弹出的"是否开始执行?"确认窗.
+          多重门禁防止打开瞬间闪烁:
+            1. historyLoaded=true: 必须等 bootstrap history 或 SSE history 至少成功返回一次, 否则连"是否为空"都还不知道.
+            2. message_count===0: 元数据上确认这个 session 从未产生过消息.
+            3. messages.length===0 && !typing && !stream: 本地视图当下也确实是空白态.
+            4. 用户尚未在本次浏览中 dismiss 过. */}
+      {currentSession
+        && historyLoaded
+        && ((currentSession as any).message_count || 0) === 0
+        && messages.length === 0
+        && !streamContent && !isTyping
+        && !isFireAndForgetSession(sessionId)
+        && sessionId && !startDismissed.has(sessionId) && (
+        <SessionStartModal
+          sessionName={currentSession.name}
+          sessionDescription={(currentSession as any).description || ''}
+          autoConfirm={!isGuidedDemoSession(sessionId)}
+          onConfirm={async () => {
+            // 抛错由 modal 内部 catch 后显示, 这里只在成功时 dismiss
+            await startSession()
+            dismissStartModal(sessionId)
+          }}
+          onDismiss={() => dismissStartModal(sessionId)}
+        />
+      )}
+    </div>
+  )
+}

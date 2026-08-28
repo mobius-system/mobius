@@ -1,11 +1,9 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useLocation } from 'react-router-dom'
-import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentPropsWithoutRef, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { CODE_MARKDOWN_COMPONENTS } from './code-artifacts/CodeMarkdownComponents'
-import { AlertTriangle, Archive, BookOpen, ChevronsLeft, ChevronsRight, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
+import { AlertTriangle, Archive, BookOpen, Check, ChevronsLeft, ChevronsRight, Copy, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
 import { api, useStore } from '../store'
 import { AssistantPresetModal } from './assistant-preset-modal'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
@@ -41,8 +39,6 @@ const ASSISTANT_FAB_VOICE_HOLD_MS = 1500
 const ASSISTANT_FAB_SIZE = 44.8 // 56px × 80%; keep drag/snap geometry aligned with the rendered FAB
 const ASSISTANT_FAB_EDGE_MARGIN = 20 // 与视口边缘留白 (1.25rem)
 const ASSISTANT_FAB_DRAG_THRESHOLD = 6 // 超过该位移视为拖动而非点击
-const ASSISTANT_FAB_COLLISION_GAP = 12
-const ASSISTANT_PROTECTED_ACTION_SELECTOR = '.workbench-composer, .session-stop-button, .workbench-status-danger'
 const ASSISTANT_FAB_POS_STORAGE_KEY = 'mobius-assistant-fab-pos'
 const AUTO_VOICE_CURSOR_STORAGE_PREFIX = 'assistant-auto-voice-cursor'
 const SHARED_VOICE_PLAYBACK_LOCK_PREFIX = 'assistant-voice-playback-lock'
@@ -258,13 +254,66 @@ const ASSISTANT_TTS_VOICE_FALLBACK: AssistantVoiceOption[] = [
 
 const EMPTY_CLONE_MODEL_OPTIONS: SessionModelOption[] = []
 
+function MarkdownAnchor({ href, children, node: _node, ...props }: ComponentPropsWithoutRef<'a'> & { node?: unknown }) {
+  return (
+    <a
+      {...props}
+      href={href}
+      target={href ? '_blank' : undefined}
+      rel={href ? 'noreferrer' : undefined}
+    >
+      {children}
+    </a>
+  )
+}
+
+// 代码块(```...```) 渲染器: 右上角叠一个复制按钮.
+// 外层包 position:relative 的 .prose-pre-wrap 托住按钮, 这样代码长行水平滚动时按钮不跟着滚走;
+// 复制内容取内层 pre 的 textContent(button 在 pre 外, 不含按钮自身文本), 兼容桌面端 clipboard 不可用时回退 execCommand.
+const CodePre = ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) => {
+  const preRef = useRef<HTMLPreElement>(null)
+  const [copied, setCopied] = useState(false)
+  const handleCopy = useCallback(async () => {
+    const text = preRef.current?.textContent ?? ''
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch { /* noop */ }
+      document.body.removeChild(ta)
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }, [])
+  return (
+    <div className="prose-pre-wrap">
+      <button
+        type="button"
+        className="prose-code-copy-btn"
+        onClick={handleCopy}
+        aria-label={copied ? '已复制' : '复制代码'}
+        title={copied ? '已复制' : '复制代码'}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} />}
+      </button>
+      <pre ref={preRef} {...props}>{children}</pre>
+    </div>
+  )
+}
+
 const AssistantMarkdown = memo(function AssistantMarkdown({ content }: { content: string }) {
   return (
     <div className="assistant-session-message__content prose-chat">
       <ReactMarkdown
         remarkPlugins={MARKDOWN_REMARK_PLUGINS as any}
         rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-        components={CODE_MARKDOWN_COMPONENTS}
+        components={{ a: MarkdownAnchor as any, pre: CodePre as any }}
       >
         {content}
       </ReactMarkdown>
@@ -442,7 +491,7 @@ function AssistantImagePreviewModal({ preview, onClose }: { preview: AssistantIm
   }, [onClose])
 
   return (
-    <div className="assistant-image-preview-modal workbench-layer-modal" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
+    <div className="assistant-image-preview-modal" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
       <button type="button" className="assistant-image-preview-modal__backdrop" aria-label="关闭图片预览" onClick={onClose} />
       <div className="assistant-image-preview-modal__header">
         <span>{preview.name}</span>
@@ -761,8 +810,8 @@ function isDesktopClient() {
   return typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
 }
 
-// FAB 可吸附到四角和两侧中点。桌面端保留标题栏点击区, 不允许盖住窗口按钮。
-function assistantFabPositions() {
+// 把 FAB 吸附到四个角点。桌面端保留标题栏点击区, 不允许吸到顶栏区域盖住窗口按钮。
+function snapFabToCorner(left: number, top: number) {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const margin = ASSISTANT_FAB_EDGE_MARGIN
@@ -772,48 +821,15 @@ function assistantFabPositions() {
   const bottomY = Math.max(minTop, vh - size - margin)
   const leftX = margin
   const rightX = Math.max(leftX, vw - size - margin)
-  const middleY = Math.max(minTop, Math.min(bottomY, (vh - size) / 2))
-  return [
+  const cx = left + size / 2
+  const cy = top + size / 2
+  const corners = [
     { left: leftX, top: topY },
     { left: rightX, top: topY },
-    { left: leftX, top: middleY },
-    { left: rightX, top: middleY },
     { left: leftX, top: bottomY },
     { left: rightX, top: bottomY },
   ]
-}
-
-function fabPositionCoversPrimaryAction(position: { left: number; top: number }) {
-  if (typeof document === 'undefined') return false
-  const gap = ASSISTANT_FAB_COLLISION_GAP
-  const fabRect = {
-    left: position.left - gap,
-    top: position.top - gap,
-    right: position.left + ASSISTANT_FAB_SIZE + gap,
-    bottom: position.top + ASSISTANT_FAB_SIZE + gap,
-  }
-  return Array.from(document.querySelectorAll<HTMLElement>(ASSISTANT_PROTECTED_ACTION_SELECTOR)).some(element => {
-    if (element.closest('.assistant-panel')) return false
-    const rect = element.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return false
-    return fabRect.left < rect.right
-      && fabRect.right > rect.left
-      && fabRect.top < rect.bottom
-      && fabRect.bottom > rect.top
-  })
-}
-
-// 吸附点除四角外还包含两侧中点；默认避开当前工作台的 Composer、Stop 与错误动作。
-function snapFabToCorner(left: number, top: number, avoidPrimaryActions = true) {
-  const size = ASSISTANT_FAB_SIZE
-  const cx = left + size / 2
-  const cy = top + size / 2
-  const positions = assistantFabPositions()
-  const safePositions = avoidPrimaryActions
-    ? positions.filter(position => !fabPositionCoversPrimaryAction(position))
-    : positions
-  const candidates = safePositions.length > 0 ? safePositions : positions
-  return candidates.reduce((best, item) => {
+  return corners.reduce((best, item) => {
     const bestDx = cx - (best.left + size / 2)
     const bestDy = cy - (best.top + size / 2)
     const itemDx = cx - (item.left + size / 2)
@@ -1160,8 +1176,8 @@ function needsPolling(snapshot: AssistantSnapshot) {
 
 function sessionPageUrl(userId?: string, snapshot?: AssistantSnapshot | null) {
   const session = snapshot?.session
-  if (!userId || !session?.session_id) return ''
-  return `/u/${encodeURIComponent(userId)}/s/${encodeURIComponent(session.session_id)}`
+  if (!userId || !session?.session_id || !session.project_id || !session.issue_id) return ''
+  return `/u/${encodeURIComponent(userId)}/p/${encodeURIComponent(session.project_id)}/i/${encodeURIComponent(session.issue_id)}/?session=${encodeURIComponent(session.session_id)}`
 }
 
 function formatTime(raw?: string | null) {
@@ -1447,7 +1463,7 @@ function pendingTurnBelongsToSnapshot(turn: PendingAssistantTurn, snapshot: Assi
 
 function CompactContextConfirmModal({ onConfirm, onClose }: { onConfirm: () => void; onClose: () => void }) {
   return (
-    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center">
       <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-label="关闭压缩确认" onClick={onClose} />
       <div
         className="relative w-[360px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
@@ -1491,7 +1507,7 @@ function DeleteCurrentSessionConfirmModal({
 }) {
   const name = sessionName.trim() || '当前小莫会话'
   return (
-    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center">
       <button
         type="button"
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -1559,7 +1575,7 @@ function CreateCloneSessionModal({
   onClose: () => void
 }) {
   return (
-    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center">
       <button
         type="button"
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -1660,7 +1676,6 @@ function CreateCloneSessionModal({
 }
 
 export function AssistantChat() {
-  const location = useLocation()
   const [open, setOpen] = useState(false)
   // 缩小态时任务完成未读计数；点击 FAB 展开时清零。
   const [unreadCompletion, setUnreadCompletion] = useState(0)
@@ -1674,7 +1689,6 @@ export function AssistantChat() {
     const restored = readFabPos()
     return restored ? snapFabToCorner(restored.left, restored.top) : null
   })
-  const [avoidanceFabPos, setAvoidanceFabPos] = useState<{ left: number; top: number } | null>(null)
   const [fabDragging, setFabDragging] = useState(false)
   const [input, setInputState] = useState('')
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -1756,7 +1770,6 @@ export function AssistantChat() {
   const [collapsedVoiceHoldState, setCollapsedVoiceHoldState] = useState<CollapsedVoiceHoldState>('idle')
   const user = useStore(state => state.user)
   const setProjects = useStore(state => state.setProjects)
-  const setAssistantBubbleEnabled = useStore(state => state.setAssistantBubbleEnabled)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
   const stickToBottomRef = useRef(true)
@@ -2373,7 +2386,6 @@ export function AssistantChat() {
     const maxTop = Math.max(minTop, vh - size - ASSISTANT_FAB_EDGE_MARGIN)
     const nextLeft = Math.max(0, Math.min(vw - size, drag.startLeft + dx))
     const nextTop = Math.max(minTop, Math.min(maxTop, drag.startTop + dy))
-    setAvoidanceFabPos(null)
     setFabPos({ left: nextLeft, top: nextTop })
   }, [clearCollapsedVoiceHoldTimer])
 
@@ -2381,7 +2393,7 @@ export function AssistantChat() {
     const drag = fabDragRef.current
     if (drag && event.pointerId === drag.pointerId) {
       fabDragRef.current = null
-      // 拖动收尾: 吸附到安全边缘点 + 持久化 + 吃掉 click
+      // 拖动收尾: 吸附到四个角点 + 持久化 + 吃掉 click
       if (drag.dragging) {
         try { event.currentTarget.releasePointerCapture(drag.pointerId) } catch {}
         const snapped = snapFabToCorner(
@@ -2979,7 +2991,7 @@ export function AssistantChat() {
     setPanelStyle({})
   }, [panelSize])
 
-  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到安全边缘点)
+  // 视口尺寸变化时把 FAB 拉回可视区 (重新吸附到四个角点)
   useEffect(() => {
     const onResize = () => {
       setFabPos(prev => (prev ? snapFabToCorner(prev.left, prev.top) : prev))
@@ -2987,44 +2999,6 @@ export function AssistantChat() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  // 路由、错误横幅或 Composer 尺寸变化时重新选择安全吸附点。避让位置不写入持久化，
-  // 因此离开默认工作台后仍保留用户原先选择的角落。
-  useLayoutEffect(() => {
-    let frame = 0
-    const update = () => {
-      const positions = assistantFabPositions()
-      const base = fabPos || positions[positions.length - 1] || { left: ASSISTANT_FAB_EDGE_MARGIN, top: assistantFabMinTop() }
-      const preferred = snapFabToCorner(base.left, base.top, false)
-      const safe = snapFabToCorner(base.left, base.top, true)
-      const next = safe.left === preferred.left && safe.top === preferred.top ? null : safe
-      setAvoidanceFabPos(current => (
-        current?.left === next?.left && current?.top === next?.top ? current : next
-      ))
-    }
-    const schedule = () => {
-      window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(update)
-    }
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
-    const observeProtectedActions = () => {
-      document.querySelectorAll<HTMLElement>(ASSISTANT_PROTECTED_ACTION_SELECTOR).forEach(element => resizeObserver?.observe(element))
-    }
-    const mutationObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
-      observeProtectedActions()
-      schedule()
-    })
-    observeProtectedActions()
-    mutationObserver?.observe(document.body, { childList: true, subtree: true })
-    window.addEventListener('resize', schedule)
-    schedule()
-    return () => {
-      window.cancelAnimationFrame(frame)
-      resizeObserver?.disconnect()
-      mutationObserver?.disconnect()
-      window.removeEventListener('resize', schedule)
-    }
-  }, [fabPos, location.pathname, location.search])
 
   const refreshProjects = useCallback(() => {
     api('/api/projects').then((arr: any[]) => setProjects(arr || [])).catch(() => {})
@@ -3665,12 +3639,11 @@ export function AssistantChat() {
         ? '继续长按进入语音输入'
         : fabSpeaking
           ? `${ASSISTANT_NAME}正在说话`
-          : (open ? `收起${ASSISTANT_NAME}快捷助手` : `打开${ASSISTANT_NAME}快捷助手（独立于当前会话）`)
-  const effectiveFabPos = avoidanceFabPos || fabPos
+          : (open ? `收起${ASSISTANT_NAME}` : `打开${ASSISTANT_NAME}`)
   const fabClassName = [
-    'assistant-fab workbench-layer-popover fixed w-[44.8px] h-[44.8px] rounded-full flex items-center justify-center',
+    'assistant-fab fixed z-[60] w-[44.8px] h-[44.8px] rounded-full flex items-center justify-center',
     // 有自定义位置时用 inline left/top, 否则回落到默认右下角
-    effectiveFabPos ? '' : 'bottom-5 right-5',
+    fabPos ? '' : 'bottom-5 right-5',
     // 拖动进行中关掉过渡 (跟随指针不拖尾), 释放后恢复过渡以平滑吸附
     fabDragging ? 'assistant-fab--dragging' : 'transition-all hover:scale-105',
     fabSpeaking ? 'assistant-fab--speaking' : '',
@@ -3693,10 +3666,8 @@ export function AssistantChat() {
           if (collapsedVoiceHoldState !== 'idle') event.preventDefault()
         }}
         title={fabTitle}
-        aria-label={fabTitle}
-        data-assistant-role="cross-page-prompt"
         className={fabClassName}
-        style={effectiveFabPos ? { left: effectiveFabPos.left, top: effectiveFabPos.top, right: 'auto', bottom: 'auto' } : undefined}
+        style={fabPos ? { left: fabPos.left, top: fabPos.top, right: 'auto', bottom: 'auto' } : undefined}
       >
         <MoAvatar size="lg" active={open || sending || activeCount > 0 || pendingActiveCount > 0 || fabSpeaking || fabVoiceActive} />
         {fabSpeaking ? (
@@ -3722,8 +3693,8 @@ export function AssistantChat() {
           </span>
         ) : null}
         {!open && unreadCompletion > 0 ? (
-          <span className="assistant-fab__completion-badge" role="status">
-            {unreadCompletion === 1 ? '快捷助手有新回复' : `快捷助手有 ${unreadCompletion} 条新回复`}
+          <span className="assistant-fab__completion-badge" aria-hidden="true">
+            {unreadCompletion === 1 ? '任务已完成' : `${unreadCompletion} 项任务完成`}
           </span>
         ) : null}
       </button>
@@ -3732,8 +3703,7 @@ export function AssistantChat() {
         <div
           ref={panelRef}
           data-testid="assistant-panel"
-          className={`assistant-panel workbench-layer-popover fixed rounded-2xl shadow-2xl overflow-hidden ${panelSizeClass}`}
-          aria-label="小莫快捷助手，与当前项目会话分开"
+          className={`assistant-panel fixed z-[60] rounded-2xl shadow-2xl overflow-hidden ${panelSizeClass}`}
           /* 定位矩形 (panelStyle) 不走 inline style: 改由 useLayoutEffect + 拖拽直接写 DOM,
              避免 React rerender 用 stale 值覆盖拖拽中的实时位置, 也避免每帧重渲染面板子树 */
         >
@@ -3856,21 +3826,12 @@ export function AssistantChat() {
                 <MoAvatar size="sm" active={open || sending || activeCount > 0 || pendingActiveCount > 0} />
               </div>
               <div className="assistant-header__copy">
-                <div className="assistant-header__title">{ASSISTANT_NAME}快捷助手</div>
+                <div className="assistant-header__title">{ASSISTANT_NAME}</div>
                 <div className="assistant-header__subtitle" title={headerSubtitle}>
                   {headerSubtitle}
                 </div>
               </div>
               <div className="assistant-header__actions">
-                <button
-                  type="button"
-                  className="assistant-mobile-dismiss"
-                  onClick={() => setAssistantBubbleEnabled(false)}
-                  aria-label="关闭并隐藏快捷助手"
-                  title="关闭并隐藏快捷助手；可在设置中重新开启"
-                >
-                  隐藏入口
-                </button>
                 <AssistantTooltip label={openSessionTip} align="left" side="top">
                   <button
                     type="button"

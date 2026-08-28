@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ui-mode-baselines": "node scripts/verify-ui-mode-baselines.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

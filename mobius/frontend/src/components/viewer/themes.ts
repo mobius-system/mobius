@@ -11,7 +11,7 @@ export type CardTheme = { dot: string; border: string; bg: string; text: string;
 // label 默认保持精短；工具特例可按明确业务语义使用更长标签。数据 type 名仍保持英文以便 JSONL 协议稳定.
 export const TYPE_THEME: Record<string, CardTheme> = {
   user:                   { dot: 'bg-slate-400',  border: 'border-slate-500/15', bg: 'bg-slate-500/[0.04]',  text: 'text-slate-300',  label: '用户' },
-  assistant:              { dot: 'bg-[var(--accent-primary)]', border: 'border-[var(--accent-border)]', bg: 'bg-[var(--accent-soft)]', text: 'text-[var(--accent-primary)]', label: '智能体' },
+  assistant:              { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: '智能体' },
   attachment:             { dot: 'bg-purple-400', border: 'border-purple-500/15',bg: 'bg-purple-500/[0.04]', text: 'text-purple-300', label: '附件' },
   system:                 { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: '系统' },
   'queue-operation':      { dot: 'bg-zinc-500',   border: 'border-zinc-600/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-400',   label: '队列' },
@@ -23,8 +23,8 @@ export const TYPE_THEME: Record<string, CardTheme> = {
   session_meta:           { dot: 'bg-zinc-400',   border: 'border-zinc-500/15',  bg: 'bg-zinc-700/[0.04]',   text: 'text-zinc-300',   label: '会话' },
   turn_context:           { dot: 'bg-amber-400',  border: 'border-amber-500/15', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: '轮次' },
   event_msg:              { dot: 'bg-cyan-400',   border: 'border-cyan-500/15',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: '事件' },
-  response_item:          { dot: 'bg-[var(--accent-primary)] opacity-80', border: 'border-[var(--accent-border)]', bg: 'bg-[var(--surface-active)]', text: 'text-[var(--accent-primary)] opacity-90', label: '应答' },
-  error:                  { dot: 'bg-[var(--status-danger)]', border: 'border-[var(--status-danger-border)]', bg: 'bg-[var(--status-danger-soft)]', text: 'text-[var(--status-danger)]', label: '错误' },
+  response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/15',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: '应答' },
+  error:                  { dot: 'bg-red-500',    border: 'border-red-500/25',   bg: 'bg-red-500/[0.10]',    text: 'text-red-200',    label: '错误' },
 }
 export const DEFAULT_THEME: CardTheme = { dot: 'bg-gray-500', border: 'border-gray-500/15', bg: 'bg-gray-500/[0.04]', text: 'text-gray-400', label: '条目' }
 

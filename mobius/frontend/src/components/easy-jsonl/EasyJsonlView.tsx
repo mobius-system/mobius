@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Bot,
+  CheckCircle2,
   ChevronDown,
   CircleEllipsis,
   FilePenLine,
@@ -10,6 +12,7 @@ import {
   Search,
   Sparkles,
   TerminalSquare,
+  UserRound,
   Wrench,
 } from 'lucide-react'
 import JsonlCompactMarkdown from '../jsonl-compact-markdown'
@@ -18,16 +21,7 @@ import type { AnyEntry, JsonlViewItem } from '../viewer/types'
 import { mergeBashToolResultItems } from '../viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from '../viewer/entry-classify'
 import { buildRounds } from '../viewer/rounds'
-import {
-  buildEasyJsonlRounds,
-  splitEasyUserPrompt,
-  stripEasyUserImageAttachmentBlocks,
-  type EasyActivity,
-  type EasyActivityKind,
-  type EasyJsonlRound,
-  type EasyTimelineBurst,
-} from './easy-jsonl-model'
-import { DisplayImagePreviewModal } from '../viewer/DisplayImages'
+import { buildEasyJsonlRounds, type EasyActivity, type EasyActivityKind } from './easy-jsonl-model'
 import './easy-jsonl.css'
 
 const EASY_INITIAL_WINDOW_SIZE = 200
@@ -60,50 +54,28 @@ function activityIcon(kind: EasyActivityKind) {
   return <Wrench />
 }
 
-function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyActivity; forceExpanded?: boolean }) {
-  const [expanded, setExpanded] = useState(false)
-  const isQuiet = activity.kind === 'command' || activity.kind === 'explore' || activity.kind === 'tool'
-  const canExpand = activity.details.length > 0 || !!activity.imageUrls?.length || !!activity.outputTail
-  const showOutput = !!activity.outputTail && expanded
-
-  useEffect(() => {
-    if (forceExpanded) setExpanded(true)
-  }, [forceExpanded])
-
+function EasyActivityItem({ activity }: { activity: EasyActivity }) {
+  const [expanded, setExpanded] = useState(!!activity.defaultExpanded)
+  const canExpand = activity.details.length > 0 || !!activity.imageUrls?.length
   return (
-    <div
-      className={`easy-jsonl-activity easy-jsonl-activity--${activity.kind}${expanded ? ' is-expanded' : ''}${forceExpanded ? ' is-search-match' : ''}`}
-      data-easy-activity={activity.kind}
-      data-easy-target-id={activity.id}
-    >
+    <div className={`easy-jsonl-activity easy-jsonl-activity--${activity.kind}${expanded ? ' is-expanded' : ''}`} data-easy-activity={activity.kind}>
       <span className="easy-jsonl-activity__node" aria-hidden="true">
         {activity.state === 'error' ? <AlertTriangle /> : activityIcon(activity.kind)}
       </span>
       <button
         type="button"
         className="easy-jsonl-activity__summary"
-        onClick={() => {
-          if (!canExpand || forceExpanded) return
-          setExpanded(value => !value)
-        }}
+        onClick={() => canExpand && setExpanded(value => !value)}
         aria-expanded={canExpand ? expanded : undefined}
         disabled={!canExpand}
       >
         <span className="easy-jsonl-activity__copy">
-          {isQuiet ? (
-            <strong className="easy-jsonl-activity__command">
-              <span className="easy-jsonl-activity__command-text">{activity.title}</span>
-            </strong>
-          ) : (
-            <>
-              <strong>{activity.title}</strong>
-              {!expanded && activity.summary && <small>{activity.summary}</small>}
-            </>
-          )}
+          <strong>{activity.title}</strong>
+          {!expanded && activity.summary && <small>{activity.summary}</small>}
         </span>
         {canExpand && <ChevronDown className="easy-jsonl-activity__chevron" />}
       </button>
-      {expanded && (activity.details.length > 0 || !!activity.imageUrls?.length) && (
+      {expanded && (
         <div className="easy-jsonl-activity__detail">
           {activity.details.length > 0 && (
             <ul>
@@ -121,140 +93,15 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
           )}
         </div>
       )}
-      {showOutput && (
-        <pre
-          className="easy-jsonl-activity__output-tail"
-          aria-label="工具输出，可滚动查看"
-          tabIndex={0}
-        >
-          {activity.outputTail}
-        </pre>
-      )}
     </div>
   )
 }
 
-function EasyBurstItem({ burst, focusedLineNo }: { burst: EasyTimelineBurst; focusedLineNo: number | null }) {
-  const forceExpanded = focusedLineNo != null && burst.items.some(activity => activity.lineNos.includes(focusedLineNo))
-  const [expanded, setExpanded] = useState(false)
-  const lockedOpen = forceExpanded
-
-  useEffect(() => {
-    if (forceExpanded) setExpanded(true)
-  }, [forceExpanded])
-
-  return (
-    <section
-      className={`easy-jsonl-burst${expanded ? ' is-expanded' : ''}${burst.hasError ? ' has-error' : ''}${forceExpanded ? ' is-search-match' : ''}`}
-      data-easy-target-id={burst.id}
-    >
-      <button
-        type="button"
-        className="easy-jsonl-burst__summary"
-        aria-expanded={expanded}
-        onClick={() => !lockedOpen && setExpanded(value => !value)}
-      >
-        <strong>{burst.title}</strong>
-        <ChevronDown className="easy-jsonl-burst__chevron" aria-hidden="true" />
-      </button>
-      {expanded && (
-        <div className="easy-jsonl-burst__items">
-          {burst.items.map(activity => (
-            <EasyActivityItem
-              key={activity.id}
-              activity={activity}
-              forceExpanded={focusedLineNo != null && activity.lineNos.includes(focusedLineNo)}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
-
-function targetIdForLine(round: EasyJsonlRound, lineNo: number): string {
-  for (const segment of round.timeline) {
-    if (segment.type === 'message' && segment.lineNos.includes(lineNo)) return segment.id
-    if (segment.type === 'row' && segment.activity.lineNos.includes(lineNo)) return segment.activity.id
-    if (segment.type === 'burst') {
-      const activity = segment.items.find(item => item.lineNos.includes(lineNo))
-      if (activity) return activity.id
-    }
-  }
-  return round.id
-}
-
-function attachmentImageLabel(src: string): string {
-  const normalized = src.replace(/\\/g, '/').replace(/\/+$/, '')
-  return normalized.slice(normalized.lastIndexOf('/') + 1) || '附件图片'
-}
-
-function EasyUserAttachmentThumbnail({ src, onOpen }: { src: string; onOpen: (src: string) => void }) {
-  const [failed, setFailed] = useState(false)
-  const label = attachmentImageLabel(src)
-  return (
-    <button
-      type="button"
-      className={`easy-jsonl-prompt__attachment${failed ? ' is-failed' : ''}`}
-      onClick={() => !failed && onOpen(src)}
-      title={failed ? `${label} · 图片无法显示` : `${label} · 点击放大`}
-      aria-label={failed ? `附件图片 ${label} 无法显示` : `预览附件图片 ${label}`}
-      disabled={failed}
-    >
-      {failed ? (
-        <span>图片无法显示</span>
-      ) : (
-        <img src={resolveMediaSrc(src)} alt={label} loading="lazy" onError={() => setFailed(true)} />
-      )}
-    </button>
-  )
-}
-
-function EasyUserPrompt({ text, images }: { text: string; images: string[] }) {
-  const parts = useMemo(() => splitEasyUserPrompt(text), [text])
-  const [contextOpen, setContextOpen] = useState(false)
-  const [previewSrc, setPreviewSrc] = useState<string | null>(null)
-  const visible = useMemo(() => stripEasyUserImageAttachmentBlocks(parts.visible), [parts.visible])
-  const hidden = parts.hidden
-  const systemOnly = !visible && !!hidden
-  const showBubble = !!visible || !!hidden || images.length === 0
-
-  return (
-    <>
-      <article
-        className={`easy-jsonl-prompt${systemOnly ? ' easy-jsonl-prompt--system-only' : ''}${systemOnly && contextOpen ? ' is-expanded' : ''}`}
-        aria-label="用户任务"
-      >
-        {images.length > 0 && (
-          <div className="easy-jsonl-prompt__attachments" aria-label={`图片附件 ${images.length} 张`}>
-            {images.map(src => <EasyUserAttachmentThumbnail key={src} src={src} onOpen={setPreviewSrc} />)}
-          </div>
-        )}
-        {showBubble && (
-          <div className="easy-jsonl-prompt__bubble">
-            {visible ? <JsonlCompactMarkdown text={visible} /> : null}
-            {!visible && !hidden && images.length === 0 ? <JsonlCompactMarkdown text="继续处理当前任务" /> : null}
-            {hidden ? (
-              <div className="easy-jsonl-prompt__context">
-                <button
-                  type="button"
-                  className="easy-jsonl-prompt__context-toggle"
-                  aria-expanded={contextOpen}
-                  aria-label={contextOpen ? '收起系统上下文' : '展开系统上下文'}
-                  onClick={() => setContextOpen(value => !value)}
-                >
-                  <span>系统上下文</span>
-                  <ChevronDown className="easy-jsonl-prompt__context-chevron" />
-                </button>
-                {contextOpen ? <JsonlCompactMarkdown text={hidden} /> : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-      </article>
-      {previewSrc && <DisplayImagePreviewModal src={previewSrc} onClose={() => setPreviewSrc(null)} />}
-    </>
-  )
+function formatRoundTime(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function EasySkeleton() {
@@ -307,7 +154,6 @@ export default function EasyJsonlView({
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
   const targetHandledRef = useRef('')
-  const [focusedLineNo, setFocusedLineNo] = useState<number | null>(null)
 
   useEffect(() => {
     onRoundCountChange?.(easyRounds.length)
@@ -319,11 +165,7 @@ export default function EasyJsonlView({
 
   useEffect(() => {
     const targetKey = `${scrollToEntryUuid || ''}:${scrollToMatchTs || ''}`
-    if (!scrollToEntryUuid && !scrollToMatchTs) {
-      targetHandledRef.current = ''
-      setFocusedLineNo(null)
-      return
-    }
+    if (!scrollToEntryUuid && !scrollToMatchTs) { targetHandledRef.current = ''; return }
     if (targetHandledRef.current === targetKey || initialLoading || entries.length === 0) return
     const lineNo = findMatchLine(visibleItems, scrollToEntryUuid, scrollToMatchTs)
     if (lineNo == null) {
@@ -334,16 +176,11 @@ export default function EasyJsonlView({
     }
     const round = easyRounds.find(item => item.lineNos.includes(lineNo))
     if (!round) { onScrollResolved?.(); return }
-    const targetId = targetIdForLine(round, lineNo)
-    setFocusedLineNo(lineNo)
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const target = document.querySelector(`[data-easy-target-id="${CSS.escape(targetId)}"]`)
-        const roundElement = document.querySelector(`[data-easy-round-id="${CSS.escape(round.id)}"]`)
-        ;(target || roundElement)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        targetHandledRef.current = targetKey
-        onScrollResolved?.()
-      })
+      const element = document.querySelector(`[data-easy-round-id="${CSS.escape(round.id)}"]`)
+      element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      targetHandledRef.current = targetKey
+      onScrollResolved?.()
     })
   }, [scrollToEntryUuid, scrollToMatchTs, visibleItems, easyRounds, initialLoading, entries.length, showAll, hasRemoteMore, onScrollResolved, onScrollUnresolved])
 
@@ -370,49 +207,38 @@ export default function EasyJsonlView({
               data-easy-round-id={round.id}
               data-testid="easy-jsonl-round"
             >
-              <EasyUserPrompt text={round.userPrompt} images={round.userAttachmentImages} />
+              <header className="easy-jsonl-prompt">
+                <span className="easy-jsonl-prompt__avatar"><UserRound /></span>
+                <div>
+                  <div className="easy-jsonl-prompt__meta">
+                    <strong>你的任务</strong>
+                    <time>{formatRoundTime(round.startedAt)}</time>
+                  </div>
+                  <p>{round.userPrompt || '继续处理当前任务'}</p>
+                </div>
+              </header>
 
-              {round.timeline.length > 0 && (
+              {(round.activities.length > 0 || roundWorking) && (
                 <div className="easy-jsonl-rail" aria-label="执行过程">
-                  {round.timeline.map(segment => {
-                    if (segment.type === 'burst') return <EasyBurstItem key={segment.id} burst={segment} focusedLineNo={focusedLineNo} />
-                    if (segment.type === 'row') {
-                      return (
-                        <EasyActivityItem
-                          key={segment.id}
-                          activity={segment.activity}
-                          forceExpanded={focusedLineNo != null && segment.activity.lineNos.includes(focusedLineNo)}
-                        />
-                      )
-                    }
-                    return (
-                      <article
-                        key={segment.id}
-                        className={`easy-jsonl-message${focusedLineNo != null && segment.lineNos.includes(focusedLineNo) ? ' is-search-match' : ''}`}
-                        data-easy-target-id={segment.id}
-                        aria-label="助手过程消息"
-                      >
-                        <JsonlCompactMarkdown text={segment.text} />
-                      </article>
-                    )
-                  })}
+                  {round.activities.map(activity => <EasyActivityItem key={activity.id} activity={activity} />)}
+                  {roundWorking && (
+                    <div className="easy-jsonl-live" role="status">
+                      <span><LoaderCircle className="animate-spin" /></span>
+                      <div><strong>正在继续处理</strong><small>{liveText || '智能体正在执行当前任务…'}</small></div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {round.assistantResponse && (
-                <article className="easy-jsonl-response" aria-label="助手回复">
+                <article className="easy-jsonl-response">
+                  <div className="easy-jsonl-response__heading">
+                    <span><Bot /></span>
+                    <strong>回复</strong>
+                    {!roundWorking && <CheckCircle2 />}
+                  </div>
                   <JsonlCompactMarkdown text={round.assistantResponse} />
                 </article>
-              )}
-
-              {roundWorking && (
-                <div className="easy-jsonl-live" role="status">
-                  <span><LoaderCircle className="animate-spin" /></span>
-                  <div>
-                    <strong>{round.workingLabel || '正在处理'}</strong>
-                    <small>{liveText || '智能体正在执行当前任务…'}</small>
-                  </div>
-                </div>
               )}
             </section>
           )

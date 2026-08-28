@@ -22,9 +22,9 @@ export type ResolvedCallMap = Map<string, ResolvedCallInfo>
 
 // 头部状态图标的视觉元数据 (图标组件映射在 EntryCard.tsx, 这里只放纯数据, 保持本文件无 React 依赖).
 export const TOOL_STATUS_META: Record<ToolStatus, { iconClass: string; spin: boolean; label: string }> = {
-  running: { iconClass: 'text-[var(--status-running)]', spin: true, label: '执行中' },
-  success: { iconClass: 'text-[var(--status-success)]', spin: false, label: '成功' },
-  error: { iconClass: 'text-[var(--status-danger)]', spin: false, label: '失败' },
+  running: { iconClass: 'text-blue-400', spin: true, label: '执行中' },
+  success: { iconClass: 'text-emerald-400', spin: false, label: '成功' },
+  error: { iconClass: 'text-red-400', spin: false, label: '失败' },
 }
 
 // 抽出一条 entry 内所有 tool_use 的稳定 id (用于查 result 是否已到).

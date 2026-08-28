@@ -1,0 +1,1179 @@
+import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { CheckCircle2, CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquare, MessageSquarePlus, Plus, Send } from 'lucide-react'
+import { useStore, api } from '../store'
+import { TopNav, timeAgo, timeAgoPrecise } from '../components/shell'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
+import { usePagination, PaginationControls } from '../components/pagination'
+import {
+  NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
+} from '../components/modals'
+import { ChatArea, SessionRow } from '../components/chat'
+import { AgentStatusDot } from '../components/AgentStatusDot'
+import { ProjectFilesCard } from '../components/project-files'
+import { Loading } from '../components/shell'
+import { AdvancedPageChrome } from '../components/advanced-page-chrome'
+import { WorkbenchShellPortal as WorkbenchPortal } from '../components/workbench-shell'
+import { TruncatedText } from '../components/truncated-text'
+import { useEditorAvailability } from '../components/workspace/use-editor-availability'
+import type { CodeArtifactEditorRequest, CodeArtifactTarget } from '../components/code-artifacts/file-target'
+import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
+import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
+import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import {
+  ConversationCreationError,
+  createDefaultConversation,
+  type ConversationCreationCheckpoint,
+} from '../services/create-conversation'
+import { logUiEvent } from '../services/ui-observability'
+import { useLayoutMode } from '../services/layout-mode'
+import {
+  focusWorkbenchTarget,
+  navigateToWorkbench,
+  navigateToWorkbenchObject,
+  projectPath,
+  readWorkbenchFocusTarget,
+  readWorkbenchReturnTo,
+  sessionNavigation,
+  sessionPath,
+} from '../services/workbench-navigation'
+
+const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
+const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
+
+const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
+const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
+const RECENT_SESSION_LIMIT = 50
+
+type SessionListMode = 'issue' | 'recent'
+
+type RecentSession = {
+  session_id: string
+  name?: string
+  project_id?: string | null
+  project_name?: string | null
+  issue_id?: string | null
+  issue_title?: string | null
+  research_id?: string | null
+  research_title?: string | null
+  scope_type?: 'issue' | 'research'
+  agent_status?: string
+  message_count?: number
+  last_active?: string
+  status?: string
+}
+
+function normalizeRecentSessions(value: unknown): RecentSession[] {
+  return (Array.isArray(value) ? value : [])
+    .filter((session: any) => session?.session_id && session?.status !== 'archived')
+    .sort((a: any, b: any) => (
+      new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
+    ))
+    .slice(0, RECENT_SESSION_LIMIT)
+}
+
+function recentSessionTarget(user: string, session: RecentSession) {
+  return user && session.session_id ? sessionPath(user, session.session_id) : ''
+}
+
+function EmptyConversationComposer({
+  projectId,
+  issueId,
+  issueTitle,
+  onCreated,
+}: {
+  projectId: string
+  issueId: string
+  issueTitle?: string
+  onCreated: (sessionId: string) => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [submissionQueued, setSubmissionQueued] = useState(false)
+  const [error, setError] = useState('')
+  const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus()
+    window.addEventListener('mobius:new-conversation', focus)
+    return () => window.removeEventListener('mobius:new-conversation', focus)
+  }, [])
+
+  const submit = async () => {
+    if (!prompt.trim() || sending) return
+    const submittedPrompt = prompt
+    setSending(true)
+    setSubmissionQueued(true)
+    setError('')
+    setPrompt('')
+    const initialCheckpoint = checkpoint || {
+      projectId,
+      issueId,
+      requestId: `issue-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    }
+    try {
+      const created = await createDefaultConversation({ projectId, prompt, checkpoint: initialCheckpoint })
+      logUiEvent('first_message_submitted', { project_id: projectId, issue_id: issueId, session_id: created.sessionId, source: 'issue' })
+      onCreated(created.sessionId)
+    } catch (reason) {
+      setPrompt(previous => previous || submittedPrompt)
+      setSubmissionQueued(false)
+      if (reason instanceof ConversationCreationError) {
+        setCheckpoint(reason.checkpoint)
+        setError(reason.message)
+      } else {
+        setError(reason instanceof Error ? reason.message : '创建会话失败')
+      }
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center justify-center overflow-y-auto p-5" style={{ background: 'var(--bg-secondary)' }}>
+      <div className="w-full max-w-[880px]">
+        <div className="mb-5 text-center">
+          <h1 data-workbench-main-heading tabIndex={-1} className="text-[18px] font-semibold outline-none" style={{ color: 'var(--text-primary)' }}>开始一个会话</h1>
+          <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>{issueTitle ? `当前项目上下文 · ${issueTitle}` : '描述你想完成的事'}</p>
+        </div>
+        <div className="rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+          <textarea ref={inputRef} autoFocus value={prompt} rows={5} disabled={sending} placeholder="描述你的任务…"
+            onChange={event => { setPrompt(event.target.value); setCheckpoint(null); setError('') }}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                void submit()
+              }
+            }}
+            className="w-full resize-none bg-transparent px-2 py-1 text-[14px] leading-6 outline-none" style={{ color: 'var(--text-primary)' }} />
+          <div className="mt-2 flex justify-end border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
+            <button type="button" onClick={() => void submit()} disabled={!prompt.trim() || sending}
+              className="flex h-8 items-center gap-2 rounded-md px-4 text-[12px] font-medium btn-primary disabled:opacity-40">
+              {submissionQueued ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} {submissionQueued ? '已提交' : '发送'}
+            </button>
+          </div>
+        </div>
+        {submissionQueued && (
+          <div className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--status-running)' }} aria-hidden="true" />
+            已提交，正在打开会话…
+          </div>
+        )}
+        {error && (
+          <div className="workbench-status-danger mt-3 flex items-center justify-between gap-3 rounded-md px-3 py-2 text-[12px]">
+            <span>{error}</span>
+            <button type="button" onClick={() => void submit()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// 默认任务页只承担“会话轨 + 会话时间线”。旧的任务概览、项目文件卡和
+// 两套会话树仍保留在本文件的 LegacyIssuePage 中，但不进入默认渲染路径。
+function EasyIssuePage() {
+  const params = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [search, setSearch] = useSearchParams()
+  const {
+    projects, setProjects, setCurrentProject, setCurrentIssue, setCurrentResearch,
+    sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
+  } = useStore()
+  const userParam = params.user || ''
+  const projectId = params.project || ''
+  const issueId = params.issue || ''
+  const sessionParam = search.get('session') || ''
+  const [issue, setIssue] = useState<any>(null)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const sessions = useMemo<any[]>(() => sessionsMap[issueId] || [], [sessionsMap, issueId])
+  const project = projects.find((item: any) => item.id === projectId)
+  const issueFallback = projectPath(userParam, projectId)
+  const returnTo = readWorkbenchReturnTo(search, issueFallback)
+
+  useEffect(() => {
+    if (readWorkbenchFocusTarget(location.state) !== 'main-heading') return
+    const frame = window.requestAnimationFrame(() => focusWorkbenchTarget('main-heading'))
+    return () => window.cancelAnimationFrame(frame)
+  }, [location.key, issue?.id, currentSession?.session_id])
+
+  useEffect(() => {
+    setCurrentResearch(null)
+    if (!projects.length) {
+      api('/api/projects').then((value: any) => setProjects(Array.isArray(value) ? value : (value?.projects || []))).catch(() => {})
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    const project = projects.find((item: any) => item.id === projectId)
+    if (project) setCurrentProject(project)
+  }, [projects, projectId, setCurrentProject])
+
+  useEffect(() => {
+    if (!issueId) return
+    let cancelled = false
+    setSessionsLoaded(false)
+    Promise.all([
+      api(`/api/issues/${issueId}`).then((value: any) => {
+        if (cancelled || value?.error) return
+        setIssue(value)
+        setCurrentIssue(value)
+      }),
+      api(`/api/issues/${issueId}/sessions`).then((value: any) => {
+        if (!cancelled) setSessionsMap(issueId, Array.isArray(value) ? value : [])
+      }),
+    ]).catch(() => {}).finally(() => { if (!cancelled) setSessionsLoaded(true) })
+    return () => { cancelled = true }
+  }, [issueId, refreshKey, setCurrentIssue, setSessionsMap])
+
+  useEffect(() => {
+    const current = useStore.getState().currentSession
+    if (!sessionParam) {
+      if (current) { setCurrentSession(null); setCurrentTask(null) }
+      return
+    }
+    if (current?.session_id === sessionParam) return
+    const fromList = sessions.find((session: any) => session.session_id === sessionParam)
+    if (fromList) {
+      setCurrentSession(fromList)
+      setCurrentTask(fromList)
+      return
+    }
+    let cancelled = false
+    api(`/api/tasks/${sessionParam}`).then((session: any) => {
+      if (cancelled) return
+      if (session?.session_id === sessionParam) {
+        setCurrentSession(session)
+        setCurrentTask(session)
+      } else if (sessionsLoaded) {
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    }).catch(() => {
+      if (!cancelled && sessionsLoaded) {
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    })
+    return () => { cancelled = true }
+  }, [sessionParam, sessions, sessionsLoaded, search, setSearch, setCurrentSession, setCurrentTask])
+
+  const onCreated = (sessionId: string) => {
+    setRefreshKey(key => key + 1)
+    window.dispatchEvent(new CustomEvent('mobius:refresh-conversation-rail'))
+    navigateToWorkbenchObject(navigate, sessionNavigation(userParam, sessionId, { sourceSurface: 'issue' }))
+  }
+  const activeIssueSession = sessionParam && currentSession?.session_id === sessionParam ? currentSession : null
+
+  return (
+    <>
+      <WorkbenchPortal slot="topbar">
+        <AdvancedPageChrome
+          eyebrow="Issue"
+          title={issue?.title || '正在加载任务'}
+          meta={project?.name}
+          returnTo={returnTo}
+          fallback={issueFallback}
+        />
+      </WorkbenchPortal>
+      {activeIssueSession ? (
+        <ChatArea layout="easy" chrome="shell" toolOrigin="issue" />
+      ) : sessionParam ? (
+        <Loading text="正在加载会话..." />
+      ) : (
+        <EmptyConversationComposer projectId={projectId} issueId={issueId} issueTitle={issue?.title} onCreated={onCreated} />
+      )}
+    </>
+  )
+}
+
+export function LegacyIssuePage() {
+  const params = useParams()
+  const [search, setSearch] = useSearchParams()
+  const navigate = useNavigate()
+  const { projects, setProjects, setCurrentProject, setCurrentIssue,
+          issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask,
+          workspaceLayoutMode, setWorkspaceLayoutMode, applySessionWorkspaceLayout } = useStore()
+  const userParam = params.user || ''
+  const projectId = params.project || ''
+  const issueId = params.issue || ''
+  const sessionParam = search.get('session') || ''
+  const autoOpenNewSession = search.get('newSession') === '1'
+
+  // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
+  const isMobile = useIsMobile()
+  // 有 currentSession 时才查询 (顶栏按钮也查同一缓存), 拿到 bind_path + VSCODE_WEB_URL.
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl, loading: editorLoading } = useEditorAvailability(projectId, !!currentSession)
+  const editorAvailable = !!currentSession && !!editorBindPath && !!editorVscodeUrl
+  // v1 代码对话仅桌面端; 移动端强制走会话模式 (避免 ResizablePanel side=left 在窄屏变抽屉).
+  const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
+  // v2 代码对话: 左原生文件浏览器 + 中代码浏览 + 右对话. 只需 bind_path, 不依赖 code-server.
+  const ccAvailable = !!currentSession && !!editorBindPath && !isMobile
+  const useCodeConversation = workspaceLayoutMode === 'code-conversation' && ccAvailable
+  // editorMounted: 首次进入代码对话后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载).
+  // 切项目时重置 (新项目重新按需挂载). 用 {editorMounted && ...} 占住稳定 React 槽位,
+  // 保证 ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂 (SSE/草稿/Agent 全不动).
+  const [editorMounted, setEditorMounted] = useState(false)
+  const [v2Mounted, setV2Mounted] = useState(false)
+  const [codeEditorRequest, setCodeEditorRequest] = useState<CodeArtifactEditorRequest | null>(null)
+  useEffect(() => { setEditorMounted(false); setV2Mounted(false); setCodeEditorRequest(null) }, [projectId])
+  useEffect(() => { if (useEditorChat) setEditorMounted(true) }, [useEditorChat])
+  useEffect(() => { if (useCodeConversation) setV2Mounted(true) }, [useCodeConversation])
+  const openCodeConversation = useCallback((target?: CodeArtifactTarget) => {
+    if (target) {
+      setCodeEditorRequest(previous => ({ target, requestKey: (previous?.requestKey || 0) + 1 }))
+    }
+    setWorkspaceLayoutMode('code-conversation')
+  }, [setWorkspaceLayoutMode])
+  // 编辑器默认宽度 ≈ 视口 60% (留 ≥360px 给右侧对话); clamp 在 [min, max], max 不超过 视口-360 保对话最小宽.
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const editorMinWidth = 480
+  const editorMaxWidth = Math.max(editorMinWidth + 240, vw - 360)
+  const editorDefaultWidth = Math.max(editorMinWidth, Math.min(editorMaxWidth, Math.floor(vw * 0.6)))
+
+  const [issueState, setIssueState] = useState<any>(null)
+  // 优先用从 ProjectPage 缓存的 issuesMap 命中；命中不上才等 GET /api/issues/:id 回来
+  const issue = useMemo(() => {
+    const cached = (issuesMap[projectId] || []).find((i: any) => i.id === issueId)
+    return cached || issueState
+  }, [issuesMap, projectId, issueId, issueState])
+  const [showNewSession, setShowNewSession] = useState(false)
+  const [editingSession, setEditingSession] = useState<any>(null)
+  const [editingIssue, setEditingIssue] = useState(false)
+  const [deletingSession, setDeletingSession] = useState<any>(null)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
+  const [sessionListMode, setSessionListMode] = useState<SessionListMode>('issue')
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
+  const [recentSessionsLoading, setRecentSessionsLoading] = useState(false)
+  const [recentSessionsError, setRecentSessionsError] = useState('')
+  const [recentReloadVersion, setRecentReloadVersion] = useState(0)
+  const [collapsedRecentGroups, setCollapsedRecentGroups] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    if (!autoOpenNewSession || !issue) return
+    setShowNewSession(true)
+    const next = new URLSearchParams(search)
+    next.delete('newSession')
+    setSearch(next, { replace: true })
+  }, [autoOpenNewSession, issue, search, setSearch])
+
+  // 必须 useMemo，否则每次渲染都生成新 [] 引用，会让下面 sessionParam 同步 effect 死循环
+  const sessions = useMemo<any[]>(() => sessionsMap[issueId] || [], [sessionsMap, issueId])
+  const project = projects.find((p: any) => p.id === projectId)
+  const selectedSession = currentSession?.session_id === sessionParam ? currentSession : null
+  const issueSummary = ((issue?.description || issue?.title || '') as string).trim()
+  const selectedSessionName = ((selectedSession?.name || '') as string).trim()
+  const selectedSessionPurpose = ((selectedSession?.description || '') as string).trim()
+
+  useEffect(() => {
+    if (!projects.length) api('/api/projects').then(setProjects).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (project) setCurrentProject(project)
+  }, [project?.id])
+
+  useEffect(() => {
+    if (!issueId) return
+    let cancelled = false
+    setSessionsLoaded(false)
+    api(`/api/issues/${issueId}`).then((iss: any) => {
+      if (iss && !iss.error) { setIssueState(iss); setCurrentIssue(iss) }
+    }).catch(() => {})
+    api(`/api/issues/${issueId}/sessions`).then((arr: any) => {
+      if (cancelled) return
+      setSessionsMap(issueId, arr)
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setSessionsLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [issueId])
+
+  useEffect(() => {
+    if (sessionListMode !== 'recent') return
+    const controller = new AbortController()
+    setRecentSessionsLoading(true)
+    setRecentSessionsError('')
+    api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal: controller.signal })
+      .then((value: unknown) => setRecentSessions(normalizeRecentSessions(value)))
+      .catch((error: any) => {
+        if (error?.name === 'AbortError') return
+        setRecentSessionsError(error?.message || '近期会话加载失败')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRecentSessionsLoading(false)
+      })
+    return () => controller.abort()
+  }, [sessionListMode, userParam, recentReloadVersion])
+
+  // URL ?session= 是唯一选中真理源：有则进入对话，无则清空展示概览.
+  // 优先级:
+  //   1. sessions 列表已有该 ID → 直接 setCurrentSession
+  //   2. 列表尚未到 / 没该 ID → 走 GET /api/tasks/:id 单条命中, 不等列表
+  //      (这样刷新带 ?session=xxx 时秒进对话, 不再先闪 SessionOverview)
+  //   3. /api/tasks/:id 也 404 → 清掉 ?session= 参数, 回退概览
+  useEffect(() => {
+    const cur = useStore.getState().currentSession
+    if (!sessionParam) {
+      if (cur !== null) { setCurrentSession(null); setCurrentTask(null) }
+      return
+    }
+    if (cur?.session_id === sessionParam) return
+    const fromList = sessions.find((s: any) => s.session_id === sessionParam)
+    if (fromList) {
+      setCurrentSession(fromList)
+      setCurrentTask(fromList as any)
+      return
+    }
+    // 列表里没命中: 直接拉单条 (不阻塞渲染 Loading)
+    let cancelled = false
+    api(`/api/tasks/${sessionParam}`).then((s: any) => {
+      if (cancelled) return
+      if (s && !s.error && s.session_id === sessionParam) {
+        setCurrentSession(s)
+        setCurrentTask(s as any)
+      } else if (sessionsLoaded) {
+        // 列表已到但里面也没这条 → 真失效, 清参数
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    }).catch(() => {
+      if (cancelled) return
+      if (sessionsLoaded) {
+        const next = new URLSearchParams(search)
+        next.delete('session')
+        setSearch(next, { replace: true })
+      }
+    })
+    return () => { cancelled = true }
+  }, [sessionParam, sessions, sessionsLoaded])
+
+  // 布局按会话独立: 切换到某会话时恢复它保存的布局模式, 未保存过或回到概览(无会话)则回落默认.
+  // 只依赖 session_id, 不随会话其它字段(如 agent_status 周期刷新)重跑, 也不覆盖用户手动切换.
+  useEffect(() => {
+    applySessionWorkspaceLayout(currentSession?.session_id || null)
+  }, [currentSession?.session_id])
+
+  // 刷新 sessions 列表. 合并而非直接覆盖: 当前会话的 agent_status 由 ChatArea 2s 轮询
+  // 实时维护 (并写回 DB), 这里保留本地值, 避免周期刷新用 DB 滞后值覆盖 -> 当前会话小圆点
+  // 闪烁 (尤其点"终止"后的 3s 抑制窗内 DB 仍报 running). 其余会话取后端最新值.
+  const refreshSessions = useCallback(() => {
+    return api(`/api/issues/${issueId}/sessions`).then((arr: any) => {
+      const list = Array.isArray(arr) ? arr : []
+      const store = useStore.getState()
+      const cur = store.currentSession
+      const prevById = new Map((store.sessionsMap[issueId] || []).map((s: any) => [s.session_id, s]))
+      const merged = list.map((s: any) => {
+        if (cur && s.session_id === cur.session_id) {
+          const local = prevById.get(s.session_id)
+          if (local && local.agent_status) return { ...s, agent_status: local.agent_status }
+        }
+        return s
+      })
+      setSessionsMap(issueId, merged)
+    }).catch(() => {})
+  }, [issueId, setSessionsMap])
+
+  // 周期刷新 sessions 列表, 让侧栏其它 (非当前) session 的状态点也能实时更新, 而不是只有
+  // 点进去后才变. 后端 agent-status-syncer 每 60s 重算 agent_status 写库, 这里 10s 拉一次
+  // 列表即可及时拿到. 仅页面可见时轮询, 切走/最小化时停.
+  useEffect(() => {
+    if (!issueId) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = () => {
+      if (cancelled) return
+      if (document.visibilityState === 'visible') refreshSessions()
+      timer = setTimeout(tick, 10000)
+    }
+    const onVis = () => {
+      if (cancelled || document.visibilityState !== 'visible') return
+      if (timer) { clearTimeout(timer); timer = null }
+      tick()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    timer = setTimeout(tick, 10000)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [issueId, refreshSessions])
+
+  const toggleIssueStar = (iss: any) => {
+    if (!iss) return
+    const next = !iss.starred
+    // 乐观更新本地
+    setIssueState((prev: any) => prev ? { ...prev, starred: next ? 1 : 0 } : prev)
+    const cur = useStore.getState().currentIssue as any
+    if (cur && cur.id === iss.id) setCurrentIssue({ ...cur, starred: next ? 1 : 0 } as any)
+    // 同时更新 ProjectPage 传下来的缓存
+    setIssuesMap(projectId, (issuesMap[projectId] || []).map((i: any) => i.id === iss.id ? { ...i, starred: next ? 1 : 0 } : i))
+    api(`/api/issues/${iss.id}/star`, { method: 'PATCH', body: JSON.stringify({ starred: next }) })
+      .then((updated: any) => { if (updated && !updated.error) { setIssueState(updated); setCurrentIssue(updated) } })
+      .catch(() => {})
+  }
+
+  const goToSession = (sid: string) => {
+    navigateToWorkbench(navigate, sessionNavigation(userParam, sid, { sourceSurface: 'issue' }))
+  }
+
+  const goToOverview = () => {
+    const next = new URLSearchParams(search)
+    next.delete('session')
+    setSearch(next, { replace: false })
+  }
+
+  const onSelectSession = (s: any) => goToSession(s.session_id)
+
+  const recentSessionGroups = useMemo(
+    () => buildRecentSessionTreeGroups(recentSessions),
+    [recentSessions],
+  )
+
+  const toggleRecentGroup = (groupKey: string) => {
+    setCollapsedRecentGroups(current => {
+      const next = new Set(current)
+      if (next.has(groupKey)) next.delete(groupKey)
+      else next.add(groupKey)
+      return next
+    })
+  }
+
+  // 引导式 Demo 旧路径依赖手动点 [完成] 推进 tour. 现在 [完成] 已移除, 改成
+  // session list 刷新时检测 job_accomplished=true (running.flag 已删) 的 demo
+  // session, 自动写入 sessionCompletedAt 推进 tour. 防抖: useEffect 依赖 sessions,
+  // patchGuidedDemoSessionCompleted 内部按 sessionId 落到对应 demo state, 重复
+  // patch 同一时间戳无副作用.
+  useEffect(() => {
+    sessions.forEach((s: any) => {
+      if (s?.job_accomplished === true && isGuidedDemoSession(s.session_id)) {
+        patchGuidedDemoSessionCompleted(s.session_id)
+        window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
+      }
+    })
+  }, [sessions])
+
+  const handleDeleteSession = async () => {
+    if (!deletingSession) return
+    const deletedSessionId = deletingSession.session_id
+    let resp: any = null
+    try {
+      resp = await api(`/api/sessions/${deletedSessionId}`, { method: 'DELETE' })
+    } catch (e: any) { alert(e?.message || '删除失败'); return }
+    setSessionsMap(issueId, sessions.filter((s: any) => s.session_id !== deletedSessionId))
+    if (currentSession?.session_id === deletedSessionId || sessionParam === deletedSessionId) {
+      setCurrentSession(null); setCurrentTask(null)
+      const next = new URLSearchParams(search)
+      next.delete('session')
+      setSearch(next, { replace: true })
+    }
+    setDeletingSession(null)
+    refreshSessions()
+    // 抛出提醒: 后端检测到并清理了该 session 的后台 claude code 时, 弹窗告知用户.
+    if (resp?.message) alert(resp.message)
+  }
+
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a: any, b: any) => {
+      const aActive = a.status === 'active' ? 0 : 1
+      const bActive = b.status === 'active' ? 0 : 1
+      if (aActive !== bActive) return aActive - bActive
+      return new Date(b.last_active).getTime() - new Date(a.last_active).getTime()
+    })
+  }, [sessions])
+
+  // sidebar 会话分页: 超过 16 个时每页 16; 选中会话 (activeId) 变化自动翻到它所在页, 保证高亮项始终可见.
+  const sidebarPagination = usePagination(sortedSessions, SESSION_SIDEBAR_PAGE_SIZE, {
+    activeId: currentSession?.session_id,
+    getId: (s: any) => s.session_id,
+  })
+  // 换页后把列表区滚回顶部; 否则用户滚到底点"下一页", 新页会停在中段 (列表区 scrollTop 不重置),
+  // 视觉上像翻页没生效 (带 session 时 sidebar 列表被 issue 详情挤压, 滚动更深, 错位最明显).
+  const sessionListRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (sessionListRef.current) sessionListRef.current.scrollTop = 0
+  }, [sidebarPagination.page, sessionListMode])
+
+  return (
+    <div
+      className="flex flex-col h-screen"
+      style={{ background: 'var(--bg-primary)' }}
+    >
+      <TopNav />
+      <div className="flex flex-1 min-h-0">
+        {/* 左侧 sidebar — 仅「会话模式」可见; contents 让内部 ResizablePanel 仍是 flex 直接子元素 (会话模式零回归) */}
+        <div className={(useEditorChat || useCodeConversation) ? 'hidden' : 'contents'}>
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:issue-sessions"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+          {/* Issue 元数据 */}
+          <div data-tour="issue-created-summary" className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex items-start gap-2 mb-2">
+              {!!issue?.pinned && <svg className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24"><path d="M16 3l5 5-3 1-2 4-3 1-3-3-3 1-2-2 6-6-1-3 3-3-3-2 4-1z" /></svg>}
+              <svg className="w-4 h-4 flex-shrink-0" style={{ color: issue?.status === 'completed' ? 'var(--status-success)' : 'var(--accent-primary)' }}
+                fill={issue?.status === 'completed' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+              <div className="flex-1 min-w-0">
+                <button onClick={goToOverview}
+                  data-tour="issue-overview-link"
+                  className={`workbench-link block w-full text-left text-[13px] font-semibold leading-tight transition-colors truncate ${issue?.status === 'completed' ? 'line-through' : ''}`}
+                  style={{ color: issue?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
+                  title="返回会话列表">
+                  {issue?.title || '加载中...'}
+                </button>
+                {project && (
+                  <Link to={projectPath(userParam, projectId)}
+                    data-tour="project-back-link"
+                    className="workbench-link text-[11px] transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
+                    ← {project.name}
+                  </Link>
+                )}
+              </div>
+              <button onClick={() => toggleIssueStar(issue)} title={issue?.starred ? '取消收藏' : '收藏'}
+                className="flex h-4 items-center justify-center px-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: issue?.starred ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
+                <svg className="w-3.5 h-3.5" fill={issue?.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+              </button>
+              <button onClick={() => setEditingIssue(true)} title="编辑任务"
+                className="flex h-4 items-center justify-center px-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
+            </div>
+            {selectedSession ? (
+              <div className="space-y-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                <TruncatedText
+                  text={issueSummary || '暂无描述'}
+                  lines={2}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>任务现状: </span>}
+                />
+                <TruncatedText
+                  text={selectedSessionName || '未命名会话'}
+                  lines={1}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>会话名称: </span>}
+                />
+                <TruncatedText
+                  text={selectedSessionPurpose || '未填写'}
+                  lines={2}
+                  prefix={<span className="font-medium" style={{ color: 'var(--text-muted)' }}>会话目的: </span>}
+                />
+              </div>
+            ) : issue?.description && (
+              <TruncatedText
+                text={issue.description}
+                lines={3}
+                className="text-[11px] leading-relaxed"
+              />
+            )}
+            {issue && (
+              <div className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                {issue.message_count || 0} 消息 · 活跃 {timeAgo(issue.last_active)}
+              </div>
+            )}
+          </div>
+
+          {/* 当前任务会话与当前用户近期会话共用侧栏空间。 */}
+          <div className="flex items-center gap-1.5 px-2 py-2"
+               data-testid="issue-session-scope-switcher">
+            <div className="flex min-w-0 flex-1 rounded-md p-0.5" role="tablist" aria-label="会话列表范围"
+                 style={{ background: 'var(--bg-secondary)' }}>
+              {([
+                ['issue', '任务会话'],
+                ['recent', '近期会话'],
+              ] as const).map(([mode, label]) => {
+                const active = sessionListMode === mode
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="issue-sidebar-session-list"
+                    onClick={() => setSessionListMode(mode)}
+                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                    style={{
+                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: active ? 'var(--bg-active)' : 'transparent',
+                      boxShadow: active ? 'var(--shadow-control)' : undefined,
+                    }}
+                    title={label}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowNewSession(true)}
+              title="新建当前任务会话"
+              aria-label="新建当前任务会话"
+              data-tour="issue-sidebar-new-session"
+              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--accent-soft)]"
+              style={{ color: 'var(--accent-primary)' }}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+            </button>
+          </div>
+
+          <div ref={sessionListRef} id="issue-sidebar-session-list" role="tabpanel"
+               className={`min-h-0 flex-1 overflow-y-auto ${sessionListMode === 'recent' ? 'p-2' : 'px-2 py-1'}`}>
+            {sessionListMode === 'issue' ? (
+              sortedSessions.length === 0 ? (
+                <button onClick={() => setShowNewSession(true)}
+                  className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-[var(--accent-border)] hover:bg-[var(--accent-soft)]"
+                  style={{ borderColor: 'var(--border-color)' }}>
+                  <MessageSquarePlus className="mx-auto mb-2 h-5 w-5 text-[var(--accent-primary)]" strokeWidth={1.8} />
+                  <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
+                  <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    为当前 Issue 开启一次智能体执行
+                  </div>
+                </button>
+              ) : sidebarPagination.pagedItems.map((s: any) => {
+                // guided-demo / logo-review 的 tour 锚点 (session-card / logo-review-session-card)
+                // 从原右侧会话卡片网格迁移到左侧 SessionRow: 会话导航统一在左侧列表, demo 流程不破坏.
+                const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
+                  && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
+                return (
+                  <SessionRow key={s.session_id}
+                    session={s}
+                    isSelected={currentSession?.session_id === s.session_id}
+                    onSelect={onSelectSession}
+                    onEdit={(s) => setEditingSession(s)}
+                    onDelete={(s) => setDeletingSession(s)}
+                    dataTour={isGuidedDemoSession(s.session_id) ? 'session-card' : isLogoReviewSessionCard ? 'logo-review-session-card' : undefined}
+                  />
+                )
+              })
+            ) : recentSessionsLoading ? (
+              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            ) : recentSessionsError ? (
+              <div className="px-3 py-8 text-center">
+                <div className="text-[12px]" style={{ color: 'var(--status-danger)' }}>{recentSessionsError}</div>
+                <button type="button" onClick={() => setRecentReloadVersion(value => value + 1)}
+                  className="mt-2 rounded-md border px-2 py-1 text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
+                  重新加载
+                </button>
+              </div>
+            ) : recentSessions.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
+            ) : (
+              <div aria-label="按项目与任务分组的近期会话" data-testid="issue-recent-session-tree">
+                {recentSessionGroups.map(group => {
+                  const collapsed = collapsedRecentGroups.has(group.key)
+                  const isResearch = group.scopeType === 'research'
+                  const groupContainsCurrent = group.sessions.some(session => session.session_id === sessionParam)
+                  const groupDomId = `issue-recent-session-group-${encodeURIComponent(group.key).replace(/%/g, '-')}`
+                  return (
+                    <section
+                      key={group.key}
+                      className="mb-1.5"
+                      data-testid="issue-recent-session-group"
+                      data-project-id={group.projectId}
+                      data-subject-id={group.subjectId}
+                      data-scope-type={group.scopeType}
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={!collapsed}
+                        aria-controls={groupDomId}
+                        onClick={() => toggleRecentGroup(group.key)}
+                        className="flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                        style={{ background: groupContainsCurrent ? 'color-mix(in srgb, var(--bg-active) 58%, transparent)' : undefined }}
+                        title={`${group.projectName} / ${group.subjectTitle}`}
+                      >
+                        {collapsed
+                          ? <ChevronRight className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                          : <ChevronDown className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                        <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>
+                          {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                          <span className="block truncate text-[11px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                        </span>
+                        <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                          <span className="text-[8px] font-medium" style={{ color: 'var(--accent-primary)' }}>{isResearch ? '研究' : '任务'}</span>
+                          <span className="text-[8px] tabular-nums" style={{ color: group.activeCount ? 'var(--status-running)' : 'var(--text-muted)' }}>
+                            {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div id={groupDomId} hidden={collapsed} className="relative ml-[18px] border-l pl-1.5" style={{ borderColor: groupContainsCurrent ? 'color-mix(in srgb, var(--accent-primary) 38%, var(--border-color))' : 'var(--border-color)' }}>
+                        {group.sessions.map(session => {
+                          const target = recentSessionTarget(userParam, session)
+                          const active = session.session_id === sessionParam
+                          const status = session.agent_status === 'running'
+                            ? { label: '执行中', color: 'var(--status-running)', bg: 'var(--status-running-soft)' }
+                            : session.agent_status === 'pending'
+                              ? { label: '启动中', color: 'var(--status-waiting)', bg: 'var(--status-waiting-soft)' }
+                              : session.agent_status === 'waiting'
+                                ? { label: '待命', color: 'var(--status-waiting)', bg: 'var(--status-waiting-soft)' }
+                                : session.agent_status === 'completed' || session.status === 'completed'
+                                  ? { label: '已完成', color: 'var(--status-success)', bg: 'var(--status-success-soft)' }
+                                  : { label: '空闲', color: 'var(--text-muted)', bg: 'var(--bg-card)' }
+                          return (
+                            <button
+                              key={session.session_id}
+                              type="button"
+                              onClick={() => { if (target) navigate(target) }}
+                              disabled={!target}
+                              title={session.name || session.session_id}
+                              className="relative mt-0.5 flex min-h-9 w-full items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50"
+                              style={{ borderColor: active ? 'color-mix(in srgb, var(--accent-primary) 42%, var(--border-color))' : 'transparent', background: active ? 'var(--bg-active)' : undefined }}
+                              data-session-id={session.session_id}
+                              aria-current={active ? 'true' : undefined}
+                            >
+                              <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex min-w-0 items-center gap-1">
+                                  <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
+                                  <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
+                                </span>
+                                <span className="mt-0.5 flex items-center gap-1.5 text-[8px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                                  <span>{timeAgoPrecise(session.last_active || '')}</span>
+                                  <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
+                                </span>
+                              </span>
+                              <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {sessionListMode === 'issue' && (
+            <PaginationControls
+              compact
+              page={sidebarPagination.page}
+              totalPages={sidebarPagination.totalPages}
+              pageStart={sidebarPagination.pageStart}
+              pageEnd={sidebarPagination.pageEnd}
+              totalItems={sortedSessions.length}
+              onPageChange={sidebarPagination.goToPage}
+            />
+          )}
+        </ResizablePanel>
+        </div>
+
+        {/* 左侧编辑器 — 「代码对话」模式可见.
+            editorMounted 首次进入后置 true, 此后切回会话模式仅 hidden 保活 iframe (不卸载/不重连 WS);
+            {!isMobile && ...} 避免 ResizablePanel side=left 在窄屏 portal 成抽屉. 该 {editorMounted && ...}
+            表达式恒占一个 React 子槽位 → ChatArea 兄弟索引恒定 → 切换布局时 ChatArea 不重挂. */}
+        {editorMounted && !isMobile && (
+          <div className={useEditorChat ? 'contents' : 'hidden'}>
+            <ResizablePanel
+              storageKey={`mobius:ui:split:editor-chat:${projectId}`}
+              defaultWidth={editorDefaultWidth}
+              minWidth={editorMinWidth}
+              maxWidth={editorMaxWidth}
+              side="left"
+              className="border-r flex flex-col"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <Suspense fallback={<WorkspacePaneLoading label="正在加载代码对话 v1..." />}>
+                <EditorPane
+                  projectName={project?.name || projectId}
+                  bindPath={editorBindPath}
+                  vscodeWebUrl={editorVscodeUrl}
+                  leading={
+                    <SessionSwitcher
+                      sessions={sortedSessions}
+                      currentId={currentSession?.session_id}
+                      onPick={goToSession}
+                    />
+                  }
+                />
+              </Suspense>
+            </ResizablePanel>
+          </div>
+        )}
+
+        {/* 中+左: 「代码对话 v2」三栏主体 (文件浏览器 + 代码浏览). 右侧 ChatArea 由下方渲染.
+            v2Mounted 保活文件树展开/选中状态; 切回会话/v1 仅 hidden. */}
+        {v2Mounted && !isMobile && (
+          <div className={useCodeConversation ? 'contents' : 'hidden'}>
+            <Suspense
+              fallback={
+                <div
+                  className="flex flex-1 items-center justify-center border-r"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                >
+                  <WorkspacePaneLoading label="正在加载代码对话 v2..." />
+                </div>
+              }
+            >
+              <CodeConversationPane
+                projectId={projectId}
+                bindPath={editorBindPath}
+                vscodeWebUrl={editorVscodeUrl}
+                initialFilePath={codeEditorRequest?.target.path}
+                initialLine={codeEditorRequest?.target.line}
+                initialColumn={codeEditorRequest?.target.column}
+                initialEndLine={codeEditorRequest?.target.endLine}
+                initialOpenKey={codeEditorRequest?.requestKey}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {/* 右侧:
+              - 已选中 session → ChatArea (代码对话模式 layout=stacked; 同一 ChatArea 实例, 切换布局仅改修饰类, 不重挂)
+              - URL 有 ?session 但 currentSession 还没对上 (拉取中) → Loading, 不闪 SessionOverview
+              - 否则 → SessionOverview */}
+        {currentSession ? (
+          <ChatArea
+            layout={(useEditorChat || useCodeConversation) ? 'stacked' : 'default'}
+            toolOrigin="issue"
+            onNewSession={(useEditorChat || useCodeConversation) ? () => setShowNewSession(true) : undefined}
+            workspaceEditor={{
+              available: ccAvailable,
+              loading: editorLoading,
+              open: useCodeConversation,
+              unavailableReason: !currentSession ? '请先选择会话' : !editorBindPath ? '需要先为项目绑定工作路径（bind path）' : '',
+              onOpen: openCodeConversation,
+              supportsFileLocation: true,
+            }}
+          />
+        ) : sessionParam ? (
+          <Loading text="正在加载会话..." />
+        ) : (
+          <SessionOverview
+            sessions={sortedSessions}
+            onNewSession={() => setShowNewSession(true)}
+            projectId={projectId}
+          />
+        )}
+      </div>
+
+      {showNewSession && <NewSessionModal issueId={issueId} projectId={projectId} onClose={() => setShowNewSession(false)}
+        defaultNamePrefix={issue?.title || ''}
+        defaultDescription={issue?.description || ''}
+        defaultModel={project?.default_model ?? null}
+        projectKind={project?.kind}
+        onCreated={(s: any) => {
+          setShowNewSession(false)
+          refreshSessions()
+          goToSession(s.session_id)
+        }} />}
+      {editingSession && <RenameSessionModal session={editingSession} onClose={() => setEditingSession(null)}
+        onRenamed={(updated: any) => {
+          setEditingSession(null)
+          refreshSessions()
+          if (currentSession && currentSession.session_id === updated.session_id) setCurrentSession({ ...currentSession, name: updated.name })
+        }} />}
+      {editingIssue && issue && <RenameIssueModal issue={issue} onClose={() => setEditingIssue(false)}
+        onRenamed={(updated: any) => {
+          setEditingIssue(false)
+          setIssueState(updated)
+          setCurrentIssue(updated)
+        }} />}
+      {deletingSession && <ConfirmModal
+        title="删除会话"
+        message={`确定删除会话「${deletingSession.name}」？删除后将立即永久删除，不再保留。`}
+        onConfirm={handleDeleteSession}
+        onClose={() => setDeletingSession(null)}
+        confirmText="删除"
+        confirmClass="bg-[var(--status-danger)] !text-[var(--status-danger-foreground)] hover:opacity-90" />}
+    </div>
+  )
+}
+
+function WorkspacePaneLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full min-h-[160px] w-full flex-col items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      <div className="text-[12px]">{label}</div>
+    </div>
+  )
+}
+
+// =====================================================================
+// SessionOverview — 没有选中 session 时的右侧主区
+// 会话导航统一收敛到左侧 SessionRow 列表 (master-detail 的 master), 这里只做
+// 任务概览: 统计摘要 + 状态统计卡 + 新建会话入口. 不再与左侧列表并列展示同一批
+// 会话卡片 (消除冗余). guided-demo / logo-review 的 tour 锚点已迁移到左侧
+// SessionRow (见 IssuePage 渲染处), demo 流程不破坏.
+// =====================================================================
+function SessionOverview({ sessions, onNewSession, projectId }: {
+  sessions: any[]
+  onNewSession: () => void
+  projectId: string
+}) {
+  // 状态分类复用 agent_status 单一真相源 (与 AgentStatusDot 同源), 颜色语义一致.
+  const stats = useMemo(() => {
+    let running = 0, completed = 0, failed = 0
+    sessions.forEach((s: any) => {
+      const st = s.agent_status || 'idle'
+      if (st === 'running') running++
+      else if (st === 'completed') completed++
+      else if (st === 'failed') failed++
+    })
+    return {
+      total: sessions.length,
+      running, completed, failed,
+      idle: sessions.length - running - completed - failed,
+    }
+  }, [sessions])
+
+  return (
+    <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
+      <div className="max-w-5xl mx-auto p-6">
+        <div className="mb-5">
+          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>任务概览</h1>
+          <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            {sessions.length === 0
+              ? '当前任务还没有会话，新建一个开始执行'
+              : `共 ${stats.total} 个会话${stats.running ? ` · ${stats.running} 个执行中` : ''}${stats.completed ? ` · ${stats.completed} 个已完成` : ''} · 从左侧选择会话进入对话`}
+          </p>
+        </div>
+
+        {sessions.length === 0 ? (
+          <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前任务还没有会话</div>
+            <button onClick={onNewSession}
+              data-tour="issue-empty-create-session"
+              className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
+              <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
+              创建第一个Session
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* 状态统计卡 — agent_status 单一真相源, 圆点颜色复用 AgentStatusDot 语义 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              <OverviewStatCard label="总会话" value={stats.total} />
+              <OverviewStatCard label="执行中" value={stats.running} agentStatus="running" />
+              <OverviewStatCard label="已完成" value={stats.completed} agentStatus="completed" />
+              <OverviewStatCard label="失败" value={stats.failed} agentStatus="failed" />
+            </div>
+
+            {/* 新建会话入口 */}
+            <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between gap-4"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>开启一次智能体执行</div>
+                <div className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>从左侧选择已有会话进入对话，或新建会话</div>
+              </div>
+              <button onClick={onNewSession}
+                data-tour="issue-overview-create-session"
+                className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10 flex-shrink-0">
+                <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
+                新建会话
+              </button>
+            </div>
+          </>
+        )}
+
+        {projectId && (
+          <div className="mt-6">
+            <ProjectFilesCard projectId={projectId} />
+          </div>
+        )}
+      </div>
+    </main>
+  )
+}
+
+// OverviewStatCard — 任务概览的状态统计小卡: 标签 + 计数, 可选状态圆点 (颜色复用 AgentStatusDot).
+function OverviewStatCard({ label, value, agentStatus }: {
+  label: string
+  value: number
+  agentStatus?: string
+}) {
+  return (
+    <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        {agentStatus && <AgentStatusDot agentStatus={agentStatus} />}
+        {label}
+      </div>
+      <div className="text-[22px] font-semibold mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</div>
+    </div>
+  )
+}
+
+// =====================================================================
+// SessionSwitcher — 「代码对话」模式下 (左侧 Session 侧栏已隐藏) 的轻量 Session 切换下拉.
+// 复用 NavSwitcherPanel 的视觉语言 (menu-bg / border / 圆角 / hover); 点击外部关闭.
+// 仅用于 EditorPane 工具栏 leading 插槽. 不做抽屉 / 焦点管理 (v1).
+// =====================================================================
+function SessionSwitcher({ sessions, currentId, onPick }: {
+  sessions: any[]
+  currentId?: string
+  onPick: (sid: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+  const current = sessions.find(s => s?.session_id === currentId)
+  const ql = q.trim().toLowerCase()
+  const filtered = ql ? sessions.filter(s => String(s?.name || '').toLowerCase().includes(ql)) : sessions
+  return (
+    <div className="relative flex-shrink-0">
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+        title="切换会话"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex h-6 max-w-[180px] items-center gap-1 rounded px-1.5 transition-colors hover:bg-[var(--bg-card-hover)]">
+        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择会话'}</span>
+        <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-muted)' }} />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-8 z-50 flex max-h-[50vh] w-[240px] flex-col rounded-lg p-1.5 shadow-xl"
+          style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+          onClick={e => e.stopPropagation()}>
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="搜索会话..."
+            className="mb-1 h-7 w-full rounded-md px-2 text-[12px] focus:outline-none"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+          <div className="overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="px-2 py-2 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>无匹配会话</div>
+            ) : filtered.map(s => (
+              <button
+                key={s.session_id}
+                type="button"
+                onClick={() => { onPick(s.session_id); setOpen(false) }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ background: s.session_id === currentId ? 'var(--bg-active)' : undefined }}>
+                <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: s.agent_status === 'completed' ? 'var(--status-success)' : 'var(--status-running)' }} />
+                <span className="truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function IssuePage() {
+  const layoutMode = useLayoutMode()
+  return layoutMode === 'easy_mode' ? <EasyIssuePage /> : <LegacyIssuePage />
+}

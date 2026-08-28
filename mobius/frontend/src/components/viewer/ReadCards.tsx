@@ -5,12 +5,10 @@
  * 命中的 tool_result (ReadResultPanel) 折在卡片里展示文件内容 (带行号, 首屏截断).
  */
 import { useMemo, useState } from 'react'
-import { splitDiffValue } from './utils'
+import { splitDiffValue, basename } from './utils'
 import { ResultTextPreview } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
 import type { ReadToolCall, BashToolResult } from './types'
-import { CodeBlockHeader, codeLanguageFromPath } from '../code-artifacts/CodeBlock'
-import { targetFromTrustedPath } from '../code-artifacts/file-target'
 
 export function JsonEntryReadCalls({ calls, results = [] }: { calls: ReadToolCall[]; results?: BashToolResult[] }) {
   return (
@@ -34,34 +32,45 @@ export function JsonEntryReadCalls({ calls, results = [] }: { calls: ReadToolCal
 }
 
 function ReadCallCard({ call, index, results = [] }: { call: ReadToolCall; index: number | null; results?: BashToolResult[] }) {
+  const [copied, setCopied] = useState<boolean>(false)
   const meta = [
     call.offset != null ? `offset ${call.offset}` : '',
     call.limit != null ? `limit ${call.limit}` : '',
   ].filter(Boolean).join(' · ')
-  const startLine = call.offset != null && call.offset > 0 ? call.offset : null
-  const target = targetFromTrustedPath(call.filePath, {
-    intent: 'preview',
-    source: 'jsonl-tool',
-  })
-  const rangedTarget = target && startLine !== null
-    ? { ...target, line: startLine, endLine: call.limit != null && call.limit > 0 ? startLine + call.limit - 1 : null }
-    : target
 
   return (
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
-      <CodeBlockHeader
-        language={codeLanguageFromPath(call.filePath)}
-        target={rangedTarget}
-        copySource={call.filePath}
-        copyLabel="复制文件路径"
-      >
-        {index != null && <span className="font-mono text-[var(--text-muted)]">#{index}</span>}
+      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+        <div className="min-w-0 flex-1">
+          {index != null && (
+            <div className="font-mono text-[10px] text-[var(--text-muted)]">#{index}</div>
+          )}
+          <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={call.filePath}>
+            {basename(call.filePath)}
+          </div>
+          <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={call.filePath}>
+            {call.filePath}
+          </div>
+        </div>
         {meta && (
           <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
             {meta}
           </span>
         )}
-      </CodeBlockHeader>
+        <JsonlCopyButton
+          copied={copied}
+          title="复制文件路径到剪贴板"
+          copiedTitle="文件路径已复制"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            navigator.clipboard.writeText(call.filePath).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1000)
+            })
+          }}
+        />
+      </div>
       {results.length > 0 ? (
         <div>
           {results.map((result, idx) => (
@@ -85,7 +94,7 @@ function ReadResultPanel({ result, fallbackPath }: { result: BashToolResult; fal
   const startLine = readFile?.startLine || 1
   const lines = splitDiffValue(text)
   const stateLabel = result.isError ? 'error' : 'ok'
-  const stateClass = result.isError ? 'text-[var(--status-danger)]' : 'text-[var(--status-success)]'
+  const stateClass = result.isError ? 'text-red-300' : 'text-emerald-300'
 
   return (
     <div className="border-t border-[var(--border-color)]/70 first:border-t-0">
