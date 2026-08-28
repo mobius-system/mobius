@@ -132,7 +132,13 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
         </div>
       )}
       {showOutput && (
-        <pre className="easy-jsonl-activity__output-tail" aria-label="命令输出尾部">{activity.outputTail}</pre>
+        <pre
+          className="easy-jsonl-activity__output-tail"
+          aria-label="工具输出，可滚动查看"
+          tabIndex={0}
+        >
+          {activity.outputTail}
+        </pre>
       )}
     </div>
   )

@@ -166,9 +166,13 @@
 .easy-jsonl-activity--error .easy-jsonl-activity__detail { border-color: var(--status-danger-border); background: var(--status-danger-soft); }
 .easy-jsonl-activity__output-tail {
   width: min(720px, calc(100% - 16px));
-  max-height: none;
+  max-height: min(320px, 42vh);
   margin: 2px 8px 6px;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid var(--easy-line);
@@ -179,6 +183,10 @@
   font-family: 'JetBrains Mono','Cascadia Code',monospace;
   font-size: 9px;
   line-height: 1.35;
+}
+.easy-jsonl-activity__output-tail:focus-visible {
+  outline: 2px solid var(--focus-ring-soft);
+  outline-offset: 1px;
 }
 .easy-jsonl-activity.is-search-match > .easy-jsonl-activity__summary,
 .easy-jsonl-burst.is-search-match > .easy-jsonl-burst__summary,

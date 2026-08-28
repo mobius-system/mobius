@@ -13,6 +13,7 @@ assert.match(homeSource, /<HomeModelHarnessSelect[\s\S]*projectId=\{selectedProj
 assert.match(homeSource, /<HomeModelHarnessSelect[\s\S]*lastRememberedModel=\{lastRememberedModel\}/, '首页必须把上次模型交给组合选择器恢复')
 assert.match(homeSource, /createDefaultConversation\(\{[\s\S]*model: selectedModel/, '首页创建会话时必须透传用户选择的组合')
 assert.match(homeSource, /const hasSendableContent = !!prompt\.trim\(\) \|\| readyAttachments\.length > 0/, '首页必须允许只有已上传图片时发送')
+assert.match(homeSource, /const canRequestSend = hasSendableContent && !anyUploading/, '附件仍在上传时首页发送按钮必须禁用')
 assert.match(homeSource, /disabled=\{!canRequestSend \|\| !selectedModel \|\| sending\}/, '无可发送内容或组合未就绪时首页发送按钮必须禁用')
 assert.match(selectorSource, /api\('\/api\/sessions\/model-options'\)/, '组合选项必须来自统一模型目录接口')
 assert.match(selectorSource, /tmux-codex[\s\S]*Codex[\s\S]*tmux-claude-code[\s\S]*Claude Code[\s\S]*deepseek-harness[\s\S]*DeepSeek Harness/, '选择器必须明确展示对应 Harness')

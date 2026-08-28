@@ -11,7 +11,9 @@ assert.match(viewSource, /<JsonlCompactMarkdown text="继续处理当前任务" 
 assert.match(viewSource, /contextOpen \? <JsonlCompactMarkdown text=\{hidden\}/, '系统注入内容必须折叠，展开后才渲染')
 assert.match(viewSource, /showTitle && \(/, '有输出的命令/搜索不得再渲染放大标题')
 assert.match(viewSource, /showOutput && \(/, '空信封不得占位，有输出时用小字展示')
-assert.match(cssSource, /\.easy-jsonl-activity__output-tail\s*\{[^}]*max-height:\s*none/, '命令输出不得再用固定高度裁切')
+assert.match(viewSource, /aria-label="工具输出，可滚动查看"[\s\S]*tabIndex=\{0\}/, '工具输出区必须支持键盘聚焦和滚动')
+assert.match(cssSource, /\.easy-jsonl-activity__output-tail\s*\{[^}]*max-height:\s*min\(320px,\s*42vh\)[^}]*overflow-y:\s*auto/, '长工具输出必须限高并在卡片内纵向滚动')
+assert.match(cssSource, /\.easy-jsonl-activity__output-tail\s*\{[^}]*overscroll-behavior:\s*contain[^}]*-webkit-overflow-scrolling:\s*touch/, '工具输出滚动必须隔离外层并支持触控惯性')
 assert.match(cssSource, /\.easy-jsonl-activity__output-tail\s*\{[^}]*font-size:\s*9px/, '命令输出必须用小字完整展示')
 
 const promptMarkdownRule = cssSource.match(/\.easy-jsonl-prompt \.jsonl-compact-md\s*\{([^}]*)\}/)?.[1] || ''

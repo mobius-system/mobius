@@ -490,7 +490,7 @@ function HomeSurface() {
   }, [anyUploading, sendError])
 
   const hasSendableContent = !!prompt.trim() || readyAttachments.length > 0
-  const canRequestSend = hasSendableContent || anyUploading
+  const canRequestSend = hasSendableContent && !anyUploading
 
   return loadingProjects ? (
           <div className="flex min-w-0 flex-1 items-center justify-center" style={{ color: 'var(--text-muted)', background: 'var(--surface-messages)' }}>加载项目…</div>
@@ -592,8 +592,8 @@ function HomeSurface() {
                       {composerExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                     </button>
                     <button type="button" onClick={() => void send()} disabled={!canRequestSend || !selectedModel || sending}
-                      aria-label={sending ? '正在开始会话' : '发送'}
-                      title={sending ? '正在开始会话' : '发送'}
+                      aria-label={sending ? '正在开始会话' : anyUploading ? '附件仍在上传' : '发送'}
+                      title={sending ? '正在开始会话' : anyUploading ? '附件仍在上传，请稍候' : '发送'}
                       className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">
                       {sending ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     </button>
