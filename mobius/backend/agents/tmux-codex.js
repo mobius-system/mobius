@@ -55,6 +55,10 @@ const {
 const { MOBIUS_DATA_PATH } = require('../config')
 const { log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
+const {
+  UPDATE_PROMPT_SENTINELS,
+  createCodexUpdatePromptGuard,
+} = require('./codex-startup-prompts')
 
 let Database = null
 try { Database = require('better-sqlite3') } catch {}
@@ -169,12 +173,6 @@ const TRUST_PROMPT_SENTINELS = [
   'Trusting the directory allows',
 ]
 const TRUST_PRESS_INTERVAL_MS = 1500
-const UPDATE_PROMPT_SENTINELS = [
-  'Update available!',
-  'Skip until next version',
-]
-const UPDATE_PRESS_INTERVAL_MS = 1500
-
 const PASTE_PROBE_TIMEOUT_MS = 8000
 const PASTE_PROBE_INTERVAL_MS = 200
 const PASTE_SLEEP_BASE_MS = 800
@@ -1288,8 +1286,8 @@ class TmuxCodexBackend extends AgentBackend {
     let historyReadyPolls = 0
     // 记录上次自动按信任确认的时间，用来限频。
     let lastTrustPress = 0
-    // 记录上次跳过更新提示的时间，用来限频。
-    let lastUpdatePress = 0
+    // 更新提示文字会残留在 scrollback；每个新窗口最多处理一次，避免重复输入 "2"。
+    const shouldSkipUpdatePrompt = createCodexUpdatePromptGuard()
     // 保留最后一次非空屏幕内容，超时报错时给调用方看。
     let lastScreen = ''
     const target = `${HUB}:${sessionId}`
@@ -1316,18 +1314,12 @@ class TmuxCodexBackend extends AgentBackend {
         break
       }
       // 如果出现 Codex 更新提示，就自动选择跳过更新。
-      if (hasUpdatePrompt) {
-        // 读取当前时间，用于判断是否到达下一次按键间隔。
-        const now = Date.now()
-        // 防止过于频繁地向 TUI 发送跳过更新按键。
-        if (now - lastUpdatePress > UPDATE_PRESS_INTERVAL_MS) {
-          // 发送 "2" 和 Enter，选择更新提示里的跳过选项。
-          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, '2', 'Enter'])
-          // 更新上次跳过更新提示的时间。
-          lastUpdatePress = now
-          // 写日志说明已自动跳过 Codex 更新提示。
-          log(`[tmux-codex] window=${sessionId} skipped Codex update prompt (cwd=${cwd})`)
-        }
+      if (shouldSkipUpdatePrompt(screen)) {
+        // 发送 "2" 和 Enter，选择更新提示里的跳过选项。失败时立即终止启动，不能
+        // 重试数字按键，否则弹窗恰好消失时会把重试内容提交成用户消息。
+        const skipped = tmux(['send-keys', '-t', `${HUB}:${sessionId}`, '2', 'Enter'])
+        if (skipped.status !== 0) throw new Error(`failed to skip Codex update prompt: ${skipped.stderr}`)
+        log(`[tmux-codex] window=${sessionId} skipped Codex update prompt once (cwd=${cwd})`)
       }
       // 如果屏幕上出现目录信任提示，就进入自动确认逻辑。
       if (hasTrustPrompt) {

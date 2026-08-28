@@ -37,6 +37,7 @@
     "test:agent-bridge-l5": "node --require tsx/cjs tests/agent-bridge-l5.js",
     "test:claude-realtime-info": "node --require tsx/cjs tests/claude-realtime-info.js",
     "test:codex-error-scan": "node --require tsx/cjs tests/codex-error-scan.js",
+    "test:codex-update-prompt-guard": "node tests/codex-update-prompt-guard.js",
     "test:provider-cli-detection": "node --require tsx/cjs tests/provider-cli-detection.js",
     "test:codex-model-catalog": "node --require tsx/cjs tests/codex-model-catalog.js",
     "test:provider-native-model-registry": "node --require tsx/cjs tests/provider-native-model-registry.js",

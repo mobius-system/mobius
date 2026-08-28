@@ -61,22 +61,14 @@ function activityIcon(kind: EasyActivityKind) {
 }
 
 function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyActivity; forceExpanded?: boolean }) {
-  const [expanded, setExpanded] = useState(!!activity.defaultExpanded)
-  const userToggledRef = useRef(false)
-  const planOutputSeenRef = useRef(false)
+  const [expanded, setExpanded] = useState(false)
   const isQuiet = activity.kind === 'command' || activity.kind === 'explore' || activity.kind === 'tool'
   const canExpand = activity.details.length > 0 || !!activity.imageUrls?.length || !!activity.outputTail
   const showOutput = !!activity.outputTail && expanded
 
   useEffect(() => {
-    if (forceExpanded || activity.defaultExpanded) setExpanded(true)
-  }, [forceExpanded, activity.defaultExpanded])
-
-  useEffect(() => {
-    if (activity.kind !== 'plan' || !activity.outputTail || planOutputSeenRef.current) return
-    planOutputSeenRef.current = true
-    if (!userToggledRef.current) setExpanded(true)
-  }, [activity.kind, activity.outputTail])
+    if (forceExpanded) setExpanded(true)
+  }, [forceExpanded])
 
   return (
     <div
@@ -92,7 +84,6 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
         className="easy-jsonl-activity__summary"
         onClick={() => {
           if (!canExpand || forceExpanded) return
-          userToggledRef.current = true
           setExpanded(value => !value)
         }}
         aria-expanded={canExpand ? expanded : undefined}
@@ -145,12 +136,12 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
 
 function EasyBurstItem({ burst, focusedLineNo }: { burst: EasyTimelineBurst; focusedLineNo: number | null }) {
   const forceExpanded = focusedLineNo != null && burst.items.some(activity => activity.lineNos.includes(focusedLineNo))
-  const [expanded, setExpanded] = useState(burst.defaultExpanded)
-  const lockedOpen = burst.hasError || forceExpanded
+  const [expanded, setExpanded] = useState(false)
+  const lockedOpen = forceExpanded
 
   useEffect(() => {
-    if (lockedOpen || burst.defaultExpanded) setExpanded(true)
-  }, [lockedOpen, burst.defaultExpanded])
+    if (forceExpanded) setExpanded(true)
+  }, [forceExpanded])
 
   return (
     <section

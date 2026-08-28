@@ -11,7 +11,7 @@
 - 它对 file edited、清洗后的 command、searching query 给出一行语义摘要，信息粒度更接近聊天，而不是日志卡。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:323-419；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:697-724）
 - 它的 Working 使用本轮最新思考标题，并在遇到 assistant 消息后停止沿用旧标题，运行反馈比“正在继续处理”更有上下文。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:189-204；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:343-352）
 - Mobius 应学连续工具加 reasoning 分组、行内摘要、当前思考标题和折叠行的命令尾部，不应照搬英文文案或其它产品控制项。
-- Mobius 还应保留自己的失败自动展开：CodexMonitor 当前只给失败状态着色，并没有通用的失败行自动展开规则。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61,224-246；mobius/frontend/src/components/viewer/EntryCard.tsx:123-149）
+- Mobius 的 Easy 时间线统一保持工具过程默认折叠；失败只在摘要标红，避免新结果到达时抢走用户当前阅读位置。搜索定位仍可显式展开命中项。
 - 标准 JSONL 应继续作为逐条 entry、原始字段、完整命令结果和搜索定位的取证面，不宜再承担默认聊天 transcript。（mobius/frontend/src/components/viewer/EntryCard.tsx:340-478）
 - 因而明确取舍是：默认 Easy 学 CodexMonitor 的时间线，错误展开学 Mobius 自己，标准 JSONL 保留但退到详细入口。
 
@@ -89,11 +89,11 @@ Easy 仍复用标准面的 user 轮次，但随后为整轮创建 Map<EasyActivi
 
 所有 assistant 文本先收集，最后一条成为 assistantResponse，之前的每一条都被塞进一个 progress 桶。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:177-182,225-257）现有测试只断言最终回复与四种 activity 存在，没有断言相邻顺序或消息边界，因此没有防住整轮重排。（mobius/frontend/tests/easy-jsonl-model.test.ts:6-24）
 
-Easy 每个 activity 默认折叠，只有 error 桶 defaultExpanded；用户问题和最终回复始终直接显示。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:230-243；mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:57-97,210-241）运行中的最后一轮在底部显示“正在继续处理”，副文案直接用 liveText 或“智能体正在执行当前任务…”，没有提炼最新思考标题。（mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:200-229）顶部 SessionStatusChip 另显示启动中、执行中、待命或失败等会话级状态。（mobius/frontend/src/components/session-status-chip.tsx:26-36；mobius/frontend/src/components/chat.tsx:4383-4391）
+Easy 的工具调用组和单条 activity 全部默认折叠，失败只保留摘要状态；用户问题和最终回复始终直接显示。运行中的最后一轮在底部显示“正在继续处理”，副文案直接用 liveText 或“智能体正在执行当前任务…”。顶部 SessionStatusChip 另显示启动中、执行中、待命或失败等会话级状态。
 
 Easy 的 command activity 只收命令文本；工具结果循环只把 isError 结果加入 error 桶，因此成功 stdout 没有进入 Easy 时间线，更没有折叠行 live tail。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:189-215）标准面则必须先打开命令 entry 才看到 BashResultPanel。（mobius/frontend/src/components/viewer/EntryCard.tsx:442-463；mobius/frontend/src/components/viewer/BashCards.tsx:109-118,120-204）
 
-两套 Mobius 面共用外层滚动：距底部超过 200px 视作用户在读旧内容，此时不抢滚动并显示“新消息”；否则 jsonlEntries 数量变化会滚到底。（mobius/frontend/src/components/session-jsonl-panel.tsx:75-85,136-142；mobius/frontend/src/components/chat.tsx:3882-3913）Easy 的搜索定位会展开 200-entry 窗口并滚到命中轮次，但不会自动展开命中 activity 详情。（mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:148-185）
+两套 Mobius 面共用外层滚动：距底部超过 200px 视作用户在读旧内容，此时不抢滚动并显示“新消息”；否则 jsonlEntries 数量变化会滚到底。（mobius/frontend/src/components/session-jsonl-panel.tsx:75-85,136-142；mobius/frontend/src/components/chat.tsx:3882-3913）Easy 的搜索定位会展开 200-entry 窗口、命中工具组与 activity 详情并滚到对应位置。
 
 ## 3. 差距表
 
@@ -104,11 +104,11 @@ Easy 的 command activity 只收命令文本；工具结果循环只把 isError 
 | 探索如何计入 | 上游把可识别只读命令语义化；混合组按 explore entries 数计真实步骤。（examples/CodexMonitor/src/utils/threadItems.explore.ts:307-376；examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:282-291） | 只按连续探索工具卡数量聚合，失败阻止语义转换的问题不存在，因为仍是原 entry。（mobius/frontend/src/components/viewer/explore-group.ts:45-67） | 标题按去重后的 details 数，重复同参调用可能少算。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:156-157,231-242） | CodexMonitor | 计实际 call/step；可去重展示文本，但不可用去重数冒充调用数。 |
 | 中间 assistant 文本去哪 | 普通 message 终止当前组并原位显示；测试确认不丢消息。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:311-318；examples/CodexMonitor/src/features/messages/components/Messages.test.tsx:1191-1229） | 作为独立 entry 原位显示。（mobius/frontend/src/components/viewer/RoundGroups.tsx:217-255） | 除最后一条外全部进入全轮唯一 progress 桶。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:177-182,225-243） | CodexMonitor 与标准面 | 最终回复永远独立；仅短进度可在相邻突发内按原位显示。 |
 | 单条摘要粒度 | file edited + basename、清洗 command、searching + query。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:323-419；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:710-724） | 类型主题、lineNo、时间和 header short，偏日志卡。（mobius/frontend/src/components/viewer/EntryCard.tsx:340-386） | kind 总数 + 该桶最后一个 detail。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:228-243） | CodexMonitor | 中文动词 + 最有辨识度的对象；命令保留可识别开头。 |
-| 默认展开层 | tool group 开；ToolRow 细节关；有 output 的最新 plan 自动开。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61,224-246） | 最新两轮开、旧轮关；探索组关；单卡按内容类型决定。（mobius/frontend/src/components/viewer/RoundGroups.tsx:148-177；mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | 所有轮平铺；activity 关，error 开。（mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:57-97,197-243） | CodexMonitor | 工具突发组默认开，行细节默认折；取消默认聊天里的“轮—组—卡”三层门。 |
-| 失败是否强制开 | 否；失败只影响 tone，通用 expandedItems 仍为空。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:429-458；examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61） | 是；失败探索组和失败工具卡默认开，forgotten-flag 特例除外。（mobius/frontend/src/components/viewer/RoundGroups.tsx:49-62；mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | 是；error activity 默认开。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:240-243） | Mobius | 失败行和包含失败的组强制展开，优先级仅低于显式搜索定位。 |
+| 默认展开层 | tool group 开；ToolRow 细节关；有 output 的最新 plan 自动开。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61,224-246） | 最新两轮开、旧轮关；探索组关；单卡按内容类型决定。（mobius/frontend/src/components/viewer/RoundGroups.tsx:148-177；mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | 所有轮平铺；工具组与 activity 全部关。 | Mobius | 工具过程全部默认折叠，只有用户点击或搜索定位才展开。 |
+| 失败是否强制开 | 否；失败只影响 tone，通用 expandedItems 仍为空。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:429-458；examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61） | 是；失败探索组和失败工具卡默认开，forgotten-flag 特例除外。（mobius/frontend/src/components/viewer/RoundGroups.tsx:49-62；mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | 否；摘要标记失败，详情保持折叠。 | Mobius | 失败状态不得触发自动展开。 |
 | 运行中文案 | 底部计时 + 本轮最新 reasoning 标题，旧轮标题不会串入。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:189-204；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:343-352） | LIVE 显示原始实时状态或沉默时长。（mobius/frontend/src/components/viewer/LiveTailCard.tsx:20-67） | “正在继续处理” + 原始 liveText/通用句。（mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:221-229） | CodexMonitor | 最新思考标题；取不到时显示“正在处理”。会话状态仍留在顶栏。 |
 | 命令输出 | 清洗命令；运行 600ms 后或长命令可在折叠行露最后 200 行，并自行贴尾。（examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:192-249,727-756） | 展开 entry 后看原命令与结果，适合完整取证但没有折叠行 tail。（mobius/frontend/src/components/viewer/EntryCard.tsx:442-463；mobius/frontend/src/components/viewer/BashCards.tsx:109-204） | 成功 stdout 不进入 activity。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:197-202） | CodexMonitor 用于默认；标准面用于详情 | 行内露有限 tail，完整 stdout 链到标准详细视图。 |
-| 计划有 output | 自动展开最近一条 plan，尊重手动切换。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:224-246） | plan 属于本地自动展开条件。（mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | plan activity 默认折叠。（mobius/frontend/src/components/easy-jsonl/easy-jsonl-model.ts:230-243） | CodexMonitor 与标准面 | 计划产物首次完整到达时自动展开；用户手动折叠后不再抢。 |
+| 计划有 output | 自动展开最近一条 plan，尊重手动切换。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:224-246） | plan 属于本地自动展开条件。（mobius/frontend/src/components/viewer/EntryCard.tsx:123-149） | plan activity 始终默认折叠。 | Mobius | output 到达也不得自动展开。 |
 | 自动滚动 | 以最后条目的文本、status、output 长度为 key；120px 内贴底，切线程重新贴底。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:543-568；examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:66-111） | 与 Easy 共用外层，仅按新 entry 等依赖贴底；超过 200px 显示新消息。（mobius/frontend/src/components/chat.tsx:3882-3913） | 同标准面；搜索只滚到轮，不打开 activity。（mobius/frontend/src/components/easy-jsonl/EasyJsonlView.tsx:166-185） | CodexMonitor 更精确，Mobius 的不抢滚动更完整 | 保留 200px 与“新消息”，补上同一命令 output 增长触发和切 Session 重新贴底。 |
 | 与 Chat / Diff 壳的关系 | fileChange 用 ToolRow 行内摘要，diff item 仍在同一消息序列。（examples/CodexMonitor/src/features/messages/components/Messages.tsx:208-225） | JSONL 卡内可切代码/字段；属于 Chat 内容层。（mobius/frontend/src/components/viewer/EntryCard.tsx:442-478） | Chat 层在 centerMode=diff 时隐藏，另挂 Diff 中心层并提供返回对话。（mobius/frontend/src/components/chat.tsx:4373-4376,4848-4852,5320-5323） | 各自解决不同层级 | 时间线只放摘要；点详情可开 Diff/标准取证面，但返回后时间线顺序与滚动位置不变。 |
 
@@ -117,7 +117,7 @@ Easy 的 command activity 只收命令文本；工具结果循环只把 isError 
 ### 必须学
 
 - 连续工具与 reasoning 形成一个真实时间顺序的突发组，assistant 普通文本是边界；对应 CodexMonitor 的 buffer/flush 规则。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:274-320）
-- 组默认展开，组内 ToolRow 的参数、cwd、diff 和完整输出默认折叠；孤立单条不再套组。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:58-61；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:783-870）
+- 工具组与组内 ToolRow 详情都默认折叠；孤立单条不再套组，也保持折叠详情。
 - 一行摘要使用“已编辑 Foo.tsx”“rg …”“正在搜索 …”这类动作加对象，而不是只有“修改了 1 个文件”。（examples/CodexMonitor/src/features/messages/utils/messageRenderUtils.ts:339-419；examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:710-724）
 - 底部 Working 使用本轮最新 reasoning 标题；标题型 reasoning 不必在组内再重复一行。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:179-220）
 - 长命令或正在运行的命令可在折叠行露有限尾部，用户上滚后停止追尾。（examples/CodexMonitor/src/features/messages/components/MessageRows.tsx:192-249,727-756）
@@ -125,7 +125,7 @@ Easy 的 command activity 只收命令文本；工具结果循环只把 isError 
 ### 可学
 
 - 把 rg、grep、cat、sed 等纯探索命令在渲染上游语义化为 search/read/list，但识别失败或执行失败时保留原命令，避免错误归类。（examples/CodexMonitor/src/utils/threadItems.explore.ts:254-338）
-- 计划一旦有 output 可自动展开一次，并尊重用户之后的手动折叠。（examples/CodexMonitor/src/features/messages/components/useMessagesViewState.ts:224-246）
+- 计划收到 output 后继续保持折叠，避免流式更新自行掀开。
 
 ### 不要学
 
@@ -140,13 +140,13 @@ Easy 的 command activity 只收命令文本；工具结果循环只把 isError 
 
 1. 用户消息始终直接可见，不受工具组、旧轮或 activity 折叠影响。
 2. 按原始条目顺序扫描。连续 tool、可见 reasoning 与被明确识别为短进度的 assistant 文本形成一次工具突发；普通 assistant 文本、用户文本和最终回复都会 flush 当前突发。
-3. 两条及以上工具过程显示“▼ N 次工具调用”组，组默认展开；孤立单工具不包外组，直接显示一行。N 统计实际调用或语义化探索步骤，不使用去重后的摘要数。
+3. 两条及以上工具过程显示“▼ N 次工具调用”组，组默认折叠；孤立单工具不包外组，直接显示一行且详情默认折叠。N 统计实际调用或语义化探索步骤，不使用去重后的摘要数。
 4. 组内每行默认只显示状态图标与摘要：已编辑 Foo.tsx、rg …、正在搜索 …。参数、cwd、diff、完整 stdout 和原始 JSON 默认折叠。
 5. assistant 普通文本打断分组并原位显示；最后一条 assistant 回复始终作为独立回复可见。中间短进度可以成为相邻组内的一行，但不得跨后续 assistant 文本汇入全轮 progress 桶。
 6. 运行中底部固定显示 Working：优先取本轮最后一个 reasoning 标题，取不到时显示“正在处理”。标题型 reasoning 若已用于 Working，不在时间线重复渲染空详情行。
-7. 任一失败行默认展开；包含失败的工具组也保持展开并在组摘要显示“含失败”。搜索命中同样强制展开组与行。
+7. 失败行与包含失败的工具组仍默认折叠，并在摘要显示“含失败”；只有搜索命中会强制展开组与行。
 8. 运行超过短延迟或已判定为长命令时，折叠行可露最后有限行输出；完整 stdout、stderr、原命令和原始字段从详细视图打开。
-9. 计划首次收到非空 output 时自动展开一次；用户手动折叠后不再自动掀开。
+9. 计划收到非空 output 时保持当前折叠态，不得自动掀开。
 10. 用户在底部附近时，新增条目和同一命令 output 增长继续贴底；用户上滚后保持阅读位置并显示“新消息”，切换 Session 时重新定位到该 Session 尾部。
 11. 标准 JSONL / 详细视图保留在“工具”入口用于取证，不作为默认 transcript；从详情返回后保留 Easy 时间线的折叠态与滚动位置。
 
@@ -154,9 +154,9 @@ Easy 的 command activity 只收命令文本；工具结果循环只把 isError 
 
     Session
       ├─ 用户消息（始终可见）
-      ├─ 工具突发组（默认开）
+      ├─ 工具突发组（默认折）
       │    ├─ 行摘要（始终可见）
-      │    └─ 行详情（默认折；失败开）
+      │    └─ 行详情（默认折；失败也不自动开）
       ├─ assistant 回复（原位；最终回复始终可见）
       └─ Working（仅运行中）
 

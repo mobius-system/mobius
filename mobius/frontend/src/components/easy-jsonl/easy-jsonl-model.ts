@@ -31,7 +31,6 @@ export type EasyActivity = {
   outputTail?: string
   state: 'success' | 'error'
   lineNos: number[]
-  defaultExpanded?: boolean
   hidden?: boolean
 }
 
@@ -414,8 +413,9 @@ function burstTitle(items: EasyActivity[], toolCount: number, hasError: boolean)
   return hasError ? `${summary} · 含失败` : summary
 }
 
-function burstDefaultExpanded(toolCount: number, hasError: boolean): boolean {
-  return hasError || toolCount < 3
+function burstDefaultExpanded(): boolean {
+  // 工具过程统一默认折叠。失败状态仍展示在摘要上，但不能主动掀开详情。
+  return false
 }
 
 function prettyCommandOutput(value: string): string {
@@ -481,7 +481,6 @@ function attachResult(activity: EasyActivity, result?: BashToolResult): void {
   activity.outputTail = limitedOutputTail(outputText(result))
   if (result.isError) {
     activity.state = 'error'
-    activity.defaultExpanded = true
     activity.summary = '执行失败'
     const detail = compactText(result.stderr || result.content || result.stdout || '工具执行失败', 360)
     if (detail) activity.details = unique([...activity.details, detail])
@@ -523,7 +522,6 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
       outputTail: options.outputTail,
       state: options.state || 'success',
       lineNos: [lineNo],
-      defaultExpanded: options.defaultExpanded,
       hidden: options.hidden,
     })
 
@@ -550,7 +548,7 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
           toolCount,
           items,
           hasError,
-          defaultExpanded: burstDefaultExpanded(toolCount, hasError),
+          defaultExpanded: burstDefaultExpanded(),
         })
       } else {
         visible.forEach(item => timeline.push({ type: 'row', id: `${item.activity.id}:row`, activity: item.activity }))
@@ -624,7 +622,6 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
               details: detail ? [detail] : [],
               outputTail: limitedOutputTail(outputText(result)),
               state: 'error',
-              defaultExpanded: true,
             }), 0)
             handled += 1
           }
@@ -800,7 +797,6 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
         summary: error,
         details: [error],
         state: 'error',
-        defaultExpanded: true,
       }), 0)
     })
 
@@ -809,7 +805,7 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
     timeline.forEach(segment => {
       if (segment.type !== 'burst') return
       segment.hasError = segment.items.some(activity => activity.state === 'error')
-      segment.defaultExpanded = burstDefaultExpanded(segment.toolCount, segment.hasError)
+      segment.defaultExpanded = burstDefaultExpanded()
       segment.title = burstTitle(segment.items, segment.toolCount, segment.hasError)
     })
 

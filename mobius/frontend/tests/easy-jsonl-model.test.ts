@@ -24,7 +24,7 @@ const initialBurst = result[0].timeline[1]
 assert.equal(initialBurst.type, 'burst')
 if (initialBurst.type === 'burst') {
   assert.equal(initialBurst.toolCount, 3)
-  assert.equal(initialBurst.defaultExpanded, false, '3 次及以上成功调用必须默认收起，避免整屏铺开')
+  assert.equal(initialBurst.defaultExpanded, false, '工具调用组必须统一默认收起，避免整屏铺开')
   assert.deepEqual(initialBurst.items.map(activity => activity.kind), ['explore', 'command', 'file-change'])
   assert.equal(initialBurst.items.at(-1)?.title, '已编辑 App.tsx')
 }
@@ -64,6 +64,7 @@ const reasoningBurst = reasoningBridge.timeline[0]
 assert.equal(reasoningBurst.type, 'burst')
 if (reasoningBurst.type === 'burst') {
   assert.equal(reasoningBurst.toolCount, 2)
+  assert.equal(reasoningBurst.defaultExpanded, false, '2 次工具调用也必须默认收起')
   assert.deepEqual(reasoningBurst.items.map(activity => activity.kind), ['explore', 'reasoning', 'command'])
 }
 assert.equal(reasoningBridge.workingLabel, '核对调用链')
@@ -97,6 +98,7 @@ const repeatedBurst = repeatedCalls.timeline[0]
 assert.equal(repeatedBurst.type, 'burst')
 if (repeatedBurst.type === 'burst') {
   assert.equal(repeatedBurst.toolCount, 2, '重复同参仍须按两次实际调用计数')
+  assert.equal(repeatedBurst.defaultExpanded, false, '重复工具调用组也必须默认收起')
   assert.equal(repeatedBurst.items.length, 2)
 }
 
@@ -168,7 +170,7 @@ assert.equal(jsonRow.type, 'row')
 if (jsonRow.type === 'row') {
   assert.doesNotMatch(jsonRow.activity.outputTail || '', /Script completed|Wall time|Output:/)
   assert.match(jsonRow.activity.outputTail || '', /"ok": true/)
-  assert.equal(jsonRow.activity.defaultExpanded, undefined)
+  assert.equal('defaultExpanded' in jsonRow.activity, false, '工具行模型不应携带自动展开标记')
 }
 
 const customExec = buildEasyJsonlRounds([{
@@ -231,7 +233,7 @@ const failedRow = commandWithResult.timeline[0]
 assert.equal(failedRow.type, 'row')
 if (failedRow.type === 'row') {
   assert.equal(failedRow.activity.state, 'error')
-  assert.equal(failedRow.activity.defaultExpanded, true)
+  assert.equal('defaultExpanded' in failedRow.activity, false, '失败工具行也不应携带自动展开标记')
   assert.match(failedRow.activity.outputTail || '', /^line 1/)
   assert.match(failedRow.activity.outputTail || '', /line 24$/)
 }
@@ -251,7 +253,7 @@ const failedBurst = failedBurstRound.timeline[0]
 assert.equal(failedBurst.type, 'burst')
 if (failedBurst.type === 'burst') {
   assert.equal(failedBurst.hasError, true)
-  assert.equal(failedBurst.defaultExpanded, true)
+  assert.equal(failedBurst.defaultExpanded, false, '失败工具组也必须默认收起，只在摘要标记失败')
   assert.equal(failedBurst.title, '已读取文件并运行了命令 · 含失败')
 }
 
