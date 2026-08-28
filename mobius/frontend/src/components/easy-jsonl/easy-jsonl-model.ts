@@ -400,7 +400,15 @@ function commandDetails(command: string, cwd?: string): string[] {
 
 function burstTitle(items: EasyActivity[], toolCount: number, hasError: boolean): string {
   const noteCount = items.filter(item => item.kind === 'reasoning').length
-  const parts = [`${toolCount} 次工具调用`]
+  const kinds = new Set(items.filter(item => !item.hidden).map(item => item.kind))
+  const parts: string[] = []
+  if (kinds.has('explore')) parts.push('已读取和搜索')
+  if (kinds.has('command')) parts.push('运行了命令')
+  if (kinds.has('file-change')) parts.push('编辑了文件')
+  if (kinds.has('plan')) parts.push('更新了计划')
+  if (kinds.has('tool')) parts.push('调用了工具')
+  if (kinds.has('image')) parts.push('处理了图片')
+  if (parts.length === 0) parts.push(toolCount > 0 ? '调用了工具' : '完成了思考')
   if (noteCount) parts.push(`${noteCount} 条思考`)
   if (hasError) parts.push('含失败')
   return parts.join(' · ')
