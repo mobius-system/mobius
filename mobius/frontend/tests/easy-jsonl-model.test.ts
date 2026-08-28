@@ -171,6 +171,33 @@ if (jsonRow.type === 'row') {
   assert.equal(jsonRow.activity.defaultExpanded, undefined)
 }
 
+const customExec = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    { entry: { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'exec-js', input: 'const r = await tools.exec_command({\n  cmd: "curl -X POST http://127.0.0.1:8787/internal/harness/complete"\n})' } }, lineNo: 2, relIdx: 1 },
+    { entry: { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'exec-js', output: [{ type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n{"ok":true,"data":{"verified_product_groups":6,"representative_products":22}}' }] } }, lineNo: 3, relIdx: 2 },
+  ],
+}])[0]
+const customExecRow = customExec.timeline[0]
+assert.equal(customExecRow.type, 'row')
+if (customExecRow.type === 'row') {
+  assert.equal(customExecRow.activity.title, 'curl POST /internal/harness/complete')
+  assert.doesNotMatch(customExecRow.activity.title, /const r = await/)
+  assert.doesNotMatch(customExecRow.activity.outputTail || '', /Script completed|Wall time|^Output:/)
+  assert.match(customExecRow.activity.outputTail || '', /"verified_product_groups": 6/)
+}
+
+const customSearch = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    { entry: { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'web-1', input: 'const r = await tools.web__run({search_query:["paired premium couples"]})' } }, lineNo: 2, relIdx: 1 },
+  ],
+}])[0]
+assert.equal(customSearch.timeline[0].type === 'row' ? customSearch.timeline[0].activity.kind : '', 'explore')
+assert.match(customSearch.timeline[0].type === 'row' ? customSearch.timeline[0].activity.title : '', /正在搜索.*paired premium couples/)
+
 const titleReasoning = buildOne([
   userEntry(),
   toolEntry('Read', { file_path: '/workspace/one.ts' }, 'read-1'),

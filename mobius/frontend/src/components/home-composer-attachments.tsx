@@ -61,18 +61,26 @@ export function useHomeComposerAttachments({
   const startUpload = useCallback((attachment: HomeComposerAttachment) => {
     uploadAttachmentFile(attachment.sourceFile, projectId)
       .then(result => {
-        setAttachments(current => current.map(item => (
-          item.id === attachment.id
-            ? { ...item, status: 'done', remotePath: result.path, size: result.size || item.size, error: undefined }
-            : item
-        )))
+        setAttachments(current => {
+          const next = current.map(item => (
+            item.id === attachment.id
+              ? { ...item, status: 'done' as const, remotePath: result.path, size: result.size || item.size, error: undefined }
+              : item
+          ))
+          attachmentsRef.current = next
+          return next
+        })
       })
       .catch(reason => {
-        setAttachments(current => current.map(item => (
-          item.id === attachment.id
-            ? { ...item, status: 'error', error: reason?.message || '上传失败' }
-            : item
-        )))
+        setAttachments(current => {
+          const next = current.map(item => (
+            item.id === attachment.id
+              ? { ...item, status: 'error' as const, error: reason?.message || '上传失败' }
+              : item
+          ))
+          attachmentsRef.current = next
+          return next
+        })
       })
   }, [projectId])
 
@@ -88,7 +96,11 @@ export function useHomeComposerAttachments({
       previewUrl: URL.createObjectURL(file),
       status: 'uploading' as const,
     }))
-    setAttachments(current => [...current, ...next])
+    setAttachments(current => {
+      const combined = [...current, ...next]
+      attachmentsRef.current = combined
+      return combined
+    })
     next.forEach(startUpload)
   }, [onAttachmentsChanged, startUpload])
 
@@ -97,7 +109,11 @@ export function useHomeComposerAttachments({
     if (!target || target.status !== 'error') return
     onAttachmentsChanged?.()
     const retrying = { ...target, status: 'uploading' as const, error: undefined }
-    setAttachments(current => current.map(attachment => attachment.id === id ? retrying : attachment))
+    setAttachments(current => {
+      const next = current.map(attachment => attachment.id === id ? retrying : attachment)
+      attachmentsRef.current = next
+      return next
+    })
     startUpload(retrying)
   }, [onAttachmentsChanged, startUpload])
 
@@ -106,7 +122,9 @@ export function useHomeComposerAttachments({
     setAttachments(current => {
       const target = current.find(attachment => attachment.id === id)
       revokePreview(target?.previewUrl)
-      return current.filter(attachment => attachment.id !== id)
+      const next = current.filter(attachment => attachment.id !== id)
+      attachmentsRef.current = next
+      return next
     })
   }, [onAttachmentsChanged])
 
