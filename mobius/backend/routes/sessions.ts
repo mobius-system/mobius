@@ -1125,6 +1125,7 @@ router.get('/:id/features/files', auth, (req: express.Request, res: express.Resp
       total: files.length,
       appended: scanned.appended,
       scanned_from_offset: scanned.scanned_from_offset,
+      scanned_to_offset: scanned.scanned_to_offset,
       source_jsonl: scanned.source_jsonl,
       feature_jsonl: scanned.feature_jsonl,
       git_root: workspace.gitRoot,

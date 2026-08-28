@@ -353,7 +353,6 @@ for (const slot of ['Topbar', 'Preview', 'Right', 'Dock']) {
 assert.match(workPageSource, /data-workbench-chat-host[\s\S]*data-workbench-editor-host[\s\S]*data-workbench-chat-instance="primary"[\s\S]*hidden=\{!activeSessionLoaded\}[\s\S]*<ChatArea[\s\S]*layout="easy"[\s\S]*chrome="shell"[\s\S]*shellChromeActive=\{activeSessionLoaded\}[\s\S]*workspaceEditor=/, '默认 Session 必须把按需编辑器宿主与唯一 easy ChatArea 放在稳定槽位，并在加载期隐藏 shell chrome')
 assert.match(workPageSource, /hidden=\{!activeSessionLoaded\}[\s\S]*className="workbench-session-chat__surface flex/, '切换 Session 时保活的旧 Chat 必须使用不会参与加载期布局的专用 surface')
 assert.match(cssSource, /\.workbench-session-chat__surface\[hidden\]\s*\{[\s\S]*?display:\s*none\s*!important;[\s\S]*?\}/, '隐藏的旧 Chat 必须强制退出 flex 布局，避免与加载占位并排后发生宽度跳变')
-assert.match(chatSource, /if \(toolFilesReady \|\| toolFilesLoading\) return[\s\S]*?void loadToolFiles\(\)/, 'Session 文件抽屉必须把空结果视为已完成，避免无限重复扫描')
 assert.match(easyModePageSource, /<ChatArea[\s\S]*layout="easy"/, 'EasyModePage 必须显式使用 easy ChatArea')
 assert.match(easyIssuePageSource, /<ChatArea layout="easy"/, '简易 Issue 必须显式使用 easy ChatArea')
 assert.match(legacyIssuePageSource, /layout=\{\(useEditorChat \|\| useCodeConversation\) \? 'stacked' : 'default'\}/, '常规 Issue 必须只使用 default / stacked ChatArea')

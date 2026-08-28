@@ -146,6 +146,17 @@ partialScan = scanSessionFeatures(partialJsonlPath);
 assert.strictEqual(partialScan.scanned_from_offset, 0);
 assert.strictEqual(partialScan.scanned_to_offset, fs.statSync(partialJsonlPath).size, 'checkpoint must advance after the live line is completed');
 
+const noTrailingNewlinePath = path.join(tmp, 'no-trailing-newline.jsonl');
+fs.writeFileSync(noTrailingNewlinePath, JSON.stringify({
+  timestamp: '2026-06-14T00:00:05.000Z',
+  type: 'event_msg',
+  payload: { type: 'agent_message', message: 'complete final line' },
+}));
+let noTrailingNewlineScan = scanSessionFeatures(noTrailingNewlinePath);
+assert.strictEqual(noTrailingNewlineScan.scanned_to_offset, fs.statSync(noTrailingNewlinePath).size, 'a complete final JSON object does not require a trailing newline');
+noTrailingNewlineScan = scanSessionFeatures(noTrailingNewlinePath);
+assert.strictEqual(noTrailingNewlineScan.scanned_from_offset, fs.statSync(noTrailingNewlinePath).size);
+
 runGit(projectRoot, ['init']);
 runGit(projectRoot, ['config', 'user.email', 'test@example.com']);
 runGit(projectRoot, ['config', 'user.name', 'Mobius Test']);

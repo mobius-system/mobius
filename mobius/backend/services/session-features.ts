@@ -255,7 +255,10 @@ function completeJsonlBytes(buffer: Buffer): number {
   if (buffer.length === 0) return 0;
   if (buffer[buffer.length - 1] === 10) return buffer.length;
   const lastNewline = buffer.lastIndexOf(10);
-  return lastNewline >= 0 ? lastNewline + 1 : 0;
+  const tailStart = lastNewline >= 0 ? lastNewline + 1 : 0;
+  // 已完整写入但没有末尾换行的最后一条仍可消费；正在写入的半条 JSON
+  // 则停在上一条行边界，等下次补全后再解析。
+  return parseJsonMaybe(buffer.subarray(tailStart).toString('utf8')) ? buffer.length : tailStart;
 }
 
 function scanCheckpoint(sourceJsonl: string, scannedOffset: number, sourceSize: number): any {
