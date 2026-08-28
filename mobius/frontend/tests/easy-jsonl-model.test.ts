@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { buildEasyJsonlRounds, splitEasyUserPrompt } from '../src/components/easy-jsonl/easy-jsonl-model'
-import { functionOutputBody, stripExecEnvelope } from '../src/components/viewer/entry-extract'
+import { buildEasyJsonlRounds, splitEasyUserPrompt, stripEasyUserImageAttachmentBlocks } from '../src/components/easy-jsonl/easy-jsonl-model'
+import { entryUserAttachmentImages, functionOutputBody, stripExecEnvelope } from '../src/components/viewer/entry-extract'
 import { buildRounds } from '../src/components/viewer/rounds'
 import type { JsonlViewItem } from '../src/components/viewer/types'
 
@@ -283,6 +283,25 @@ assert.equal(notice.visible, '')
 const plain = splitEasyUserPrompt('实现一个简易页面')
 assert.equal(plain.visible, '实现一个简易页面')
 assert.equal(plain.hidden, '')
+
+const imageAttachmentPrompt = '[附件]\n- [图片] /tmp/screenshot.png\n\n检查这张截图'
+const imageAttachmentRound = buildOne([
+  userEntry(imageAttachmentPrompt),
+  assistantText('已检查。'),
+])
+assert.deepEqual(imageAttachmentRound.userAttachmentImages, ['/tmp/screenshot.png'])
+assert.equal(imageAttachmentRound.timeline.some(segment => segment.type === 'row' && segment.activity.kind === 'image'), false, '用户附件图不得在执行轨迹中重复出现')
+assert.equal(stripEasyUserImageAttachmentBlocks(imageAttachmentPrompt), '检查这张截图')
+assert.equal(
+  stripEasyUserImageAttachmentBlocks('[附件]\n- [图片] /tmp/screenshot.png\n- [文件] /tmp/report.pdf\n\n检查附件'),
+  '[附件]\n- [文件] /tmp/report.pdf\n\n检查附件',
+  '非图片文件仍保留为正文文件引用',
+)
+
+const structuredAttachmentPrompt = '用户随本轮消息上传了以下附件。你可以直接读取这些本机绝对路径来理解内容；图片需要向用户展示时可使用 `display_images <图片路径>`。\n1. [图片] /tmp/shot.webp (原图.webp)\n\n请分析'
+assert.deepEqual(entryUserAttachmentImages({ type: 'user', content: structuredAttachmentPrompt }), ['/tmp/shot.webp'])
+assert.equal(stripEasyUserImageAttachmentBlocks(structuredAttachmentPrompt), '请分析')
+assert.deepEqual(entryUserAttachmentImages({ attachments: [{ type: 'image', path: '/tmp/structured.png' }] }), ['/tmp/structured.png'])
 
 const framedPrompt = '以下信息描述了你正在协助的用户、当前Project、Issue/Research 与 Session.\n\n---\n\n## 用户的问题\n强化学习是什么'
 const plainThenFramed = buildEasyJsonlRounds(buildRounds([

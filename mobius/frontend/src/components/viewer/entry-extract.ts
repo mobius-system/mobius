@@ -868,6 +868,9 @@ function collectDisplayImagesFromCommand(command: any, out: string[]): void {
 function cleanAttachmentImagePath(raw: string): string {
   return String(raw || '')
     .trim()
+    // 结构化附件提示会在路径后附带原始文件名: /abs/path.png (shot.png).
+    // 展示端只需要真实路径；去掉该说明后才能通过图片扩展名判断。
+    .replace(/\s+\([^()\n]+\)\s*$/, '')
     .replace(/^["'`<]+/, '')
     .replace(/[>"'`]+$/, '')
 }
@@ -875,10 +878,24 @@ function cleanAttachmentImagePath(raw: string): string {
 function collectAttachmentImagesFromText(text: any, out: string[]): void {
   if (typeof text !== 'string' || text.indexOf('[图片]') === -1) return
   for (const line of text.split(/\r?\n/)) {
-    const match = line.match(/^\s*[-*]\s*\[图片\]\s+(.+?)\s*$/)
+    // 兼容旧发送格式 "- [图片] /path" 与结构化附件提示
+    // "1. [图片] /path (原始文件名)"。
+    const match = line.match(/^\s*(?:[-*]|\d+\.)\s*\[图片\]\s+(.+?)\s*$/)
     if (!match) continue
     const imagePath = cleanAttachmentImagePath(match[1])
     if (isImageArg(imagePath)) out.push(imagePath)
+  }
+}
+
+function collectStructuredAttachmentImages(entry: AnyEntry, out: string[]): void {
+  const candidates = [entry?.attachments, entry?.payload?.attachments, entry?.message?.attachments]
+  for (const attachments of candidates) {
+    if (!Array.isArray(attachments)) continue
+    for (const attachment of attachments) {
+      if (!attachment || attachment.type !== 'image') continue
+      const imagePath = cleanAttachmentImagePath(attachment.path)
+      if (isImageArg(imagePath)) out.push(imagePath)
+    }
   }
 }
 
@@ -925,6 +942,11 @@ export function entryDisplayImages(entry: AnyEntry): string[] {
 export function entryUserAttachmentImages(entry: AnyEntry): string[] {
   const texts: string[] = []
 
+  // Mobius 自身的 user_input JSONL 已携带结构化 attachments；优先支持该字段，
+  // 同时保留下面的文本解析以兼容历史消息与各 Agent 原生 JSONL。
+  const out: string[] = []
+  collectStructuredAttachmentImages(entry, out)
+
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'user_message') {
     if (typeof entry.payload.message === 'string') texts.push(entry.payload.message)
     if (typeof entry.payload.content === 'string') texts.push(entry.payload.content)
@@ -939,7 +961,6 @@ export function entryUserAttachmentImages(entry: AnyEntry): string[] {
     if (typeof entry?.content === 'string') texts.push(entry.content)
   }
 
-  const out: string[] = []
   for (const text of texts) collectAttachmentImagesFromText(text, out)
   return Array.from(new Set(out))
 }

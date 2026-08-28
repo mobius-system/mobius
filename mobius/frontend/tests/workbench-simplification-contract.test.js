@@ -248,19 +248,20 @@ assert.match(cssSource, /\.mobius-workbench \.home-composer-project-select:focus
 assert.match(cssSource, /\[data-home-composer-expand-toggle\]:focus-visible,[\s\S]*?\.home-recent-project:focus-visible,[\s\S]*?outline-color:\s*var\(--border-strong\)/, 'Home 次级控件的键盘焦点不得恢复亮蓝外圈')
 
 const easyPromptRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt\s*\{([^}]*)\}/)?.[1] || ''
+const easyPromptBubbleRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt__bubble\s*\{([^}]*)\}/)?.[1] || ''
 const easyPromptBodyRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt \.jsonl-compact-md\s*\{([^}]*)\}/)?.[1] || ''
 const easyResponseRule = easyJsonlCssSource.match(/\.easy-jsonl-response\s*\{([^}]*)\}/)?.[1] || ''
-assert.match(easyPromptRule, /border:\s*1px solid transparent/, '用户任务气泡不得再用可见硬边框，只保留透明描边占位')
+assert.match(easyPromptBubbleRule, /border:\s*1px solid transparent/, '用户任务气泡不得再用可见硬边框，只保留透明描边占位')
 assert.doesNotMatch(easyPromptRule, /border-left:\s*(?:[23]px|[^;]*var\(--accent-primary\))/, '用户任务卡不得再使用 2–3px 或 accent-primary 左侧装饰条')
-assert.match(easyPromptRule, /background:\s*var\(--surface-user-bubble/, '用户任务必须使用中性灰气泡表面')
-assert.match(easyPromptRule, /border-radius:\s*var\(--radius-bubble/, '用户任务气泡必须使用 Codex 式大圆角')
-assert.doesNotMatch(easyPromptRule, /box-shadow/, '用户任务气泡不得再使用 inset 高光或额外阴影')
+assert.match(easyPromptBubbleRule, /background:\s*var\(--surface-user-bubble/, '用户任务必须使用中性灰气泡表面')
+assert.match(easyPromptBubbleRule, /border-radius:\s*var\(--radius-bubble/, '用户任务气泡必须使用 Codex 式大圆角')
+assert.doesNotMatch(easyPromptBubbleRule, /box-shadow/, '用户任务气泡不得再使用 inset 高光或额外阴影')
 assert.match(easyPromptRule, /width:\s*fit-content/, '短用户任务必须按内容收缩，而不是铺满整列')
 assert.match(easyPromptRule, /margin-left:\s*auto/, '用户任务必须靠右，形成 Codex 式气泡')
 assert.match(easyPromptRule, /max-width:\s*100%/, '长用户任务应对齐 880px 对话列，不得再被 560px 截成细长卡')
 assert.doesNotMatch(easyPromptRule, /560px|min\(72%/, '用户任务气泡不得再使用 72% / 560px 窄上限')
 assert.match(easyJsonlCssSource, /\.easy-jsonl-rounds \{ width: min\(880px, 100%\)/, '简易对话列必须对齐 Composer 的 880px 可读宽')
-assert.match(easyPromptRule, /padding:\s*12px 16px/, '用户任务必须使用 Codex 式气泡内边距')
+assert.match(easyPromptBubbleRule, /padding:\s*12px 16px/, '用户任务必须使用 Codex 式气泡内边距')
 assert.doesNotMatch(easyJsonlCssSource, /easy-jsonl-prompt__avatar/, '用户任务不得再占用圆形头像列')
 assert.doesNotMatch(easyJsonlViewSource, /你的任务<\/strong>/, '用户任务不得再渲染可见的「你的任务」标题行')
 assert.match(easyJsonlViewSource, /aria-label="用户任务"/, '用户任务必须保留屏幕阅读器标签')

@@ -64,6 +64,7 @@ export type EasyJsonlRound = {
   id: string
   roundNum: number
   userPrompt: string
+  userAttachmentImages: string[]
   activities: EasyActivity[]
   timeline: EasyTimelineSegment[]
   assistantResponse: string
@@ -78,6 +79,82 @@ export type EasyUserPromptParts = {
   visible: string
   hidden: string
   hiddenKind: 'none' | 'session-context' | 'system-prompt'
+}
+
+const LEGACY_ATTACHMENT_LINE_RE = /^\s*[-*]\s*\[(图片|文件)\]\s+(.+?)\s*$/
+const STRUCTURED_ATTACHMENT_LINE_RE = /^\s*\d+\.\s*\[(图片|文件)\]\s+(.+?)\s*$/
+
+function removeAttachmentBlockLines(
+  lines: string[],
+  headerIndex: number,
+  linePattern: RegExp,
+): { lines: string[]; changed: boolean } {
+  let end = headerIndex + 1
+  const retained: string[] = []
+  let matched = false
+  let removedImage = false
+  while (end < lines.length) {
+    const match = lines[end].match(linePattern)
+    if (!match) break
+    matched = true
+    if (match[1] === '图片') removedImage = true
+    else retained.push(lines[end])
+    end += 1
+  }
+  if (!matched || !removedImage) return { lines, changed: false }
+
+  const replacement = retained.length > 0 ? [lines[headerIndex], ...retained] : []
+  return {
+    lines: [...lines.slice(0, headerIndex), ...replacement, ...lines.slice(end)],
+    changed: true,
+  }
+}
+
+/**
+ * 附件路径属于 Agent prompt，不应原样占据用户正文。图片由气泡右上方的缩略图
+ * 单独展示；非图片文件行仍保留为可点击文件引用。
+ */
+export function stripEasyUserImageAttachmentBlocks(text: string): string {
+  let lines = String(text || '').replace(/\r\n/g, '\n').split('\n')
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = lines[index].trim()
+    if (header === '[附件]') {
+      const result = removeAttachmentBlockLines(lines, index, LEGACY_ATTACHMENT_LINE_RE)
+      if (result.changed) {
+        lines = result.lines
+        // 仍有普通文件时 header 会被保留；此时继续向后扫描，避免反复处理
+        // 同一个只含 [文件] 的块。header 被整个移除时则回退一格接住后移内容。
+        if (lines[index]?.trim() !== header) index = Math.max(-1, index - 1)
+      }
+      continue
+    }
+
+    if (header.startsWith('用户随本轮消息上传了以下附件。')) {
+      const result = removeAttachmentBlockLines(lines, index, STRUCTURED_ATTACHMENT_LINE_RE)
+      if (result.changed) {
+        lines = result.lines
+        if (lines[index]?.trim() !== header) index = Math.max(-1, index - 1)
+      }
+      continue
+    }
+
+    // 小莫面板的历史格式：该块只包含图片路径，无需保留任何一行。
+    if (header === '[图片附件]') {
+      let end = index + 1
+      let matched = false
+      while (end < lines.length && /^\s*[-*]\s+\S.*$/.test(lines[end])) {
+        matched = true
+        end += 1
+      }
+      if (matched) {
+        lines = [...lines.slice(0, index), ...lines.slice(end)]
+        index = Math.max(-1, index - 1)
+      }
+    }
+  }
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 const USER_QUESTION_MARKERS = [
@@ -698,7 +775,8 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
         }
       }
 
-      const images = unique([...entryDisplayImages(entry), ...entryReadImagePaths(entry), ...entryUserAttachmentImages(entry)])
+      // 用户上传图固定展示在问题气泡右上方，不再混入下面的执行轨迹。
+      const images = unique([...entryDisplayImages(entry), ...entryReadImagePaths(entry)])
       if (images.length) {
         const imageOwner = [...pending]
           .reverse()
@@ -735,10 +813,12 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
 
     const firstEntry = round.items[0]?.entry
     const lastEntry = round.items[round.items.length - 1]?.entry
+    const userAttachmentImages = unique(round.items.flatMap(item => entryUserAttachmentImages(item.entry)))
     return {
       id: String(firstEntry?.uuid || firstEntry?.id || round.items[0]?.lineNo || round.roundNum),
       roundNum: round.roundNum,
       userPrompt: easyUserText(firstEntry),
+      userAttachmentImages,
       activities,
       timeline,
       assistantResponse,

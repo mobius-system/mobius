@@ -21,11 +21,13 @@ import { buildRounds } from '../viewer/rounds'
 import {
   buildEasyJsonlRounds,
   splitEasyUserPrompt,
+  stripEasyUserImageAttachmentBlocks,
   type EasyActivity,
   type EasyActivityKind,
   type EasyJsonlRound,
   type EasyTimelineBurst,
 } from './easy-jsonl-model'
+import { DisplayImagePreviewModal } from '../viewer/DisplayImages'
 import './easy-jsonl.css'
 
 const EASY_INITIAL_WINDOW_SIZE = 200
@@ -194,36 +196,76 @@ function targetIdForLine(round: EasyJsonlRound, lineNo: number): string {
   return round.id
 }
 
-function EasyUserPrompt({ text }: { text: string }) {
+function attachmentImageLabel(src: string): string {
+  const normalized = src.replace(/\\/g, '/').replace(/\/+$/, '')
+  return normalized.slice(normalized.lastIndexOf('/') + 1) || '附件图片'
+}
+
+function EasyUserAttachmentThumbnail({ src, onOpen }: { src: string; onOpen: (src: string) => void }) {
+  const [failed, setFailed] = useState(false)
+  const label = attachmentImageLabel(src)
+  return (
+    <button
+      type="button"
+      className={`easy-jsonl-prompt__attachment${failed ? ' is-failed' : ''}`}
+      onClick={() => !failed && onOpen(src)}
+      title={failed ? `${label} · 图片无法显示` : `${label} · 点击放大`}
+      aria-label={failed ? `附件图片 ${label} 无法显示` : `预览附件图片 ${label}`}
+      disabled={failed}
+    >
+      {failed ? (
+        <span>图片无法显示</span>
+      ) : (
+        <img src={resolveMediaSrc(src)} alt={label} loading="lazy" onError={() => setFailed(true)} />
+      )}
+    </button>
+  )
+}
+
+function EasyUserPrompt({ text, images }: { text: string; images: string[] }) {
   const parts = useMemo(() => splitEasyUserPrompt(text), [text])
   const [contextOpen, setContextOpen] = useState(false)
-  const visible = parts.visible
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null)
+  const visible = useMemo(() => stripEasyUserImageAttachmentBlocks(parts.visible), [parts.visible])
   const hidden = parts.hidden
   const systemOnly = !visible && !!hidden
+  const showBubble = !!visible || !!hidden || images.length === 0
 
   return (
-    <article
-      className={`easy-jsonl-prompt${systemOnly ? ' easy-jsonl-prompt--system-only' : ''}${systemOnly && contextOpen ? ' is-expanded' : ''}`}
-      aria-label="用户任务"
-    >
-      {visible ? <JsonlCompactMarkdown text={visible} /> : null}
-      {!visible && !hidden ? <JsonlCompactMarkdown text="继续处理当前任务" /> : null}
-      {hidden ? (
-        <div className="easy-jsonl-prompt__context">
-          <button
-            type="button"
-            className="easy-jsonl-prompt__context-toggle"
-            aria-expanded={contextOpen}
-            aria-label={contextOpen ? '收起系统上下文' : '展开系统上下文'}
-            onClick={() => setContextOpen(value => !value)}
-          >
-            <span>系统上下文</span>
-            <ChevronDown className="easy-jsonl-prompt__context-chevron" />
-          </button>
-          {contextOpen ? <JsonlCompactMarkdown text={hidden} /> : null}
-        </div>
-      ) : null}
-    </article>
+    <>
+      <article
+        className={`easy-jsonl-prompt${systemOnly ? ' easy-jsonl-prompt--system-only' : ''}${systemOnly && contextOpen ? ' is-expanded' : ''}`}
+        aria-label="用户任务"
+      >
+        {images.length > 0 && (
+          <div className="easy-jsonl-prompt__attachments" aria-label={`图片附件 ${images.length} 张`}>
+            {images.map(src => <EasyUserAttachmentThumbnail key={src} src={src} onOpen={setPreviewSrc} />)}
+          </div>
+        )}
+        {showBubble && (
+          <div className="easy-jsonl-prompt__bubble">
+            {visible ? <JsonlCompactMarkdown text={visible} /> : null}
+            {!visible && !hidden && images.length === 0 ? <JsonlCompactMarkdown text="继续处理当前任务" /> : null}
+            {hidden ? (
+              <div className="easy-jsonl-prompt__context">
+                <button
+                  type="button"
+                  className="easy-jsonl-prompt__context-toggle"
+                  aria-expanded={contextOpen}
+                  aria-label={contextOpen ? '收起系统上下文' : '展开系统上下文'}
+                  onClick={() => setContextOpen(value => !value)}
+                >
+                  <span>系统上下文</span>
+                  <ChevronDown className="easy-jsonl-prompt__context-chevron" />
+                </button>
+                {contextOpen ? <JsonlCompactMarkdown text={hidden} /> : null}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </article>
+      {previewSrc && <DisplayImagePreviewModal src={previewSrc} onClose={() => setPreviewSrc(null)} />}
+    </>
   )
 }
 
@@ -340,7 +382,7 @@ export default function EasyJsonlView({
               data-easy-round-id={round.id}
               data-testid="easy-jsonl-round"
             >
-              <EasyUserPrompt text={round.userPrompt} />
+              <EasyUserPrompt text={round.userPrompt} images={round.userAttachmentImages} />
 
               {round.timeline.length > 0 && (
                 <div className="easy-jsonl-rail" aria-label="执行过程">
