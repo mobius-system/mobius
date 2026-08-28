@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  FolderPlus,
   Home,
   LogOut,
   Plus,
@@ -103,6 +104,7 @@ export function ConversationRail({
   activeSessionId,
   projectId,
   onNewConversation,
+  onNewProject,
   onOpenConversation,
   onOpenSearch,
   onOpenSettings,
@@ -112,6 +114,7 @@ export function ConversationRail({
   activeSessionId?: string | null
   projectId?: string | null
   onNewConversation: () => void
+  onNewProject?: () => void
   onOpenConversation?: (item: ConversationRailItem) => void
   onOpenSearch?: (trigger: HTMLElement) => void
   onOpenSettings?: (trigger: HTMLElement) => void
@@ -307,6 +310,10 @@ export function ConversationRail({
           <button type="button" onClick={() => { setDrawerOpen(false); onNewConversation() }} aria-label="新会话" title="新会话"
             className="workbench-control-md inline-flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
             <Plus className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => { setDrawerOpen(false); onNewProject?.() }} aria-label="新建项目" title="新建项目"
+            className="workbench-control-md inline-flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
+            <FolderPlus className="h-4 w-4" />
           </button>
           <button type="button" onClick={() => setManualRefreshKey(key => key + 1)} disabled={loading} aria-label="刷新会话" title="刷新会话"
             className="workbench-control-md inline-flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)] disabled:opacity-50" style={{ color: 'var(--text-secondary)' }}>
