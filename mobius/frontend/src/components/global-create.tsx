@@ -1851,7 +1851,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         disabled={!researchId}
       />
       {isDesktop && (
-        <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
+        <PcTaskModeSection projectId={projectId || undefined} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
       <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
       <div>
