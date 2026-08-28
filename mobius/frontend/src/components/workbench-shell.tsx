@@ -8,14 +8,13 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { History, LayoutPanelTop, Plus, Search } from 'lucide-react'
+import { History, Plus, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useStore } from '../store'
 import { ConversationRail, type ConversationRailItem } from './conversation-rail'
+import { LayoutModeSwitch } from './layout-mode-switch'
 import { SearchModal } from './search-modal'
 import { SettingsPanel, type SettingsSection } from './settings-panel'
 import { prepareWorkbenchObjectNavigation } from '../services/workbench-navigation'
-import { buildNormalModeTargetUrl, setLayoutMode } from '../services/layout-mode'
 
 type WorkbenchShellSlot = 'topbar' | 'preview' | 'right' | 'dock'
 
@@ -37,12 +36,10 @@ function WorkbenchGlobalTopbar({
   title,
   onNewConversation,
   onOpenSearch,
-  onSwitchToNormalMode,
 }: {
   title: string
   onNewConversation: () => void
   onOpenSearch: (trigger: HTMLElement) => void
-  onSwitchToNormalMode: () => void
 }) {
   return (
     <div className="workbench-global-topbar flex h-full min-w-0 items-center gap-2 px-3">
@@ -79,18 +76,7 @@ function WorkbenchGlobalTopbar({
         <Plus className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">新会话</span>
       </button>
-      <button
-        type="button"
-        onClick={onSwitchToNormalMode}
-        className="workbench-control-md inline-flex items-center gap-1.5 px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)]"
-        style={{ color: 'var(--text-secondary)' }}
-        aria-label="切换到常规模式"
-        title="切换到常规模式"
-        data-testid="workbench-normal-mode-switch"
-      >
-        <LayoutPanelTop className="h-3.5 w-3.5" />
-        <span className="hidden lg:inline">常规</span>
-      </button>
+      <LayoutModeSwitch />
     </div>
   )
 }
@@ -117,7 +103,6 @@ export function WorkbenchShell({
   children: ReactNode
 }) {
   const navigate = useNavigate()
-  const { currentIssue, currentResearch, currentSession } = useStore()
   const [targets, setTargets] = useState<WorkbenchShellTargets>({ topbar: null, preview: null, right: null, dock: null })
   const [showSearch, setShowSearch] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -159,19 +144,6 @@ export function WorkbenchShell({
     prepareWorkbenchObjectNavigation()
     onNewConversation()
   }, [onNewConversation])
-
-  const switchToNormalMode = useCallback(() => {
-    const session = currentSession as any
-    setLayoutMode('normal_mode')
-    navigate(buildNormalModeTargetUrl({
-      user: userId,
-      projectId: session?.project_id || projectId,
-      issueId: session?.issue_id || currentIssue?.id,
-      researchId: session?.research_id || currentResearch?.id,
-      scopeType: session?.scope_type === 'research' || session?.research_id ? 'research' : 'issue',
-      sessionId: session?.session_id || activeSessionId,
-    }))
-  }, [activeSessionId, currentIssue?.id, currentResearch?.id, currentSession, navigate, projectId, userId])
 
   useEffect(() => {
     const handleOpenSettings = (event: Event) => {
@@ -239,7 +211,6 @@ export function WorkbenchShell({
                 title={topbarTitle}
                 onNewConversation={startNewConversation}
                 onOpenSearch={openSearch}
-                onSwitchToNormalMode={switchToNormalMode}
               />
             )}
           </header>

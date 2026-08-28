@@ -1,4 +1,8 @@
 import { api, useStore } from '../store'
+import { composeConversationPrompt, type ConversationPromptAttachment } from './conversation-prompt'
+
+export { composeConversationPrompt }
+export type { ConversationPromptAttachment }
 
 export type ConversationCreationStage = 'issue' | 'session' | 'message'
 
@@ -53,18 +57,20 @@ async function projectDefaults(projectId: string): Promise<any | null> {
 export async function createDefaultConversation(args: {
   projectId: string
   prompt: string
+  attachments?: ConversationPromptAttachment[]
   /** 用户显式选择的模型/Harness 组合；缺省时继续沿用项目与系统默认链。 */
   model?: string
   checkpoint?: ConversationCreationCheckpoint | null
 }): Promise<CreatedConversation> {
-  const prompt = args.prompt.trim()
+  const userPrompt = args.prompt.trim()
+  const prompt = composeConversationPrompt(userPrompt, args.attachments)
   const checkpoint: ConversationCreationCheckpoint = args.checkpoint?.projectId === args.projectId
     ? { ...args.checkpoint }
     : {
         projectId: args.projectId,
         requestId: `home-start-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       }
-  const title = conciseTitle(prompt)
+  const title = conciseTitle(userPrompt)
   const project = await projectDefaults(args.projectId)
 
   if (!checkpoint.issueId) {

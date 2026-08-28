@@ -529,7 +529,7 @@ function parseCustomToolInput(raw: any): Record<string, any> | null {
   if (!raw) return null
   if (typeof raw === 'object') return raw
   if (typeof raw !== 'string') return null
-  const marker = /(?:tools\.)?exec_command\s*\(/g
+  const marker = /(?:tools\.)?([A-Za-z_]\w*)\s*\(/g
   const match = marker.exec(raw)
   if (!match) return null
   const objectStart = raw.indexOf('{', match.index + match[0].length)
@@ -552,20 +552,25 @@ function parseCustomToolInput(raw: any): Record<string, any> | null {
   }
   if (objectEnd < 0) return null
   const source = raw.slice(objectStart, objectEnd + 1)
+  const withName = (value: Record<string, any> | null) => {
+    if (!value) return null
+    if (!value.__toolName) value.__toolName = match[1]
+    return value
+  }
   try {
     const parsed = JSON.parse(source)
-    return parsed && typeof parsed === 'object' ? parsed : null
+    return withName(parsed && typeof parsed === 'object' ? parsed : null)
   } catch {
     const out: Record<string, any> = {}
     const patterns = [
-      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd)\s*:\s*"((?:\\.|[^"\\])*)"/g,
-      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd)\s*:\s*'((?:\\.|[^'\\])*)'/g,
+      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|query|search_query|pattern|path|url)\s*:\s*"((?:\\.|[^"\\])*)"/g,
+      /(?:^|[,{])\s*(cmd|command|script|workdir|cwd|query|search_query|pattern|path|url)\s*:\s*'((?:\\.|[^'\\])*)'/g,
     ]
     for (const fieldPattern of patterns) {
       let field: RegExpExecArray | null
       while ((field = fieldPattern.exec(source))) out[field[1]] = decodeJsString(field[2])
     }
-    return Object.keys(out).length > 0 ? out : null
+    return withName(Object.keys(out).length > 0 ? out : null)
   }
 }
 
@@ -574,26 +579,37 @@ function functionCallArguments(payload: any): Record<string, any> | null {
     || parseCustomToolInput(payload?.input)
 }
 
+export function functionCallInput(payload: any): Record<string, any> {
+  return functionCallArguments(payload) || {}
+}
+
 export function functionCallCommand(payload: any): string | null {
   const args = functionCallArguments(payload)
-  const cmd = args?.cmd ?? args?.command ?? args?.input?.cmd ?? args?.input?.command
+  const cmd = args?.cmd ?? args?.command ?? args?.script ?? args?.input?.cmd ?? args?.input?.command ?? args?.input?.script
   if (typeof cmd === 'string' && cmd.trim()) return cmd
-  // 新版 Codex 的 custom_tool_call(name="exec") 不只包装 exec_command，也会包装
-  // write_stdin / apply_patch 等工具。它们没有 shell cmd，但仍必须成为一个可按 call_id
-  // 接收 custom_tool_call_output 的调用卡片；否则调用与结果会再次拆成两张字段卡。
-  if (payload?.type === 'custom_tool_call' && payload?.name === 'exec') {
-    const input = stringField(payload?.input).trim()
-    if (input) return input
-  }
   return null
 }
 
-export function functionOutputBody(output: any): string {
-  if (typeof output === 'string') {
-    const marker = 'Output:'
-    const idx = output.indexOf(marker)
-    return idx >= 0 ? output.slice(idx + marker.length).trimStart() : output
+/** Codex exec 会在真实 stdout 外包 Script completed / Wall time / Output:，展示前按行剥掉。 */
+export function stripExecEnvelope(text: string): string {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n')
+  const isBlank = (line: string) => /^\s*$/.test(line)
+  const isMeta = (line: string) =>
+    /^Script completed\.?\s*$/i.test(line)
+    || /^Wall time\b/i.test(line)
+    || /^Exit code:\s*\d+\s*$/i.test(line)
+  let index = 0
+  while (index < lines.length && (isBlank(lines[index]) || isMeta(lines[index]))) index += 1
+  if (index < lines.length && /^Output:\s*$/i.test(lines[index])) index += 1
+  else if (index < lines.length && /^Output:/i.test(lines[index])) {
+    lines[index] = lines[index].replace(/^Output:\s*/i, '')
   }
+  while (index < lines.length && isBlank(lines[index])) index += 1
+  return lines.slice(index).join('\n').replace(/\s+$/, '')
+}
+
+function collectFunctionOutputText(output: any): string {
+  if (typeof output === 'string') return output
   if (output == null) return ''
   // codex 偶尔把 output 写成结构化数组 (例如 [{type:'input_image', image_url:'data:...', detail:'high'}]).
   // 直接 String() 会得到 [object Object]. 这里把每个 block 摊平成可读描述.
@@ -637,6 +653,10 @@ export function functionOutputBody(output: any): string {
   return String(output ?? '')
 }
 
+export function functionOutputBody(output: any): string {
+  return stripExecEnvelope(collectFunctionOutputText(output))
+}
+
 // 从 codex function_call_output 数组里提取第一张图片的 data url, 用于卡片正文直接渲染.
 export function functionOutputImageUrls(output: any): string[] {
   const out: string[] = []
@@ -657,7 +677,7 @@ export function functionOutputImageUrls(output: any): string[] {
 // functionOutputImageUrls 单独抽出渲染成 <img>, 不再混进文本). 纯图片 output 返回空串,
 // 让图片面板只渲染图片; 含文字说明的 output 把文字附在图片下方.
 export function functionOutputTextBody(output: any): string {
-  if (typeof output === 'string') return output.trim()
+  if (typeof output === 'string') return stripExecEnvelope(output)
   if (!Array.isArray(output)) return ''
   const parts: string[] = []
   for (const block of output) {
@@ -671,7 +691,7 @@ export function functionOutputTextBody(output: any): string {
       : typeof block.output_text === 'string' ? block.output_text : ''
     if (textField) parts.push(textField)
   }
-  return parts.filter(Boolean).join('\n').trim()
+  return stripExecEnvelope(parts.filter(Boolean).join('\n'))
 }
 
 // ── update_plan (codex 计划模式) ─────────────────────────────────────────

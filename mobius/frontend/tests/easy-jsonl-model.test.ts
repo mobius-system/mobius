@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { buildEasyJsonlRounds, splitEasyUserPrompt } from '../src/components/easy-jsonl/easy-jsonl-model'
+import { functionOutputBody, stripExecEnvelope } from '../src/components/viewer/entry-extract'
 import { buildRounds } from '../src/components/viewer/rounds'
 import type { JsonlViewItem } from '../src/components/viewer/types'
 
@@ -17,12 +18,14 @@ const result = buildEasyJsonlRounds(grouped.rounds)
 assert.equal(result.length, 1)
 assert.equal(result[0].userPrompt, '实现一个简易页面')
 assert.equal(result[0].assistantResponse, '页面已经实现并通过构建。')
-assert.deepEqual(result[0].timeline.map(segment => segment.type), ['burst'])
-const initialBurst = result[0].timeline[0]
+assert.deepEqual(result[0].timeline.map(segment => segment.type), ['message', 'burst'], '短进度文案必须像 CodexMonitor 一样切断工具分组')
+assert.equal(result[0].timeline[0].type === 'message' ? result[0].timeline[0].text : '', '我先检查页面结构。')
+const initialBurst = result[0].timeline[1]
 assert.equal(initialBurst.type, 'burst')
 if (initialBurst.type === 'burst') {
   assert.equal(initialBurst.toolCount, 3)
-  assert.deepEqual(initialBurst.items.map(activity => activity.kind), ['progress', 'explore', 'command', 'file-change'])
+  assert.equal(initialBurst.defaultExpanded, false, '3 次及以上成功调用必须默认收起，避免整屏铺开')
+  assert.deepEqual(initialBurst.items.map(activity => activity.kind), ['explore', 'command', 'file-change'])
   assert.equal(initialBurst.items.at(-1)?.title, '已编辑 App.tsx')
 }
 
@@ -72,6 +75,18 @@ const singleTool = buildOne([
 ])
 assert.deepEqual(singleTool.timeline.map(segment => segment.type), ['row'], '孤立单工具不得增加外层分组')
 
+const reasoningAndOne = buildOne([
+  userEntry(),
+  { type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: '核对调用链\n继续定位引用位置' }] } },
+  toolEntry('Bash', { command: 'npm test' }, 'bash-1'),
+  assistantText('完成。'),
+])
+assert.deepEqual(reasoningAndOne.timeline.map(segment => segment.type), ['row', 'row'], '一次真实调用即使夹着思考也不得出现「1 次工具调用」分组头')
+assert.deepEqual(
+  reasoningAndOne.timeline.map(segment => segment.type === 'row' ? segment.activity.kind : ''),
+  ['reasoning', 'command'],
+)
+
 const repeatedCalls = buildOne([
   userEntry(),
   toolEntry('Read', { file_path: '/workspace/same.ts' }, 'read-1'),
@@ -92,6 +107,69 @@ const finalReply = buildOne([
 ])
 assert.equal(finalReply.assistantResponse, '正在处理的任务已经完成。')
 assert.equal(finalReply.activities.some(activity => activity.kind === 'progress'), false, '最后一条 assistant 永远不得进入 progress')
+
+const progressThenSingle = buildOne([
+  userEntry(),
+  assistantText('我先查看本项目指定的 mobius-self-iter 规则，确认本次回答完成后的收尾要求。'),
+  toolEntry('Bash', { command: "sed -n '1,240p' .mobius/skills/mobius-self-iter/SKILL.md" }, 'sed-1'),
+  assistantText('强化学习是一种从反馈中学习的方法。'),
+])
+assert.deepEqual(progressThenSingle.timeline.map(segment => segment.type), ['message', 'row'], '短进度 + 单工具不得再包一层「1 次工具调用」')
+assert.equal(progressThenSingle.timeline[1].type === 'row' ? progressThenSingle.timeline[1].activity.title : '', "sed -n '1,240p' .mobius/skills/mobius-self-iter/SKILL.md")
+
+const longCommand = 'rm -- /Users/boyin.liu/PycharmProjects/mobius-nutshell/.mobius/flags/38d08977/running.flag && test ! -e /Users/boyin.liu/PycharmProjects/mobius-nutshell/.mobius/flags/38d08977/running.flag'
+const longCommandRound = buildOne([
+  userEntry(),
+  toolEntry('Bash', { command: longCommand }, 'rm-long'),
+  assistantText('清理完成。'),
+])
+assert.equal(longCommandRound.timeline[0].type === 'row' ? longCommandRound.timeline[0].activity.title.length <= 72 : false, true, '折叠标题必须是短摘要，不能整段 curl/rm 铺满')
+assert.equal(longCommandRound.timeline[0].type === 'row' ? longCommandRound.timeline[0].activity.details[0] : '', longCommand)
+
+const curlCommand = `curl --http1.1 -sS -X POST --max-time 30 --fail --header 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:8787/internal/harness/complete'`
+const curlRound = buildOne([
+  userEntry(),
+  toolEntry('Bash', { command: curlCommand }, 'curl-1'),
+  assistantText('已上报。'),
+])
+assert.equal(curlRound.timeline[0].type === 'row' ? curlRound.timeline[0].activity.title : '', 'curl POST /internal/harness/complete')
+assert.match(curlRound.timeline[0].type === 'row' ? curlRound.timeline[0].activity.details[0] || '' : '', /--data-binary/)
+
+assert.equal(stripExecEnvelope('Script completed\nWall time 0.1 seconds\nOutput:'), '')
+assert.equal(functionOutputBody([{ type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:' }]), '')
+assert.equal(functionOutputBody('Script completed\nWall time 0.2 seconds\nOutput:\n---\nname: demo'), '---\nname: demo')
+assert.equal(functionOutputBody('Script completed\nWall time 0.1 seconds\nOutput:\n{"ok":true,"percent":60}'), '{"ok":true,"percent":60}')
+assert.match(functionOutputBody('---\nname: keep\nOutput: later'), /Output: later/, '正文中间的 Output: 不得被当成信封剥掉')
+
+const emptyEnvelope = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    { entry: toolEntry('Bash', { command: 'rm -- /tmp/running.flag' }, 'rm-1'), lineNo: 2, relIdx: 1 },
+    { entry: { type: 'response_item', payload: { type: 'function_call_output', call_id: 'rm-1', output: [{ type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:' }] } }, lineNo: 3, relIdx: 2 },
+  ],
+}])[0]
+const emptyRow = emptyEnvelope.timeline[0]
+assert.equal(emptyRow.type, 'row')
+if (emptyRow.type === 'row') {
+  assert.equal(emptyRow.activity.outputTail, undefined, '只有 Script completed / Wall time / Output: 时不得渲染空输出块')
+}
+
+const jsonEnvelope = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    { entry: toolEntry('Bash', { command: 'curl -X POST http://127.0.0.1:8787/internal/x' }, 'curl-json'), lineNo: 2, relIdx: 1 },
+    { entry: { type: 'response_item', payload: { type: 'function_call_output', call_id: 'curl-json', output: [{ type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n{"ok":true,"percent":60}' }] } }, lineNo: 3, relIdx: 2 },
+  ],
+}])[0]
+const jsonRow = jsonEnvelope.timeline[0]
+assert.equal(jsonRow.type, 'row')
+if (jsonRow.type === 'row') {
+  assert.doesNotMatch(jsonRow.activity.outputTail || '', /Script completed|Wall time|Output:/)
+  assert.match(jsonRow.activity.outputTail || '', /"ok": true/)
+  assert.equal(jsonRow.activity.defaultExpanded, undefined)
+}
 
 const titleReasoning = buildOne([
   userEntry(),

@@ -15,6 +15,7 @@ const chatSource = readSource('src/components/chat.tsx')
 const chatPaneSource = readSource('src/components/chat-pane.tsx')
 const composerInputLayoutSource = readSource('src/components/useComposerInputLayout.ts')
 const workbenchShellSource = readSource('src/components/workbench-shell.tsx')
+const layoutModeSwitchSource = readSource('src/components/layout-mode-switch.tsx')
 const advancedPageChromeSource = readSource('src/components/advanced-page-chrome.tsx')
 const sessionToolDrawerSource = readSource('src/components/session-tool-drawer.tsx')
 const sessionToolContextSource = readSource('src/components/session-tool-context.ts')
@@ -56,6 +57,18 @@ const workbenchTopNavSource = sourceBetween(
   'export function WorkbenchTopNav',
   'export function TopNav',
   '简易模式 TopNav',
+)
+const normalTopNavSource = sourceBetween(
+  shellSource,
+  'export function TopNav',
+  '// 简易"加载中"占位',
+  '常规模式 TopNav',
+)
+const workbenchGlobalTopbarSource = sourceBetween(
+  workbenchShellSource,
+  'function WorkbenchGlobalTopbar',
+  'export function WorkbenchShell',
+  '简易工作台共享 Topbar',
 )
 const easyIssuePageSource = sourceBetween(
   issuePageSource,
@@ -312,8 +325,15 @@ for (const slot of ['header', 'search', 'body', 'bottom']) {
 }
 assert.match(railSource, /data-rail-slot="bottom"[\s\S]*aria-label="账户"[\s\S]*aria-label="设置"/, '账户与设置必须位于 Rail bottom')
 assert.match(workbenchShellSource, /returnFocusRef=\{settingsReturnFocusRef\}/, 'Settings 关闭后必须恢复 Rail 触发焦点')
-assert.match(workbenchTopNavSource, /setLayoutMode\(nextMode\)[\s\S]*buildNormalModeTargetUrl[\s\S]*切换到常规模式/, '简易 TopNav 切到常规模式时必须按会话上下文构造目标 URL')
-assert.match(shellSource, /export function TopNav[\s\S]*data-testid="easy-mode-switch"/, '常规完整 TopNav 必须恢复简易/常规切换')
+assert.match(workbenchGlobalTopbarSource, /<LayoutModeSwitch \/>/, '简易 WorkbenchGlobalTopbar 必须挂载共享模式分段控件')
+assert.match(workbenchTopNavSource, /<LayoutModeSwitch \/>[\s\S]*ref=\{settingsButtonRef\}/, '简易 WorkbenchTopNav 必须把共享模式分段控件放在设置与账户之前')
+assert.match(normalTopNavSource, /<LayoutModeSwitch \/>[\s\S]*data-tour="top-theme-toggle"[\s\S]*data-tour="top-user-menu"/, '常规 TopNav 必须把共享模式分段控件放在可见动作簇的外观与账户之前')
+assert.match(layoutModeSwitchSource, /data-testid="layout-mode-switch"[\s\S]*MODE_OPTIONS\.map[\s\S]*aria-pressed=\{selected\}/, '共享模式控件必须用同一组简易/常规分段表达当前态')
+assert.match(layoutModeSwitchSource, /if \(layoutMode === targetMode\) return[\s\S]*setLayoutMode\(targetMode\)/, '再次点击当前模式必须 no-op')
+assert.match(layoutModeSwitchSource, /targetMode === 'normal_mode'[\s\S]*buildNormalModeTargetUrl\([\s\S]*sessionId/, '切到常规模式必须按当前对象与会话上下文构造目标 URL')
+assert.match(layoutModeSwitchSource, /navigate\(sessionId \? sessionPath\(userId, sessionId\) : homePath\(userId\)\)/, '切到简易模式必须优先进入会话短路由，否则回工作台首页')
+assert.doesNotMatch(shellSource, /data-testid="easy-mode-switch"/, '外观菜单不得保留旧简易模式开关')
+assert.doesNotMatch(workbenchShellSource, /data-testid="workbench-normal-mode-switch"/, '简易工作台不得保留旧单向常规模式按钮')
 assert.match(easyModePageSource, /<WorkbenchTopNav \/>/, 'EasyModePage 必须使用简易工作台 TopNav')
 
 // 简易 Home / Session / Issue 必须是同一父路由下的 Main slot，页面自身不能重建壳。

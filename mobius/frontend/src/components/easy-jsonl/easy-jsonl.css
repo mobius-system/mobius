@@ -132,9 +132,39 @@
 .easy-jsonl-activity__summary:not(:disabled) { cursor: pointer; }
 .easy-jsonl-activity__summary:not(:disabled):hover { background: var(--surface-control-hover); }
 .easy-jsonl-activity.is-expanded .easy-jsonl-activity__summary { border-radius: 12px; width: 100%; }
+.easy-jsonl-activity--command .easy-jsonl-activity__summary { max-width: 100%; }
+.easy-jsonl-activity--command.is-expanded .easy-jsonl-activity__summary { width: 100%; }
+.easy-jsonl-activity--command .easy-jsonl-activity__copy { min-width: 0; }
 .easy-jsonl-activity__copy { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
 .easy-jsonl-activity__copy strong { flex-shrink: 0; font-size: 12px; font-weight: 650; }
+.easy-jsonl-activity__copy strong.easy-jsonl-activity__command { flex: 1 1 auto; flex-shrink: 1; min-width: 0; font-weight: 500; }
 .easy-jsonl-activity__copy small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--easy-muted); }
+.easy-jsonl-activity__command {
+  max-width: 280px;
+  font-family: 'JetBrains Mono','Cascadia Code',monospace;
+  font-size: 11px;
+  line-height: 1.28;
+  color: var(--text-secondary);
+}
+.easy-jsonl-activity__command-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.easy-jsonl-activity:not(.is-expanded) .easy-jsonl-activity__command-text {
+  -webkit-mask-image: linear-gradient(90deg, #000 70%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 70%, transparent 100%);
+}
+.easy-jsonl-activity__command.is-full { max-width: none; }
+.easy-jsonl-activity__command.is-full .easy-jsonl-activity__command-text {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: pre-wrap;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 .easy-jsonl-activity__chevron { width: 13px; height: 13px; flex-shrink: 0; color: var(--easy-muted); transition: transform .18s ease; }
 .easy-jsonl-activity.is-expanded .easy-jsonl-activity__chevron { transform: rotate(180deg); }
 .easy-jsonl-activity__detail { margin: 0 8px 9px; padding: 8px 10px; border: 1px solid var(--easy-line); border-radius: 10px; background: color-mix(in srgb, var(--bg-primary) 72%, transparent); }

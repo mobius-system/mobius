@@ -10,8 +10,11 @@ import {
   extractReadCalls,
   functionOutputBody,
   functionCallCommand,
+  functionCallInput,
   isFunctionCallPayload,
   isFunctionCallOutputPayload,
+  parseMcpResultEnvelope,
+  stripExecEnvelope,
 } from '../viewer/entry-extract'
 import { assistantEntryText, isThinkingOnlyAssistantEntry } from '../viewer/entry-classify'
 import type { BashToolResult } from '../viewer/types'
@@ -267,13 +270,83 @@ function cleanCommand(command: string): string {
   return text
 }
 
-function commandSummary(command: string): string {
+function commandBinary(command: string): string {
+  const token = command.trim().split(/\s+/, 1)[0] || ''
+  return token.replace(/\\/g, '/').split('/').pop() || token
+}
+
+function commandHeadline(command: string): string {
   const cleaned = cleanCommand(command)
-  return compactText(cleaned.split(/\r?\n/, 1)[0], 180) || '命令工具调用'
+  if (!cleaned) return '命令'
+  const name = commandBinary(cleaned)
+  if (/^curl$/i.test(name)) {
+    const method = /\s-X\s+(\w+)/i.exec(cleaned)?.[1]?.toUpperCase()
+      || (/\s(?:-d|--data|--data-raw|--data-binary|-F|--form)\b/i.test(cleaned) ? 'POST' : 'GET')
+    const rawUrl = cleaned.match(/https?:\/\/[^\s'"]+/)?.[0]
+      || cleaned.match(/'(https?:\/\/[^']+)'/)?.[1]
+      || cleaned.match(/"(https?:\/\/[^"]+)"/)?.[1]
+      || ''
+    let path = rawUrl
+    try {
+      if (/^https?:\/\//i.test(rawUrl)) path = new URL(rawUrl).pathname
+    } catch { /* keep raw */ }
+    return path ? `curl ${method} ${path}` : `curl ${method}`
+  }
+  if (/^jq$/i.test(name)) {
+    const filter = cleaned.match(/jq\s+(?:-[^\s]+\s+)*('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|\S+)/)?.[1]
+    const hint = filter ? unwrapQuoted(filter) : ''
+    return hint ? compactText(`jq ${hint}`, 64) : 'jq'
+  }
+  const firstLine = cleaned.split(/\r?\n/, 1)[0]
+  return firstLine.length <= 72 ? firstLine : compactText(firstLine, 72)
+}
+
+function commandTitle(command: string): string {
+  return commandHeadline(command)
+}
+
+function commandDetails(command: string, cwd?: string): string[] {
+  const cleaned = cleanCommand(command)
+  const headline = commandHeadline(command)
+  return unique([
+    cleaned && cleaned !== headline ? cleaned : '',
+    cwd ? `cwd · ${cwd}` : '',
+  ])
+}
+
+function burstTitle(items: EasyActivity[], toolCount: number, hasError: boolean): string {
+  const noteCount = items.filter(item => item.kind === 'reasoning').length
+  const parts = [`${toolCount} 次工具调用`]
+  if (noteCount) parts.push(`${noteCount} 条思考`)
+  if (hasError) parts.push('含失败')
+  return parts.join(' · ')
+}
+
+function burstDefaultExpanded(toolCount: number, hasError: boolean): boolean {
+  return hasError || toolCount < 3
+}
+
+function prettyCommandOutput(value: string): string {
+  const stripped = stripExecEnvelope(value)
+  const trimmed = stripped.trim()
+  if (!trimmed) return ''
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2)
+  } catch {
+    const jsonish = trimmed.match(/(\{[\s\S]*\}|\[[\s\S]*\])\s*$/)
+    if (jsonish && jsonish.index != null) {
+      try {
+        const pretty = JSON.stringify(JSON.parse(jsonish[1]), null, 2)
+        const prefix = trimmed.slice(0, jsonish.index).trimEnd()
+        return (prefix ? `${prefix}\n${pretty}` : pretty).trim()
+      } catch { /* keep raw */ }
+    }
+    return stripped
+  }
 }
 
 function limitedOutputTail(value: string, maxLines = 16, maxChars = 2600): string | undefined {
-  const normalized = String(value || '').replace(/\r\n/g, '\n').trimEnd()
+  const normalized = prettyCommandOutput(value)
   if (!normalized) return undefined
   const lines = normalized.split('\n')
   let tail = lines.slice(-maxLines).join('\n')
@@ -305,14 +378,8 @@ function reasoningParts(text: string): { title: string; details: string[]; hidde
   return { title, details, hidden: details.length === 0 }
 }
 
-function isShortProgress(text: string): boolean {
-  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
-  if (!normalized || normalized.length > 120) return false
-  return /^(?:我(?:先|来|会|将|正在|继续)|先|接下来|随后|现在|正在|继续|准备|开始)(?:检查|查看|读取|搜索|定位|分析|修改|编辑|运行|执行|验证|测试|处理|整理|确认|更新|修复|排查|对比|实现|补充|清理)?/u.test(normalized)
-}
-
 function outputText(result: BashToolResult): string {
-  return [result.stdout, result.stderr].filter(Boolean).join('\n') || result.content || ''
+  return stripExecEnvelope([result.stdout, result.stderr].filter(Boolean).join('\n') || result.content || '')
 }
 
 function attachResult(activity: EasyActivity, result?: BashToolResult): void {
@@ -379,24 +446,21 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
     const flush = () => {
       if (pending.length === 0) return
       const visible = pending.filter(item => !item.activity.hidden)
-      if (visible.length === 1) {
-        timeline.push({ type: 'row', id: `${visible[0].activity.id}:row`, activity: visible[0].activity })
-      } else if (visible.length > 1) {
-        const toolCount = visible.reduce((sum, item) => sum + item.toolCount, 0)
-        if (toolCount > 0) {
-          const hasError = visible.some(item => item.activity.state === 'error')
-          timeline.push({
-            type: 'burst',
-            id: `${visible[0].activity.id}:burst`,
-            title: `${toolCount} 次工具调用${hasError ? ' · 含失败' : ''}`,
-            toolCount,
-            items: visible.map(item => item.activity),
-            hasError,
-            defaultExpanded: true,
-          })
-        } else {
-          visible.forEach(item => timeline.push({ type: 'row', id: `${item.activity.id}:row`, activity: item.activity }))
-        }
+      const toolCount = visible.reduce((sum, item) => sum + item.toolCount, 0)
+      if (toolCount > 1) {
+        const items = visible.map(item => item.activity)
+        const hasError = items.some(item => item.state === 'error')
+        timeline.push({
+          type: 'burst',
+          id: `${visible[0].activity.id}:burst`,
+          title: burstTitle(items, toolCount, hasError),
+          toolCount,
+          items,
+          hasError,
+          defaultExpanded: burstDefaultExpanded(toolCount, hasError),
+        })
+      } else {
+        visible.forEach(item => timeline.push({ type: 'row', id: `${item.activity.id}:row`, activity: item.activity }))
       }
       pending.length = 0
     }
@@ -518,9 +582,8 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
         const commands = extractBashCalls(sourceEntry)
         if (commands.length > 0) {
           commands.forEach(call => {
-            const cleaned = cleanCommand(call.command)
-            const activity = makeActivity('command', commandSummary(call.command), item.lineNo, {
-              details: unique([cleaned, call.cwd ? `cwd · ${call.cwd}` : '']),
+            const activity = makeActivity('command', commandTitle(call.command), item.lineNo, {
+              details: commandDetails(call.command, call.cwd),
             })
             attachResult(activity, matchingResult(item.bashResults || [], call.id, commandResultIndex++))
             append(activity, 1, call.id || callId)
@@ -546,8 +609,8 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
         }
         if (isCommandTool(name)) {
           const command = functionCallCommand(block?.payload || sourceEntry?.payload) || input.cmd || input.command || genericToolDetail(block)
-          append(makeActivity('command', commandSummary(command), item.lineNo, {
-            details: [cleanCommand(command)],
+          append(makeActivity('command', commandTitle(command), item.lineNo, {
+            details: commandDetails(command),
           }), 1, callId)
           return
         }
@@ -581,8 +644,6 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
                 assistantResponse = finalText
                 finalHandled = true
               }
-            } else if (isShortProgress(block.text)) {
-              append(makeActivity('progress', compactText(block.text, 160), item.lineNo), 0)
             } else {
               addMessage(block.text, item.lineNo)
             }
@@ -597,8 +658,6 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
           if (index === finalAssistantIndex) {
             flush()
             assistantResponse = response
-          } else if (isShortProgress(response)) {
-            append(makeActivity('progress', compactText(response, 160), item.lineNo), 0)
           } else {
             addMessage(response, item.lineNo)
           }
@@ -621,8 +680,8 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
               summary: call.filePath,
               details: [call.filePath],
             }), 1, call.id))
-            commands.forEach(call => append(makeActivity('command', commandSummary(call.command), item.lineNo, {
-              details: unique([cleanCommand(call.command), call.cwd ? `cwd · ${call.cwd}` : '']),
+            commands.forEach(call => append(makeActivity('command', commandTitle(call.command), item.lineNo, {
+              details: commandDetails(call.command, call.cwd),
             }), 1, call.id))
           }
         }
@@ -653,8 +712,8 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
     timeline.forEach(segment => {
       if (segment.type !== 'burst') return
       segment.hasError = segment.items.some(activity => activity.state === 'error')
-      segment.defaultExpanded = true
-      segment.title = `${segment.toolCount} 次工具调用${segment.hasError ? ' · 含失败' : ''}`
+      segment.defaultExpanded = burstDefaultExpanded(segment.toolCount, segment.hasError)
+      segment.title = burstTitle(segment.items, segment.toolCount, segment.hasError)
     })
 
     const activities = timeline.flatMap(segment => {

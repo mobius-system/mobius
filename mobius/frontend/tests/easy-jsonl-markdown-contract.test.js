@@ -9,6 +9,8 @@ assert.match(viewSource, /splitEasyUserPrompt/, 'EasyJsonlView 必须先拆出�
 assert.match(viewSource, /<JsonlCompactMarkdown text=\{visible\} \/>/, '用户自己输入必须用 JsonlCompactMarkdown 渲染')
 assert.match(viewSource, /<JsonlCompactMarkdown text="继续处理当前任务" \/>/, '空用户任务必须保留占位文案')
 assert.match(viewSource, /contextOpen \? <JsonlCompactMarkdown text=\{hidden\}/, '系统注入内容必须折叠，展开后才渲染')
+assert.match(viewSource, /easy-jsonl-activity__command-text/, '命令行必须复用 CodexMonitor 的 fade/全文切换，而不是硬截断标题')
+assert.match(viewSource, /showOutput && \(/, '命令输出必须在展开或失败后才渲染，空信封不得占位')
 
 const promptMarkdownRule = cssSource.match(/\.easy-jsonl-prompt \.jsonl-compact-md\s*\{([^}]*)\}/)?.[1] || ''
 assert.match(promptMarkdownRule, /padding:\s*0/, '用户任务 Markdown 不得增加内层内边距')

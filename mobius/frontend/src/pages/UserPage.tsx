@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Activity,
@@ -11,6 +11,7 @@ import {
   EyeOff,
   FlaskConical,
   Folder,
+  ImagePlus,
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
@@ -35,6 +36,14 @@ import { SearchMatchText } from '../components/search-match-text'
 import { useLayoutMode } from '../services/layout-mode'
 import { useComposerInputLayout, useComposerMobileLayout } from '../components/useComposerInputLayout'
 import { HomeModelHarnessSelect } from '../components/home-model-harness-select'
+import { HomeComposerAttachments, useHomeComposerAttachments } from '../components/home-composer-attachments'
+import { HOME_COMPOSER_IMAGE_ACCEPT } from '../services/home-composer-attachments'
+import {
+  readLastHomeModel,
+  readLastHomeProjectId,
+  rememberLastHomeModel,
+  rememberLastHomeProjectId,
+} from '../services/home-composer-preferences'
 import {
   ConversationCreationError,
   createDefaultConversation,
@@ -306,12 +315,37 @@ function HomeSurface() {
   const [loadingProjects, setLoadingProjects] = useState(true)
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [lastRememberedProjectId, setLastRememberedProjectId] = useState(readLastHomeProjectId)
+  const [lastRememberedModel, setLastRememberedModel] = useState(readLastHomeModel)
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [checkpoint, setCheckpoint] = useState<ConversationCreationCheckpoint | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const [composerExpanded, setComposerExpanded] = useState(false)
+  const invalidateComposerCheckpoint = useCallback(() => {
+    setSendError('')
+    setCheckpoint(null)
+  }, [])
+  const {
+    attachments,
+    readyAttachments,
+    anyUploading,
+    isDraggingImages,
+    fileInputRef,
+    openFilePicker,
+    handleFileInputChange,
+    handlePaste,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    retryAttachment,
+    removeAttachment,
+    clearAttachments,
+  } = useHomeComposerAttachments({
+    projectId: selectedProjectId,
+    onAttachmentsChanged: invalidateComposerCheckpoint,
+  })
   const isComposerMobile = useComposerMobileLayout()
   const homeComposerLayout = useComposerInputLayout({
     textareaRef: composerRef,
@@ -328,17 +362,18 @@ function HomeSurface() {
     setCurrentTask(null)
   }, [userParam])
 
-  const prepareNewConversation = () => {
+  const prepareNewConversation = useCallback(() => {
     setPrompt('')
     setSendError('')
     setCheckpoint(null)
+    clearAttachments()
     window.setTimeout(() => composerRef.current?.focus(), 0)
-  }
+  }, [clearAttachments])
 
   useEffect(() => {
     window.addEventListener('mobius:new-conversation', prepareNewConversation)
     return () => window.removeEventListener('mobius:new-conversation', prepareNewConversation)
-  })
+  }, [prepareNewConversation])
 
   useEffect(() => {
     let cancelled = false
@@ -361,16 +396,15 @@ function HomeSurface() {
   )
   useEffect(() => {
     const requestedProjectId = homeSearch.get('project') || ''
-    if (requestedProjectId && usableProjects.some((project: any) => project.id === requestedProjectId)) {
-      if (selectedProjectId !== requestedProjectId) setSelectedProjectId(requestedProjectId)
-      return
-    }
-    if (selectedProjectId && usableProjects.some((project: any) => project.id === selectedProjectId)) return
-    const next = currentProject && usableProjects.some((project: any) => project.id === currentProject.id)
-      ? currentProject.id
-      : usableProjects[0]?.id || ''
-    setSelectedProjectId(next)
-  }, [usableProjects, currentProject?.id, selectedProjectId, homeSearch])
+    const next = requestedProjectId && usableProjects.some((project: any) => project.id === requestedProjectId)
+      ? requestedProjectId
+      : lastRememberedProjectId && usableProjects.some((project: any) => project.id === lastRememberedProjectId)
+        ? lastRememberedProjectId
+        : currentProject && usableProjects.some((project: any) => project.id === currentProject.id)
+          ? currentProject.id
+          : usableProjects[0]?.id || ''
+    if (selectedProjectId !== next) setSelectedProjectId(next)
+  }, [usableProjects, currentProject?.id, homeSearch, lastRememberedProjectId, selectedProjectId])
 
   useEffect(() => {
     setCurrentProject(selectedProject)
@@ -379,6 +413,9 @@ function HomeSurface() {
   const onProjectCreated = (project: any) => {
     setProjects(sortProjectsForDisplay([project, ...projects.filter((item: any) => item.id !== project.id)]))
     setSelectedProjectId(project.id)
+    setLastRememberedProjectId(project.id)
+    rememberLastHomeProjectId(project.id)
+    setHomeSearch({ project: project.id }, { replace: true })
     setCurrentProject(project)
     window.setTimeout(() => composerRef.current?.focus(), 60)
   }
@@ -390,7 +427,12 @@ function HomeSurface() {
   }
 
   const send = async () => {
-    if (!selectedProjectId || !prompt.trim() || sending) return
+    if (!selectedProjectId || sending) return
+    if (anyUploading) {
+      setSendError('附件仍在上传，请稍候…')
+      return
+    }
+    if (!prompt.trim() && readyAttachments.length === 0) return
     if (!selectedModel) {
       setSendError('模型与 Harness 组合仍在加载或暂无可用组合')
       return
@@ -401,6 +443,7 @@ function HomeSurface() {
       const created = await createDefaultConversation({
         projectId: selectedProjectId,
         prompt,
+        attachments: readyAttachments.map(attachment => ({ kind: 'image', path: attachment.remotePath || '' })),
         model: selectedModel,
         checkpoint,
       })
@@ -427,12 +470,27 @@ function HomeSurface() {
   const selectHomeProject = (nextProjectId: string) => {
     prepareWorkbenchObjectNavigation()
     setSelectedProjectId(nextProjectId)
-    setSelectedModel('')
+    setLastRememberedProjectId(nextProjectId)
+    rememberLastHomeProjectId(nextProjectId)
     setHomeSearch(nextProjectId ? { project: nextProjectId } : {}, { replace: true })
+    clearAttachments()
     setCheckpoint(null)
     setSendError('')
     window.requestAnimationFrame(() => composerRef.current?.focus())
   }
+
+  const selectHomeModel = useCallback((model: string) => {
+    setSelectedModel(model)
+    setLastRememberedModel(model)
+    rememberLastHomeModel(model)
+  }, [])
+
+  useEffect(() => {
+    if (!anyUploading && sendError === '附件仍在上传，请稍候…') setSendError('')
+  }, [anyUploading, sendError])
+
+  const hasSendableContent = !!prompt.trim() || readyAttachments.length > 0
+  const canRequestSend = hasSendableContent || anyUploading
 
   return loadingProjects ? (
           <div className="flex min-w-0 flex-1 items-center justify-center" style={{ color: 'var(--text-muted)', background: 'var(--surface-messages)' }}>加载项目…</div>
@@ -445,7 +503,29 @@ function HomeSurface() {
                 <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-strong)' }}>想让 Mobius 做什么？</h1>
                 <p className="mt-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>描述目标即可，任务详情和会话会自动创建。</p>
               </div>
-              <div className="workbench-composer px-3 py-2.5">
+              <div
+                className="workbench-composer relative px-3 py-2.5"
+                onPaste={handlePaste}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                {isDraggingImages && (
+                  <div className="pointer-events-none absolute inset-0 z-20 rounded-[var(--radius-composer,22px)] p-1" style={{ background: 'var(--surface-composer)' }}>
+                    <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-strong)', background: 'var(--surface-active)' }}>
+                      <span className="text-[12px] font-medium">松开以添加图片</span>
+                    </div>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={HOME_COMPOSER_IMAGE_ACCEPT}
+                  className="hidden"
+                  onChange={handleFileInputChange}
+                />
+                <HomeComposerAttachments attachments={attachments} onRemove={removeAttachment} onRetry={retryAttachment} />
                 <textarea ref={composerRef} data-workbench-composer autoFocus value={prompt} onChange={event => onPromptChange(event.target.value)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -464,6 +544,16 @@ function HomeSurface() {
                   }} />
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={openFilePicker}
+                      disabled={sending}
+                      className="composer-icon-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40"
+                      aria-label="选择图片"
+                      title="添加图片"
+                    >
+                      <ImagePlus className="h-4 w-4" strokeWidth={1.8} />
+                    </button>
                     <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 px-2.5 text-[11px]" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}>
                       <Folder className="h-3.5 w-3.5 flex-shrink-0" />
                       <select value={selectedProjectId} onChange={event => selectHomeProject(event.target.value)}
@@ -474,9 +564,10 @@ function HomeSurface() {
                     </label>
                     <HomeModelHarnessSelect
                       projectId={selectedProjectId}
+                      lastRememberedModel={lastRememberedModel}
                       projectDefaultModel={selectedProject?.default_model}
                       value={selectedModel}
-                      onChange={setSelectedModel}
+                      onChange={selectHomeModel}
                       disabled={sending || !!checkpoint?.sessionId}
                     />
                   </div>
@@ -500,7 +591,7 @@ function HomeSurface() {
                     >
                       {composerExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                     </button>
-                    <button type="button" onClick={() => void send()} disabled={!prompt.trim() || !selectedModel || sending}
+                    <button type="button" onClick={() => void send()} disabled={!canRequestSend || !selectedModel || sending}
                       aria-label={sending ? '正在开始会话' : '发送'}
                       title={sending ? '正在开始会话' : '发送'}
                       className="home-composer-send inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-0 p-0 disabled:opacity-40">
@@ -512,7 +603,7 @@ function HomeSurface() {
               {sendError && (
                 <div className="workbench-status-danger mt-3 flex items-center justify-between gap-3 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
                   <span>{sendError}</span>
-                  <button type="button" onClick={() => void send()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>
+                  {checkpoint && <button type="button" onClick={() => void send()} disabled={sending} className="flex-shrink-0 underline disabled:opacity-50">重试当前阶段</button>}
                 </div>
               )}
               <section className="mt-10">

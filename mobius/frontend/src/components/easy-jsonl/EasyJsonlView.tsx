@@ -62,7 +62,9 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
   const [expanded, setExpanded] = useState(!!activity.defaultExpanded)
   const userToggledRef = useRef(false)
   const planOutputSeenRef = useRef(false)
-  const canExpand = activity.details.length > 0 || !!activity.imageUrls?.length
+  const isCommand = activity.kind === 'command'
+  const canExpand = activity.details.length > 0 || !!activity.imageUrls?.length || !!activity.outputTail
+  const showOutput = !!activity.outputTail && expanded
 
   useEffect(() => {
     if (forceExpanded || activity.defaultExpanded) setExpanded(true)
@@ -95,12 +97,20 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
         disabled={!canExpand}
       >
         <span className="easy-jsonl-activity__copy">
-          <strong>{activity.title}</strong>
-          {!expanded && activity.summary && <small>{activity.summary}</small>}
+          {isCommand ? (
+            <strong className="easy-jsonl-activity__command">
+              <span className="easy-jsonl-activity__command-text">{activity.title}</span>
+            </strong>
+          ) : (
+            <>
+              <strong>{activity.title}</strong>
+              {!expanded && activity.summary && <small>{activity.summary}</small>}
+            </>
+          )}
         </span>
         {canExpand && <ChevronDown className="easy-jsonl-activity__chevron" />}
       </button>
-      {expanded && (
+      {expanded && (activity.details.length > 0 || !!activity.imageUrls?.length) && (
         <div className="easy-jsonl-activity__detail">
           {activity.details.length > 0 && (
             <ul>
@@ -118,7 +128,7 @@ function EasyActivityItem({ activity, forceExpanded = false }: { activity: EasyA
           )}
         </div>
       )}
-      {activity.outputTail && (
+      {showOutput && (
         <pre className="easy-jsonl-activity__output-tail" aria-label="命令输出尾部">{activity.outputTail}</pre>
       )}
     </div>
