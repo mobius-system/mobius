@@ -17,10 +17,137 @@ const result = buildEasyJsonlRounds(grouped.rounds)
 assert.equal(result.length, 1)
 assert.equal(result[0].userPrompt, '实现一个简易页面')
 assert.equal(result[0].assistantResponse, '页面已经实现并通过构建。')
-assert.ok(result[0].activities.some(activity => activity.kind === 'explore'))
-assert.ok(result[0].activities.some(activity => activity.kind === 'command'))
-assert.ok(result[0].activities.some(activity => activity.kind === 'file-change'))
-assert.ok(result[0].activities.some(activity => activity.kind === 'progress'))
+assert.deepEqual(result[0].timeline.map(segment => segment.type), ['burst'])
+const initialBurst = result[0].timeline[0]
+assert.equal(initialBurst.type, 'burst')
+if (initialBurst.type === 'burst') {
+  assert.equal(initialBurst.toolCount, 3)
+  assert.deepEqual(initialBurst.items.map(activity => activity.kind), ['progress', 'explore', 'command', 'file-change'])
+  assert.equal(initialBurst.items.at(-1)?.title, '已编辑 App.tsx')
+}
+
+const userEntry = (text = '处理任务'): JsonlViewItem['entry'] => ({ type: 'user', message: { content: text } })
+const assistantText = (text: string): JsonlViewItem['entry'] => ({ type: 'assistant', message: { content: [{ type: 'text', text }] } })
+const toolEntry = (name: string, input: Record<string, unknown>, id?: string): JsonlViewItem['entry'] => ({
+  type: 'assistant',
+  message: { content: [{ type: 'tool_use', id, name, input }] },
+})
+
+function buildOne(entries: JsonlViewItem['entry'][]) {
+  return buildEasyJsonlRounds(buildRounds(entries.map((entry, index) => ({ entry, lineNo: index + 1 }))).rounds)[0]
+}
+
+const assistantBoundary = buildOne([
+  userEntry(),
+  toolEntry('Read', { file_path: '/workspace/one.ts' }, 'read-1'),
+  assistantText('第一部分已经确认，这里是阶段结论。'),
+  toolEntry('Bash', { command: 'npm test' }, 'bash-1'),
+  assistantText('全部检查完成。'),
+])
+assert.deepEqual(assistantBoundary.timeline.map(segment => segment.type), ['row', 'message', 'row'], '普通 assistant 文本必须切断相邻工具突发')
+assert.equal(assistantBoundary.timeline[0].type === 'row' ? assistantBoundary.timeline[0].activity.kind : '', 'explore')
+assert.equal(assistantBoundary.timeline[1].type === 'message' ? assistantBoundary.timeline[1].text : '', '第一部分已经确认，这里是阶段结论。')
+assert.equal(assistantBoundary.timeline[2].type === 'row' ? assistantBoundary.timeline[2].activity.kind : '', 'command')
+
+const reasoningBridge = buildOne([
+  userEntry(),
+  toolEntry('Read', { file_path: '/workspace/one.ts' }, 'read-1'),
+  { type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: '核对调用链\n继续定位引用位置' }] } },
+  toolEntry('Bash', { command: 'rg -n "buildOne" src' }, 'bash-1'),
+  assistantText('定位完成。'),
+])
+assert.deepEqual(reasoningBridge.timeline.map(segment => segment.type), ['burst'], 'reasoning 不得切断工具突发')
+const reasoningBurst = reasoningBridge.timeline[0]
+assert.equal(reasoningBurst.type, 'burst')
+if (reasoningBurst.type === 'burst') {
+  assert.equal(reasoningBurst.toolCount, 2)
+  assert.deepEqual(reasoningBurst.items.map(activity => activity.kind), ['explore', 'reasoning', 'command'])
+}
+assert.equal(reasoningBridge.workingLabel, '核对调用链')
+
+const singleTool = buildOne([
+  userEntry(),
+  toolEntry('Read', { file_path: '/workspace/only.ts' }, 'read-1'),
+  assistantText('读取完成。'),
+])
+assert.deepEqual(singleTool.timeline.map(segment => segment.type), ['row'], '孤立单工具不得增加外层分组')
+
+const repeatedCalls = buildOne([
+  userEntry(),
+  toolEntry('Read', { file_path: '/workspace/same.ts' }, 'read-1'),
+  toolEntry('Read', { file_path: '/workspace/same.ts' }, 'read-2'),
+  assistantText('读取完成。'),
+])
+const repeatedBurst = repeatedCalls.timeline[0]
+assert.equal(repeatedBurst.type, 'burst')
+if (repeatedBurst.type === 'burst') {
+  assert.equal(repeatedBurst.toolCount, 2, '重复同参仍须按两次实际调用计数')
+  assert.equal(repeatedBurst.items.length, 2)
+}
+
+const finalReply = buildOne([
+  userEntry(),
+  toolEntry('Bash', { command: 'npm test' }, 'bash-1'),
+  assistantText('正在处理的任务已经完成。'),
+])
+assert.equal(finalReply.assistantResponse, '正在处理的任务已经完成。')
+assert.equal(finalReply.activities.some(activity => activity.kind === 'progress'), false, '最后一条 assistant 永远不得进入 progress')
+
+const titleReasoning = buildOne([
+  userEntry(),
+  toolEntry('Read', { file_path: '/workspace/one.ts' }, 'read-1'),
+  { type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: '扫描相关测试' }] } },
+  toolEntry('Bash', { command: 'shell -lc \'cd /workspace && rg -n "timeline" src\'' }, 'bash-1'),
+  assistantText('完成。'),
+])
+const titleReasoningBurst = titleReasoning.timeline[0]
+assert.equal(titleReasoningBurst.type, 'burst')
+if (titleReasoningBurst.type === 'burst') {
+  assert.deepEqual(titleReasoningBurst.items.map(activity => activity.kind), ['explore', 'command'], '仅标题 reasoning 只驱动 Working，不重复渲染空详情行')
+  assert.match(titleReasoningBurst.items[1].title, /^rg -n/)
+}
+assert.equal(titleReasoning.workingLabel, '扫描相关测试')
+
+const commandWithResult = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    {
+      entry: toolEntry('Bash', { command: 'npm test' }, 'bash-result'),
+      lineNo: 2,
+      relIdx: 1,
+      bashResults: [{
+        entry: {}, lineNo: 3, toolUseId: 'bash-result', stdout: Array.from({ length: 24 }, (_, index) => `line ${index + 1}`).join('\n'), stderr: '', content: '', isError: true, interrupted: false, isImage: false, noOutputExpected: false,
+      }],
+    },
+  ],
+}])[0]
+const failedRow = commandWithResult.timeline[0]
+assert.equal(failedRow.type, 'row')
+if (failedRow.type === 'row') {
+  assert.equal(failedRow.activity.state, 'error')
+  assert.equal(failedRow.activity.defaultExpanded, true)
+  assert.match(failedRow.activity.outputTail || '', /^…\nline 9/)
+}
+
+const failedBurstRound = buildEasyJsonlRounds([{
+  roundNum: 1,
+  items: [
+    { entry: userEntry(), lineNo: 1, relIdx: 0 },
+    {
+      entry: toolEntry('Bash', { command: 'npm test' }, 'failed-command'), lineNo: 2, relIdx: 1,
+      bashResults: [{ entry: {}, lineNo: 3, toolUseId: 'failed-command', stdout: '', stderr: 'tests failed', content: 'tests failed', isError: true, interrupted: false, isImage: false, noOutputExpected: false }],
+    },
+    { entry: toolEntry('Read', { file_path: '/workspace/report.txt' }, 'read-report'), lineNo: 4, relIdx: 2 },
+  ],
+}])[0]
+const failedBurst = failedBurstRound.timeline[0]
+assert.equal(failedBurst.type, 'burst')
+if (failedBurst.type === 'burst') {
+  assert.equal(failedBurst.hasError, true)
+  assert.equal(failedBurst.defaultExpanded, true)
+  assert.match(failedBurst.title, /2 次工具调用 · 含失败/)
+}
 
 const framed = splitEasyUserPrompt('以下信息描述了你正在协助的用户、当前Project、Issue/Research 与 Session.\n\n## 用户\n- 姓名: admin\n\n---\n\n## 用户的问题\n调研婚恋 AI 产品')
 assert.equal(framed.visible, '调研婚恋 AI 产品')

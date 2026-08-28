@@ -266,11 +266,12 @@ assert.match(appSource, /<Route path="\/welcome"/, 'Welcome 兼容路由必须�
 assert.doesNotMatch(appSource, /<Navigate to=[^>]*\/welcome/, '默认 Web 导航不得自动跳转到 Welcome')
 assert.match(settingsSource, /label="连接 \/ 导入向导"[\s\S]*go\('\/welcome', true\)/, 'Welcome 必须从设置高级区作为连接/导入次级入口可达')
 
-// P0-S1/S2：默认工作台使用 44px 单层 chrome，账户与 Settings 固定在 Rail bottom。
+// P0-S1/S2：默认工作台使用 36–40px 单层 chrome，账户与 Settings 固定在 Rail bottom。
 for (const label of ['历史', '搜索', '新会话']) {
   assert.match(workbenchShellSource, new RegExp(`aria-label="${label}"`), `共享主壳必须提供「${label}」入口`)
 }
-assert.match(cssSource, /--workbench-topbar-height:\s*44px;/, '共享主壳顶栏必须锁定为 44px')
+const workbenchTopbarHeight = Number(cssSource.match(/--workbench-topbar-height:\s*(\d+)px;/)?.[1])
+assert.ok(workbenchTopbarHeight >= 36 && workbenchTopbarHeight <= 40, '共享主壳顶栏必须保持在 36–40px')
 assert.match(cssSource, /--rail-width:\s*280px;/, '桌面 Rail 默认宽度必须是 280px')
 assert.doesNotMatch(homeSurfaceSource, /<TopNav|<ConversationRail/, 'Home 不得再手写 TopNav + ConversationRail 外壳')
 assert.doesNotMatch(workPageSource, /<TopNav|<ConversationRail/, 'Session 不得再手写 TopNav + ConversationRail 外壳')
@@ -295,8 +296,10 @@ for (const slot of ['Topbar', 'Preview', 'Right', 'Dock']) {
   assert.match(workbenchShellSource, new RegExp(`const set${slot}Target = useCallback`), `WorkbenchShell ${slot} 槽位必须使用稳定 callback ref`)
 }
 assert.match(workPageSource, /data-workbench-chat-host[\s\S]*data-workbench-editor-host[\s\S]*data-workbench-chat-instance="primary"[\s\S]*hidden=\{!activeSessionLoaded\}[\s\S]*<ChatArea[\s\S]*layout="easy"[\s\S]*chrome="shell"[\s\S]*shellChromeActive=\{activeSessionLoaded\}[\s\S]*workspaceEditor=/, '默认 Session 必须把按需编辑器宿主与唯一 easy ChatArea 放在稳定槽位，并在加载期隐藏 shell chrome')
-assert.match(easySessionChromeSource, /workbench-session-topbar[\s\S]*data-testid="easy-session-context"/, '默认 Session 会话头必须进入 44px shell topbar')
-assert.match(easySessionChromeSource, /aria-controls=\{chrome === 'shell' \? 'session-tool-drawer'[\s\S]*<span>\{chrome === 'shell'/, '默认 Session 只保留一个 Tool Drawer 控制器')
+assert.match(easySessionChromeSource, /workbench-session-topbar[\s\S]*data-testid="easy-session-context"/, '默认 Session 会话头必须进入共享薄 shell topbar')
+assert.match(easySessionChromeSource, /aria-label="工具"[\s\S]*aria-controls=\{chrome === 'shell' \? 'session-tool-drawer'[\s\S]*<Wrench/, '默认 Session 只保留一个无文字 Tool Drawer 控制器')
+assert.match(easySessionChromeSource, /aria-label="当前会话标题"[\s\S]*currentSession\?\.name \|\| currentTask\?\.name \|\| sessionId/, '默认 Session 顶栏主信息只能是会话标题')
+assert.doesNotMatch(easySessionChromeSource, /easy-session-summary|easyRoundCount\} 轮|alwaysShowLabel/, '项目面包屑、轮次摘要与常驻状态文案不得撑宽薄顶栏')
 assert.match(sessionToolDrawerSource, /id="session-tool-drawer"/, 'Tool Drawer 控制器必须指向真实抽屉元素')
 assert.match(easySessionChromeSource, /renderAdvancedSessionActions\('menu'\)/, '既有会话能力必须收进工具入口，不能被删除')
 assert.match(chatSource, /const showEasyStop = Boolean\([\s\S]*backendAlive && backendWorking/, '停止动作必须由会话运行状态控制')
@@ -436,7 +439,7 @@ assert.match(workbenchShellSource, /event\.key === ',' \|\| event\.code === 'Com
 // 响应式静态布局回归（无需登录态或浏览器）。
 assert.match(railSource, /window\.matchMedia\('\(min-width: 1280px\)'\)/, 'ConversationRail 必须以 1280px 作为常驻断点')
 assert.match(railSource, /className="hidden h-full xl:block"/, '1280px 及以上必须直接显示历史轨')
-assert.match(railSource, /top-\[44px\][^"`]*xl:hidden/, '窄屏历史抽屉必须位于 44px Header 下并在 xl 隐藏')
+assert.match(railSource, /xl:hidden" style=\{\{ top: 'var\(--workbench-topbar-height\)' \}\}/, '窄屏历史抽屉必须跟随共享 topbar 高度并在 xl 隐藏')
 assert.match(workbenchShellSource, /xl:hidden[\s\S]*aria-label="历史"/, '窄屏必须从顶部「历史」按钮一次打开抽屉')
 assert.match(workbenchShellSource, /\{topbar \?\? \([\s\S]*<WorkbenchGlobalTopbar/, 'Portal 尚未挂载时共享顶栏必须提供 fallback')
 assert.match(cssSource, /workbench-shell__topbar:has\(\[data-workbench-session-topbar\]\)[\s\S]*workbench-global-topbar[\s\S]*display:\s*none/, 'Session Portal 挂载后必须隐藏 fallback，避免双顶栏内容')

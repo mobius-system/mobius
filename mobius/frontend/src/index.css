@@ -217,7 +217,7 @@ label,
   --primary: var(--accent-primary);
 
   --chrome-height: 44px;
-  --workbench-topbar-height: 44px;
+  --workbench-topbar-height: 38px;
   --rail-width: 280px;
   --tool-drawer-width: 230px;
   --file-preview-width: clamp(520px, 48vw, 820px);
@@ -7057,7 +7057,7 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* 默认会话工作台: JSONL 占满主区，输入框悬浮在底部中央。TopNav 与 ConversationRail
-   和 Home 共用；当前会话状态与按需工具留在 40px 会话头，不复制数据/SSE/发送逻辑。 */
+   和 Home 共用；当前会话状态与按需工具留在 38px 会话头，不复制数据/SSE/发送逻辑。 */
 .mobius-chat-body.mobius-chat-body--easy {
   position: relative;
   flex-direction: column;
@@ -7130,6 +7130,23 @@ body.mobius-resizing .mobius-resizable-handle {
 .easy-session-context .easy-session-tools .mobius-chat-input-actions {
   display: flex !important;
 }
+.easy-session-overflow {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.easy-session-overflow:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-control-hover);
+}
+.easy-session-overflow:disabled { cursor: wait; opacity: .55; }
+/* 旧摘要类不再挂到默认 topbar；保留兼容样式给旧高级布局。 */
 .easy-session-summary {
   display: inline-flex;
   align-items: center;
@@ -7164,14 +7181,10 @@ body.mobius-resizing .mobius-resizable-handle {
 .easy-session-summary__action:disabled { cursor: wait; opacity: .55; }
 @media (max-width: 700px) {
   .easy-session-context { padding-left: 10px; padding-right: 10px; gap: 6px; }
-  .easy-session-context [aria-label="当前会话上下文"] > span:not(:last-of-type),
-  .easy-session-context [aria-label="当前会话上下文"] > svg { display: none; }
-  .easy-session-context [aria-label="当前会话上下文"] strong { max-width: 120px; }
+  .easy-session-context [aria-label="当前会话标题"] strong { max-width: 120px; }
   .easy-session-tools > [role="group"] { right: -58px; max-width: calc(100vw - 16px); overflow-x: auto; }
   .easy-session-tools .advanced-session-actions--compact { width: 340px; }
-  .easy-session-summary { margin-left: 1px; padding-left: 7px; gap: 4px; font-size: 11px; }
-  .easy-session-summary__label { display: none; }
-  .easy-session-summary__action { min-height: 26px; padding-inline: 4px; font-size: 10px; }
+  .easy-session-overflow { width: 30px; min-width: 30px; }
   [data-page="easy-mode"] input { font-size: 16px !important; }
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input--with-actions .mobius-chat-input-editor {

@@ -17,7 +17,7 @@ import {
   type SessionFileFeature,
   type SessionGitDiff,
 } from './code-git/types'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -2424,7 +2424,6 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
   const [jsonlPath, setJsonlPath] = useState<string | null>(null)
   const [jsonlInitialLoading, setJsonlInitialLoading] = useState(false)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
-  const [easyRoundCount, setEasyRoundCount] = useState(0)
   const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const pendingJsonlEntriesRef = useRef<any[]>([])
   const pendingJsonlTotalIncrementRef = useRef(0)
@@ -2528,7 +2527,6 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
     toolFilesAbortRef.current?.abort()
     toolFilesAbortRef.current = null
     setEasyToolsOpen(false)
-    setEasyRoundCount(0)
     setEasyExpandAllSignal(0)
     setArtifactOpenRequest(null)
     setArtifactAboveChanges(false)
@@ -2552,9 +2550,6 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
     setTerminalContextError('')
     setTerminalContextReloadKey(0)
   }, [sessionId, toolOrigin])
-  const handleEasyRoundCountChange = useCallback((count: number) => {
-    setEasyRoundCount(previous => previous === count ? previous : count)
-  }, [])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
   const currentIssueId = (currentSession as any)?.issue_id || (currentIssue as any)?.id || ''
   const currentResearchId = (currentSession as any)?.research_id || (currentTask as any)?.research_id || ''
@@ -4642,31 +4637,33 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
         working={!!(backendAlive && backendWorking)}
         waiting={!!(backendAlive && !backendWorking)}
         done={backendJobDone === true && !backendAlive}
-        alwaysShowLabel
         onNextAction={backendAlive && !backendWorking ? () => inputRef.current?.focus() : undefined}
         nextActionLabel={backendAlive && !backendWorking ? '点击继续输入' : undefined}
       />
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
-        <span className="max-w-[180px] truncate font-medium" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
-          {projectForSession?.name || currentProjectId || '项目'}
-        </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-        <strong className="min-w-0 truncate font-semibold" style={{ color: 'var(--text-primary)' }} title={currentSession?.name || currentTask?.name || sessionId}>
+      <div className="flex min-w-0 flex-1 items-center text-[12px]" aria-label="当前会话标题">
+        <strong
+          className="min-w-0 truncate font-semibold"
+          style={{ color: 'var(--text-primary)' }}
+          title={[projectForSession?.name || currentProjectId, currentSession?.name || currentTask?.name || sessionId].filter(Boolean).join(' · ')}
+        >
           {currentSession?.name || currentTask?.name || sessionId}
         </strong>
       </div>
-      <div className="easy-session-summary hidden lg:inline-flex" aria-label="会话摘要">
-        <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
-        <small>{easyRoundCount} 轮</small>
-        {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
-          <button type="button" className="easy-session-summary__action" disabled={jsonlLoadingMore} onClick={() => {
+      {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
+        <button
+          type="button"
+          className="easy-session-overflow workbench-control-md"
+          aria-label="展开全部会话记录"
+          title="展开全部会话记录"
+          disabled={jsonlLoadingMore}
+          onClick={() => {
             setEasyExpandAllSignal(value => value + 1)
             if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
-          }}>
-            {jsonlLoadingMore ? '加载中…' : `展开 · ${jsonlTotal || jsonlEntries.length}`}
-          </button>
-        )}
-      </div>
+          }}
+        >
+          {jsonlLoadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+        </button>
+      )}
       <div className="easy-session-tools relative flex-shrink-0" ref={easyToolsRef}>
         <button
           type="button"
@@ -4676,16 +4673,17 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
               else openToolFromCurrentSource(activeToolTab)
             } else setEasyToolsOpen(value => !value)
           }}
+          aria-label="工具"
+          title="工具"
           aria-controls={chrome === 'shell' ? 'session-tool-drawer' : 'easy-session-tools-panel'}
           aria-expanded={chrome === 'shell' ? toolDrawerOpen : easyToolsOpen}
-          className="workbench-control-md inline-flex cursor-pointer items-center gap-1.5 px-2.5 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
+          className="workbench-control-md inline-flex w-8 cursor-pointer items-center justify-center p-0 transition-colors hover:bg-[var(--surface-control-hover)]"
           style={{
             color: 'var(--text-secondary)',
             background: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--surface-active)' : undefined,
           }}
         >
           <Wrench className="h-3.5 w-3.5" />
-          <span>{chrome === 'shell' && toolDrawerOpen ? SESSION_TOOL_TAB_LABELS[activeToolTab] : '工具'}</span>
         </button>
         {chrome !== 'shell' && easyToolsOpen && (
           <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="workbench-popover absolute right-0 top-9 max-h-[calc(100vh-80px)] overflow-y-auto p-1" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }} onKeyDown={(event) => {
@@ -5208,7 +5206,6 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           onMatchScrollUnresolved={handleLoadAllJsonl}
-          onEasyRoundCountChange={handleEasyRoundCountChange}
           easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}
           onOpenArtifact={(request) => {

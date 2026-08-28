@@ -4,15 +4,19 @@ import {
   entryReadImagePaths,
   entryUserAttachmentImages,
   extractBashCalls,
+  extractBashToolResultRecords,
   extractCodeEdit,
   extractPlanCard,
   extractReadCalls,
+  functionOutputBody,
   functionCallCommand,
   isFunctionCallPayload,
+  isFunctionCallOutputPayload,
 } from '../viewer/entry-extract'
-import { assistantEntryText } from '../viewer/entry-classify'
+import { assistantEntryText, isThinkingOnlyAssistantEntry } from '../viewer/entry-classify'
+import type { BashToolResult } from '../viewer/types'
 
-export type EasyActivityKind = 'explore' | 'command' | 'file-change' | 'plan' | 'tool' | 'progress' | 'error' | 'image'
+export type EasyActivityKind = 'explore' | 'command' | 'file-change' | 'plan' | 'tool' | 'progress' | 'error' | 'image' | 'reasoning'
 
 export type EasyActivity = {
   id: string
@@ -21,17 +25,46 @@ export type EasyActivity = {
   summary?: string
   details: string[]
   imageUrls?: string[]
+  outputTail?: string
   state: 'success' | 'error'
   lineNos: number[]
   defaultExpanded?: boolean
+  hidden?: boolean
 }
+
+export type EasyTimelineBurst = {
+  type: 'burst'
+  id: string
+  title: string
+  toolCount: number
+  items: EasyActivity[]
+  hasError: boolean
+  defaultExpanded: boolean
+}
+
+export type EasyTimelineRow = {
+  type: 'row'
+  id: string
+  activity: EasyActivity
+}
+
+export type EasyTimelineMessage = {
+  type: 'message'
+  id: string
+  text: string
+  lineNos: number[]
+}
+
+export type EasyTimelineSegment = EasyTimelineBurst | EasyTimelineRow | EasyTimelineMessage
 
 export type EasyJsonlRound = {
   id: string
   roundNum: number
   userPrompt: string
   activities: EasyActivity[]
+  timeline: EasyTimelineSegment[]
   assistantResponse: string
+  workingLabel?: string
   lineNos: number[]
   startedAt?: string
   completedAt?: string
@@ -120,14 +153,6 @@ export function splitEasyUserPrompt(text: string): EasyUserPromptParts {
   return { visible: raw.trim(), hidden: '', hiddenKind: 'none' }
 }
 
-type ActivityBucket = {
-  kind: EasyActivityKind
-  firstIndex: number
-  details: string[]
-  lineNos: number[]
-  imageUrls: string[]
-}
-
 function contentText(content: unknown, acceptedTypes: string[]): string {
   if (typeof content === 'string') return content.trim()
   if (!Array.isArray(content)) return ''
@@ -172,17 +197,6 @@ function compactText(value: unknown, limit = 220): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 }
 
-function toolBlocks(entry: AnyEntry): any[] {
-  if (entry?.type === 'assistant' && Array.isArray(entry?.message?.content)) {
-    return entry.message.content.filter((block: any) => block?.type === 'tool_use')
-  }
-  const payload = entry?.payload
-  if (entry?.type === 'response_item' && isFunctionCallPayload(payload)) {
-    return [{ type: 'tool_use', name: payload?.name || '工具', input: payload?.arguments, payload }]
-  }
-  return []
-}
-
 function toolInputObject(block: any): any {
   if (block?.input && typeof block.input === 'object') return block.input
   const raw = block?.payload?.arguments ?? block?.input
@@ -201,7 +215,7 @@ function genericToolDetail(block: any): string {
 }
 
 function isExploreTool(name: string): boolean {
-  return /^(read|glob|grep|search|websearch|web_search|list|find)/i.test(name)
+  return /(?:^|__)(?:read|glob|grep|search|websearch|web_search|list|find)/i.test(name)
 }
 
 function isCommandTool(name: string): boolean {
@@ -222,109 +236,432 @@ function errorText(entry: AnyEntry): string {
   return ''
 }
 
-function activityTitle(kind: EasyActivityKind, details: string[], images: string[]): string {
-  if (kind === 'explore') return details.length === 1 ? '探索了 1 项上下文' : `探索了 ${details.length} 项上下文`
-  if (kind === 'command') return details.length === 1 ? '运行了 1 条命令' : `运行了 ${details.length} 条命令`
-  if (kind === 'file-change') {
-    const files = new Set(details.map(detail => detail.split(' · ')[0]).filter(Boolean))
-    return files.size === 1 ? '修改了 1 个文件' : `修改了 ${files.size || details.length} 个文件`
-  }
-  if (kind === 'plan') return '更新了执行计划'
-  if (kind === 'progress') return details.length === 1 ? '发布了 1 条进度' : `发布了 ${details.length} 条进度`
-  if (kind === 'error') return details.length === 1 ? '有 1 个步骤需要注意' : `有 ${details.length} 个步骤需要注意`
-  if (kind === 'image') return images.length === 1 ? '生成了 1 张图片' : `生成了 ${images.length} 张图片`
-  return details.length === 1 ? '使用了 1 个工具' : `使用了 ${details.length} 个工具`
-}
-
 function unique(values: string[]): string[] {
   return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
 }
 
+function pathBasename(value: string): string {
+  const normalized = String(value || '').replace(/\\/g, '/').replace(/\/$/, '')
+  return normalized.slice(normalized.lastIndexOf('/') + 1) || normalized || '文件'
+}
+
+function unwrapQuoted(value: string): string {
+  const text = value.trim()
+  if (text.length < 2) return text
+  const quote = text[0]
+  return (quote === '"' || quote === "'") && text[text.length - 1] === quote
+    ? text.slice(1, -1)
+    : text
+}
+
+/** 只清理展示副本；标准 JSONL 仍保留原始命令。 */
+function cleanCommand(command: string): string {
+  let text = String(command || '').trim()
+  const shell = /^(?:\/usr\/bin\/env\s+)?(?:\/bin\/)?(?:(?:ba|z|)sh|shell)\s+(?:-[a-z]*c|--command)\s+([\s\S]+)$/i.exec(text)
+  if (shell) text = unwrapQuoted(shell[1])
+  for (let index = 0; index < 3; index += 1) {
+    const cd = /^cd\s+(?:"[^"]+"|'[^']+'|[^;&|]+?)\s*(?:&&|;)\s*([\s\S]+)$/i.exec(text)
+    if (!cd) break
+    text = cd[1].trim()
+  }
+  return text
+}
+
+function commandSummary(command: string): string {
+  const cleaned = cleanCommand(command)
+  return compactText(cleaned.split(/\r?\n/, 1)[0], 180) || '命令工具调用'
+}
+
+function limitedOutputTail(value: string, maxLines = 16, maxChars = 2600): string | undefined {
+  const normalized = String(value || '').replace(/\r\n/g, '\n').trimEnd()
+  if (!normalized) return undefined
+  const lines = normalized.split('\n')
+  let tail = lines.slice(-maxLines).join('\n')
+  if (tail.length > maxChars) tail = tail.slice(-maxChars)
+  return lines.length > maxLines || normalized.length > tail.length ? `…\n${tail}` : tail
+}
+
+function reasoningText(entry: AnyEntry, block?: any): string {
+  if (block?.type === 'thinking') return String(block.thinking || '').trim()
+  if (entry?.type !== 'response_item' || entry?.payload?.type !== 'reasoning') return ''
+  const summary = entry.payload.summary
+  if (Array.isArray(summary)) {
+    return summary
+      .map((part: any) => typeof part === 'string' ? part : String(part?.text || ''))
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  return typeof summary === 'string' ? summary.trim() : ''
+}
+
+function reasoningParts(text: string): { title: string; details: string[]; hidden: boolean } | null {
+  const normalized = String(text || '').trim()
+  if (!normalized) return null
+  const lines = normalized.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  if (lines.length === 0) return null
+  const title = compactText(lines[0], 80)
+  const details = lines.length > 1 ? lines.slice(1) : (lines[0].length > 80 ? [normalized] : [])
+  return { title, details, hidden: details.length === 0 }
+}
+
+function isShortProgress(text: string): boolean {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  if (!normalized || normalized.length > 120) return false
+  return /^(?:我(?:先|来|会|将|正在|继续)|先|接下来|随后|现在|正在|继续|准备|开始)(?:检查|查看|读取|搜索|定位|分析|修改|编辑|运行|执行|验证|测试|处理|整理|确认|更新|修复|排查|对比|实现|补充|清理)?/u.test(normalized)
+}
+
+function outputText(result: BashToolResult): string {
+  return [result.stdout, result.stderr].filter(Boolean).join('\n') || result.content || ''
+}
+
+function attachResult(activity: EasyActivity, result?: BashToolResult): void {
+  if (!result) return
+  activity.lineNos = unique([...activity.lineNos.map(String), String(result.lineNo)]).map(Number)
+  activity.outputTail = limitedOutputTail(outputText(result))
+  if (result.isError) {
+    activity.state = 'error'
+    activity.defaultExpanded = true
+    activity.summary = '执行失败'
+    const detail = compactText(result.stderr || result.content || result.stdout || '工具执行失败', 360)
+    if (detail) activity.details = unique([...activity.details, detail])
+  }
+}
+
+function matchingResult(results: BashToolResult[], id: string | undefined, index: number): BashToolResult | undefined {
+  if (id) {
+    const exact = results.find(result => result.toolUseId === id)
+    if (exact) return exact
+  }
+  return results[index]
+}
+
+type PendingActivity = { activity: EasyActivity; toolCount: number; callId?: string }
+
 export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
   return rounds.map((round) => {
-    const buckets = new Map<EasyActivityKind, ActivityBucket>()
-    const assistantMessages: Array<{ text: string; lineNo: number; index: number }> = []
+    const timeline: EasyTimelineSegment[] = []
+    const pending: PendingActivity[] = []
+    const activitiesByCallId = new Map<string, EasyActivity[]>()
     const lineNos = round.items.map(item => item.lineNo)
+    let activityIndex = 0
+    let assistantResponse = ''
+    let workingLabel: string | undefined
 
-    const add = (kind: EasyActivityKind, detail: string, lineNo: number, index: number, imageUrls: string[] = []) => {
-      let bucket = buckets.get(kind)
-      if (!bucket) {
-        bucket = { kind, firstIndex: index, details: [], lineNos: [], imageUrls: [] }
-        buckets.set(kind, bucket)
+    const makeActivity = (
+      kind: EasyActivityKind,
+      title: string,
+      lineNo: number,
+      options: Partial<Omit<EasyActivity, 'id' | 'kind' | 'title' | 'state' | 'lineNos'>> & { state?: EasyActivity['state'] } = {},
+    ): EasyActivity => ({
+      id: `${round.roundNum}:activity:${lineNo}:${activityIndex++}`,
+      kind,
+      title,
+      summary: options.summary,
+      details: options.details || [],
+      imageUrls: options.imageUrls,
+      outputTail: options.outputTail,
+      state: options.state || 'success',
+      lineNos: [lineNo],
+      defaultExpanded: options.defaultExpanded,
+      hidden: options.hidden,
+    })
+
+    const append = (activity: EasyActivity, toolCount: number, callId?: string) => {
+      pending.push({ activity, toolCount, callId })
+      if (callId) {
+        const registered = activitiesByCallId.get(callId) || []
+        registered.push(activity)
+        activitiesByCallId.set(callId, registered)
       }
-      if (detail) bucket.details.push(detail)
-      bucket.lineNos.push(lineNo)
-      bucket.imageUrls.push(...imageUrls)
     }
+
+    const flush = () => {
+      if (pending.length === 0) return
+      const visible = pending.filter(item => !item.activity.hidden)
+      if (visible.length === 1) {
+        timeline.push({ type: 'row', id: `${visible[0].activity.id}:row`, activity: visible[0].activity })
+      } else if (visible.length > 1) {
+        const toolCount = visible.reduce((sum, item) => sum + item.toolCount, 0)
+        if (toolCount > 0) {
+          const hasError = visible.some(item => item.activity.state === 'error')
+          timeline.push({
+            type: 'burst',
+            id: `${visible[0].activity.id}:burst`,
+            title: `${toolCount} 次工具调用${hasError ? ' · 含失败' : ''}`,
+            toolCount,
+            items: visible.map(item => item.activity),
+            hasError,
+            defaultExpanded: true,
+          })
+        } else {
+          visible.forEach(item => timeline.push({ type: 'row', id: `${item.activity.id}:row`, activity: item.activity }))
+        }
+      }
+      pending.length = 0
+    }
+
+    const addMessage = (text: string, lineNo: number) => {
+      flush()
+      timeline.push({
+        type: 'message',
+        id: `${round.roundNum}:message:${lineNo}`,
+        text: text.trim(),
+        lineNos: [lineNo],
+      })
+    }
+
+    const addReasoning = (entry: AnyEntry, lineNo: number, block?: any) => {
+      const parsed = reasoningParts(reasoningText(entry, block))
+      if (!parsed) return
+      workingLabel = parsed.title
+      append(makeActivity('reasoning', parsed.title, lineNo, {
+        details: parsed.details,
+        hidden: parsed.hidden,
+      }), 0)
+    }
+
+    const assistantIndexes = round.items
+      .map((item, index) => easyAssistantText(item.entry) ? index : -1)
+      .filter(index => index >= 0)
+    const finalAssistantIndex = assistantIndexes[assistantIndexes.length - 1] ?? -1
 
     round.items.forEach((item, index) => {
       const entry = item.entry
-      if (index > 0) {
-        const response = easyAssistantText(entry)
-        if (response) assistantMessages.push({ text: response, lineNo: item.lineNo, index })
+      if (index > 0 && easyUserText(entry)) flush()
+
+      if (entry?.type === 'response_item' && isFunctionCallOutputPayload(entry?.payload)) {
+        const callId = String(entry.payload.call_id || '')
+        const registered = callId ? activitiesByCallId.get(callId) : undefined
+        if (registered?.length) {
+          const output = functionOutputBody(entry.payload.output)
+          const failed = entry.payload.status === 'failed' || entry.payload.is_error === true
+          registered.forEach(activity => attachResult(activity, {
+            entry,
+            lineNo: item.lineNo,
+            toolUseId: callId,
+            stdout: output,
+            stderr: '',
+            content: output,
+            isError: failed,
+            interrupted: false,
+            isImage: false,
+            noOutputExpected: false,
+          }))
+        }
+        return
       }
 
-      const plan = extractPlanCard(entry)
-      if (plan) {
-        plan.steps.forEach(step => add('plan', `${step.status === 'completed' ? '已完成' : step.status === 'in_progress' ? '进行中' : '待处理'} · ${compactText(step.step)}`, item.lineNo, index))
+      const unmergedResults = extractBashToolResultRecords(entry, item.lineNo)
+      if (unmergedResults.length > 0 && !item.bashResults?.length && !item.readResults?.length) {
+        let handled = 0
+        unmergedResults.forEach(result => {
+          const registered = result.toolUseId ? activitiesByCallId.get(result.toolUseId) : undefined
+          if (registered?.length) {
+            registered.forEach(activity => attachResult(activity, result))
+            handled += 1
+          } else if (result.isError) {
+            const detail = compactText(result.stderr || result.content || result.stdout || '工具执行失败', 360)
+            append(makeActivity('error', '工具调用失败', item.lineNo, {
+              summary: detail,
+              details: detail ? [detail] : [],
+              outputTail: limitedOutputTail(outputText(result)),
+              state: 'error',
+              defaultExpanded: true,
+            }), 0)
+            handled += 1
+          }
+        })
+        if (handled > 0) return
       }
 
-      const edits = extractCodeEdit(entry)
-      if (edits) {
-        edits.files.forEach(file => add('file-change', `${file.filePath} · +${file.newLineCount} -${file.oldLineCount}`, item.lineNo, index))
-      }
-
-      const reads = extractReadCalls(entry)
-      reads.forEach(call => add('explore', call.filePath || '读取上下文', item.lineNo, index))
-
-      const commands = extractBashCalls(entry)
-      commands.forEach(call => add('command', compactText(call.command, 260), item.lineNo, index))
-
-      for (const result of [...(item.bashResults || []), ...(item.readResults || [])]) {
-        if (result.isError) add('error', compactText(result.stderr || result.content || '工具执行失败'), result.lineNo || item.lineNo, index)
-      }
-
-      for (const block of toolBlocks(entry)) {
-        const name = String(block?.name || '工具')
+      let commandResultIndex = 0
+      let readResultIndex = 0
+      const processTool = (block: any, sourceEntry: AnyEntry) => {
+        const name = String(block?.name || sourceEntry?.payload?.name || '工具')
         const input = toolInputObject(block)
+        const callId = String(block?.id || block?.payload?.call_id || sourceEntry?.payload?.call_id || '') || undefined
+        const plan = extractPlanCard(sourceEntry)
+        if (isPlanTool(name) && plan) {
+          const current = plan.currentStep ? `正在处理 ${compactText(plan.currentStep, 100)}` : '已更新执行计划'
+          const activity = makeActivity('plan', current, item.lineNo, {
+            details: plan.steps.map(step => `${step.status === 'completed' ? '已完成' : step.status === 'in_progress' ? '进行中' : '待处理'} · ${compactText(step.step)}`),
+          })
+          append(activity, 1, callId)
+          return
+        }
+
+        const edits = extractCodeEdit(sourceEntry)
+        if (isFileChangeTool(name) && edits?.files.length) {
+          edits.files.forEach((file, fileIndex) => {
+            append(makeActivity('file-change', `已编辑 ${pathBasename(file.filePath)}`, item.lineNo, {
+              summary: file.filePath,
+              details: [`${file.filePath} · +${file.newLineCount} -${file.oldLineCount}`],
+            }), fileIndex === 0 ? 1 : 0, callId)
+          })
+          return
+        }
+
+        const reads = extractReadCalls(sourceEntry)
+        if (reads.length > 0) {
+          reads.forEach(call => {
+            const activity = makeActivity('explore', `正在读取 ${pathBasename(call.filePath)}`, item.lineNo, {
+              summary: call.filePath,
+              details: [call.filePath],
+            })
+            attachResult(activity, matchingResult(item.readResults || [], call.id, readResultIndex++))
+            append(activity, 1, call.id || callId)
+          })
+          return
+        }
+
+        const commands = extractBashCalls(sourceEntry)
+        if (commands.length > 0) {
+          commands.forEach(call => {
+            const cleaned = cleanCommand(call.command)
+            const activity = makeActivity('command', commandSummary(call.command), item.lineNo, {
+              details: unique([cleaned, call.cwd ? `cwd · ${call.cwd}` : '']),
+            })
+            attachResult(activity, matchingResult(item.bashResults || [], call.id, commandResultIndex++))
+            append(activity, 1, call.id || callId)
+          })
+          return
+        }
+
+        if (isFileChangeTool(name)) {
+          const filePath = String(input.file_path || input.filePath || input.path || name)
+          append(makeActivity('file-change', `已编辑 ${pathBasename(filePath)}`, item.lineNo, {
+            summary: filePath,
+            details: filePath ? [filePath] : [],
+          }), 1, callId)
+          return
+        }
         if (isExploreTool(name)) {
-          if (reads.length === 0) add('explore', compactText(input.file_path || input.path || input.query || input.pattern || genericToolDetail(block)), item.lineNo, index)
-        } else if (isCommandTool(name)) {
-          if (commands.length === 0) add('command', compactText(input.command || genericToolDetail(block), 260), item.lineNo, index)
-        } else if (isFileChangeTool(name)) {
-          if (!edits) add('file-change', `${input.file_path || input.path || name} · 已更新`, item.lineNo, index)
-        } else if (!isPlanTool(name) || !plan) {
-          add(isPlanTool(name) ? 'plan' : 'tool', genericToolDetail(block), item.lineNo, index)
+          const query = String(input.query || input.pattern || input.file_path || input.path || input.url || '').trim()
+          const searching = /(?:grep|search|find)/i.test(name)
+          append(makeActivity('explore', `${searching ? '正在搜索' : '正在读取'}${query ? ` ${compactText(query, 140)}` : ''}`, item.lineNo, {
+            details: query ? [query] : [],
+          }), 1, callId)
+          return
+        }
+        if (isCommandTool(name)) {
+          const command = functionCallCommand(block?.payload || sourceEntry?.payload) || input.cmd || input.command || genericToolDetail(block)
+          append(makeActivity('command', commandSummary(command), item.lineNo, {
+            details: [cleanCommand(command)],
+          }), 1, callId)
+          return
+        }
+        append(makeActivity(isPlanTool(name) ? 'plan' : 'tool', genericToolDetail(block), item.lineNo, {
+          details: Object.keys(input).length ? [compactText(JSON.stringify(input), 360)] : [],
+        }), 1, callId)
+      }
+
+      if (entry?.type === 'response_item' && entry?.payload?.type === 'reasoning') {
+        addReasoning(entry, item.lineNo)
+      } else if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload)) {
+        processTool({
+          type: 'tool_use',
+          id: entry.payload.call_id,
+          name: entry.payload.name || '工具',
+          input: entry.payload.arguments,
+          payload: entry.payload,
+        }, entry)
+      } else if (entry?.type === 'assistant' && Array.isArray(entry?.message?.content)) {
+        const finalText = index === finalAssistantIndex ? easyAssistantText(entry) : ''
+        let finalHandled = false
+        entry.message.content.forEach((block: any) => {
+          if (block?.type === 'thinking') {
+            addReasoning(entry, item.lineNo, block)
+          } else if (block?.type === 'tool_use') {
+            processTool(block, { ...entry, message: { ...entry.message, content: [block] } })
+          } else if ((block?.type === 'text' || block?.type === 'output_text') && typeof block.text === 'string' && block.text.trim()) {
+            if (finalText) {
+              if (!finalHandled) {
+                flush()
+                assistantResponse = finalText
+                finalHandled = true
+              }
+            } else if (isShortProgress(block.text)) {
+              append(makeActivity('progress', compactText(block.text, 160), item.lineNo), 0)
+            } else {
+              addMessage(block.text, item.lineNo)
+            }
+          }
+        })
+        if (isThinkingOnlyAssistantEntry(entry) && !entry.message.content.some((block: any) => reasoningText(entry, block))) {
+          // 加密或空 thinking 不伪造可见内容，也不切断相邻工具。
+        }
+      } else {
+        const response = index > 0 ? easyAssistantText(entry) : ''
+        if (response) {
+          if (index === finalAssistantIndex) {
+            flush()
+            assistantResponse = response
+          } else if (isShortProgress(response)) {
+            append(makeActivity('progress', compactText(response, 160), item.lineNo), 0)
+          } else {
+            addMessage(response, item.lineNo)
+          }
+        } else {
+          const plan = extractPlanCard(entry)
+          const edits = extractCodeEdit(entry)
+          const reads = extractReadCalls(entry)
+          const commands = extractBashCalls(entry)
+          if (plan) {
+            append(makeActivity('plan', plan.currentStep ? `正在处理 ${compactText(plan.currentStep, 100)}` : '已更新执行计划', item.lineNo, {
+              details: plan.steps.map(step => `${step.status === 'completed' ? '已完成' : step.status === 'in_progress' ? '进行中' : '待处理'} · ${compactText(step.step)}`),
+            }), 1)
+          } else if (edits?.files.length) {
+            edits.files.forEach((file, fileIndex) => append(makeActivity('file-change', `已编辑 ${pathBasename(file.filePath)}`, item.lineNo, {
+              summary: file.filePath,
+              details: [`${file.filePath} · +${file.newLineCount} -${file.oldLineCount}`],
+            }), fileIndex === 0 ? 1 : 0))
+          } else {
+            reads.forEach(call => append(makeActivity('explore', `正在读取 ${pathBasename(call.filePath)}`, item.lineNo, {
+              summary: call.filePath,
+              details: [call.filePath],
+            }), 1, call.id))
+            commands.forEach(call => append(makeActivity('command', commandSummary(call.command), item.lineNo, {
+              details: unique([cleanCommand(call.command), call.cwd ? `cwd · ${call.cwd}` : '']),
+            }), 1, call.id))
+          }
         }
       }
 
       const images = unique([...entryDisplayImages(entry), ...entryReadImagePaths(entry), ...entryUserAttachmentImages(entry)])
-      if (images.length) add('image', '', item.lineNo, index, images)
+      if (images.length) {
+        const imageOwner = [...pending]
+          .reverse()
+          .find(candidate => candidate.activity.lineNos.includes(item.lineNo) && !['progress', 'reasoning'].includes(candidate.activity.kind))
+        if (imageOwner) imageOwner.activity.imageUrls = unique([...(imageOwner.activity.imageUrls || []), ...images])
+        else append(makeActivity('image', images.length === 1 ? '生成了 1 张图片' : `生成了 ${images.length} 张图片`, item.lineNo, {
+          imageUrls: images,
+        }), 0)
+      }
 
       const error = errorText(entry)
-      if (error) add('error', error, item.lineNo, index)
+      if (error) append(makeActivity('error', '工具调用失败', item.lineNo, {
+        summary: error,
+        details: [error],
+        state: 'error',
+        defaultExpanded: true,
+      }), 0)
     })
 
-    const finalMessage = assistantMessages[assistantMessages.length - 1]
-    assistantMessages.slice(0, -1).forEach(message => add('progress', compactText(message.text, 320), message.lineNo, message.index))
+    flush()
 
-    const activities = Array.from(buckets.values())
-      .sort((a, b) => a.firstIndex - b.firstIndex)
-      .map((bucket, index): EasyActivity => {
-        const details = unique(bucket.details)
-        const imageUrls = unique(bucket.imageUrls)
-        return {
-          id: `${round.roundNum}:${bucket.kind}:${index}`,
-          kind: bucket.kind,
-          title: activityTitle(bucket.kind, details, imageUrls),
-          summary: details[details.length - 1],
-          details,
-          imageUrls: imageUrls.length ? imageUrls : undefined,
-          state: bucket.kind === 'error' ? 'error' : 'success',
-          lineNos: Array.from(new Set(bucket.lineNos)),
-          defaultExpanded: bucket.kind === 'error',
-        }
-      })
+    timeline.forEach(segment => {
+      if (segment.type !== 'burst') return
+      segment.hasError = segment.items.some(activity => activity.state === 'error')
+      segment.defaultExpanded = true
+      segment.title = `${segment.toolCount} 次工具调用${segment.hasError ? ' · 含失败' : ''}`
+    })
+
+    const activities = timeline.flatMap(segment => {
+      if (segment.type === 'burst') return segment.items
+      if (segment.type === 'row') return [segment.activity]
+      return []
+    })
 
     const firstEntry = round.items[0]?.entry
     const lastEntry = round.items[round.items.length - 1]?.entry
@@ -333,7 +670,9 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
       roundNum: round.roundNum,
       userPrompt: easyUserText(firstEntry),
       activities,
-      assistantResponse: finalMessage?.text || '',
+      timeline,
+      assistantResponse,
+      workingLabel,
       lineNos,
       startedAt: entryTimestamp(firstEntry),
       completedAt: entryTimestamp(lastEntry),
