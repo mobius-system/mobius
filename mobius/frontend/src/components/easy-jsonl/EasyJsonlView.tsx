@@ -214,7 +214,7 @@ export default function EasyJsonlView({
                     <strong>你的任务</strong>
                     <time>{formatRoundTime(round.startedAt)}</time>
                   </div>
-                  <p>{round.userPrompt || '继续处理当前任务'}</p>
+                  <JsonlCompactMarkdown text={round.userPrompt || '继续处理当前任务'} />
                 </div>
               </header>
 

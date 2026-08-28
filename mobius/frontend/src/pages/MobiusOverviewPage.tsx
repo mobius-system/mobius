@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Activity,
   ArrowUpRight,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { AdvancedPageChrome } from '../components/advanced-page-chrome'
+import { homePath, readWorkbenchReturnTo } from '../services/workbench-navigation'
 
 type EntityKind = 'project' | 'issue' | 'research' | 'session'
 
@@ -141,9 +143,9 @@ function nodeAccent(kind: EntityKind, source?: any) {
   if (kind === 'project') return '#22c55e'
   if (kind === 'research') return '#a855f7'
   if (kind === 'issue') return '#38bdf8'
-  if (source?.agent_status === 'running') return '#f59e0b'
-  if (source?.job_failed) return '#ef4444'
-  if (source?.job_accomplished || source?.status === 'completed') return '#22c55e'
+  if (source?.agent_status === 'running') return 'var(--status-running)'
+  if (source?.job_failed) return 'var(--status-danger)'
+  if (source?.job_accomplished || source?.status === 'completed') return 'var(--status-success)'
   return '#94a3b8'
 }
 
@@ -442,6 +444,8 @@ function DetailDrawer({
 export default function MobiusOverviewPage() {
   const params = useParams()
   const userParam = params.user || ''
+  const [search] = useSearchParams()
+  const returnTo = readWorkbenchReturnTo(search, homePath(userParam))
   const {
     projects,
     setProjects,
@@ -693,10 +697,18 @@ export default function MobiusOverviewPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+    <div data-system-visualization="fullscreen" className="advanced-page-surface flex h-screen flex-col" style={{ background: 'var(--surface-base)', color: 'var(--text-primary)' }}>
       <TopNav />
+      <AdvancedPageChrome
+        eyebrow="高级"
+        title="系统项目总览"
+        meta="按需全屏视图"
+        returnTo={returnTo}
+        fallback={homePath(userParam)}
+        autoFocusHeading
+      />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}>
+        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-default, var(--border-color))', background: 'var(--surface-base, var(--bg-primary, #0a0e16))' }}>
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
@@ -817,7 +829,7 @@ export default function MobiusOverviewPage() {
                 加载中
               </div>
             )}
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[360px] truncate text-[12px] text-[var(--status-danger)]">{error}</div>}
           </div>
 
           <div

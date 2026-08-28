@@ -47,6 +47,20 @@ type CodeConversationPaneProps = {
   projectId: string
   bindPath: string
   vscodeWebUrl?: string
+  /** 项目相对文件；只在用户显式选择“在编辑器打开”时传入。 */
+  initialFilePath?: string | null
+  initialLine?: number | null
+  initialColumn?: number | null
+  initialEndLine?: number | null
+  initialOpenKey?: string | number | null
+}
+
+type InitialEditorLocation = {
+  path: string
+  line: number | null
+  column: number | null
+  endLine: number | null
+  key: string | number
 }
 
 type FileSource = 'hub' | 'local' | 'remote'
@@ -134,7 +148,16 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
+export function CodeConversationPane({
+  projectId,
+  bindPath,
+  vscodeWebUrl,
+  initialFilePath = null,
+  initialLine = null,
+  initialColumn = null,
+  initialEndLine = null,
+  initialOpenKey = null,
+}: CodeConversationPaneProps) {
   const desktop = getDesktopBridge()
   const isDesktop = !!desktop?.isDesktop
   const [source, setSourceState] = useState<FileSource>(() => loadFileSource(projectId))
@@ -190,6 +213,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveOk, setSaveOk] = useState(false)
+  const [initialEditorLocation, setInitialEditorLocation] = useState<InitialEditorLocation | null>(null)
+  const appliedInitialOpenRef = useRef<string | number | null>(null)
   // ★ Markdown 编辑模式 (仅 .md 文件): 源码编辑 (CodeMirror) <-> 富文本 WYSIWYG 编辑; 切换文件时复位为源码.
   const [mdPreview, setMdPreview] = useState(false)
 
@@ -296,6 +321,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSaving(false)
     setSaveError('')
     setSaveOk(false)
+    setInitialEditorLocation(null)
   }, [])
 
   useEffect(() => {
@@ -369,7 +395,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     }
   }, [clearEditorState, desktop, loadDir, projectId, source])
 
-  const onSelectFile = useCallback(async (entry: Entry) => {
+  const onSelectFile = useCallback(async (entry: Entry, location: InitialEditorLocation | null = null) => {
     if (entry.type !== 'file') return
     // 切换前若有未保存改动, 提示确认 (避免静默丢失编辑).
     if (dirty && selected && selected.abs_path !== entry.abs_path) {
@@ -384,6 +410,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     setSaveError('')
     setSaveOk(false)
     setMdPreview(false)
+    setInitialEditorLocation(location)
     try {
       const root = source === 'local' ? localBindPath : bindPath
       const rel = source === 'remote' ? (entry.rel_path || '/') : relPathUnderBind(entry.abs_path, root)
@@ -401,6 +428,69 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       setFileLoading(false)
     }
   }, [desktop, projectId, bindPath, localBindPath, remoteName, source, dirty, selected])
+
+  useEffect(() => {
+    if (!initialFilePath || !bindPath) return
+    if (source !== 'hub') {
+      // 文件预览读取的是项目中枢文件；显式进入编辑器时切回同一数据源。
+      // chooseSource 会沿用既有未保存修改确认，不会静默丢弃本地/远程草稿。
+      chooseSource('hub')
+      return
+    }
+    const locationKey = initialOpenKey ?? `${initialFilePath}:${initialLine ?? ''}:${initialColumn ?? ''}:${initialEndLine ?? ''}`
+    const requestKey = `${projectId}:${locationKey}`
+    if (appliedInitialOpenRef.current === requestKey) return
+    appliedInitialOpenRef.current = requestKey
+
+    const relPath = normalizeInitialProjectFile(initialFilePath, bindPath)
+    if (!relPath) {
+      setFileError('无法在当前项目中解析要打开的文件')
+      return
+    }
+    const location: InitialEditorLocation = {
+      path: relPath,
+      line: initialLine,
+      column: initialColumn,
+      endLine: initialEndLine,
+      key: requestKey,
+    }
+    const absolutePath = `${bindPath.replace(/[\\/]+$/, '')}/${relPath.replace(/^\/+/, '')}`
+    const entry: Entry = {
+      name: relPath.split('/').filter(Boolean).pop() || relPath,
+      type: 'file',
+      size: null,
+      modified: '',
+      abs_path: absolutePath,
+    }
+
+    // 让文件树同步展开到目标父目录；读取仍走既有只读 GET file API。
+    const segments = relPath.split('/').filter(Boolean)
+    const parentPaths = segments.slice(0, -1).map((_, index) => `/${segments.slice(0, index + 1).join('/')}`)
+    if (parentPaths.length) {
+      setExpanded(current => new Set([...current, '/', ...parentPaths]))
+      parentPaths.forEach(path => { if (!dirs[path]) void loadDir(path) })
+    }
+
+    if (selected?.abs_path === absolutePath) {
+      setInitialEditorLocation(location)
+      setMdPreview(false)
+      return
+    }
+    void onSelectFile(entry, location)
+  }, [
+    bindPath,
+    chooseSource,
+    dirs,
+    initialColumn,
+    initialEndLine,
+    initialFilePath,
+    initialLine,
+    initialOpenKey,
+    loadDir,
+    onSelectFile,
+    selected?.abs_path,
+    source,
+  ])
 
   // 保存: 写回磁盘, 复位 dirty. 返回是否保存成功 (供重命名前确认使用)。
   const save = useCallback(async (): Promise<boolean> => {
@@ -1153,6 +1243,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
                   onChange={onChange}
                   wrap={wordWrap}
                   onToggleWrap={toggleWordWrap}
+                  initialLine={initialEditorLocation?.line}
+                  initialColumn={initialEditorLocation?.column}
+                  initialEndLine={initialEditorLocation?.endLine}
+                  initialLocationKey={initialEditorLocation?.key}
                 />
               </Suspense>
             )
@@ -1364,4 +1458,20 @@ function relPathUnderBind(absPath: string, bindPath: string): string {
   if (absPath === root) return '/'
   if (absPath.startsWith(root + '/')) return '/' + absPath.slice(root.length + 1).replace(/\\/g, '/')
   return absPath.replace(/\\/g, '/')
+}
+
+function normalizeInitialProjectFile(filePath: string, bindPath: string): string | null {
+  const normalized = filePath.trim().replace(/\\/g, '/')
+  if (!normalized || normalized.includes('\0')) return null
+  const root = bindPath.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+  const candidate = root && (normalized === root || normalized.startsWith(`${root}/`))
+    ? normalized.slice(root.length)
+    : normalized
+  const segments: string[] = []
+  for (const segment of candidate.split('/')) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') return null
+    segments.push(segment)
+  }
+  return segments.length ? `/${segments.join('/')}` : null
 }

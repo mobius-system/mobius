@@ -72,7 +72,7 @@ export function ProjectAssistantPresetPanel({ projectId }: { projectId: string }
             </div>
           </div>
           <button type="button" onClick={() => setShowPresetModal(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-500/15 px-3 text-[12px] text-blue-400 transition-colors hover:bg-blue-500/25">
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--surface-active)] px-3 text-[12px] text-[var(--accent-primary)] transition-colors hover:bg-[var(--accent-soft)]">
             <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
             预设配置
           </button>
@@ -93,7 +93,7 @@ export function ProjectAssistantPresetPanel({ projectId }: { projectId: string }
         {loading && !data ? (
           <div className="py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>正在读取...</div>
         ) : err ? (
-          <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">{err}</div>
+          <div className="workbench-status-danger rounded-lg border px-3 py-2 text-[12px]">{err}</div>
         ) : preset ? (
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>

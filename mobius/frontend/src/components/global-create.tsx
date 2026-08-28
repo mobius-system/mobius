@@ -122,8 +122,8 @@ const SCOPE_LABEL: Record<string, string> = { user: '用户级', project: '项�
 // ---------------------------------------------------------------------
 // 工具
 // ---------------------------------------------------------------------
-function modalShellStyle(isDark: boolean): React.CSSProperties {
-  return { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
+function modalShellStyle(_isDark: boolean): React.CSSProperties {
+  return { background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }
 }
 
 // ---------------------------------------------------------------------
@@ -148,7 +148,7 @@ function TextInput(props: { value: string; onChange: (v: string) => void; placeh
       onKeyDown={e => { if (e.key === 'Enter' && onEnter) onEnter() }}
       placeholder={placeholder}
       className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40"
-      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
+      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
     />
   )
 }
@@ -162,7 +162,7 @@ export function LanguageSelect({ value, onChange }: { value: SessionLanguage; on
           <button key={opt.key} type="button" onClick={() => onChange(opt.key)}
             className="h-9 rounded-lg border text-[12px] transition-colors"
             style={active
-              ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
+              ? { background: 'var(--accent-soft)', borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' }
               : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
             {opt.title}
           </button>
@@ -295,8 +295,8 @@ function DropdownSelect({
   return (
     <>
       <button ref={triggerRef} type="button" disabled={disabled} onClick={() => setOpen(v => !v)}
-        className="w-full h-10 px-2.5 rounded-xl text-[13px] text-left flex items-center justify-between gap-2 focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-color-strong,#475569)]"
-        style={{ background: 'var(--input-bg)', border: open ? '1px solid rgba(59,130,246,0.55)' : '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}>
+        className="w-full h-10 px-2.5 rounded-xl text-[13px] text-left flex items-center justify-between gap-2 focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-strong)]"
+        style={{ background: 'var(--input-bg)', border: open ? '1px solid var(--accent-border)' : '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
         <span className={`truncate ${selected ? '' : 'opacity-60'}`}>
           {selected ? selected.label : (placeholder || '— 请选择 —')}
         </span>
@@ -305,14 +305,14 @@ function DropdownSelect({
       {open && pos && createPortal(
         <div ref={panelRef} className="fixed z-[100]" style={{ top: pos.top, left: pos.left, width: pos.width }}>
           <div className="rounded-xl shadow-2xl overflow-hidden flex flex-col"
-            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxHeight: 340, boxShadow: '0 12px 32px -8px rgba(0,0,0,0.45)' }}>
+            style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', maxHeight: 340, boxShadow: 'var(--shadow-overlay)' }}>
             {showSearch && (
               <div className="p-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                   <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                   <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索…" autoFocus
                     className="flex-1 bg-transparent text-[12px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
-                    style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+                    style={{ color: 'var(--text-primary)' }} />
                   {q && (
                     <button type="button" onClick={() => setQ('')} className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
                       <X className="w-3 h-3" />
@@ -332,7 +332,7 @@ function DropdownSelect({
                     panelAction.onClick()
                   }}
                   className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ color: '#60a5fa' }}
+                  style={{ color: 'var(--status-running)' }}
                 >
                   <FolderPlus className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="truncate">{panelAction.label}</span>
@@ -347,17 +347,17 @@ function DropdownSelect({
                 return (
                   <button key={opt.value} type="button" disabled={opt.disabled} onClick={() => onPick(opt)}
                     className="w-full px-2.5 py-1.5 text-left flex items-start gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                    style={{ background: active ? 'rgba(59,130,246,0.10)' : 'transparent' }}>
+                    style={{ background: active ? 'var(--accent-soft)' : 'transparent' }}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{opt.label}</span>
+                        <span className="truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{opt.label}</span>
                         {opt.badge && (
                           <span className="text-[9px] px-1 py-0.5 rounded shrink-0" style={{ background: opt.badge.bg, color: opt.badge.color }}>{opt.badge.text}</span>
                         )}
                       </div>
                       {opt.description && <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>}
                     </div>
-                    {active && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#60a5fa' }} />}
+                    {active && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: 'var(--accent-primary)' }} />}
                   </button>
                 )
               })}
@@ -430,21 +430,21 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files) }}
         className="relative rounded-xl transition-colors focus-within:border-blue-500/40"
-        style={{ background: 'var(--input-bg)', border: `1px solid ${dragOver ? 'rgba(59,130,246,0.6)' : 'var(--input-border)'}` }}>
+        style={{ background: 'var(--input-bg)', border: `1px solid ${dragOver ? 'var(--accent-border)' : 'var(--input-border)'}` }}>
         <input ref={fileRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = '' }} />
         {attachments.length > 0 && (
           <div className="flex flex-wrap items-start gap-1.5 px-3 pt-2.5">
             {attachments.map(a => (
               <div key={a.id} className="relative group flex-shrink-0" title={`${a.name}${a.size ? ` · ${formatFileSize(a.size)}` : ''}`}>
                 {a.kind === 'image' && a.previewUrl ? (
-                  <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)' }}>
+                  <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--input-border)' }}>
                     <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
-                    {a.status === 'uploading' && <div className="absolute inset-0 bg-black/40" />}
+                    {a.status === 'uploading' && <div className="absolute inset-0" style={{ background: 'var(--surface-scrim)' }} />}
                     {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[9px] flex items-center justify-center">失败</div>}
                   </div>
                 ) : (
                   <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[10px]"
-                    style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
+                    style={{ background: 'var(--surface-overlay)', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
                     <Paperclip className="w-3 h-3" /><span className="max-w-[80px] truncate">{a.name}</span>
                   </div>
                 )}
@@ -459,7 +459,7 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
         <ExpandableTextarea value={value} onValueChange={onValueChange} placeholder={placeholder}
           overlayTitle="编辑目的 / 问题描述"
           className="w-full bg-transparent resize-none border-0 px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
-          style={{ minHeight: 72, color: dark ? '#f1f5f9' : '#1e293b' }} />
+          style={{ minHeight: 72, color: 'var(--text-primary)' }} />
         <div className="flex items-center gap-2 px-3 pb-2">
           <button type="button" onClick={() => fileRef.current?.click()}
             className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
@@ -526,7 +526,7 @@ export function SkillMemoryPicker({
         <button type="button" onClick={() => setPanel('skill')} disabled={disabled} className={btnCls}
           style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
           <span className="flex items-center gap-1.5 truncate">
-            <span style={{ color: '#60a5fa' }}><Lock className="w-3 h-3" /></span>
+            <span style={{ color: 'var(--status-running)' }}><Lock className="w-3 h-3" /></span>
             Skill
           </span>
           <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledSkillCount}/{skills.length}</span>
@@ -534,7 +534,7 @@ export function SkillMemoryPicker({
         <button type="button" onClick={() => setPanel('memory')} disabled={disabled} className={btnCls}
           style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
           <span className="flex items-center gap-1.5 truncate">
-            <span style={{ color: '#a855f7' }}><Eye className="w-3 h-3" /></span>
+            <span style={{ color: 'var(--accent-primary)' }}><Eye className="w-3 h-3" /></span>
             Memory
           </span>
           <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledMemoryCount}/{memories.length}</span>
@@ -542,12 +542,13 @@ export function SkillMemoryPicker({
       </div>
 
       {panel && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={close}>
-          <div className="flex max-h-[min(600px,calc(100vh-64px))] w-[min(520px,calc(100vw-32px))] flex-col rounded-2xl shadow-2xl"
-            onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={close}>
+          <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+          <div className="theme-overlay__panel relative flex max-h-[min(600px,calc(100vh-64px))] w-[min(520px,calc(100vw-32px))] flex-col rounded-[var(--radius-modal)] border shadow-2xl"
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0">
-                <div className="text-[14px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+                <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {panel === 'skill' ? 'Skill 选择' : 'Memory 选择'}
                 </div>
                 <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -562,7 +563,7 @@ export function SkillMemoryPicker({
               <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                 <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索名称或描述…" autoFocus
-                  className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+                  className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
@@ -584,16 +585,16 @@ export function SkillMemoryPicker({
                         onChange={() => !locked && !mutex && onToggle(it.id)} className="mt-0.5 accent-blue-500" />
                       <div className="min-w-0 flex-1" style={{ opacity: mutex ? 0.4 : checked ? 1 : 0.5 }}>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{it.name}</span>
-                          {it.research_role && <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{it.research_role}</span>}
-                          <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
+                          <span className="truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
+                          {it.research_role && <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>{it.research_role}</span>}
+                          <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
                         </div>
                         {it.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{it.description}</div>}
                       </div>
                     </label>
                     {accent && (
                       <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px]"
-                        style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
+                        style={{ background: 'var(--status-running-soft)', color: 'var(--status-running)' }}>
                         {accent === '互斥' ? <Ban className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}{accent}
                       </span>
                     )}
@@ -616,16 +617,16 @@ function CreateSuccessDialog({ kind, name, detailUrl, onClose }: { kind: CreateK
   const isDark = useStore(s => s.theme) !== 'light'
   const labelMap: Record<CreateKind, string> = { project: '项目', issue: '任务', session: '会话', research: '研究智能体' }
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-      <div className="relative w-[400px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center"
+    <div className="theme-overlay fixed inset-0 z-[90] flex items-center justify-center px-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-[400px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-6 shadow-2xl flex flex-col items-center text-center"
         style={modalShellStyle(isDark)}>
-        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(34,197,94,0.15)' }}>
-          <CheckCircle2 className="w-7 h-7" style={{ color: '#22c55e' }} />
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'var(--status-success-soft)' }}>
+          <CheckCircle2 className="w-7 h-7" style={{ color: 'var(--status-success)' }} />
         </div>
-        <h3 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
+        <h3 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>创建成功</h3>
         <p className="text-[12px] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          {labelMap[kind]}「<span style={{ color: isDark ? '#e2e8f0' : '#334155' }}>{name || '(未命名)'}</span>」已创建。是否跳转详情？
+          {labelMap[kind]}「<span style={{ color: 'var(--text-secondary)' }}>{name || '(未命名)'}</span>」已创建。是否跳转详情？
         </p>
         <div className="flex gap-2 w-full">
           <button type="button" onClick={onClose}
@@ -649,16 +650,16 @@ function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose,
   name: string; canView: boolean; onView: () => void; onCreateAnother: () => void; onClose: () => void; dark: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-      <div className="relative w-[400px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center"
+    <div className="theme-overlay fixed inset-0 z-[90] flex items-center justify-center px-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" />
+      <div className="theme-overlay__panel relative w-[400px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-6 shadow-2xl flex flex-col items-center text-center"
         style={modalShellStyle(dark)}>
-        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(34,197,94,0.15)' }}>
-          <CheckCircle2 className="w-7 h-7" style={{ color: '#22c55e' }} />
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'var(--status-success-soft)' }}>
+          <CheckCircle2 className="w-7 h-7" style={{ color: 'var(--status-success)' }} />
         </div>
-        <h3 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
+        <h3 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>创建成功</h3>
         <p className="text-[12px] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          会话「<span style={{ color: dark ? '#e2e8f0' : '#334155' }}>{name || '(未命名)'}</span>」已创建并开始执行。
+          会话「<span style={{ color: 'var(--text-secondary)' }}>{name || '(未命名)'}</span>」已创建并开始执行。
         </p>
         <div className="flex flex-col gap-2 w-full">
           <button type="button" onClick={onView} disabled={!canView}
@@ -684,13 +685,13 @@ function CreateModalShell({ title, onClose, children, footer, dark, width = 560,
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode; dark: boolean; width?: number; headerExtra?: React.ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="global-create-modal relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-24px)]"
+    <div className="theme-overlay fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={onClose} />
+      <div className="theme-overlay__panel global-create-modal relative w-full flex flex-col rounded-[var(--radius-modal)] border shadow-2xl max-h-[calc(100vh-24px)]"
         style={{ ...modalShellStyle(dark), maxWidth: `min(${width}px, calc(100vw - 24px))` }}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-2" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
             {headerExtra}
           </div>
           <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -832,11 +833,11 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
   const visibilityOption = VISIBILITY_OPTIONS.find(o => o.value === visibility) || VISIBILITY_OPTIONS[0]
 
   const permissionSettingsModal = permissionOpen ? (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
-      <div className="relative w-[440px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
-        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="theme-overlay__panel relative w-[440px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>修改项目权限</h4>
         <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
         {projectKind !== 'extension' && (
           <ProjectMemberInvite
@@ -870,9 +871,9 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               description: `${opt.desc} · ${disabled ? '仅管理员或开发者' : opt.note}`,
               disabled,
               badge: opt.kind === 'research'
-                ? { text: '自动', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
+                ? { text: '自动', color: 'var(--status-success)', bg: 'var(--status-success-soft)' }
                 : opt.kind === 'extension'
-                ? { text: '需授权', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' }
+                ? { text: '需授权', color: 'var(--status-waiting)', bg: 'var(--status-waiting-soft)' }
                 : undefined,
             }
           })}
@@ -895,7 +896,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             <SectionLabel hint="选填">项目描述</SectionLabel>
             <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
               className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
-              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
           </div>
           <div>
             <SectionLabel hint="agent 的工作目录">绑定路径</SectionLabel>
@@ -927,7 +928,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Upload className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12px] font-medium" style={{ color: archiveFile ? (dark ? '#cbd5e1' : '#334155') : 'var(--text-muted)' }}>
+                <span className="block truncate text-[12px] font-medium" style={{ color: archiveFile ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
                   {archiveFile ? archiveFile.name : '点击选择压缩包(可不上传)'}
                 </span>
                 <span className="mt-0.5 block text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -937,7 +938,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               {archiveFile && (
                 <span role="button" tabIndex={0}
                   onClick={e => { e.stopPropagation(); setArchiveFile(null); if (archiveInputRef.current) archiveInputRef.current.value = '' }}
-                  className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>移除</span>
+                  className="flex-shrink-0 text-[11px]" style={{ color: 'var(--status-running)' }}>移除</span>
               )}
             </button>
           </div>
@@ -949,10 +950,10 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
+                <span className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>设置项目成员</span>
                 <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（负责人 / 管理员 / 成员 / 访客）'}</span>
               </span>
-              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>设置</span>
+              <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--status-running)' }}>设置</span>
             </button>
           </div>
           {projectKind === 'default' && (
@@ -960,12 +961,12 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               checked={researchEnabled}
               onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
               className="flex items-start gap-3 text-[13px]"
-              style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              style={{ color: 'var(--text-secondary)' }}>
               <span><span className="font-medium">启用研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
             </ToggleSwitch>
           )}
           {projectKind === 'research' && (
-            <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+            <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'var(--status-success-soft)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)' }}>
               <FlaskConical className="w-3.5 h-3.5" /> 研究项目已自动启用研究系统并禁用 git worktree
             </div>
           )}
@@ -974,7 +975,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               checked={defaultUseWorktree}
               onChange={setDefaultUseWorktree}
               className="flex items-center gap-3 text-[13px]"
-              style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+              style={{ color: 'var(--text-secondary)' }}>
               默认使用 git worktree（新建任务时在绑定路径下开独立工作区）
             </ToggleSwitch>
           )}
@@ -1061,11 +1062,11 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   }
 
   const issuePermissionModal = permissionOpen ? (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
-      <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
-        onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
+    <div className="theme-overlay fixed inset-0 z-[80] flex items-center justify-center">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
+      <div className="theme-overlay__panel relative w-[420px] max-w-[calc(100vw-32px)] rounded-[var(--radius-modal)] border p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}>
+        <h4 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>修改任务权限</h4>
         <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围受所属项目权限限制。</p>
         <div>
           <div className="grid grid-cols-2 gap-1.5">
@@ -1074,7 +1075,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
               return (
                 <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
                   className="h-8 rounded-lg border text-[12px] transition-colors"
-                  style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                  style={active ? { background: 'var(--accent-soft)', borderColor: 'var(--accent-border)', color: 'var(--accent-primary)' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
                   {opt.label}
                 </button>
               )
@@ -1106,7 +1107,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
               value: String(p.id),
               label: String(p.name),
               description: p.description ? String(p.description) : undefined,
-              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              badge: p.research_enabled ? { text: '研究', color: 'var(--status-success)', bg: 'var(--status-success-soft)' } : undefined,
             })),
           ]}
         />
@@ -1119,25 +1120,25 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         <SectionLabel hint="默认同标题, 选填">任务描述</SectionLabel>
         <ExpandableTextarea value={effectiveDesc} onValueChange={v => { setDesc(v); setDescTouched(true); setErr('') }} placeholder="详细说明任务目标与约束" overlayTitle="编辑任务描述"
           className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
       </div>
       <button type="button" onClick={() => projectId && setPermissionOpen(true)} disabled={!projectId}
         className="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
         style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
         <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
+          <span className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>修改任务权限</span>
           <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
             {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
           </span>
         </span>
-        <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+        <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--status-running)' }}>修改</span>
       </button>
       <ToggleSwitch
         checked={isPlanning}
         onChange={v => { setIsPlanning(v); setErr('') }}
         className="flex items-start gap-3 text-[13px]"
-        style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+        style={{ color: 'var(--text-secondary)' }}>
         <span>
           <span className="font-medium">系统宏观规划模式</span>
         </span>
@@ -1148,7 +1149,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
             checked={useWorktree}
             onChange={v => { setUseWorktree(v); setErr('') }}
             className="flex items-center gap-3 text-[13px]"
-            style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+            style={{ color: 'var(--text-secondary)' }}>
             使用 git worktree（在绑定路径下为本任务开独立工作区）
           </ToggleSwitch>
           {useWorktree && (
@@ -1472,7 +1473,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
               value: String(p.id),
               label: String(p.name),
               description: p.description ? String(p.description) : undefined,
-              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              badge: p.research_enabled ? { text: '研究', color: 'var(--status-success)', bg: 'var(--status-success-soft)' } : undefined,
             })),
           ]}
         />
@@ -1510,7 +1511,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         disabled={!issueId}
       />
       {isDesktop && (
-        <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
+        <PcTaskModeSection projectId={projectId || undefined} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
       <button type="button" onClick={() => setMoreOpen(v => !v)}
         className="flex w-full items-center gap-1.5 py-1 text-[12px] font-medium rounded-lg transition-colors hover:bg-[var(--bg-card-hover)]"
@@ -1783,13 +1784,13 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
               description: p.research_enabled
                 ? (p.description ? String(p.description) : undefined)
                 : (p.description ? `${String(p.description)} · 未启用研究` : '未启用研究'),
-              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : { text: '未启用', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+              badge: p.research_enabled ? { text: '研究', color: 'var(--status-success)', bg: 'var(--status-success-soft)' } : { text: '未启用', color: 'var(--status-danger)', bg: 'var(--status-danger-soft)' },
             })),
           ]}
         />
       </SelectShell>
       {projectId && !researchEnabled && (
-        <div className="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
+        <div className="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2" style={{ background: 'var(--status-danger-soft)', border: '1px solid var(--status-danger-border)', color: 'var(--status-danger)' }}>
           <Ban className="w-3.5 h-3.5" /> 当前项目未启用研究系统，请前往项目设置开启后再创建研究智能体。
         </div>
       )}
@@ -1861,7 +1862,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
               value: String(sk.id),
               label: String(sk.name),
               description: sk.description ? String(sk.description) : undefined,
-              badge: sk.research_role ? { text: sk.research_role, color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              badge: sk.research_role ? { text: sk.research_role, color: 'var(--status-success)', bg: 'var(--status-success-soft)' } : undefined,
             })),
           ]}
         />

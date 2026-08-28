@@ -327,13 +327,55 @@ function toPosix(value: any): string {
   return String(value || '').split(path.sep).join('/');
 }
 
+function pathExists(abs: string | null): boolean {
+  if (!abs) return false;
+  try { return fs.existsSync(abs); } catch { return false; }
+}
+
+// Codex / 沙箱常用 /workspace/<project>/file；映射回当前 workDir 或 gitRoot。
+function remapSandboxAbsolutePath(original: string, workDir: string | null, gitRoot: string | null): string | null {
+  const mounted = toPosix(original).match(/^\/workspaces?\/(.+)$/);
+  if (!mounted) return null;
+  const segments = mounted[1].split('/').filter(Boolean);
+  for (const base of [workDir, gitRoot]) {
+    if (!base) continue;
+    const projectName = path.basename(base);
+    const projectIndex = segments.indexOf(projectName);
+    const relative = (projectIndex >= 0 ? segments.slice(projectIndex + 1) : segments).join('/');
+    const abs = relative ? path.resolve(base, relative) : path.resolve(base);
+    if (isWithinPath(base, abs)) return abs;
+  }
+  return null;
+}
+
+// summarize 会把嵌套工作区文件收成 gitRoot 相对路径；git-diff 再解析时必须仍对 gitRoot
+// 拼接。若一律用 workDir 当 base，会出现 local_data/workspace/... 被叠两次后 ENOENT。
+function resolveFeatureAbsolutePath(original: string, workDir: string | null, gitRoot: string | null): string {
+  const sandbox = remapSandboxAbsolutePath(original, workDir, gitRoot);
+  if (sandbox) return sandbox;
+  if (path.isAbsolute(original)) return path.resolve(original);
+
+  const workAbs = workDir ? path.resolve(workDir, original) : null;
+  const gitAbs = gitRoot ? path.resolve(gitRoot, original) : null;
+  const workOk = !!(workAbs && workDir && isWithinPath(workDir, workAbs) && pathExists(workAbs));
+  const gitOk = !!(gitAbs && gitRoot && isWithinPath(gitRoot, gitAbs) && pathExists(gitAbs));
+  if (gitOk && !workOk) return gitAbs as string;
+  if (workOk) return workAbs as string;
+
+  if (gitRoot && workDir && gitAbs && isWithinPath(gitRoot, workDir) && isWithinPath(gitRoot, gitAbs)) {
+    const nestPrefix = toPosix(path.relative(gitRoot, workDir));
+    const relative = toPosix(original);
+    if (nestPrefix && (relative === nestPrefix || relative.startsWith(`${nestPrefix}/`))) return gitAbs;
+  }
+  return workAbs || gitAbs || path.resolve(original);
+}
+
 function normalizeFeaturePath(rawPath: any, workspace: any = {}): any {
   const original = stringValue(rawPath);
   if (!original) return null;
   const workDir = workspace.workDir ? path.resolve(workspace.workDir) : null;
   const gitRoot = workspace.gitRoot ? path.resolve(workspace.gitRoot) : null;
-  const base = workDir || gitRoot || process.cwd();
-  const abs = path.isAbsolute(original) ? path.resolve(original) : path.resolve(base, original);
+  const abs = resolveFeatureAbsolutePath(original, workDir, gitRoot);
 
   let rel = null;
   let outside = false;
@@ -406,21 +448,49 @@ function listBashCommands(features: any[]): any[] {
     });
 }
 
-function normalizeDiffMode(mode: any): string {
-  if (mode === 'staged') return 'staged';
-  if (mode === 'last_commit') return 'last_commit';
-  if (mode === 'last_two_commits') return 'last_two_commits';
-  return 'unstaged';
+type WorkingTreeDiffMode = 'unstaged' | 'staged';
+
+function diffRequestError(message: string): Error & { status: number } {
+  return Object.assign(new Error(message), { status: 400 });
 }
 
-const AUTO_DIFF_MODES = ['unstaged', 'staged', 'last_commit', 'last_two_commits'];
+// 当前变更查看面只允许明确的 working-tree / index 来源。commit history 属于 P2，
+// 不得在这里作为“无工作树 diff”时的隐式 fallback。
+function normalizeDiffMode(mode: any): WorkingTreeDiffMode {
+  if (mode === undefined || mode === null || mode === '' || mode === 'unstaged') return 'unstaged';
+  if (mode === 'staged') return 'staged';
+  throw diffRequestError('非法 diff mode，仅支持 unstaged 或 staged');
+}
 
-function gitDiffArgsForMode(mode: any): string[] {
-  const normalized = normalizeDiffMode(mode);
-  if (normalized === 'staged') return ['diff', '--no-ext-diff', '--staged', '--'];
-  if (normalized === 'last_commit') return ['show', '--format=', '--find-renames', '--find-copies', 'HEAD', '--'];
-  if (normalized === 'last_two_commits') return ['diff', '--no-ext-diff', '--find-renames', 'HEAD~2', 'HEAD', '--'];
-  return ['diff', '--no-ext-diff', '--'];
+function gitDiffArgsForMode(mode: WorkingTreeDiffMode): string[] {
+  const common = ['diff', '--no-ext-diff', '--no-textconv', '--find-renames'];
+  return mode === 'staged' ? [...common, '--staged', '--'] : [...common, '--'];
+}
+
+function allowlistedDiffFiles(files: any[], requested: any[]): string[] {
+  const allowed = new Map<string, string>();
+  for (const file of files || []) {
+    const canonical = stringValue(file?.path);
+    if (!canonical) continue;
+    allowed.set(canonical, canonical);
+    const displayPath = stringValue(file?.display_path);
+    if (displayPath) allowed.set(displayPath, canonical);
+    for (const original of file?.original_paths || []) {
+      const originalPath = stringValue(original);
+      if (originalPath) allowed.set(originalPath, canonical);
+    }
+  }
+
+  const requestedPaths = (requested || []).map((value) => stringValue(value)).filter(Boolean);
+  if (!requestedPaths.length) return [...new Set((files || []).map((file) => stringValue(file?.path)).filter(Boolean))];
+
+  const resolved: string[] = [];
+  for (const requestedPath of requestedPaths) {
+    const canonical = allowed.get(requestedPath);
+    if (!canonical) throw diffRequestError('请求的文件不在当前 Session 文件修改清单中');
+    resolved.push(canonical);
+  }
+  return [...new Set(resolved)];
 }
 
 function runGit(cwd: string, args: string[], opts: any = {}): any {
@@ -445,8 +515,9 @@ function gitTopLevel(abs: string): string | null {
   return top ? path.resolve(top) : null;
 }
 
-function gitDiffForFiles(workDir: any, files: any, _mode: any): any {
+function gitDiffForFiles(workDir: any, files: any, mode: any = 'unstaged'): any {
   if (!workDir) throw new Error('缺少工作目录, 无法读取 git diff');
+  const normalizedMode = normalizeDiffMode(mode);
   const gitRoot = gitTopLevel(workDir);
   const safeFiles: any[] = [];
   for (const file of files || []) {
@@ -458,25 +529,21 @@ function gitDiffForFiles(workDir: any, files: any, _mode: any): any {
   const diffs = uniqueFiles.map((file) => {
     let lastGitError: string | null = gitRoot ? null : `工作目录不是 Git 仓库: ${workDir}`;
     if (gitRoot && !file.outside_workspace) {
-      for (const diffMode of AUTO_DIFF_MODES) {
-        const argsBase = gitDiffArgsForMode(diffMode);
-        const result = runGit(gitRoot, [...argsBase, file.relative_path]);
-        if (!result.ok) {
-          lastGitError = result.error || null;
-          continue;
-        }
-        if ((result.stdout || '').trim()) {
-          return {
-            path: file.relative_path,
-            display_path: file.display_path,
-            mode: diffMode,
-            diff: result.stdout,
-            fallback_content: null,
-            fallback_error: null,
-            ok: true,
-            error: null,
-          };
-        }
+      const argsBase = gitDiffArgsForMode(normalizedMode);
+      const result = runGit(gitRoot, [...argsBase, file.relative_path]);
+      if (!result.ok) {
+        lastGitError = result.error || null;
+      } else if ((result.stdout || '').trim()) {
+        return {
+          path: file.relative_path,
+          display_path: file.display_path,
+          mode: normalizedMode,
+          diff: result.stdout,
+          fallback_content: null,
+          fallback_error: null,
+          ok: true,
+          error: null,
+        };
       }
     }
 
@@ -487,12 +554,15 @@ function gitDiffForFiles(workDir: any, files: any, _mode: any): any {
       if (!stat.isFile()) throw new Error('目标路径不是文件');
       fallbackContent = fs.readFileSync(file.absolute_path, 'utf8');
     } catch (e) {
-      fallbackError = (e as Error).message || String(e);
+      const raw = (e as Error).message || String(e);
+      fallbackError = /ENOENT|no such file or directory/i.test(raw)
+        ? '当前工作区已找不到这个文件，可能已被删除或路径已变化'
+        : raw;
     }
     return {
       path: gitRoot && !file.outside_workspace ? file.relative_path : file.original,
       display_path: file.display_path,
-      mode: null,
+      mode: normalizedMode,
       diff: null,
       fallback_content: fallbackContent,
       fallback_error: fallbackError,
@@ -503,7 +573,7 @@ function gitDiffForFiles(workDir: any, files: any, _mode: any): any {
   const first = diffs[0] || null;
   return {
     git_root: gitRoot,
-    mode: first?.mode || null,
+    mode: normalizedMode,
     diff: first?.diff ?? null,
     fallback_content: first?.fallback_content ?? null,
     diffs,
@@ -516,6 +586,7 @@ export {
   summarizeFileChanges,
   listBashCommands,
   normalizeDiffMode,
+  allowlistedDiffFiles,
   gitDiffForFiles,
   normalizeFeaturePath,
   extractFeaturesFromEntry,

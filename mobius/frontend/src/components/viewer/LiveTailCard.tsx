@@ -3,9 +3,9 @@
  *
  * 从 jsonl-view.tsx 拆出. agent 进程活着但 jsonl 没新内容时显示, 计算沉默时长.
  * 也是用户判断 "agent 卡死了 vs 还在 thinking" 的唯一可信号.
- *   0~30s   绿  正常生成中
+ *   0~30s   运行色  正常生成中
  *   30~120s 琥珀 沉默较久, API 可能长尾
- *   120s+   红  长时间没输出, 建议终止重试
+ *   120s+   危险色  长时间没输出, 建议终止重试
  */
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -40,9 +40,9 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo }: { lastTi
     : silenceSec < 120 ? 'warn'
     : 'stale'
   const theme =
-    sev === 'normal' ? { border: 'border-emerald-500/15', bg: 'bg-emerald-500/[0.05]', dot: 'bg-emerald-400', text: 'text-emerald-300', accent: '#34d399' }
-    : sev === 'warn'   ? { border: 'border-amber-500/15',   bg: 'bg-amber-500/[0.05]',   dot: 'bg-amber-400',   text: 'text-amber-300',   accent: '#fbbf24' }
-    :                    { border: 'border-red-500/20',     bg: 'bg-red-500/[0.06]',     dot: 'bg-red-400',     text: 'text-red-300',     accent: '#f87171' }
+    sev === 'normal' ? { border: 'border-[var(--status-running-border)]', bg: 'bg-[var(--status-running-soft)]', dot: 'bg-[var(--status-running)]', text: 'text-[var(--status-running)]', accent: 'var(--status-running)' }
+    : sev === 'warn'   ? { border: 'border-[var(--status-waiting-border)]', bg: 'bg-[var(--status-waiting-soft)]', dot: 'bg-[var(--status-waiting)]', text: 'text-[var(--status-waiting)]', accent: 'var(--status-waiting)' }
+    :                    { border: 'border-[var(--status-danger-border)]', bg: 'bg-[var(--status-danger-soft)]', dot: 'bg-[var(--status-danger)]', text: 'text-[var(--status-danger)]', accent: 'var(--status-danger)' }
 
   return (
     <div

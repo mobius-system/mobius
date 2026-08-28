@@ -1,5 +1,5 @@
 import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { ToastCard } from './components/toast-card'
 import { useStore, api } from './store'
@@ -8,7 +8,16 @@ import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
 import { pollRecursive } from './services/polling'
 import { DesktopTitleBar } from './components/window-controls'
+import { WorkbenchShell } from './components/workbench-shell'
+import { AdminOverlayHost } from './components/admin-overlay'
 import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services/handle-stale-chunk'
+import {
+  homePath,
+  legacySessionRedirect,
+  navigateToWorkbench,
+  sessionNavigation,
+} from './services/workbench-navigation'
+import { detectClientRuntime } from './services/client-distribution'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
@@ -225,8 +234,8 @@ function AssistantTaskDoneToast() {
       void Notification.requestPermission().then(() => {})
       return
     }
-    const openUrl = e.sessionId
-      ? `/u/${user?.id || ''}/s/${encodeURIComponent(e.sessionId)}`
+    const openTarget = e.sessionId
+      ? sessionNavigation(user?.id || '', e.sessionId)
       : null
     try {
       const n = new Notification(
@@ -238,7 +247,7 @@ function AssistantTaskDoneToast() {
       )
       n.onclick = () => {
         window.focus()
-        if (openUrl) navigate(openUrl)
+        if (openTarget) navigateToWorkbench(navigate, openTarget)
         n.close()
       }
       // 失败常驻到用户处理; 成功 8s 自动收
@@ -324,8 +333,8 @@ function AssistantTaskDoneToast() {
   if (!entry || !user) return null
 
   // 完成提醒统一打开 Session 短路由，由 WorkPage 还原 Issue/Research 上下文。
-  const openUrl = entry.sessionId
-    ? `/u/${user.id}/s/${encodeURIComponent(entry.sessionId)}`
+  const openTarget = entry.sessionId
+    ? sessionNavigation(user.id, entry.sessionId)
     : null
 
   return (
@@ -336,8 +345,8 @@ function AssistantTaskDoneToast() {
         : <CheckCircle2 className="h-4 w-4" strokeWidth={2} />}
       title={entry.failed ? '小莫任务失败' : '小莫已完成任务'}
       subtitle={entry.name}
-      actionLabel={openUrl ? '查看' : undefined}
-      onAction={openUrl ? () => navigate(openUrl) : undefined}
+      actionLabel={openTarget ? '查看' : undefined}
+      onAction={openTarget ? () => navigateToWorkbench(navigate, openTarget) : undefined}
       onClose={() => showEntry(null)}
     />
   )
@@ -346,44 +355,110 @@ function AssistantTaskDoneToast() {
 function RootRedirect() {
   const { user } = useStore()
   if (!user) return null
-  return <Navigate to={`/u/${user.id}`} replace />
+  return <Navigate to={homePath(user.id)} replace />
+}
+
+function WorkbenchMainFallback() {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center" role="status" aria-label="正在加载">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+    </div>
+  )
+}
+
+function decodeWorkbenchPathSegment(value: string | undefined) {
+  if (!value) return ''
+  try { return decodeURIComponent(value) } catch { return '' }
+}
+
+function WorkbenchRouteLayout() {
+  const params = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { currentIssue, currentProject, currentSession } = useStore()
+  const userId = params.user || ''
+  const search = new URLSearchParams(location.search)
+  const sessionRouteMatch = location.pathname.match(/^\/u\/[^/]+\/s\/([^/]+)\/?$/)
+  const issueRouteMatch = location.pathname.match(/^\/u\/[^/]+\/p\/([^/]+)\/i\/([^/]+)\/?$/)
+  const isHomeRoute = location.pathname === homePath(userId)
+  const isIssueRoute = !!issueRouteMatch
+  const advancedHome = isHomeRoute && search.get('view') === 'projects'
+  const activeSessionId = decodeWorkbenchPathSegment(sessionRouteMatch?.[1]) || search.get('session') || ''
+  const sessionProjectId = currentSession?.session_id === activeSessionId
+    ? String((currentSession as any)?.project_id || '')
+    : ''
+  const routeProjectId = decodeWorkbenchPathSegment(issueRouteMatch?.[1])
+  const projectId = routeProjectId || sessionProjectId || search.get('project') || currentProject?.id || ''
+  const topbarTitle = activeSessionId
+    ? 'Session'
+    : isIssueRoute
+      ? currentIssue?.title || 'Issue'
+      : 'Home'
+
+  const startNewConversation = useCallback(() => {
+    if (isIssueRoute) {
+      const next = new URLSearchParams(location.search)
+      next.delete('session')
+      const suffix = next.toString()
+      navigate(`${location.pathname}${suffix ? `?${suffix}` : ''}`)
+    } else {
+      navigate(homePath(userId, { projectId }))
+    }
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:new-conversation')), 80)
+  }, [isIssueRoute, location.pathname, location.search, navigate, projectId, userId])
+
+  if (advancedHome) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Outlet />
+      </Suspense>
+    )
+  }
+
+  return (
+    <WorkbenchShell
+      userId={userId}
+      activeSessionId={activeSessionId}
+      projectId={projectId}
+      onNewConversation={startNewConversation}
+      topbarTitle={topbarTitle}
+    >
+      <Suspense fallback={<WorkbenchMainFallback />}>
+        <Outlet />
+      </Suspense>
+    </WorkbenchShell>
+  )
 }
 
 function EasyModeCompatibility() {
   const params = useParams()
   const location = useLocation()
   const { user } = useStore()
-  const search = new URLSearchParams(location.search)
-  const sessionId = search.get('session')
   const userId = params.user || user?.id || ''
-  search.delete('session')
-  const suffix = search.toString() ? `?${search.toString()}` : ''
-  return sessionId
-    ? <Navigate to={`/u/${userId}/s/${encodeURIComponent(sessionId)}${suffix}${location.hash}`} replace />
-    : <Navigate to={`/u/${userId}${suffix}${location.hash}`} replace />
+  const redirect = legacySessionRedirect(userId, location.search, location.hash)
+  return redirect
+    ? <Navigate to={redirect} replace />
+    : <Navigate to={`${homePath(userId)}${location.search}${location.hash}`} replace />
 }
 
 function IssueRouteCompatibility() {
   const params = useParams()
   const location = useLocation()
-  const search = new URLSearchParams(location.search)
-  const sessionId = search.get('session')
-  if (!sessionId) return <IssuePage />
-  search.delete('session')
-  const suffix = search.toString() ? `?${search.toString()}` : ''
-  return <Navigate to={`/u/${params.user || ''}/s/${encodeURIComponent(sessionId)}${suffix}${location.hash}`} replace />
+  const redirect = legacySessionRedirect(params.user || '', location.search, location.hash)
+  return redirect ? <Navigate to={redirect} replace /> : <IssuePage />
 }
 
 function AuthenticatedApp() {
   const { user, assistantBubbleEnabled } = useStore()
   const location = useLocation()
+  const clientRuntime = detectClientRuntime()
 
   useEffect(() => startTextRedactionRuntime(), [])
 
   if (!user) return null
   // 兼容旧链接：根路径或未匹配路由 → 默认进我的项目页
   if (location.pathname === '/' || location.pathname === '') {
-    return <Navigate to={`/u/${user.id}`} replace />
+    return <Navigate to={homePath(user.id)} replace />
   }
   return (
     <>
@@ -392,14 +467,16 @@ function AuthenticatedApp() {
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
-            <Route path="/u/:user" element={<UserPage />} />
+            <Route path="/u/:user" element={<WorkbenchRouteLayout />}>
+              <Route index element={<UserPage />} />
+              <Route path="s/:session" element={<WorkPage />} />
+              <Route path="p/:project/i/:issue" element={<IssueRouteCompatibility />} />
+            </Route>
             <Route path="/easy_mode" element={<EasyModeCompatibility />} />
             <Route path="/u/:user/easy_mode" element={<EasyModeCompatibility />} />
-            <Route path="/u/:user/s/:session" element={<WorkPage />} />
             <Route path="/u/:user/mobius_overview" element={<MobiusOverviewPage />} />
             <Route path="/u/:user/mobius_overview_cluster" element={<MobiusOverviewClusterPage />} />
             <Route path="/u/:user/p/:project" element={<ProjectPage />} />
-            <Route path="/u/:user/p/:project/i/:issue" element={<IssueRouteCompatibility />} />
             <Route path="/u/:user/p/:project/r/:research" element={<ResearchPage />} />
             <Route path="*" element={<RootRedirect />} />
           </Routes>
@@ -415,9 +492,12 @@ function AuthenticatedApp() {
           <AssistantChat />
         </Suspense>
       ) : null}
-      <Suspense fallback={null}>
-        <DesktopTabBar />
-      </Suspense>
+      {clientRuntime === 'desktop' ? (
+        <Suspense fallback={null}>
+          <DesktopTabBar />
+        </Suspense>
+      ) : null}
+      <AdminOverlayHost />
     </>
   )
 }

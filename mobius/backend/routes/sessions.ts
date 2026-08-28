@@ -1166,7 +1166,8 @@ router.get('/:id/features/bash', auth, (req: express.Request, res: express.Respo
   }
 });
 
-// 按文件修改特征清单限定路径, 自动依次读取 git diff; 无 diff 时回退为文件内容.
+// 按文件修改特征清单限定路径，只读查看明确的 unstaged / staged 来源；
+// 当前来源无 diff 时返回当前文件内容，不回退到 commit history。
 router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.Response) => {
   const sessionId = String(req.params.id);
   const user = userOf(req);
@@ -1174,9 +1175,17 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_feature_git_diff', session);
 
+  let mode: 'unstaged' | 'staged';
+  try {
+    mode = sessionFeatures.normalizeDiffMode(req.query.mode) as 'unstaged' | 'staged';
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+    return;
+  }
+
   const jsonlPath = sessionJsonlPath(session, sessionId);
   if (!jsonlPath) {
-    res.json({ session_id: sessionId, mode: null, diff: null, fallback_content: null, diffs: [], files: [] });
+    res.json({ session_id: sessionId, mode, diff: null, fallback_content: null, diffs: [], files: [] });
     return;
   }
 
@@ -1189,26 +1198,19 @@ router.get('/:id/features/git-diff', auth, (req: express.Request, res: express.R
       workDir: workspace.workDir,
       gitRoot: workspace.gitRoot,
     });
-    const allowed = new Map<string, string>();
-    for (const file of files) {
-      allowed.set(file.path, file.path);
-      allowed.set(file.display_path, file.path);
-      for (const original of file.original_paths || []) allowed.set(original, file.path);
-    }
-
     const requested = queryFiles(req.query.file);
-    const targetFiles = requested.length
-      ? requested.map((file) => allowed.get(file)).filter(Boolean)
-      : files.map((file: any) => file.path);
-    if (requested.length && targetFiles.length === 0) {
-      res.status(400).json({ error: '请求的文件不在当前 Session 文件修改清单中' });
+    let targetFiles: string[];
+    try {
+      targetFiles = sessionFeatures.allowlistedDiffFiles(files, requested);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message || String(e) });
       return;
     }
 
     const result = sessionFeatures.gitDiffForFiles(
       workspace.workDir,
-      [...new Set(targetFiles)],
-      null,
+      targetFiles,
+      mode,
     );
     res.json({
       session_id: sessionId,

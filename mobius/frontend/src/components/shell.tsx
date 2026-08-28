@@ -6,7 +6,6 @@ import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-cr
 import { SearchModal } from './search-modal'
 import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
-import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
@@ -19,8 +18,13 @@ import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
-import { SettingsPanel } from './settings-panel'
+import { SettingsPanel, type SettingsSection } from './settings-panel'
 import { logUiEvent } from '../services/ui-observability'
+import {
+  homePath,
+  projectPath,
+  sessionPath,
+} from '../services/workbench-navigation'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -731,21 +735,28 @@ function RecentSessionsPanel({
 // =====================================================================
 export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React.ReactNode; showHistory?: boolean } = {}) {
   const {
-    user, currentProject, currentSession, branding, logout, setMobileNavOpen,
+    user, currentProject, currentSession, branding, logout,
   } = useStore()
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const isMobile = useIsMobile()
   const topnavDrag = useDesktopWindowDrag()
   const [showSearch, setShowSearch] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null)
+  const searchReturnFocusRef = useRef<HTMLElement | null>(null)
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null)
+  const settingsReturnFocusRef = useRef<HTMLElement | null>(null)
   const userParam = params.user || user?.id
   const projectParam = params.project
-  const projectName = currentProject?.name || projectParam
+  const sessionProjectId = params.session && currentSession?.session_id === params.session
+    ? currentSession?.project_id
+    : undefined
+  const projectContextId = projectParam || sessionProjectId || (!params.session ? currentProject?.id : undefined)
+  const projectName = currentProject && currentProject.id === projectContextId ? currentProject.name : projectContextId
   void rightExtra
 
   const isPointerOnInteractive = (event: { target: EventTarget | null; nativeEvent: Event }): boolean => {
@@ -762,12 +773,34 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
     topnavDrag.toggleMaximize()
   }
 
-  const openSettings = () => {
+  const openSearch = (trigger?: HTMLElement | null) => {
+    searchReturnFocusRef.current = trigger
+      || (document.activeElement instanceof HTMLElement ? document.activeElement : searchButtonRef.current)
+    setShowSearch(true)
+  }
+
+  const openSettings = (trigger?: HTMLElement | null, initialSection: SettingsSection = 'general') => {
     logUiEvent('settings_opened', { path: location.pathname })
+    settingsReturnFocusRef.current = showUserMenu
+      ? settingsButtonRef.current
+      : trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : settingsButtonRef.current)
     setShowUserMenu(false)
     setShowSearch(false)
+    setSettingsInitialSection(initialSection)
     setShowSettings(true)
   }
+
+  useEffect(() => {
+    const handleOpenSettings = (event: Event) => {
+      const requested = (event as CustomEvent<{ section?: SettingsSection }>).detail?.section
+      const section: SettingsSection = requested === 'context' || requested === 'connections' || requested === 'advanced' || requested === 'admin'
+        ? requested
+        : 'general'
+      openSettings(settingsButtonRef.current, section)
+    }
+    window.addEventListener('mobius:open-settings', handleOpenSettings)
+    return () => window.removeEventListener('mobius:open-settings', handleOpenSettings)
+  }, [location.pathname, showUserMenu])
 
   const startNewConversation = () => {
     const eventName = 'mobius:new-conversation'
@@ -775,9 +808,8 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
       window.dispatchEvent(new CustomEvent(eventName))
       return
     }
-    const inheritedProjectId = projectParam || currentSession?.project_id || currentProject?.id
-    const projectQuery = inheritedProjectId ? `?project=${encodeURIComponent(inheritedProjectId)}` : ''
-    navigate(`/u/${userParam}${projectQuery}`)
+    const inheritedProjectId = projectContextId
+    navigate(homePath(userParam || '', { projectId: inheritedProjectId }))
     window.setTimeout(() => window.dispatchEvent(new CustomEvent(eventName)), 80)
   }
 
@@ -797,7 +829,7 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
         if (settingsShortcut) event.preventDefault()
         return
       }
-      if (event.key.toLowerCase() === 'k') { event.preventDefault(); setShowSearch(true) }
+      if (event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch() }
       if (event.key.toLowerCase() === 'n') { event.preventDefault(); startNewConversation() }
       if (settingsShortcut) { event.preventDefault(); openSettings() }
     }
@@ -813,35 +845,31 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
   return (
     <>
       <header
-        className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-2 sm:px-3"
-        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}
+        className="mobius-topnav flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-2 sm:px-3"
+        style={{ height: 'var(--chrome-height)', background: 'var(--surface-base)', borderColor: 'var(--border-default)' }}
         onPointerDown={onTopNavPointerDown}
         onDoubleClick={onTopNavDoubleClick}
       >
-        {isMobile && (
-          <button type="button" onClick={() => setMobileNavOpen(true)} aria-label="打开导航" title="打开导航"
-            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-muted)' }}>
-            <Menu className="h-4 w-4" />
-          </button>
-        )}
-        <LinklessRouteButton to={userParam ? `/u/${userParam}` : '/'} aria-label="Mobius 主页" title="Mobius 主页"
-          className="flex h-8 items-center gap-2 rounded-md px-1.5 hover:bg-[var(--bg-hover)]">
+        <LinklessRouteButton to={userParam ? homePath(userParam) : '/'} aria-label="Mobius 主页" title="Mobius 主页"
+          className="workbench-control-md flex items-center gap-2 px-1.5 hover:bg-[var(--surface-control-hover)]">
           <MobiusLogo className="h-6 w-6" />
         </LinklessRouteButton>
         <LinklessRouteButton
-          to={userParam ? `/u/${userParam}` : '/'}
+          to={userParam ? homePath(userParam) : '/'}
           aria-label="回到主页"
           title="回到主页"
-          className="mobius-topnav-userlink hidden max-w-[140px] truncate text-[12px] font-medium hover:text-blue-400 sm:block"
+          className="mobius-topnav-userlink workbench-link hidden max-w-[140px] truncate text-[12px] font-medium lg:block"
           style={{ color: 'var(--text-secondary)' }}
         >
           {user?.display_name || userParam || '主页'}
         </LinklessRouteButton>
-        {projectParam && (
+        {projectContextId && (
           <>
-            <span className="hidden text-[11px] lg:inline" style={{ color: 'var(--text-muted)' }}>/</span>
-            <LinklessRouteButton to={`/u/${userParam}/p/${projectParam}`} title="打开项目详情"
-              className="hidden max-w-[220px] truncate rounded-md px-2 py-1 text-[12px] hover:bg-[var(--bg-hover)] lg:block"
+            <span className="hidden text-[11px] sm:inline" style={{ color: 'var(--text-muted)' }}>/</span>
+            <LinklessRouteButton to={projectPath(userParam || '', projectContextId, {
+              returnTo: params.session ? sessionPath(userParam || '', params.session) : undefined,
+            })} title="打开项目详情"
+              className="workbench-control-md max-w-[72px] truncate px-1.5 py-1 text-[12px] hover:bg-[var(--surface-control-hover)] sm:max-w-[150px] sm:px-2 lg:max-w-[220px]"
               style={{ color: 'var(--text-secondary)' }}>
               {projectName}
             </LinklessRouteButton>
@@ -850,46 +878,45 @@ export function TopNav({ rightExtra, showHistory = false }: { rightExtra?: React
         <div className="flex-1" />
         {showHistory && (
           <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-history'))} aria-label="历史" title="历史"
-            className="flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12px] hover:bg-[var(--bg-hover)] xl:hidden"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-            <History className="h-3.5 w-3.5" /><span>历史</span>
+            className="workbench-control-md flex items-center gap-1.5 border px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)] xl:hidden"
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+            <History className="h-3.5 w-3.5" /><span className="hidden sm:inline">历史</span>
           </button>
         )}
-        <button type="button" onClick={() => setShowSearch(true)} aria-label="搜索" title="搜索"
-          className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+        <button ref={searchButtonRef} type="button" onClick={event => openSearch(event.currentTarget)} aria-label="搜索" title="搜索"
+          className="workbench-control-md flex items-center gap-1.5 px-2.5 text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
           <Search className="h-3.5 w-3.5" /><span className="hidden sm:inline">搜索</span>
         </button>
         <button type="button" onClick={startNewConversation} aria-label="新会话" title="新会话"
-          className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-          <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">新会话</span>
+          className={`workbench-control-md flex items-center gap-1.5 border px-3 text-[12px] font-medium transition-colors hover:bg-[var(--surface-control-hover)] ${showHistory ? 'xl:w-8 xl:justify-center xl:gap-0 xl:px-0' : ''}`}
+          style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+          <Plus className="h-3.5 w-3.5" /><span className={`hidden sm:inline ${showHistory ? 'xl:hidden' : ''}`}>新会话</span>
         </button>
-        <button ref={settingsButtonRef} type="button" onClick={openSettings} aria-label="设置/更多" title="设置/更多"
-          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+        <button ref={settingsButtonRef} type="button" onClick={event => openSettings(event.currentTarget)} aria-label="设置/更多" title="设置/更多"
+          className="workbench-control-md flex w-8 items-center justify-center hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
           <Sliders className="h-4 w-4" />
         </button>
         <div className="relative">
           <button type="button" onClick={event => { event.stopPropagation(); setShowUserMenu(value => !value) }} aria-label="账户" title="账户"
-            className="flex h-8 w-8 items-center justify-center rounded-md border hover:bg-[var(--bg-hover)]"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+            className="workbench-control-md flex w-8 items-center justify-center border hover:bg-[var(--surface-control-hover)]"
+            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
             <UserRound className="h-4 w-4" />
           </button>
           {showUserMenu && (
-            <div className="absolute right-0 top-10 z-50 w-44 rounded-lg border p-1 shadow-lg" onClick={event => event.stopPropagation()}
-              style={{ background: 'var(--menu-bg)', borderColor: 'var(--border-color)' }}>
+            <div className="workbench-popover absolute right-0 top-10 w-44 border p-1" onClick={event => event.stopPropagation()}
+              style={{ background: 'var(--surface-overlay)', borderColor: 'var(--border-strong)' }}>
               <div className="truncate px-3 py-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{user?.display_name || user?.id}</div>
-              <button type="button" onClick={openSettings} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>设置/更多</button>
-              <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePw(true) }} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>修改密码</button>
-              <button type="button" onClick={() => { setShowUserMenu(false); logout(); navigate('/') }} className="h-8 w-full rounded-md px-3 text-left text-[12px] hover:bg-red-500/10" style={{ color: '#ef4444' }}>退出登录</button>
+              <button type="button" onClick={event => openSettings(event.currentTarget)} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>设置/更多</button>
+              <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePw(true) }} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>修改密码</button>
+              <button type="button" onClick={() => { setShowUserMenu(false); logout(); navigate('/') }} className="workbench-control-md w-full px-3 text-left text-[12px] hover:bg-[var(--status-danger-soft)]" style={{ color: 'var(--status-danger)' }}>退出登录</button>
             </div>
           )}
         </div>
         {IS_DESKTOP && <WindowControls />}
       </header>
-      {showSearch && <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />}
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} returnFocusRef={settingsButtonRef} />}
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} returnFocusRef={searchReturnFocusRef} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} returnFocusRef={settingsReturnFocusRef} initialSection={settingsInitialSection} />}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
-      <OverlayPanels />
     </>
   )
 }
@@ -983,6 +1010,13 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   // 顶栏「搜索」弹窗: 跨项目/Issue/Research 搜索所有会话 JSONL 内容.
   const [showSearch, setShowSearch] = useState(false)
+  const searchReturnFocusRef = useRef<HTMLElement | null>(null)
+
+  const openSearch = (trigger?: HTMLElement | null) => {
+    searchReturnFocusRef.current = trigger
+      || (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    setShowSearch(true)
+  }
 
   const refreshCustomThemes = () => {
     const map = loadCustomThemes()
@@ -1342,7 +1376,7 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <TopNavActionElement
             type="button"
-            onClick={() => setShowSearch(true)}
+            onClick={(event: any) => openSearch(event.currentTarget)}
             title="搜索会话内容"
             aria-label="搜索会话内容"
             data-tour="top-search"
@@ -1647,7 +1681,7 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
       {showSearch && (
-        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
+        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} returnFocusRef={searchReturnFocusRef} />
       )}
       {createKind && (
         <GlobalCreateRoot
@@ -1657,44 +1691,7 @@ function LegacyTopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           onNavigate={navigate}
         />
       )}
-      <OverlayPanels />
     </>
-  )
-}
-
-// =====================================================================
-// 全局弹层（Admin）
-// 通过 store 上挂载的方法触发；这种"弹层"覆盖在主内容上
-// =====================================================================
-type OverlayKind = 'admin' | null
-
-// 全局打开 overlay 的函数 (供引导系统等外部触发, 如「重温管理中心」按钮先打开 overlay 再启动引导).
-// 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
-// 使用 pending 模式: OverlayPanels 在 useEffect 中赋值 _setOverlay 之前若被调用, 请求会留在 _pendingAdminTab
-// 里, 下次 OverlayPanels 挂载 AdminPanel 时读取并清空, 避免「点按钮 overlay 没反应 / 落错 tab」.
-let _pendingAdminTab: AdminPanelTab | null = null
-window.openAdminOverlay = (tab?: AdminPanelTab) => {
-  _pendingAdminTab = tab ?? null
-  _setOverlay?.('admin')
-  window.dispatchEvent(new CustomEvent('imac:admin-overlay-opened'))
-}
-let _setOverlay: ((kind: OverlayKind) => void) | null = null
-function openOverlay(kind: OverlayKind) { _setOverlay?.(kind) }
-
-function OverlayPanels() {
-  const [overlay, setOverlay] = useState<OverlayKind>(null)
-  useEffect(() => {
-    _setOverlay = setOverlay
-    return () => { _setOverlay = null }
-  }, [])
-  if (!overlay) return null
-  // 取一次 pending tab 后立即清空, 避免下次无参 openAdminOverlay 时落错 tab.
-  const initialTab = _pendingAdminTab
-  _pendingAdminTab = null
-  return (
-    <div className="fixed inset-0 z-40 flex" style={{ background: 'var(--bg-secondary)' }}>
-      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} initialTab={initialTab ?? undefined} />}
-    </div>
   )
 }
 

@@ -20,6 +20,7 @@ type ProjectItemsPanelProps = {
   project: any
   userParam: string
   projectId: string
+  returnTo: string
   section: ProjectListSection
   filter: ProjectFilter
   search: string
@@ -56,6 +57,7 @@ export function ProjectItemsPanel({
   project,
   userParam,
   projectId,
+  returnTo,
   section,
   filter,
   search,
@@ -150,7 +152,7 @@ export function ProjectItemsPanel({
                 <button
                   type="button"
                   onClick={openDevelopmentLink}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/15 px-3 text-[12px] font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--accent-border)] bg-[var(--surface-active)] px-3 text-[12px] font-medium text-[var(--accent-primary)] transition-colors hover:bg-[var(--accent-soft)]"
                   title={developmentLink.description}
                 >
                   <Wrench className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -219,7 +221,7 @@ export function ProjectItemsPanel({
               aria-pressed={!listView}
               title="卡片显示"
               className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-              style={{ color: !listView ? '#60a5fa' : 'var(--text-muted)', background: !listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              style={{ color: !listView ? 'var(--accent-primary)' : 'var(--text-muted)', background: !listView ? 'var(--surface-active)' : 'transparent' }}>
               <LayoutList className="h-3.5 w-3.5" strokeWidth={1.8} />
               详情
             </button>
@@ -229,7 +231,7 @@ export function ProjectItemsPanel({
               aria-pressed={listView}
               title="详情列表显示"
               className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
-              style={{ color: listView ? '#60a5fa' : 'var(--text-muted)', background: listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              style={{ color: listView ? 'var(--accent-primary)' : 'var(--text-muted)', background: listView ? 'var(--surface-active)' : 'transparent' }}>
               <Rows3 className="h-3.5 w-3.5" strokeWidth={1.8} />
               列表
             </button>
@@ -254,6 +256,7 @@ export function ProjectItemsPanel({
           sessionMatchesByIssue={sessionMatchesByIssue}
           userParam={userParam}
           projectId={projectId}
+          returnTo={returnTo}
           filter={filter}
           search={search}
           pagination={issuePagination}
@@ -280,6 +283,7 @@ export function ProjectItemsPanel({
           sessionMatchesByResearch={sessionMatchesByResearch}
           userParam={userParam}
           projectId={projectId}
+          returnTo={returnTo}
           filter={filter}
           search={search}
           researchesLoading={researchesLoading}
@@ -303,6 +307,7 @@ type IssueListProps = {
   sessionMatchesByIssue: ProjectSessionMatchMap
   userParam: string
   projectId: string
+  returnTo: string
   filter: ProjectFilter
   search: string
   pagination: ProjectIssuePagination
@@ -323,6 +328,7 @@ function IssueList({
   sessionMatchesByIssue,
   userParam,
   projectId,
+  returnTo,
   filter,
   search,
   pagination,
@@ -384,6 +390,7 @@ function IssueList({
             searchQuery={search}
             userParam={userParam}
             projectId={projectId}
+            returnTo={returnTo}
             listView={listView}
             onEdit={onEditIssue}
             onConfirm={onIssueConfirm}
@@ -452,6 +459,7 @@ type ResearchListProps = {
   sessionMatchesByResearch: ProjectSessionMatchMap
   userParam: string
   projectId: string
+  returnTo: string
   filter: ProjectFilter
   search: string
   researchesLoading?: boolean
@@ -470,6 +478,7 @@ function ResearchList({
   sessionMatchesByResearch,
   userParam,
   projectId,
+  returnTo,
   filter,
   search,
   researchesLoading = false,
@@ -519,6 +528,7 @@ function ResearchList({
           searchQuery={search}
           userParam={userParam}
           projectId={projectId}
+          returnTo={returnTo}
           listView={listView}
           onEdit={onEditResearch}
           onToggleStatus={onToggleResearchStatus}
@@ -550,7 +560,7 @@ type CreateItemCardProps = {
 function CreateItemCard({ kind, listView, disabled, onClick, dataTour }: CreateItemCardProps) {
   const isIssue = kind === 'issue'
   const label = isIssue ? '创建新任务' : '创建新研究'
-  const accent = isIssue ? '#60a5fa' : '#34d399'
+  const accent = isIssue ? 'var(--accent-primary)' : '#34d399'
 
   return (
     <button
@@ -559,7 +569,7 @@ function CreateItemCard({ kind, listView, disabled, onClick, dataTour }: CreateI
       disabled={disabled}
       data-tour={dataTour || (isIssue ? 'project-list-create-issue' : 'project-list-create-research')}
       aria-label={disabled ? `${label}（无权限）` : label}
-      className={`group flex items-center justify-center rounded-lg border border-dashed border-[var(--border-color-strong)] bg-[var(--bg-primary)] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--border-color-strong)] disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-blue-400' : 'hover:border-emerald-400'} ${listView ? 'h-12 w-full flex-row gap-2' : 'h-[220px] flex-col gap-3'}`}
+      className={`group flex items-center justify-center rounded-lg border border-dashed border-[var(--border-color-strong)] bg-[var(--bg-primary)] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[var(--border-color-strong)] disabled:hover:bg-[var(--bg-primary)] ${isIssue ? 'hover:border-[var(--accent-border)]' : 'hover:border-emerald-400'} ${listView ? 'h-12 w-full flex-row gap-2' : 'h-[220px] flex-col gap-3'}`}
       style={{
         color: accent,
         '--tw-ring-color': accent,

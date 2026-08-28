@@ -609,11 +609,11 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className={`absolute inset-0 backdrop-blur-sm ${showPrelude ? 'bg-black/95' : 'bg-black/50'}`} onClick={close} />
+    <div className="theme-overlay workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
+      <div className="theme-overlay__scrim absolute inset-0 backdrop-blur-sm" style={{ opacity: showPrelude ? 1 : undefined }} onClick={close} />
       <div
-        className={`relative w-full overflow-hidden ${showPrelude ? 'max-w-[1180px] max-h-[calc(100vh-32px)] rounded-2xl shadow-none' : 'max-w-[720px] max-h-[86vh] rounded-xl shadow-2xl'}`}
-        style={{ background: showPrelude ? 'transparent' : 'var(--modal-bg)', border: showPrelude ? '0' : '1px solid var(--border-color)' }}
+        className={`relative w-full overflow-hidden ${showPrelude ? 'max-w-[1180px] max-h-[calc(100vh-32px)] rounded-2xl shadow-none' : 'theme-overlay__panel max-w-[720px] max-h-[86vh] rounded-[var(--radius-modal)] border shadow-2xl'}`}
+        style={showPrelude ? { background: 'transparent', border: 0 } : undefined}
       >
         {showPrelude ? (
           <GuidePrelude
@@ -859,7 +859,7 @@ export function GuideHelpModal({ firstLogin = false, onClose }: GuideHelpModalPr
               )}
 
               {err && (
-                <div className="mt-3 rounded-lg border px-3 py-2 text-[12px]" style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
+                <div className="mt-3 rounded-lg border px-3 py-2 text-[12px]" style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--status-danger-soft)' }}>
                   {err}
                 </div>
               )}

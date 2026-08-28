@@ -2,8 +2,8 @@
  * viewer/PlanCard.tsx — codex 计划模式 (update_plan function_call) 的可视化卡片.
  *
  * 把 update_plan 的 {plan:[{step,status}]} 渲染成步骤列表:
- *  - completed  → 绿勾
- *  - in_progress → 蓝色旋转
+ *  - completed  → 成功色勾
+ *  - in_progress → 运行色旋转
  *  - pending    → 灰色空心圈
  * 顶部展示进度条与各类计数, 让分步计划的进展一眼可扫.
  */
@@ -23,18 +23,18 @@ const STATUS_META: Record<PlanStepStatus, StatusMeta> = {
   completed: {
     label: '已完成',
     icon: Check,
-    iconClass: 'text-emerald-400',
+    iconClass: 'text-[var(--status-success)]',
     spin: false,
     textClass: 'text-[var(--text-secondary)]',
-    badgeClass: 'border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-300',
+    badgeClass: 'border-[var(--status-success-border)] bg-[var(--status-success-soft)] text-[var(--status-success)]',
   },
   in_progress: {
     label: '进行中',
     icon: Loader2,
-    iconClass: 'text-blue-400',
+    iconClass: 'text-[var(--status-running)]',
     spin: true,
     textClass: 'text-[var(--text-primary)] font-medium',
-    badgeClass: 'border-blue-500/30 bg-blue-500/[0.08] text-blue-300',
+    badgeClass: 'border-[var(--status-running-border)] bg-[var(--status-running-soft)] text-[var(--status-running)]',
   },
   pending: {
     label: '待处理',
@@ -93,12 +93,12 @@ export function JsonEntryPlanCard({ plan }: { plan: PlanUpdate }) {
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       <div className="border-b border-[var(--border-color)] px-2.5 py-1.5">
         <div className="flex items-center gap-2 text-[10px]">
-          <span className={`font-semibold ${allDone ? 'text-emerald-300' : 'text-violet-300'}`}>
+          <span className={`font-semibold ${allDone ? 'text-[var(--status-success)]' : 'text-violet-300'}`}>
             {allDone ? '计划已完成' : '计划模式'}
           </span>
-          <span className="font-mono text-emerald-300/80">{plan.completed}/{total} 完成</span>
+          <span className="font-mono text-[var(--status-success)]">{plan.completed}/{total} 完成</span>
           {plan.inProgress > 0 && (
-            <span className="font-mono text-blue-300/80">{plan.inProgress} 进行中</span>
+            <span className="font-mono text-[var(--status-running)]">{plan.inProgress} 进行中</span>
           )}
           {plan.pending > 0 && (
             <span className="font-mono text-[var(--text-muted)]">{plan.pending} 待处理</span>
@@ -107,7 +107,7 @@ export function JsonEntryPlanCard({ plan }: { plan: PlanUpdate }) {
         </div>
         <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--border-color)]/50">
           <div
-            className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-400/70' : 'bg-violet-400/70'}`}
+            className={`h-full rounded-full transition-all ${allDone ? 'bg-[var(--status-success)]' : 'bg-violet-400/70'}`}
             style={{ width: `${pct}%` }}
           />
         </div>

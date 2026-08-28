@@ -3,14 +3,27 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
+import { CODE_MARKDOWN_COMPONENTS } from './code-artifacts/CodeMarkdownComponents'
+import { CodeArtifactOpenProvider } from './code-artifacts/CodeArtifactOpenContext'
+import { FilePreviewLayer } from './code-artifacts/FilePreviewLayer'
+import { targetFromTrustedPath, type CodeArtifactOpenRequest, type CodeArtifactTarget } from './code-artifacts/file-target'
+import { GitChangesViewer } from './code-git/GitChangesViewer'
+import { DiffRows as UnifiedDiffRows, parseUnifiedDiff, unifiedDiffNoHunkMessage } from './code-git/DiffRows'
+import {
+  GIT_DIFF_MODE_LABELS,
+  sessionFileMatches,
+  type GitDiffMode,
+  type SessionFileFeature,
+  type SessionGitDiff,
+} from './code-git/types'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, AtSign, ArrowLeftRight, Search, Clock, Sparkles } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo, isRecentlyActive } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { FileTreeLevel, OpenInVSCodeButton, type DirState, type Entry } from './project-files'
-import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
+import { WebTerminalModal, WebTerminalSurface, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { useVisibleJsonl } from './session-jsonl-filter'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
@@ -25,9 +38,30 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { AdvancedSessionActions } from './advanced-session-actions'
+import { blurFocusInsideHiddenLayer, useComposerOverlayHeight } from './chat-pane'
+import { useComposerInputLayout, useComposerMobileLayout } from './useComposerInputLayout'
+import { SESSION_TOOL_TAB_LABELS, SessionToolDrawer, type SessionToolTab } from './session-tool-drawer'
+import {
+  safeToolDirectoryLabel,
+  safeToolPathLabel,
+  sanitizeToolError,
+  sessionToolOriginLabel,
+  type SessionToolObjectContext,
+  type SessionToolOrigin,
+} from './session-tool-context'
+import { WorkbenchShellPortal } from './workbench-shell'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { extensionAppUrlForProject } from '../services/extension-entry'
 import { isFireAndForgetSession } from '../services/session-start-policy'
+import {
+  navigateToWorkbench,
+  navigateToWorkbenchObject,
+  researchGraphNavigation,
+  sessionNavigation,
+  sessionPath,
+  WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT,
+  WORKBENCH_EXIT_CENTER_TOOL_EVENT,
+} from '../services/workbench-navigation'
 import {
   formatVoiceSeconds,
   permissionErrorMessage,
@@ -165,6 +199,7 @@ type Attachment = {
   name: string
   size: number
   kind: 'image' | 'file'
+  sourceFile?: File        // 仅保留在当前页面，用于上传失败后原位重试
   previewUrl?: string      // 仅 image: 本地 ObjectURL, 用作缩略图
   status: AttachmentStatus
   remotePath?: string      // 上传成功后的服务端绝对路径 (用于 prompt 拼接)
@@ -187,14 +222,15 @@ type SessionInputEntry = {
   turn_number?: number | null
 }
 
-type SessionFileFeature = {
-  path: string
-  display_path: string
-  original_paths?: string[]
-  count: number
-  first_timestamp?: string | null
-  last_timestamp?: string | null
-  outside_workspace?: boolean
+type FailedSendAttempt = {
+  sessionId: string
+  draft: string
+  content: string
+  inputText: string
+  requestId: string
+  urgent: boolean
+  mentions: any[]
+  attachmentIds: string[]
 }
 
 type SessionBashCommand = {
@@ -204,19 +240,6 @@ type SessionBashCommand = {
   description?: string | null
   cwd?: string | null
   source?: string | null
-}
-
-type SessionDiffMode = 'unstaged' | 'staged' | 'last_commit' | 'last_two_commits'
-
-type SessionGitDiff = {
-  path: string
-  display_path: string
-  mode: SessionDiffMode | null
-  diff: string | null
-  fallback_content?: string | null
-  fallback_error?: string | null
-  ok: boolean
-  error?: string | null
 }
 
 function makeAttachmentId() {
@@ -260,26 +283,25 @@ async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ p
 }
 
 // 输入框内的紧凑附件芯片. 图片缩略图 / 文件短标签 + 删除按钮 + 上传状态.
-function AttachmentChip({ att, theme, onRemove, onPreview }: {
+function AttachmentChip({ att, onRemove, onRetry, onPreview }: {
   att: Attachment
-  theme: 'dark' | 'light' | 'purple'
   onRemove: () => void
+  onRetry: () => void
   onPreview?: (preview: AttachmentImagePreview) => void
 }) {
   const isImage = att.kind === 'image' && att.previewUrl
-  const isDark = theme !== 'light'
   const baseStyle: React.CSSProperties = {
-    background: isDark ? '#111827' : '#ffffff',
-    border: `1px solid ${isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)'}`,
+    background: 'var(--surface-base)',
+    border: '1px solid var(--border-strong)',
   }
   const fileLabel = fileExtBadge(att.name).slice(0, 2)
   return (
-    <div className="relative group flex-shrink-0" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
+    <div className="group relative flex flex-shrink-0 items-center gap-1" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
       {isImage ? (
         <button
           type="button"
           onClick={() => onPreview?.({ id: att.id, name: att.name, src: att.previewUrl! })}
-          className="w-6 h-6 rounded-md overflow-hidden relative block text-left focus:outline-none focus:ring-2 focus:ring-blue-500/35 cursor-zoom-in"
+          className="w-6 h-6 rounded-[var(--radius-control)] overflow-hidden relative block text-left cursor-zoom-in"
           style={baseStyle}
           title={`${att.name} · 点击预览`}
           aria-label={`预览图片 ${att.name}`}>
@@ -296,7 +318,7 @@ function AttachmentChip({ att, theme, onRemove, onPreview }: {
             </div>
           )}
           {att.status === 'error' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[10px] font-semibold" title={att.error}>
+            <div className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>
               失败
             </div>
           )}
@@ -304,7 +326,7 @@ function AttachmentChip({ att, theme, onRemove, onPreview }: {
       ) : (
         <div
           className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[9px] font-semibold leading-none"
-          style={{ ...baseStyle, color: isDark ? '#bfdbfe' : '#2563eb' }}>
+          style={{ ...baseStyle, color: 'var(--accent-primary)' }}>
           <span>{fileLabel}</span>
             {att.status === 'uploading' && (
               <div className="absolute inset-0 rounded-md flex items-center justify-center bg-black/50">
@@ -315,15 +337,28 @@ function AttachmentChip({ att, theme, onRemove, onPreview }: {
               </div>
             )}
             {att.status === 'error' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[8px] font-semibold" title={att.error}>
+              <div className="absolute inset-0 rounded-md flex items-center justify-center text-[8px] font-semibold" style={{ color: 'var(--status-danger-foreground)', background: 'var(--status-danger)' }} title={att.error}>
                 !
               </div>
             )}
         </div>
       )}
+      {att.status === 'error' && (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onRetry() }}
+          className="workbench-control-sm inline-flex items-center gap-1 border px-1.5 text-[10px] font-medium transition-colors hover:bg-[var(--status-danger-soft)]"
+          style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)' }}
+          title={`${att.error || '上传失败'}，点击重试`}
+          aria-label={`重试上传 ${att.name}`}
+        >
+          <RefreshCw className="h-3 w-3" strokeWidth={2} />
+          重试
+        </button>
+      )}
       <button type="button" onClick={(e) => { e.stopPropagation(); onRemove() }}
-        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-white shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-        style={{ background: '#1f2937' }}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ color: 'var(--text-primary)', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
         title="移除">
         <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -346,7 +381,7 @@ function AttachmentImagePreviewModal({ preview, onClose }: {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
+    <div className="workbench-layer-modal fixed inset-0 flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
       <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
       <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
         <div className="min-w-0 text-[13px] font-medium truncate">{preview.name}</div>
@@ -441,8 +476,8 @@ async function copyTextToClipboard(text: string) {
 // =====================================================================
 export function Avatar({ role }: { role: string }) {
   if (role === 'user') return (
-    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/30 to-blue-600/20 border border-blue-500/15 flex items-center justify-center flex-shrink-0">
-      <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+    <div className="w-8 h-8 rounded-full bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center flex-shrink-0">
+      <svg className="w-4 h-4 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
     </div>
   )
   return (
@@ -526,14 +561,14 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-[720px] max-w-[92vw] max-h-[78vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <History className="w-4 h-4 text-blue-400 flex-shrink-0" strokeWidth={1.8} />
+            <History className="w-4 h-4 text-[var(--accent-primary)] flex-shrink-0" strokeWidth={1.8} />
             <span className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>回放输入</span>
             <span className="text-[11px] font-normal flex-shrink-0" style={{ color: 'var(--text-muted)' }}>· {entries.length} 条</span>
           </div>
@@ -545,9 +580,9 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
         <div className="px-5 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <input value={query} onChange={e => setQuery(e.target.value)}
             placeholder="搜索输入内容"
-            className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/40"
+            className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-border)]"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-          {copyError && <div className="mt-2 text-[11px] text-red-400">{copyError}</div>}
+          {copyError && <div className="mt-2 text-[11px] text-[var(--status-danger)]">{copyError}</div>}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -555,8 +590,7 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
             <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>加载中...</div>
           )}
           {!loading && error && (
-            <pre className="text-[12px] text-red-400 whitespace-pre-wrap break-words rounded-lg p-3"
-              style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>{error}</pre>
+            <pre className="workbench-status-danger text-[12px] whitespace-pre-wrap break-words rounded-lg border p-3">{error}</pre>
           )}
           {!loading && !error && entries.length === 0 && (
             <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>暂无可回放输入</div>
@@ -600,7 +634,7 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
                           title={copied ? '已复制' : '复制输入'}
                           aria-label={copied ? '已复制' : '复制输入'}
                           className="h-8 w-8 rounded-lg border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--bg-card-hover)]"
-                          style={{ color: copied ? '#22c55e' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
+                          style={{ color: copied ? 'var(--status-success)' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                           {copied ? <Check className="w-3.5 h-3.5" strokeWidth={2} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.9} />}
                         </button>
                         <button
@@ -609,7 +643,7 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
                           disabled={!replayText}
                           title="替换当前输入"
                           aria-label="替换当前输入"
-                          className="h-8 w-8 rounded-lg border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-500/10"
+                          className="h-8 w-8 rounded-lg border inline-flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--accent-soft)]"
                           style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                           <Replace className="w-3.5 h-3.5" strokeWidth={1.9} />
                         </button>
@@ -630,32 +664,30 @@ function CompactContextConfirmModal({ onConfirm, onClose }: {
   onConfirm: () => void
   onClose: () => void
 }) {
-  const { theme } = useStore()
-  const textPrimary = theme !== 'light' ? '#f1f5f9' : '#1e293b'
-  const textMuted = theme !== 'light' ? '#9ca3af' : '#64748b'
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div
-        className="relative w-[360px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
+        className="workbench-modal relative w-[360px] max-w-[calc(100vw-32px)] p-6"
         onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-2" style={{ color: textPrimary }}>压缩上文</h3>
-        <p className="text-[13px] leading-relaxed mb-5" style={{ color: textMuted }}>
+        style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}>
+        <h3 className="text-[15px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>压缩上文</h3>
+        <p className="text-[13px] leading-relaxed mb-5" style={{ color: 'var(--text-secondary)' }}>
           是否继续，将消耗一段时间压缩上文；压缩期间，您可以继续发送后续指令，但响应会延后。期间点击“终止”可以打断压缩。
         </p>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border"
-            style={{ color: textMuted, borderColor: 'var(--input-border)' }}>
+            className="workbench-control-md flex-1 border text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}>
             取消
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 h-9 rounded-xl text-[13px] text-white bg-blue-500 hover:bg-blue-600 transition-colors">
+            className="workbench-control-md flex-1 text-[13px] font-medium transition-opacity hover:opacity-90"
+            style={{ color: 'var(--accent-foreground)', background: 'var(--accent-primary)' }}>
             继续
           </button>
         </div>
@@ -664,237 +696,163 @@ function CompactContextConfirmModal({ onConfirm, onClose }: {
   )
 }
 
-const DIFF_MODE_LABELS: Record<SessionDiffMode, string> = {
-  unstaged: '未Stage修改',
-  staged: '已Stage未提交',
-  last_commit: '最近一次 commit',
-  last_two_commits: '最近两次 commit',
-}
-
-function diffLineClass(line: string) {
-  if (line.startsWith('+') && !line.startsWith('+++')) return 'code-diff-line--added'
-  if (line.startsWith('-') && !line.startsWith('---')) return 'code-diff-line--removed'
-  if (line.startsWith('@@')) return 'code-diff-line--hunk'
-  if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
-    return 'code-diff-line--meta'
-  }
-  return 'code-diff-line'
-}
-
-function GitDiffBlock({ diff }: { diff: string }) {
-  const lines = diff ? diff.split('\n') : []
-  return (
-    <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
-      {lines.map((line, index) => (
-        <div key={`${index}-${line.slice(0, 24)}`} className={`grid grid-cols-[3.25rem_minmax(0,1fr)] ${diffLineClass(line)}`}>
-          <span className="code-diff-line-number select-none border-r border-[var(--border-color)]/50 px-2 text-right">
-            {index + 1}
-          </span>
-          <code className="whitespace-pre px-2 text-inherit">{line || ' '}</code>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function SessionFileChangesModal({ sessionId, onClose }: {
-  sessionId: string
-  onClose: () => void
+function SessionFilesDrawerSurface({
+  files,
+  selectedPath,
+  loading,
+  error,
+  showDiffHint = false,
+  onReload,
+  onSelect,
+}: {
+  files: SessionFileFeature[]
+  selectedPath: string
+  loading: boolean
+  error: string
+  showDiffHint?: boolean
+  onReload: () => void
+  onSelect: (path: string) => void
 }) {
-  const [files, setFiles] = useState<SessionFileFeature[]>([])
-  const [selectedPath, setSelectedPath] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [workspaceError, setWorkspaceError] = useState('')
-  const [diff, setDiff] = useState<SessionGitDiff | null>(null)
-  const [diffLoading, setDiffLoading] = useState(false)
-  const [diffError, setDiffError] = useState('')
+  return (
+    <section className="flex min-h-0 flex-col" aria-label="本 Session 文件修改">
+      <div className="mb-1 flex items-center gap-2 px-1">
+        {showDiffHint
+          ? <p className="min-w-0 flex-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>点选后在中心看 Diff</p>
+          : <span className="min-w-0 flex-1" />}
+        <button type="button" onClick={onReload} disabled={loading} className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-control)] hover:bg-[var(--surface-control-hover)] disabled:opacity-50" aria-label="重新扫描文件修改" title="重新扫描">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+      {error && (
+        <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border p-2 text-[11px]" role="alert">
+          <div>{error}</div>
+          <button type="button" onClick={onReload} disabled={loading} className="mt-1 inline-flex items-center gap-1 font-medium hover:underline disabled:opacity-50">
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />重新扫描
+          </button>
+        </div>
+      )}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-8 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 扫描中…
+        </div>
+      ) : files.length === 0 && !error ? (
+        <div className="px-3 py-8 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          暂无文件修改记录
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {files.map(file => {
+            const active = file.path === selectedPath || file.display_path === selectedPath
+            const fullPath = file.display_path || file.path
+            const basename = fullPath.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || fullPath
+            const timeLabel = formatFeatureTime(file.last_timestamp)
+            return (
+              <button
+                key={file.path}
+                type="button"
+                onClick={() => onSelect(file.path)}
+                className="flex min-h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] px-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ background: active ? 'var(--surface-active)' : undefined, boxShadow: active ? 'inset 2px 0 var(--accent-primary)' : undefined }}
+                aria-current={active ? 'true' : undefined}
+                title={`${fullPath} · ${timeLabel}`}
+              >
+                <FileText className="h-3.5 w-3.5 flex-shrink-0" aria-hidden style={{ color: 'var(--text-muted)' }} />
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-primary)' }}>{basename}</span>
+                <span className="flex-shrink-0 text-[9px] tabular-nums" style={{ color: 'var(--text-muted)' }} aria-label={`${file.count} 次改动`}>{file.count}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
 
-  const selectedFile = useMemo(
-    () => files.find(file => file.path === selectedPath || file.display_path === selectedPath) || null,
-    [files, selectedPath],
+function SessionDiffCenterSurface({
+  file,
+  requestedPath,
+  sourceLabel,
+  diff,
+  mode,
+  loading,
+  error,
+  onModeChange,
+  onRetry,
+  onOpenArtifact,
+}: {
+  file: SessionFileFeature | null
+  requestedPath: string
+  sourceLabel: string
+  diff: SessionGitDiff | null
+  mode: GitDiffMode
+  loading: boolean
+  error: string
+  onModeChange: (mode: GitDiffMode) => void
+  onRetry: () => void
+  onOpenArtifact: (request: CodeArtifactOpenRequest) => void
+}) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const diffModel = useMemo(
+    () => diff?.diff ? parseUnifiedDiff(diff.diff, file?.path || '') : null,
+    [diff?.diff, file?.path],
   )
 
-  const loadFiles = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await api(`/api/sessions/${sessionId}/features/files`)
-      const nextFiles = Array.isArray(data?.files) ? data.files : []
-      setFiles(nextFiles)
-      setWorkspaceError(typeof data?.workspace_error === 'string' ? data.workspace_error : '')
-      setSelectedPath(prev => {
-        if (prev && nextFiles.some((file: SessionFileFeature) => file.path === prev || file.display_path === prev)) return prev
-        return nextFiles[0]?.path || ''
-      })
-    } catch (e: any) {
-      setError(e?.message || '读取文件修改清单失败')
-      setFiles([])
-      setSelectedPath('')
-    } finally {
-      setLoading(false)
-    }
-  }, [sessionId])
-
-  useEffect(() => {
-    void loadFiles()
-  }, [loadFiles])
-
-  useEffect(() => {
-    if (!selectedPath) {
-      setDiff(null)
-      setDiffError('')
-      setDiffLoading(false)
-      return
-    }
-    let cancelled = false
-    setDiffLoading(true)
-    setDiffError('')
-    const url = `/api/sessions/${sessionId}/features/git-diff?file=${encodeURIComponent(selectedPath)}`
-    api(url)
-      .then((data: any) => {
-        if (cancelled) return
-        const first = Array.isArray(data?.diffs) ? data.diffs[0] : null
-        setDiff(first || null)
-        if (first && first.ok === false && !first.fallback_content) setDiffError(first.error || '读取 diff 失败')
-      })
-      .catch((e: any) => {
-        if (cancelled) return
-        setDiff(null)
-        setDiffError(e?.message || '读取 diff 失败')
-      })
-      .finally(() => {
-        if (!cancelled) setDiffLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [sessionId, selectedPath])
+  useLayoutEffect(() => {
+    headingRef.current?.focus({ preventScroll: true })
+  }, [file?.display_path])
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex h-[82vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
-        onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <FileDiff className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>文件修改清单</span>
-            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {files.length} 个文件</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadFiles()}
-            disabled={loading}
-            title="重新扫描"
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
-            style={{ color: 'var(--text-secondary)' }}>
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCompare className="h-3.5 w-3.5" />}
-            重新扫描
-          </button>
-          <button onClick={onClose}
-            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
-            style={{ color: 'var(--text-secondary)' }}>关闭</button>
+    <CodeArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+    <section className="session-center-diff flex h-full min-h-0 flex-1 flex-col" aria-label="文件 Diff" data-workbench-diff-layer data-tool-source={sourceLabel}>
+      <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-4" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+        <FileDiff className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
+        <h2 ref={headingRef} tabIndex={-1} className="min-w-0 flex-1 truncate font-mono text-[11px] outline-none" title={file?.display_path} style={{ color: 'var(--text-primary)' }}>{file?.display_path || safeToolPathLabel(requestedPath) || '文件 Diff'}</h2>
+        <span className="git-changes-viewer__badge flex-shrink-0">{sourceLabel}</span>
+        <div className="flex gap-1" role="tablist" aria-label="当前 Git diff source">
+          {(['unstaged', 'staged'] as GitDiffMode[]).map(item => (
+            <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => onModeChange(item)} className={`git-changes-viewer__source-tab flex-none px-2${mode === item ? ' git-changes-viewer__source-tab--active' : ''}`}>
+              {GIT_DIFF_MODE_LABELS[item]}
+            </button>
+          ))}
         </div>
-
-        {(error || workspaceError) && (
-          <div className="mx-5 mt-3 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25">
-            {error || workspaceError}
+        {loading && <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent-primary)' }} />}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {!loading && !file && (
+          <div className="m-4 rounded-[var(--radius-control)] border p-4" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }} role="status">
+            <strong className="text-[13px] text-[var(--text-primary)]">{requestedPath ? '当前对象不在本会话变更清单' : '当前会话没有可定位的文件变更'}</strong>
+            {requestedPath && <code className="mt-2 block text-[11px] text-[var(--text-secondary)]">{safeToolPathLabel(requestedPath)}</code>}
+            <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)]">不会扩大文件范围或回退到提交历史；可原地重新扫描。</p>
+            <button type="button" onClick={onRetry} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="h-3.5 w-3.5" />重试扫描
+            </button>
           </div>
         )}
-
-        <div className="flex min-h-0 flex-1">
-          <div className="flex w-[34%] min-w-[260px] flex-col border-r" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="border-b px-4 py-2 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-              修改文件来自 session JSONL 特征，右侧 diff 来自当前 Git 仓库。
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {loading && (
-                <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  扫描中...
-                </div>
-              )}
-              {!loading && files.length === 0 && !error && (
-                <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无文件修改记录</div>
-              )}
-              {!loading && files.length > 0 && (
-                <div className="space-y-1">
-                  {files.map(file => {
-                    const active = file.path === selectedPath || file.display_path === selectedPath
-                    return (
-                      <button
-                        key={file.path}
-                        type="button"
-                        onClick={() => setSelectedPath(file.path)}
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${active ? 'border-blue-500/35 bg-blue-500/10' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}>
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={file.display_path} style={{ color: 'var(--text-primary)' }}>
-                            {file.display_path}
-                          </span>
-                          <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
-                            {file.count}
-                          </span>
-                        </div>
-                        <div className="mt-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                          {formatFeatureTime(file.last_timestamp)}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+        {file && error && (
+          <div className="workbench-status-danger m-4 rounded-[var(--radius-control)] border p-3 text-[12px]" role="alert">
+            <pre className="whitespace-pre-wrap">{error}</pre>
+            <button type="button" onClick={onRetry} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}>
+              <RefreshCw className="h-3.5 w-3.5" />重试当前 Diff
+            </button>
           </div>
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-auto">
-              {!selectedFile && !loading && (
-                <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>请选择一个文件</div>
-              )}
-              {selectedFile && (
-                <div className="min-w-0">
-                  <div className="sticky top-0 z-10 flex min-w-0 items-center gap-2 border-b px-4 py-2"
-                    style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={selectedFile.display_path} style={{ color: 'var(--text-primary)' }}>
-                      {selectedFile.display_path}
-                    </span>
-                    {!diffLoading && diff?.mode && (
-                      <span className="flex-shrink-0 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-300">
-                        {DIFF_MODE_LABELS[diff.mode]}
-                      </span>
-                    )}
-                    {!diffLoading && diff && !diff.diff && diff.fallback_content !== undefined && (
-                      <span className="flex-shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
-                        文件内容
-                      </span>
-                    )}
-                    {diffLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
-                  </div>
-                  {diffError && (
-                    <pre className="m-4 whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{diffError}</pre>
-                  )}
-                  {!diffLoading && !diffError && diff && !diff.diff && diff.fallback_content !== undefined && (
-                    <div className="overflow-auto">
-                      <pre className="min-w-max whitespace-pre p-4 font-mono text-[11px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                        {diff.fallback_content || ' '}
-                      </pre>
-                    </div>
-                  )}
-                  {!diffLoading && !diffError && (!diff || (!diff.diff && diff.fallback_content === undefined)) && (
-                    <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>没有可显示的 diff 或文件内容</div>
-                  )}
-                  {!diffError && diff?.diff && diff.diff.trim() !== '' && (
-                    <div className="overflow-auto">
-                      <GitDiffBlock diff={diff.diff} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        )}
+        {file && !loading && !error && (!diff || !diff.diff) && (
+          <div className="border-b px-4 py-3 text-[11px] leading-relaxed" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)', background: 'var(--surface-base)' }}>
+            <strong className="text-[var(--text-primary)]">本会话改过，但当前工作树无该 diff。</strong>
+            <span className="ml-1">当前来源为「{GIT_DIFF_MODE_LABELS[mode]}」，不会自动回退到最近 commit。</span>
+            <button type="button" onClick={onRetry} className="workbench-control-md ml-3 inline-flex items-center gap-1 border px-2 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <RefreshCw className="h-3 w-3" />重试
+            </button>
           </div>
-        </div>
+        )}
+        {file && !loading && !error && diff?.fallback_content != null && <pre className="min-w-max whitespace-pre p-4 font-mono text-[11px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>{diff.fallback_content || ' '}</pre>}
+        {file && !loading && !error && diffModel && !diffModel.hasHunks && (
+          <div className="border-b px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>{unifiedDiffNoHunkMessage(diffModel)}</div>
+        )}
+        {file && !error && diffModel && <UnifiedDiffRows model={diffModel} fallbackPath={file.path} />}
       </div>
-    </div>
+    </section>
+    </CodeArtifactOpenProvider>
   )
 }
 
@@ -952,7 +910,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} data-tour="session-bash-overlay" />
       <div className="relative flex h-[80vh] w-[min(920px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}
@@ -982,7 +940,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜索命令、描述或工作目录"
-            className="h-9 w-full rounded-lg px-3 text-[13px] focus:outline-none focus:border-blue-500/40"
+            className="h-9 w-full rounded-lg px-3 text-[13px] focus:outline-none focus:border-[var(--accent-border)]"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
         </div>
@@ -995,7 +953,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
             </div>
           )}
           {!loading && error && (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{error}</pre>
+            <pre className="workbench-status-danger whitespace-pre-wrap break-words rounded-lg border p-3 text-[12px]">{error}</pre>
           )}
           {!loading && !error && commands.length === 0 && (
             <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无 Bash 命令记录</div>
@@ -1029,7 +987,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
                         className="h-8 w-8 flex-shrink-0 rounded-lg border inline-flex items-center justify-center transition-colors hover:bg-[var(--bg-card-hover)]"
                         title={copied ? '已复制' : '复制命令'}
                         aria-label={copied ? '已复制' : '复制命令'}
-                        style={{ color: copied ? '#22c55e' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
+                        style={{ color: copied ? 'var(--status-success)' : 'var(--text-secondary)', borderColor: 'var(--border-color-strong)' }}>
                         {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} />}
                       </button>
                     </div>
@@ -1081,7 +1039,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
   const available = data?.available !== false
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+    <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative flex h-[80vh] w-[min(860px,94vw)] flex-col overflow-hidden rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}
@@ -1110,7 +1068,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
             </div>
           )}
           {!loading && error && (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{error}</pre>
+            <pre className="workbench-status-danger whitespace-pre-wrap break-words rounded-lg border p-3 text-[12px]">{error}</pre>
           )}
           {!loading && !error && !available && (
             <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
@@ -1119,7 +1077,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
             <>
               <div className="mb-3 rounded-xl border px-3.5 py-3 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                  <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? '#22c55e' : '#fbbf24') : '#6b7280' }} />
+                  <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? 'var(--status-running)' : 'var(--status-waiting)') : 'var(--status-unknown)' }} />
                   <span>
                     {lock
                       ? (schedulerAlive ? '调度器运行中' : '锁文件存在但持锁进程未运行 (任务休眠, 下个 Claude Code 会话接管后恢复)')
@@ -1156,12 +1114,12 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                           <span className="rounded px-1.5 py-0.5 font-mono" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>{t.id || '?'}</span>
                           <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{t.cron || '-'}</span>
                           {sessionOnly
-                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>仅本会话</span>
-                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>durable</span>}
+                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--status-waiting-soft)', color: 'var(--status-waiting)' }}>仅本会话</span>
+                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--accent-soft)', color: 'var(--accent-primary)' }}>durable</span>}
                           {recurring
                             ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>循环</span>
                             : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>一次性</span>}
-                          {permanent && <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>永久</span>}
+                          {permanent && <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--status-success-soft)', color: 'var(--status-success)' }}>永久</span>}
                           {!sessionOnly && created !== '-' && <span>· 创建于 {created}</span>}
                           {t.lastFiredAt && <span>· 上次触发 {formatFeatureTime(t.lastFiredAt)}</span>}
                         </div>
@@ -1196,11 +1154,11 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
 type HeaderActionTone = 'red' | 'emerald' | 'violet' | 'blue' | 'neutral'
 
 const HEADER_ACTION_TONE_CLASS: Record<HeaderActionTone, string> = {
-  red:     'border-red-500/25 text-red-300 hover:bg-red-500/15 hover:text-red-100',
+  red:     'border-[var(--status-danger-border)] text-[var(--status-danger)] hover:bg-[var(--status-danger-soft)]',
   emerald: 'border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10',
   violet:  'border-violet-500/25 text-violet-400 hover:bg-violet-500/10',
-  blue:    'border-blue-500/20 text-blue-400 hover:bg-blue-500/10',
-  neutral: 'border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]',
+  blue:    'border-[var(--accent-border)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)]',
+  neutral: 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)]',
 }
 
 type HeaderActionButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
@@ -1222,7 +1180,7 @@ function HeaderActionButton({
     <button
       type="button"
       className={[
-        'text-[11px] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+        'text-[11px] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:opacity-45 disabled:cursor-not-allowed',
         iconOnly ? 'h-[22px] w-[22px] p-0' : 'px-2.5 py-0.5',
         HEADER_ACTION_TONE_CLASS[tone],
         className,
@@ -1291,7 +1249,7 @@ function ChatHeaderOverflowMenu({
             color: 'var(--text-primary)',
           }}>
           {/* 移动端: 顶栏终止按钮已隐藏, 终止收纳进此菜单 (md:hidden = 仅移动端显示) */}
-          <button className={`${itemClass} md:hidden`} style={{ color: '#f87171' }}
+          <button className={`${itemClass} md:hidden`} style={{ color: 'var(--status-danger)' }}
             disabled={!canStop}
             onClick={() => { setOpen(false); onStop() }}>
             <span>终止当前操作</span>
@@ -1309,7 +1267,7 @@ function ChatHeaderOverflowMenu({
           <button className={itemClass}
             onClick={() => { setOpen(false); onToggleAutoUrgentOnEnter() }}>
             <span>{autoUrgentOnEnter ? '关闭回车自动加急' : '启动回车自动加急'}</span>
-            {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: '#fbbf24' }}>已开启</span>}
+            {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: 'var(--status-waiting)' }}>已开启</span>}
           </button>
           <button className={itemClass}
             onClick={() => { setOpen(false); onViewScheduledTasks() }}>
@@ -1423,7 +1381,7 @@ export function MessageBubble({
       </details>
       <div className="absolute -right-10 top-0 opacity-0 group-hover/tool:opacity-100 transition-opacity">
         <ActionButton icon={copied
-          ? <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          ? <svg className="w-3.5 h-3.5 text-[var(--status-success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
           : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
         } label="复制" onClick={copy} />
       </div>
@@ -1454,7 +1412,7 @@ export function MessageBubble({
       return (
         <>
           <div className="border-l-2 border-[var(--text-dimmed)] pl-3 mb-2 text-[12px] italic line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{quoted}</div>
-          <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{rest}</ReactMarkdown></div>
+          <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={CODE_MARKDOWN_COMPONENTS}>{rest}</ReactMarkdown></div>
         </>
       )
     }
@@ -1472,7 +1430,7 @@ export function MessageBubble({
       }
       return <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{content}</p>
     }
-    return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{content}</ReactMarkdown></div>
+    return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={CODE_MARKDOWN_COMPONENTS}>{content}</ReactMarkdown></div>
   }
 
   return (
@@ -1535,7 +1493,7 @@ export function MessageBubble({
         )}
         <ActionButton label={copied ? '已复制' : '复制'} onClick={copy}
           icon={copied
-            ? <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            ? <svg className="w-3.5 h-3.5 text-[var(--status-success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
             : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
           } />
         {onBookmark && (
@@ -1580,7 +1538,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
     <div onClick={() => onSelect(session)}
       data-tour={dataTour}
       className={`group flex h-[54px] items-center gap-1.5 overflow-hidden px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-colors ${
-        isSelected ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
+        isSelected ? 'bg-[var(--surface-active)] border border-[var(--accent-border)]' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
       } ${nameMuted ? 'opacity-75' : ''}`}>
       <div className="flex-shrink-0">
         <AgentStatusDot agentStatus={session.agent_status} />
@@ -1595,9 +1553,9 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
             <span className="min-w-0 max-w-[82px] truncate rounded px-1.5 py-[1px] text-[9px] leading-4 border"
               title={`模型: ${modelLabel}`}
               style={{
-                color: theme !== 'light' ? '#93c5fd' : '#1d4ed8',
-                background: theme !== 'light' ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.07)',
-                borderColor: theme !== 'light' ? 'rgba(147,197,253,0.22)' : 'rgba(37,99,235,0.16)',
+                color: 'var(--accent-primary)',
+                background: 'var(--accent-soft)',
+                borderColor: 'var(--accent-border)',
               }}>
               {modelLabel}
             </span>
@@ -1616,10 +1574,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
         </div>
         <div className="absolute inset-0 flex items-center justify-end gap-0.5 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100">
           {onEdit && <button onClick={e => { e.stopPropagation(); onEdit(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title="重命名">
-            <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            <svg className="w-3 h-3 text-[var(--accent-primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
           </button>}
           {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title="删除">
-            <svg className="w-3 h-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            <svg className="w-3 h-3 text-[var(--status-danger)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
           </button>}
           {pinnedIds && onTogglePinned && <button onClick={e => { e.stopPropagation(); onTogglePinned(session) }} className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-white/10" title={pinnedIds.has(session.session_id) ? '取消置顶' : '置顶'}>
             <svg className="w-3 h-3" style={{ color: pinnedIds.has(session.session_id) ? '#f59e0b' : textMuted }} fill={pinnedIds.has(session.session_id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
@@ -1688,6 +1646,7 @@ function RemoteFileMentionDrawer({
   researchId,
   currentSessionId,
   open,
+  initialTab,
   query,
   onClose,
   onPickPath,
@@ -1698,6 +1657,7 @@ function RemoteFileMentionDrawer({
   researchId?: string
   currentSessionId?: string
   open: boolean
+  initialTab?: 'files' | 'agents'
   query?: string
   onClose: () => void
   onPickPath: (path: string) => void
@@ -1764,10 +1724,10 @@ function RemoteFileMentionDrawer({
 
   useEffect(() => {
     if (!open) return
-    setActiveTab(currentSessionId ? 'agents' : 'files')
+    setActiveTab(initialTab || (currentSessionId ? 'agents' : 'files'))
     setAgentMode('read_only')
     setAgentSearch(String(query || '').trim())
-  }, [currentSessionId, open, query])
+  }, [currentSessionId, initialTab, open, query])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -1890,7 +1850,7 @@ function RemoteFileMentionDrawer({
     : '选择文件，把绝对路径插入输入框'
 
   return (
-    <div className={compactAgents ? 'pointer-events-none fixed inset-0 z-[90]' : 'fixed inset-0 z-[90]'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
+    <div className={compactAgents ? 'workbench-layer-popover pointer-events-none fixed inset-0' : 'workbench-layer-drawer fixed inset-0'} role="dialog" aria-modal={!compactAgents} aria-label="选择 @ 目标">
       {!compactAgents && <button
         type="button"
         className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
@@ -1901,14 +1861,14 @@ function RemoteFileMentionDrawer({
         data-testid="remote-file-mention-drawer"
         ref={agentPanelRef}
         className={compactAgents
-          ? 'pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl shadow-2xl transition-transform duration-150 ease-out sm:right-6'
-          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col shadow-2xl transition-transform duration-200 ease-out'}
+          ? 'workbench-panel pointer-events-auto absolute bottom-24 right-4 flex max-h-[min(64vh,520px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden transition-transform ease-out sm:right-6'
+          : 'absolute inset-y-0 left-0 flex w-[420px] max-w-[calc(100vw-24px)] flex-col transition-transform ease-out'}
         style={compactAgents
-          ? { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
-          : { background: 'var(--modal-bg)', borderRight: '1px solid var(--border-color)' }}
+          ? { background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-overlay)', transitionDuration: 'var(--dur-normal)' }
+          : { background: 'var(--surface-overlay)', borderRight: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-overlay)', transitionDuration: 'var(--dur-slow)' }}
       >
-        <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
+        <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-default)' }}>
+          <div className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center" style={{ color: 'var(--accent-primary)', background: 'var(--accent-soft)' }}>
             <AtSign className="h-4 w-4" strokeWidth={1.8} />
           </div>
           <div className="min-w-0 flex-1">
@@ -1918,7 +1878,7 @@ function RemoteFileMentionDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+            className="workbench-control-md inline-flex w-8 items-center justify-center transition-colors hover:bg-[var(--surface-control-hover)]"
             style={{ color: 'var(--text-muted)' }}
             title="关闭"
             aria-label="关闭 @ 弹层"
@@ -1927,16 +1887,16 @@ function RemoteFileMentionDrawer({
           </button>
         </div>
 
-        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-default)' }}>
           <div className="mb-2 flex items-center gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('files')}
-              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
+              className="workbench-control-md inline-flex flex-1 items-center justify-center gap-1.5 border px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
               style={{
-                borderColor: activeTab === 'files' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
-                background: activeTab === 'files' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
-                color: activeTab === 'files' ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderColor: activeTab === 'files' ? 'var(--accent-border)' : 'var(--border-default)',
+                background: activeTab === 'files' ? 'var(--surface-active)' : 'var(--surface-base)',
+                color: activeTab === 'files' ? 'var(--accent-primary)' : 'var(--text-muted)',
               }}
             >
               <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -1945,11 +1905,11 @@ function RemoteFileMentionDrawer({
             <button
               type="button"
               onClick={() => setActiveTab('agents')}
-              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
+              className="workbench-control-md inline-flex flex-1 items-center justify-center gap-1.5 border px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
               style={{
-                borderColor: activeTab === 'agents' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
-                background: activeTab === 'agents' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
-                color: activeTab === 'agents' ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderColor: activeTab === 'agents' ? 'var(--accent-border)' : 'var(--border-default)',
+                background: activeTab === 'agents' ? 'var(--surface-active)' : 'var(--surface-base)',
+                color: activeTab === 'agents' ? 'var(--accent-primary)' : 'var(--text-muted)',
               }}
             >
               <Bot className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -1964,7 +1924,7 @@ function RemoteFileMentionDrawer({
                   type="button"
                   onClick={() => void loadSources()}
                   disabled={sourcesLoading}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="workbench-control-sm inline-flex items-center gap-1 px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-50"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <RefreshCw className={`h-3 w-3 ${sourcesLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
@@ -1977,7 +1937,7 @@ function RemoteFileMentionDrawer({
                 </div>
               ) : (
                 <>
-                  {sourcesError && <div className="mb-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">远程来源加载失败：{sourcesError}</div>}
+                  {sourcesError && <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">远程来源加载失败：{sourcesError}</div>}
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {sourceOptions.map(source => {
                       const active = source.key === selectedSourceKey
@@ -1986,13 +1946,13 @@ function RemoteFileMentionDrawer({
                           key={source.key}
                           type="button"
                           onClick={() => setSelectedSourceKey(source.key)}
-                          className="min-w-[150px] rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                          style={{ borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)', background: active ? 'rgba(59,130,246,0.10)' : 'var(--bg-primary)' }}
+                          className="workbench-panel min-w-[150px] border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                          style={{ borderColor: active ? 'var(--accent-border)' : 'var(--border-default)', background: active ? 'var(--surface-active)' : 'var(--surface-base)' }}
                         >
                           <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.kind !== 'remote' || source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                            <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: source.kind !== 'remote' || source.status === 'reachable' ? 'var(--status-success)' : 'var(--status-waiting)' }} />
                             <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
-                            {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
+                            {active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} strokeWidth={2} />}
                           </div>
                           <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
                             {source.kind === 'hub' ? '项目绑定路径' : source.kind === 'local' ? 'Electron 本机路径' : (source.remote_path || '默认登录目录')}
@@ -2010,14 +1970,14 @@ function RemoteFileMentionDrawer({
                 <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
                   {agentScopeUrl ? '按相关性排序的 Session' : '无可用范围'}
                 </span>
-                <div className="flex items-center gap-1 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center gap-1 rounded-[var(--radius-control)] border p-0.5" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
                   <button
                     type="button"
                     onClick={() => setAgentMode('read_only')}
                     className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
                     style={{
-                      background: agentMode === 'read_only' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                      color: agentMode === 'read_only' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: agentMode === 'read_only' ? 'var(--surface-active)' : 'transparent',
+                      color: agentMode === 'read_only' ? 'var(--accent-primary)' : 'var(--text-muted)',
                     }}
                   >
                     <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -2028,8 +1988,8 @@ function RemoteFileMentionDrawer({
                     onClick={() => setAgentMode('bidirectional')}
                     className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors"
                     style={{
-                      background: agentMode === 'bidirectional' ? 'rgba(59,130,246,0.12)' : 'transparent',
-                      color: agentMode === 'bidirectional' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      background: agentMode === 'bidirectional' ? 'var(--surface-active)' : 'transparent',
+                      color: agentMode === 'bidirectional' ? 'var(--accent-primary)' : 'var(--text-muted)',
                     }}
                   >
                     <ArrowLeftRight className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -2044,15 +2004,15 @@ function RemoteFileMentionDrawer({
                     value={agentSearch}
                     onChange={(event) => setAgentSearch(event.target.value)}
                     placeholder="搜索名称、Session ID、项目、Issue、消息或模型"
-                    className="h-8 w-full rounded-md border bg-transparent pl-8 pr-8 text-[11px] outline-none focus:ring-2 focus:ring-blue-500/40"
-                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                    className="workbench-control-md w-full border bg-transparent pl-8 pr-8 text-[11px] outline-none"
+                    style={{ borderColor: 'var(--border-strong)', color: 'var(--text-primary)', background: 'var(--surface-control)' }}
                     aria-label="搜索 Session"
                   />
                   {agentSearch && (
                     <button
                       type="button"
                       onClick={() => setAgentSearch('')}
-                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]"
+                      className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-[var(--surface-control-hover)]"
                       style={{ color: 'var(--text-muted)' }}
                       aria-label="清空 Session 搜索"
                     >
@@ -2064,7 +2024,7 @@ function RemoteFileMentionDrawer({
                   type="button"
                   onClick={() => void loadAgentSessions()}
                   disabled={agentLoading}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="workbench-control-sm inline-flex items-center gap-1 px-2 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-50"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <RefreshCw className={`h-3 w-3 ${agentLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
@@ -2077,13 +2037,13 @@ function RemoteFileMentionDrawer({
                 </div>
               ) : (
                 <>
-                  {agentError && <div className="mb-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">智能体加载失败：{agentError}</div>}
+                  {agentError && <div className="workbench-status-danger mb-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">智能体加载失败：{agentError}</div>}
                   {!agentScopeUrl ? (
-                    <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    <div className="workbench-panel border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
                       当前会话没有 issue / research 范围，无法 @ 其他智能体。
                     </div>
                   ) : filteredAgents.length === 0 ? (
-                    <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                    <div className="workbench-panel border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
                       没有找到可 @ 的智能体。
                     </div>
                   ) : (
@@ -2101,24 +2061,24 @@ function RemoteFileMentionDrawer({
                             key={agent.session_id}
                             type="button"
                             onClick={() => pickAgent(agent)}
-                            className="w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
+                            className="workbench-panel w-full border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                            style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}
                           >
                             <div className="flex items-center gap-2">
-                              <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${active ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                              <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: active ? 'var(--status-running)' : 'var(--status-unknown)' }} />
                               <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
                                 {agent.name || agent.session_id}
                               </span>
-                              <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                              <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
                                 {selectedModeLabel}
                               </span>
                             </div>
                             <div className="mt-1 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                               <span className="truncate">{agent.session_id}</span>
-                              <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{relationLabel}</span>
-                              {modelLabel && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{modelLabel}</span>}
-                              {agent.backend && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.backend}</span>}
-                              {agent.research_role && <span className="rounded bg-[var(--bg-card-hover)] px-1.5 py-0.5">{agent.research_role}</span>}
+                              <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{relationLabel}</span>
+                              {modelLabel && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{modelLabel}</span>}
+                              {agent.backend && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{agent.backend}</span>}
+                              {agent.research_role && <span className="rounded bg-[var(--surface-control)] px-1.5 py-0.5">{agent.research_role}</span>}
                             </div>
                             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                               {agent.project_name && <span className="truncate">{agent.project_name}</span>}
@@ -2144,8 +2104,8 @@ function RemoteFileMentionDrawer({
         {activeTab === 'files' ? (
           <>
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-                <FolderOpen className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} />
+              <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                <FolderOpen className="h-3.5 w-3.5" style={{ color: 'var(--accent-primary)' }} strokeWidth={1.8} />
                 <span className="truncate">{selectedSource?.name || '未选择来源'}</span>
                 {selectedSource && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
                 <span className="truncate font-mono">{selectedSource?.kind === 'hub' ? '项目绑定路径' : selectedSource?.kind === 'local' ? 'Electron 本机路径' : (selectedSource?.remote_path || (selectedSource ? '默认登录目录' : ''))}</span>
@@ -2170,13 +2130,13 @@ function RemoteFileMentionDrawer({
                 )}
               </div>
             </div>
-            <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
               <FileText className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
-              点击文件后会替换当前的 <code className="rounded bg-[var(--bg-card-hover)] px-1 py-0.5">@</code> 并回到输入框
+              点击文件后会替换当前的 <code className="rounded bg-[var(--surface-control)] px-1 py-0.5">@</code> 并回到输入框
             </div>
           </>
         ) : (
-          <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
             <ArrowLeftRight className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
             选择智能体后会插入当前输入框，并把其上下文或双向桥接语义一起发送给后端
           </div>
@@ -2199,8 +2159,21 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
-export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: {
+type WorkspaceEditorControl = {
+  available: boolean
+  loading: boolean
+  open: boolean
+  unavailableReason: string
+  /** CodeConversation 可接收 target；VSCode iframe 等不可靠定位实现不声明 supportsFileLocation。 */
+  onOpen: (target?: CodeArtifactTarget) => void
+  supportsFileLocation?: boolean
+}
+
+export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive = true, toolOrigin = 'session', onNewSession, easyProjectControl, workspaceEditor }: {
   layout?: 'default' | 'stacked' | 'easy'
+  chrome?: 'inline' | 'shell'
+  shellChromeActive?: boolean
+  toolOrigin?: Exclude<SessionToolOrigin, 'message'>
   onNewSession?: () => void
   easyProjectControl?: {
     selectedProjectId?: string
@@ -2209,6 +2182,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     onSelectProject: (projectId: string | null) => void
     onCreateProject: () => void
   }
+  workspaceEditor?: WorkspaceEditorControl
 } = {}) {
   const { user, currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
@@ -2236,12 +2210,12 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const [sessionLinkCopied, setSessionLinkCopied] = useState(false)
   const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
   const [easyProjectQuery, setEasyProjectQuery] = useState('')
-  const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
   const [attachmentsBySession, setAttachmentsBySession] = useState<Record<string, Attachment[]>>({})
   const [attachmentImagePreview, setAttachmentImagePreview] = useState<AttachmentImagePreview | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
+  const [remoteFileDrawerInitialTab, setRemoteFileDrawerInitialTab] = useState<'files' | 'agents'>('agents')
   const inputMenuRef = useRef<HTMLDivElement | null>(null)
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsRef = useRef<HTMLDivElement | null>(null)
@@ -2258,11 +2232,12 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     startWidth: number
     currentWidth: number
   } | null>(null)
+  useComposerOverlayHeight(chatBodyRef, chatInputRef, layout === 'easy')
 
   const copySessionLink = useCallback(async () => {
     const activeSessionId = currentSession?.session_id || currentTask?.session_id
     if (!user?.id || !activeSessionId) return
-    const path = `/u/${encodeURIComponent(user.id)}/s/${encodeURIComponent(activeSessionId)}`
+    const path = sessionPath(user.id, activeSessionId)
     const link = typeof window === 'undefined' ? path : new URL(path, window.location.origin).toString()
     if (await copyTextToClipboard(link)) {
       setSessionLinkCopied(true)
@@ -2467,7 +2442,14 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const [showRaw, setShowRaw] = useState(false)
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
-  const [fileChangesOpen, setFileChangesOpen] = useState(false)
+  const [artifactOpenRequest, setArtifactOpenRequest] = useState<CodeArtifactOpenRequest | null>(null)
+  const [artifactAboveChanges, setArtifactAboveChanges] = useState(false)
+  const [fileChangesRequest, setFileChangesRequest] = useState<{
+    target?: CodeArtifactTarget
+    trigger?: HTMLElement | null
+    returnToPreview?: boolean
+    previewRequest?: CodeArtifactOpenRequest | null
+  } | null>(null)
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
   const [scheduledTasksOpen, setScheduledTasksOpen] = useState(false)
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false)
@@ -2478,6 +2460,31 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const [terminalChoiceOpen, setTerminalChoiceOpen] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalMode, setTerminalMode] = useState<WebTerminalMode>('cwd')
+  const [toolDrawerOpen, setToolDrawerOpen] = useState(false)
+  const [activeToolTab, setActiveToolTab] = useState<SessionToolTab>('files')
+  const [toolObjectContext, setToolObjectContext] = useState<SessionToolObjectContext>({
+    origin: toolOrigin,
+    originLabel: '',
+    target: null,
+    trigger: null,
+  })
+  const [centerDiffOpen, setCenterDiffOpen] = useState(false)
+  const [terminalDockOpen, setTerminalDockOpen] = useState(false)
+  const [toolFiles, setToolFiles] = useState<SessionFileFeature[]>([])
+  const [toolFilesReady, setToolFilesReady] = useState(false)
+  const [toolFilesLoading, setToolFilesLoading] = useState(false)
+  const [toolFilesError, setToolFilesError] = useState('')
+  const [toolWorkspaceError, setToolWorkspaceError] = useState('')
+  const [selectedToolFilePath, setSelectedToolFilePath] = useState('')
+  const [toolDiff, setToolDiff] = useState<SessionGitDiff | null>(null)
+  const [toolDiffMode, setToolDiffMode] = useState<GitDiffMode>('unstaged')
+  const [toolDiffLoading, setToolDiffLoading] = useState(false)
+  const [toolDiffError, setToolDiffError] = useState('')
+  const [toolDiffReloadKey, setToolDiffReloadKey] = useState(0)
+  const [terminalContextLoading, setTerminalContextLoading] = useState(false)
+  const [terminalContextReady, setTerminalContextReady] = useState(false)
+  const [terminalContextError, setTerminalContextError] = useState('')
+  const [terminalContextReloadKey, setTerminalContextReloadKey] = useState(0)
   const [projectKnowledgeSending, setProjectKnowledgeSending] = useState(false)
   const [messageSubmitting, setMessageSubmitting] = useState(false)
   // 当前会话模型是否仍可用 (管理员删除该模型配置后 → false, 会话只读, 需"修改模型并继续").
@@ -2513,11 +2520,31 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     })
   }, [])
   const sessionId = currentSession?.session_id || currentTask?.task_id || ''
-  useEffect(() => {
+  useLayoutEffect(() => {
     setEasyToolsOpen(false)
     setEasyRoundCount(0)
     setEasyExpandAllSignal(0)
-  }, [sessionId])
+    setArtifactOpenRequest(null)
+    setArtifactAboveChanges(false)
+    setFileChangesRequest(null)
+    setToolDrawerOpen(false)
+    setActiveToolTab('files')
+    setToolObjectContext({ origin: toolOrigin, originLabel: '', target: null, trigger: null })
+    setCenterDiffOpen(false)
+    setTerminalDockOpen(false)
+    setToolFiles([])
+    setToolFilesReady(false)
+    setToolFilesError('')
+    setToolWorkspaceError('')
+    setSelectedToolFilePath('')
+    setToolDiff(null)
+    setToolDiffMode('unstaged')
+    setToolDiffError('')
+    setToolDiffReloadKey(0)
+    setTerminalContextReady(false)
+    setTerminalContextError('')
+    setTerminalContextReloadKey(0)
+  }, [sessionId, toolOrigin])
   const handleEasyRoundCountChange = useCallback((count: number) => {
     setEasyRoundCount(previous => previous === count ? previous : count)
   }, [])
@@ -2529,6 +2556,21 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const projectForSession = currentProject?.id === currentProjectId
     ? currentProject
     : projects.find((p: any) => p.id === currentProjectId)
+  const toolOriginEntityLabel = toolOrigin === 'issue'
+    ? String((currentIssue as any)?.title || '')
+    : toolOrigin === 'research'
+      ? String((currentResearch as any)?.title || '')
+      : ''
+  const currentPageToolSourceLabel = sessionToolOriginLabel(toolOrigin, toolOriginEntityLabel)
+  const toolSourceLabel = toolObjectContext.originLabel
+    || sessionToolOriginLabel(toolObjectContext.origin, toolOriginEntityLabel)
+  const toolObjectLabel = toolObjectContext.target?.path
+    ? safeToolPathLabel(toolObjectContext.target.path)
+    : ''
+  const terminalObjectDirectory = safeToolDirectoryLabel(toolObjectContext.target)
+  const terminalWorkingDirectoryLabel = [projectForSession?.name || '当前项目', terminalObjectDirectory]
+    .filter(Boolean)
+    .join(' · ')
   const extensionAppUrl = extensionAppUrlForProject(projectForSession)
   const currentModelLabel = sessionModelLabel(
     (currentSession as any)?.model || (currentTask as any)?.model,
@@ -2541,6 +2583,206 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     : voiceState === 'transcribing'
       ? '正在转写并发送语音'
       : '语音输入'
+
+  const openToolTab = useCallback((tab: SessionToolTab) => {
+    setActiveToolTab(tab)
+    setToolDrawerOpen(true)
+    setEasyToolsOpen(false)
+  }, [])
+
+  const captureCurrentToolSource = useCallback(() => {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setToolObjectContext(previous => ({
+      ...previous,
+      origin: toolOrigin,
+      originLabel: currentPageToolSourceLabel,
+      trigger,
+    }))
+  }, [currentPageToolSourceLabel, toolOrigin])
+
+  const rememberArtifactSource = useCallback((request: CodeArtifactOpenRequest) => {
+    setToolObjectContext({
+      origin: 'message',
+      originLabel: sessionToolOriginLabel('message'),
+      target: request.target,
+      trigger: request.trigger || null,
+    })
+  }, [])
+
+  const restoreToolSourceFocus = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      if (toolObjectContext.trigger?.isConnected) toolObjectContext.trigger.focus()
+      else inputRef.current?.focus()
+    })
+  }, [toolObjectContext.trigger])
+
+  const closeToolWorkspace = useCallback(() => {
+    setToolDrawerOpen(false)
+    setTerminalDockOpen(false)
+    setCenterDiffOpen(false)
+    restoreToolSourceFocus()
+  }, [restoreToolSourceFocus])
+
+  const openToolFromCurrentSource = useCallback((tab: SessionToolTab) => {
+    captureCurrentToolSource()
+    if (tab === 'diff') setCenterDiffOpen(true)
+    openToolTab(tab)
+  }, [captureCurrentToolSource, openToolTab])
+
+  const loadToolFiles = useCallback(async () => {
+    if (!sessionId) return
+    setToolFilesReady(false)
+    setToolFilesLoading(true)
+    setToolFilesError('')
+    try {
+      const data = await api(`/api/sessions/${sessionId}/features/files`)
+      const nextFiles = Array.isArray(data?.files) ? data.files : []
+      setToolFiles(nextFiles)
+      setToolWorkspaceError(typeof data?.workspace_error === 'string'
+        ? sanitizeToolError(data.workspace_error, '当前工作目录不可用')
+        : '')
+      setSelectedToolFilePath(current => {
+        const requested = current || toolObjectContext.target?.path || ''
+        if (!requested) return ''
+        const matched = nextFiles.find((file: SessionFileFeature) => sessionFileMatches(file, requested))
+        return matched?.path || requested
+      })
+    } catch (reason: any) {
+      setToolFiles([])
+      setToolFilesError(sanitizeToolError(reason, '读取文件修改清单失败'))
+    } finally {
+      setToolFilesLoading(false)
+      setToolFilesReady(true)
+    }
+  }, [sessionId, toolObjectContext.target?.path])
+
+  useEffect(() => {
+    if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff')) return
+    if (toolFiles.length || toolFilesLoading || toolFilesError) return
+    void loadToolFiles()
+  }, [activeToolTab, loadToolFiles, toolDrawerOpen, toolFiles.length, toolFilesError, toolFilesLoading])
+
+  const selectedToolFile = useMemo(
+    () => toolFiles.find(file => sessionFileMatches(file, selectedToolFilePath)) || null,
+    [selectedToolFilePath, toolFiles],
+  )
+
+  const selectToolFile = useCallback((path: string) => {
+    setSelectedToolFilePath(path)
+    setCenterDiffOpen(true)
+    setActiveToolTab('diff')
+    const target = targetFromTrustedPath(path, { intent: 'diff', source: 'diff' })
+    if (target) setToolObjectContext(previous => ({ ...previous, target }))
+  }, [])
+
+  useEffect(() => {
+    if (!toolDrawerOpen || (activeToolTab !== 'files' && activeToolTab !== 'diff') || !toolFilesReady || toolFilesLoading) return
+    if (activeToolTab === 'diff') setCenterDiffOpen(true)
+    if (selectedToolFilePath) return
+    const contextual = toolObjectContext.target?.path
+      ? toolFiles.find(file => sessionFileMatches(file, toolObjectContext.target!.path))
+      : null
+    const next = contextual || toolFiles[0]
+    if (!next) return
+    setSelectedToolFilePath(next.path)
+    const target = targetFromTrustedPath(next.path, { intent: 'diff', source: 'diff' })
+    if (target) setToolObjectContext(previous => ({ ...previous, target }))
+  }, [activeToolTab, selectedToolFilePath, toolDrawerOpen, toolFiles, toolFilesLoading, toolFilesReady, toolObjectContext.target?.path])
+
+  useEffect(() => {
+    if (!selectedToolFilePath || !sessionId || (toolFilesReady && !selectedToolFile)) {
+      setToolDiff(null)
+      setToolDiffError('')
+      setToolDiffLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setToolDiffLoading(true)
+    setToolDiffError('')
+    api(`/api/sessions/${sessionId}/features/git-diff?file=${encodeURIComponent(selectedToolFilePath)}&mode=${toolDiffMode}`, { signal: controller.signal })
+      .then((data: any) => {
+        if (controller.signal.aborted) return
+        const first = Array.isArray(data?.diffs) ? data.diffs[0] : null
+        setToolDiff(first || null)
+        if (first && first.ok === false && !first.fallback_content) setToolDiffError(sanitizeToolError(first.error, '读取 Diff 失败'))
+      })
+      .catch((reason: any) => {
+        if (controller.signal.aborted) return
+        setToolDiff(null)
+        setToolDiffError(sanitizeToolError(reason, '读取 Diff 失败'))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setToolDiffLoading(false)
+      })
+    return () => controller.abort()
+  }, [selectedToolFile, selectedToolFilePath, sessionId, toolDiffMode, toolDiffReloadKey, toolFilesReady])
+
+  useEffect(() => {
+    if ((!toolDrawerOpen || activeToolTab !== 'terminal') && !terminalDockOpen) return
+    const controller = new AbortController()
+    setTerminalContextLoading(true)
+    setTerminalContextReady(false)
+    setTerminalContextError('')
+    void (async () => {
+      try {
+        if (!sessionId) throw new Error('当前没有活动会话，终端不可用')
+        if (!currentProjectId) throw new Error('当前会话没有所属项目，终端不可用')
+        if ((projectForSession?.bind_path || '').trim()) {
+          setTerminalContextReady(true)
+          return
+        }
+        const data = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/files?path=/`, { signal: controller.signal })
+        if (!String(data?.bind_path || '').trim()) throw new Error('当前项目未绑定工作目录，终端不可用')
+        setTerminalContextReady(true)
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        setTerminalContextError(sanitizeToolError(reason, '终端上下文不可用'))
+      } finally {
+        if (!controller.signal.aborted) setTerminalContextLoading(false)
+      }
+    })()
+    return () => controller.abort()
+  }, [activeToolTab, currentProjectId, projectForSession?.bind_path, sessionId, terminalContextReloadKey, terminalDockOpen, toolDrawerOpen])
+
+  const centerMode: 'chat' | 'diff' = centerDiffOpen ? 'diff' : 'chat'
+  const returnToChat = useCallback(() => {
+    setCenterDiffOpen(false)
+    restoreToolSourceFocus()
+  }, [restoreToolSourceFocus])
+
+  useEffect(() => {
+    if (centerMode !== 'diff') return
+    blurFocusInsideHiddenLayer(chatBodyRef.current)
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"], .workbench-popover, .workbench-layer-modal')) return
+      event.preventDefault()
+      returnToChat()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [centerMode, returnToChat])
+
+  useEffect(() => {
+    const exitCenterTool = () => {
+      setToolDrawerOpen(false)
+      setTerminalDockOpen(false)
+      setCenterDiffOpen(false)
+    }
+    const clearObjectSelection = () => {
+      setSelectedToolFilePath('')
+      setToolDiff(null)
+      setToolDiffError('')
+      setActiveToolTab('files')
+      setCenterDiffOpen(false)
+    }
+    window.addEventListener(WORKBENCH_EXIT_CENTER_TOOL_EVENT, exitCenterTool)
+    window.addEventListener(WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT, clearObjectSelection)
+    return () => {
+      window.removeEventListener(WORKBENCH_EXIT_CENTER_TOOL_EVENT, exitCenterTool)
+      window.removeEventListener(WORKBENCH_CLEAR_OBJECT_SELECTION_EVENT, clearObjectSelection)
+    }
+  }, [])
 
   // 次要条目过滤: 普通 SSE append 走增量快路径; 切 session / 加载全部 / 切过滤开关时完整重算.
   const { visibleJsonl, minorCount } = useVisibleJsonl(jsonlEntries, hideMinorJsonl)
@@ -2577,6 +2819,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const [sendingHint, setSendingHint] = useState<string | null>(null)
   const [backendWorktreeIgnored, setBackendWorktreeIgnored] = useState(false)
   const [lastSendError, setLastSendError] = useState('')
+  const [failedSendAttempt, setFailedSendAttempt] = useState<FailedSendAttempt | null>(null)
   const [dismissedBackendFailureKeys, setDismissedBackendFailureKeys] = useState<Record<string, string>>({})
   const [hiddenBackendFailureBefore, setHiddenBackendFailureBefore] = useState<Record<string, number>>({})
   const guidedCompletionNotifiedRef = useRef<Set<string>>(new Set())
@@ -2854,6 +3097,16 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     }
   }, [])
 
+  const restoreSessionInputDraft = useCallback((sid: string, sentInput: string) => {
+    if (!sid || !sentInput) return
+    setDrafts(prev => {
+      const current = prev[sid] || ''
+      if (current.trim()) return prev
+      draftSave(`session-input:${sid}`, { input: sentInput }, { minChars: 1 })
+      return { ...prev, [sid]: sentInput }
+    })
+  }, [])
+
   const applyReplayedInput = useCallback((text: string) => {
     setInput(text)
     setInputReplayOpen(false)
@@ -2978,6 +3231,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       name: f.name || 'file',
       size: f.size || 0,
       kind: attachmentKindOf(f),
+      sourceFile: f,
       previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
       status: 'uploading',
     }))
@@ -2997,6 +3251,29 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
+
+  const retryAttachment = useCallback((id: string) => {
+    if (!sessionId) return
+    const target = (attachmentsBySession[sessionId] || []).find(att => att.id === id)
+    if (!target?.sourceFile || target.status !== 'error') return
+    setSessionAttachments(sessionId, prev => prev.map(att => (
+      att.id === id ? { ...att, status: 'uploading', error: undefined } : att
+    )))
+    uploadAttachmentFile(target.sourceFile, currentProjectId)
+      .then(res => {
+        setSessionAttachments(sessionId, prev => prev.map(att => (
+          att.id === id
+            ? { ...att, status: 'done', remotePath: res.path, size: res.size || att.size, error: undefined }
+            : att
+        )))
+      })
+      .catch(error => {
+        setSessionAttachments(sessionId, prev => prev.map(att => (
+          att.id === id ? { ...att, status: 'error', error: error?.message || '上传失败' } : att
+        )))
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, currentProjectId, attachmentsBySession])
 
   const removeAttachment = useCallback((id: string) => {
     if (!sessionId) return
@@ -3076,6 +3353,54 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const endRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const isComposerMobile = useComposerMobileLayout()
+  const easyComposerLayout = useComposerInputLayout({
+    textareaRef: inputRef,
+    value: input,
+    expanded: inputExpanded,
+    isMobile: isComposerMobile,
+    enabled: layout === 'easy',
+  })
+  const insertArtifactReference = useCallback((reference: string) => {
+    setArtifactOpenRequest(null)
+    setArtifactAboveChanges(false)
+    setFileChangesRequest(null)
+    window.requestAnimationFrame(() => {
+      const textarea = inputRef.current
+      const currentValue = textarea?.value ?? input
+      const start = textarea?.selectionStart ?? currentValue.length
+      const end = textarea?.selectionEnd ?? start
+      const before = currentValue.slice(0, start)
+      const after = currentValue.slice(end)
+      const leading = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
+      const trailing = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+      const insertion = `${leading}${reference}${trailing}`
+
+      if (textarea) {
+        textarea.focus()
+        textarea.setSelectionRange(start, end)
+        // insertText participates in the textarea's native undo stack. The
+        // controlled onChange path persists the resulting session draft.
+        try {
+          if (document.execCommand('insertText', false, insertion)) return
+        } catch {
+          /* Fall through to the controlled-state path below. */
+        }
+      }
+
+      const nextValue = `${before}${insertion}${after}`
+      setInput(nextValue)
+      window.requestAnimationFrame(() => {
+        const nextTextarea = inputRef.current
+        if (!nextTextarea) return
+        const caret = start + insertion.length
+        nextTextarea.focus()
+        try { nextTextarea.setSelectionRange(caret, caret) } catch {}
+      })
+    })
+  // setInput is session-scoped and intentionally recreated with the active draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, sessionId])
   const [remoteFileDrawerOpen, setRemoteFileDrawerOpen] = useState(false)
   const remoteMentionRangeRef = useRef<{ start: number; end: number } | null>(null)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -3126,6 +3451,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       : Math.max(0, beforeCaret.toLowerCase().lastIndexOf('session=') - (beforeCaret[beforeCaret.toLowerCase().lastIndexOf('session=') - 1] === '@' ? 1 : 0))
     remoteMentionRangeRef.current = { start, end: caret }
     setMentionQuery(mentionMatch ? (mentionMatch[1] || '') : (copiedSessionMatch?.[2] || ''))
+    setRemoteFileDrawerInitialTab('agents')
     setRemoteFileDrawerOpen(true)
   }
 
@@ -3437,13 +3763,14 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const [inputHeight, setInputHeight] = useState(60)
   const toggleInputExpanded = useCallback(() => {
     setInputExpanded(prev => !prev)
-  }, [])
+    if (layout === 'easy') requestAnimationFrame(() => inputRef.current?.focus())
+  }, [layout])
   const toggleInputMenu = useCallback(() => {
     setInputMenuOpen(prev => !prev)
   }, [])
   const expandedInputRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
-    if (!inputExpanded) return
+    if (!inputExpanded || layout === 'easy') return
     const id = requestAnimationFrame(() => expandedInputRef.current?.focus())
     const onKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') setInputExpanded(false)
@@ -3453,7 +3780,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       cancelAnimationFrame(id)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [inputExpanded])
+  }, [inputExpanded, layout])
 
   useEffect(() => {
     if (!inputMenuOpen) return
@@ -3476,6 +3803,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   }, [inputMenuOpen])
 
   useEffect(() => {
+    if (layout === 'easy') return
     const el = inputRef.current
     if (!el) return
     const syncHeight = () => {
@@ -3490,7 +3818,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     syncHeight()
     window.addEventListener('resize', syncHeight)
     return () => window.removeEventListener('resize', syncHeight)
-  }, [input, sessionId])
+  }, [input, layout, sessionId])
 
   const resolveProjectBindPath = useCallback(async () => {
     if (!currentProjectId) throw new Error('当前会话没有所属项目, 无法写入项目知识沉淀')
@@ -3839,7 +4167,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
   const send = useCallback((urgent = false) => {
     // 模型被管理员移除 → 会话只读, 拦截发送并打开与底部按钮一致的"修改模型并继续"流程.
     if (!modelAvailableRef.current) {
-      setLastSendError('因之前使用的模型被管理员移除，本次会话不能继续，请先"修改模型并继续"。')
+      setLastSendError('因之前使用的模型被管理员移除，本次会话不能继续。修改模型会新建 Session，不会热切当前会话。')
       setContinueModalOpen(true)
       return
     }
@@ -3885,6 +4213,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       context_at: mention.contextAt || new Date().toISOString(),
     }))
     setLastSendError('')
+    setFailedSendAttempt(null)
     addMessage({ role: 'user', content, session_mentions: optimisticSessionMentions })
     pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
@@ -3910,14 +4239,87 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           }, 5000)
         }
         setEditingMsg(null)
+        setFailedSendAttempt(null)
         clearAttachments()
         setSelectedAgentMentions([])
         inputRef.current?.focus()
         setTimeout(() => loadHistoryRef.current(), 500)
       })
-      .catch(() => { inputRef.current?.focus() })
+      .catch(() => {
+        restoreSessionInputDraft(sentSessionId, sentInput)
+        setFailedSendAttempt({
+          sessionId: sentSessionId,
+          draft: sentInput,
+          content,
+          inputText: text,
+          requestId,
+          urgent,
+          mentions: mentionPayload,
+          attachmentIds: readyAtts.map(att => att.id),
+        })
+        inputRef.current?.focus()
+      })
       .finally(() => setMessageSubmitting(false))
-  }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, voiceState, selectedAgentMentions])
+  }, [input, replyTo, sessionId, addMessage, attachments, anyUploading, messageSubmitting, clearAttachments, postSessionMessage, clearSessionInputDraft, restoreSessionInputDraft, voiceState, selectedAgentMentions])
+
+  const retryFailedSend = useCallback(async () => {
+    const attempt = failedSendAttempt
+    if (!attempt || attempt.sessionId !== sessionId || messageSubmitting) return
+    setLastSendError('')
+    pendingUrgentRef.current = attempt.urgent
+    setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
+    setTyping(true)
+    try {
+      const data = await api(`/api/sessions/${encodeURIComponent(attempt.sessionId)}/inputs`)
+      const entries = Array.isArray(data?.entries) ? data.entries as SessionInputEntry[] : []
+      const originalWasRecorded = entries.some(entry => entry.request_id === attempt.requestId)
+      if (originalWasRecorded) {
+        // 后端已记录原用户消息时只发送一条重试指令，避免把原文重复写入 Session。
+        const retryContent = '请重试上一条未完成的请求。'
+        addMessage({ role: 'user', content: retryContent })
+        await postSessionMessage({
+          content: retryContent,
+          inputText: retryContent,
+          requestId: makeSendRequestId(),
+        })
+      } else {
+        // 原请求未到达后端时复用 payload；本地已有乐观消息，不再追加第二条原文。
+        await postSessionMessage({
+          content: attempt.content,
+          inputText: attempt.inputText,
+          requestId: attempt.requestId,
+          urgent: attempt.urgent,
+          mentions: attempt.mentions,
+        })
+      }
+      setFailedSendAttempt(null)
+      clearSessionInputDraft(attempt.sessionId, attempt.draft)
+      const attemptedAttachmentIds = new Set(attempt.attachmentIds)
+      setSessionAttachments(attempt.sessionId, current => {
+        current.forEach(att => {
+          if (attemptedAttachmentIds.has(att.id) && att.previewUrl) {
+            try { URL.revokeObjectURL(att.previewUrl) } catch {}
+          }
+        })
+        return current.filter(att => !attemptedAttachmentIds.has(att.id))
+      })
+      const attemptedMentionIds = new Set(attempt.mentions.map(mention => String(mention.session_id || '')))
+      setSelectedAgentMentions(current => current.filter(mention => !attemptedMentionIds.has(mention.sessionId)))
+      inputRef.current?.focus()
+      setTimeout(() => loadHistoryRef.current(), 500)
+    } catch (error: any) {
+      restoreSessionInputDraft(attempt.sessionId, attempt.draft)
+      setPendingSendAt(null)
+      setTyping(false)
+      setLastSendError(error?.message || '重试失败，请检查连接后再试。')
+      inputRef.current?.focus()
+    } finally {
+      setMessageSubmitting(false)
+    }
+  // setSessionAttachments is intentionally session-scoped and recreated with the active state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addMessage, clearSessionInputDraft, failedSendAttempt, messageSubmitting, postSessionMessage, restoreSessionInputDraft, sessionId, setTyping])
 
   const sendProjectKnowledgePrompt = useCallback(async () => {
     if (!sessionId || projectKnowledgeSending) return
@@ -4002,7 +4404,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     }
     setCurrentSession(created)
     setCurrentTask(created as any)
-    if (user?.id) navigate(`/u/${encodeURIComponent(user.id)}/s/${encodeURIComponent(created.session_id)}`)
+    window.dispatchEvent(new CustomEvent('mobius:refresh-conversation-rail'))
+    if (user?.id) navigateToWorkbenchObject(navigate, sessionNavigation(user.id, created.session_id))
   }, [currentIssueId, sessionsMap, setCurrentSession, setCurrentTask, setSessionsMap, navigate, user?.id])
 
   // 由"开始执行?"弹窗的「立即执行!」按钮触发: 自动用 Session 元数据
@@ -4106,51 +4509,324 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
     </div>
   )
 
-  const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu') => (
+  const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu' | 'editor' | 'overflow') => (
     <AdvancedSessionActions
       variant={variant}
       sessionId={currentSession?.session_id || sessionId}
       projectId={currentProjectId}
       issueId={currentIssueId}
-      researchId={(currentSession as any)?.research_id}
+      researchId={currentResearchId || undefined}
       vscodeSubPath={currentVscodeSubPath}
       jsonlEntryCount={jsonlEntries.length}
       showJsonlMeta={showJsonlMeta}
       connectionReady={connectionStatus === 'connected'}
       projectKnowledgeSending={projectKnowledgeSending}
-      onOpenFileChanges={() => setFileChangesOpen(true)}
-      onOpenBashCommands={() => setBashCommandsOpen(true)}
-      onOpenInputReplay={() => setInputReplayOpen(true)}
-      onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
-      onRequestRunProject={sendRunProjectPortPrompt}
-      onOpenTerminal={() => setTerminalChoiceOpen(true)}
-      onOpenCooperablePc={() => setCooperablePcOpen(true)}
-      onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
-      onOpenResearchGraph={currentResearchId ? () => {
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev)
-          next.set('view', 'graph')
-          next.delete('match')
-          next.delete('ts')
-          return next
-        }, { replace: false })
-      } : undefined}
-      onSendProjectKnowledge={sendProjectKnowledgePrompt}
-      onContinueWithModel={() => setContinueModalOpen(true)}
-      onOpenSkill={() => setSkillMemoryModal('skill')}
-      onOpenMemory={() => setSkillMemoryModal('memory')}
-      onOpenGit={() => setSkillMemoryModal('git')}
+      onOpenProjectFiles={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') {
+          openToolTab('files')
+          return
+        }
+        captureCurrentToolSource()
+        remoteMentionRangeRef.current = null
+        setMentionQuery('')
+        setRemoteFileDrawerInitialTab('files')
+        setRemoteFileDrawerOpen(true)
+      }}
+      onOpenFileChanges={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') {
+          setCenterDiffOpen(true)
+          openToolTab('diff')
+          return
+        }
+        captureCurrentToolSource()
+        setFileChangesRequest({
+          trigger: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+        })
+      }}
+      onOpenBashCommands={() => { setEasyToolsOpen(false); setBashCommandsOpen(true) }}
+      onOpenInputReplay={() => { setEasyToolsOpen(false); setInputReplayOpen(true) }}
+      onToggleJsonlMeta={() => { setEasyToolsOpen(false); setShowJsonlMeta(value => !value) }}
+      onRequestRunProject={(path) => { setEasyToolsOpen(false); sendRunProjectPortPrompt(path) }}
+      onOpenTerminal={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('terminal')
+        else {
+          captureCurrentToolSource()
+          setTerminalChoiceOpen(true)
+        }
+      }}
+      onOpenCooperablePc={() => { setEasyToolsOpen(false); setCooperablePcOpen(true) }}
+      onOpenKnowledge={() => { setEasyToolsOpen(false); setKnowledgeEditorOpen(true) }}
+      onOpenResearchGraph={user?.id && currentProjectId && currentResearchId && sessionId
+        ? () => {
+          setEasyToolsOpen(false)
+          navigateToWorkbench(navigate, researchGraphNavigation(user.id, currentProjectId, currentResearchId, sessionId))
+        }
+        : undefined}
+      onSendProjectKnowledge={() => { setEasyToolsOpen(false); return sendProjectKnowledgePrompt() }}
+      onContinueWithModel={() => { setEasyToolsOpen(false); setContinueModalOpen(true) }}
+      onOpenSkill={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('skill')
+        else setSkillMemoryModal('skill')
+      }}
+      onOpenMemory={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('memory')
+        else setSkillMemoryModal('memory')
+      }}
+      onOpenGit={() => {
+        setEasyToolsOpen(false)
+        if (chrome === 'shell') openToolTab('git')
+        else {
+          captureCurrentToolSource()
+          setSkillMemoryModal('git')
+        }
+      }}
+      onOpenEditor={workspaceEditor
+        ? () => {
+          setEasyToolsOpen(false)
+          setToolDrawerOpen(false)
+          workspaceEditor.onOpen()
+        }
+        : undefined}
+      editorAvailable={workspaceEditor?.available}
+      editorLoading={workspaceEditor?.loading}
+      editorOpen={workspaceEditor?.open}
+      editorUnavailableReason={workspaceEditor?.unavailableReason}
+      onOpenExtensionApp={extensionAppUrl
+        ? () => { setEasyToolsOpen(false); window.open(extensionAppUrl, '_blank', 'noopener,noreferrer') }
+        : undefined}
     />
   )
+  const showEasyStop = Boolean(
+    sessionId && (pendingSendAt || (backendAlive && backendWorking) || stopFeedbackActive),
+  )
+
+  const easySessionChrome = (
+    <div className="easy-session-context workbench-session-topbar flex flex-shrink-0 items-center gap-2 px-3" data-testid="easy-session-context" data-workbench-session-topbar>
+      {chrome === 'shell' && centerMode === 'diff' && (
+        <button type="button" onClick={returnToChat} className="workbench-control-md inline-flex flex-shrink-0 items-center gap-1 px-2 text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }} aria-label="返回对话">
+          <ChevronLeft className="h-3.5 w-3.5" /> 返回对话
+        </button>
+      )}
+      {chrome === 'shell' && (
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-history'))} className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center border xl:hidden" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }} aria-label="历史" title="历史">
+          <History className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <SessionStatusChip
+        connected={connectionStatus === 'connected'}
+        failed={backendJobFailed === true}
+        pending={!!pendingSendAt}
+        working={!!(backendAlive && backendWorking)}
+        waiting={!!(backendAlive && !backendWorking)}
+        done={backendJobDone === true && !backendAlive}
+        alwaysShowLabel
+        onNextAction={backendAlive && !backendWorking ? () => inputRef.current?.focus() : undefined}
+        nextActionLabel={backendAlive && !backendWorking ? '点击继续输入' : undefined}
+      />
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
+        <span className="max-w-[180px] truncate font-medium" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
+          {projectForSession?.name || currentProjectId || '项目'}
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+        <strong className="min-w-0 truncate font-semibold" style={{ color: 'var(--text-primary)' }} title={currentSession?.name || currentTask?.name || sessionId}>
+          {currentSession?.name || currentTask?.name || sessionId}
+        </strong>
+      </div>
+      <div className="easy-session-summary hidden lg:inline-flex" aria-label="会话摘要">
+        <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
+        <small>{easyRoundCount} 轮</small>
+        {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
+          <button type="button" className="easy-session-summary__action" disabled={jsonlLoadingMore} onClick={() => {
+            setEasyExpandAllSignal(value => value + 1)
+            if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
+          }}>
+            {jsonlLoadingMore ? '加载中…' : `展开 · ${jsonlTotal || jsonlEntries.length}`}
+          </button>
+        )}
+      </div>
+      <div className="easy-session-tools relative flex-shrink-0" ref={easyToolsRef}>
+        <button
+          type="button"
+          onClick={() => {
+            if (chrome === 'shell') {
+              if (toolDrawerOpen) closeToolWorkspace()
+              else openToolFromCurrentSource(activeToolTab)
+            } else setEasyToolsOpen(value => !value)
+          }}
+          aria-controls={chrome === 'shell' ? 'session-tool-drawer' : 'easy-session-tools-panel'}
+          aria-expanded={chrome === 'shell' ? toolDrawerOpen : easyToolsOpen}
+          className="workbench-control-md inline-flex cursor-pointer items-center gap-1.5 border px-2.5 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
+          style={{
+            borderColor: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--accent-border)' : 'var(--border-default)',
+            color: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            background: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--surface-active)' : undefined,
+          }}
+        >
+          <Wrench className="h-3.5 w-3.5" />
+          <span>{chrome === 'shell' && toolDrawerOpen ? SESSION_TOOL_TAB_LABELS[activeToolTab] : '工具'}</span>
+        </button>
+        {chrome !== 'shell' && easyToolsOpen && (
+          <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="workbench-popover absolute right-0 top-9 max-h-[calc(100vh-80px)] overflow-y-auto p-1" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }} onKeyDown={(event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            setEasyToolsOpen(false)
+          }}>
+            <button type="button" onClick={() => { setEasyToolsOpen(false); void copySessionLink() }} className="workbench-control-md mb-1 flex w-full items-center gap-2 px-2 text-left text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
+              {sessionLinkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
+            </button>
+            {renderAdvancedSessionActions('menu')}
+          </div>
+        )}
+      </div>
+      {showEasyStop && (
+        <HeaderActionButton tone="red" title="终止当前智能体正在执行的操作" aria-live="polite" onClick={handleStopSession} className={`session-stop-button ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
+          <span className="session-stop-button__square inline-block h-1.5 w-1.5 rounded-sm bg-current opacity-90" />
+          <span>{stopFeedbackActive ? '已触发' : '停止'}</span>
+        </HeaderActionButton>
+      )}
+    </div>
+  )
+
+  const toolDrawerContent = (() => {
+    if (activeToolTab === 'files') {
+      return (
+        <>
+          {toolObjectContext.target && (
+            <div className="mb-1 flex min-w-0 items-center gap-2 px-1 py-1 text-[10px]" style={{ color: 'var(--text-muted)' }} data-session-tool-object>
+              <div className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]" title={toolObjectLabel}>
+                {toolObjectLabel.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || toolObjectLabel}
+              </div>
+              <button
+                type="button"
+                onClick={(event) => setArtifactOpenRequest({ target: { ...toolObjectContext.target!, intent: 'preview' }, trigger: event.currentTarget })}
+                className="flex-shrink-0 font-medium hover:underline"
+                style={{ color: 'var(--accent-primary)' }}
+              >
+                预览
+              </button>
+            </div>
+          )}
+          <button type="button" onClick={() => {
+            remoteMentionRangeRef.current = null
+            setMentionQuery('')
+            setRemoteFileDrawerInitialTab('files')
+            setRemoteFileDrawerOpen(true)
+          }} className="mb-1 flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
+            <FolderOpen className="h-3.5 w-3.5" /> 浏览项目文件 / 引用
+          </button>
+          <SessionFilesDrawerSurface
+            files={toolFiles}
+            selectedPath={selectedToolFilePath}
+            loading={toolFilesLoading}
+            error={toolFilesError || toolWorkspaceError}
+            onReload={() => void loadToolFiles()}
+            onSelect={selectToolFile}
+          />
+        </>
+      )
+    }
+    if (activeToolTab === 'diff') {
+      return (
+        <SessionFilesDrawerSurface
+          files={toolFiles}
+          selectedPath={selectedToolFilePath}
+          loading={toolFilesLoading}
+          error={toolFilesError || toolWorkspaceError}
+          showDiffHint
+          onReload={() => void loadToolFiles()}
+          onSelect={selectToolFile}
+        />
+      )
+    }
+    if (activeToolTab === 'terminal') {
+      return (
+        <div className="flex h-full min-h-[360px] flex-col gap-2">
+          <div className="truncate px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }} title={`工作目录 · ${terminalWorkingDirectoryLabel}`}>
+            工作目录 · {terminalWorkingDirectoryLabel}
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {(['cwd', 'agent'] as WebTerminalMode[]).map(mode => (
+              <button key={mode} type="button" onClick={() => setTerminalMode(mode)} className="workbench-control-md text-[10px] hover:bg-[var(--surface-control-hover)]" style={{ color: terminalMode === mode ? 'var(--accent-primary)' : 'var(--text-muted)', background: terminalMode === mode ? 'var(--surface-active)' : undefined }}>
+                {mode === 'cwd' ? '当前目录' : 'Agent 后台'}
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={() => setTerminalDockOpen(value => !value)} disabled={!terminalContextReady} className="workbench-control-md border px-2 text-[10px] hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+            {terminalDockOpen ? '收回到工具抽屉' : '展开到底部坞'}
+          </button>
+          {terminalContextLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3.5 w-3.5 animate-spin" />正在定位工作目录…</div>
+          ) : terminalContextError ? (
+            <div className="workbench-status-danger rounded-[var(--radius-control)] border p-3 text-[11px]" role="alert">
+              <div>{terminalContextError}</div>
+              <button type="button" onClick={() => setTerminalContextReloadKey(key => key + 1)} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}>
+                <RefreshCw className="h-3.5 w-3.5" />重试终端
+              </button>
+            </div>
+          ) : terminalDockOpen ? (
+            <div className="flex flex-1 items-center justify-center text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>终端已在底部坞展开，Chat 草稿和滚动保持不变。</div>
+          ) : terminalContextReady ? (
+            <div className="min-h-0 flex-1"><WebTerminalSurface key={`${sessionId}:${terminalMode}:drawer`} sessionId={sessionId} mode={terminalMode} workingDirectoryLabel={terminalWorkingDirectoryLabel} variant="drawer" /></div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-[11px]" style={{ color: 'var(--text-muted)' }}>终端上下文尚未就绪</div>
+          )}
+        </div>
+      )
+    }
+    if (activeToolTab === 'editor') {
+      return (
+        <div className="flex min-h-0 flex-col gap-2" data-workbench-editor-tool>
+          <div className="truncate px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }} title="按需在当前会话旁打开；关闭后保留编辑状态">
+            按需在会话旁打开，关闭后保留状态
+          </div>
+          {renderAdvancedSessionActions('editor')}
+        </div>
+      )
+    }
+    if (activeToolTab === 'skill' || activeToolTab === 'memory') {
+      return (
+        <div className="flex min-h-0 flex-col">
+          <div className="mb-1 flex min-w-0 items-center gap-2 px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <span className="min-w-0 flex-1 truncate" title="本会话创建时定型的只读快照；管理变更仅用于后续会话">本会话只读快照</span>
+            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('mobius:open-settings', { detail: { section: 'context', resource: activeToolTab } }))} className="flex-shrink-0 font-medium hover:underline" style={{ color: 'var(--accent-primary)' }}>
+              在设置中管理
+            </button>
+          </div>
+          <SessionSkillMemoryEditor key={activeToolTab} sessionId={sessionId} projectId={currentProjectId || undefined} initialPanel={activeToolTab} snapshotOnly />
+        </div>
+      )
+    }
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2" data-session-git-context>
+        <div className="min-w-0 px-1 text-[10px] leading-5" style={{ color: 'var(--text-muted)' }}>
+          <div className="truncate" title={`${toolSourceLabel} · ${projectForSession?.name || '当前项目'}`}>{toolSourceLabel} · {projectForSession?.name || '当前项目'}</div>
+          {toolObjectContext.target && (
+            <button type="button" onClick={() => selectToolFile(toolObjectContext.target!.path)} className="block max-w-full truncate font-mono font-medium hover:underline" style={{ color: 'var(--accent-primary)' }} title={toolObjectLabel}>
+              查看对象改动 · {toolObjectLabel}
+            </button>
+          )}
+        </div>
+        <SessionSkillMemoryEditor key="git" sessionId={sessionId} projectId={currentProjectId || undefined} initialPanel="git" gitOnly />
+      </div>
+    )
+  })()
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--bg-secondary)' }}>
+    <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--surface-messages)' }}>
       <RemoteFileMentionDrawer
         projectId={currentProjectId}
         issueId={currentIssueId || undefined}
         researchId={(currentSession as any)?.research_id || (currentTask as any)?.research_id || undefined}
         currentSessionId={sessionId || undefined}
         open={remoteFileDrawerOpen}
+        initialTab={remoteFileDrawerInitialTab}
         query={mentionQuery}
         onClose={() => setRemoteFileDrawerOpen(false)}
         onPickPath={insertRemoteFilePath}
@@ -4160,7 +4836,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
         <AttachmentImagePreviewModal preview={attachmentImagePreview} onClose={closeAttachmentImagePreview} />
       )}
       {runProjectPrompt && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="run-project-port-title">
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="run-project-port-title">
           <button
             type="button"
             className="absolute inset-0 bg-black/55 backdrop-blur-sm"
@@ -4168,11 +4844,11 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             onClick={() => setRunProjectPrompt('')}
           />
           <div
-            className="relative w-full max-w-[640px] overflow-hidden rounded-2xl shadow-2xl"
-            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            className="workbench-modal relative w-full max-w-[640px] overflow-hidden"
+            style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-default)' }}>
               <div className="min-w-0">
                 <div id="run-project-port-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   确认发送运行前端命令
@@ -4184,8 +4860,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               <button
                 type="button"
                 onClick={() => setRunProjectPrompt('')}
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
-                style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                className="workbench-control-md inline-flex w-8 flex-shrink-0 items-center justify-center border transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}
                 aria-label="关闭"
               >
                 <X className="h-4 w-4" />
@@ -4193,8 +4869,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             </div>
             <div className="p-4">
               <div
-                className="max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 text-[12px] leading-relaxed"
-                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
+                className="workbench-panel max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words border p-3 text-[12px] leading-relaxed"
+                style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-secondary)' }}
               >
                 {runProjectPrompt}
               </div>
@@ -4202,15 +4878,16 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 <button
                   type="button"
                   onClick={() => setRunProjectPrompt('')}
-                  className="h-9 rounded-xl border px-4 text-[13px] transition-colors hover:bg-[var(--bg-card-hover)]"
-                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                  className="workbench-control-md border px-4 text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
+                  style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
                 >
                   取消
                 </button>
                 <button
                   type="button"
                   onClick={confirmSendRunProjectPortPrompt}
-                  className="h-9 rounded-xl bg-emerald-500 px-4 text-[13px] font-medium text-white transition-colors hover:bg-emerald-600"
+                  className="workbench-control-md px-4 text-[13px] font-medium transition-opacity hover:opacity-90"
+                  style={{ color: 'var(--accent-foreground)', background: 'var(--accent-primary)' }}
                 >
                   确认发送
                 </button>
@@ -4232,6 +4909,12 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           projectId={currentProjectId || undefined}
           initialPanel={skillMemoryModal}
           onClose={() => setSkillMemoryModal(null)}
+          onManage={(kind) => {
+            setSkillMemoryModal(null)
+            window.dispatchEvent(new CustomEvent('mobius:open-settings', {
+              detail: { section: 'context', resource: kind },
+            }))
+          }}
         />
       )}
       {/* 声明可合作计算机: 勾选 aimux remote → 生成声明文本作为消息发给当前会话 agent (不写 Memory) */}
@@ -4243,103 +4926,50 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           onAnnounce={(body) => { handleAnnouncePc(body); setCooperablePcOpen(false) }}
         />
       )}
-      {layout === 'easy' && (
-        <div className="easy-session-context flex h-11 flex-shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }} data-testid="easy-session-context">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <SessionStatusChip
-              connected={connectionStatus === 'connected'}
-              failed={backendJobFailed === true}
-              pending={!!pendingSendAt}
-              working={!!(backendAlive && backendWorking)}
-              waiting={!!(backendAlive && !backendWorking)}
-              done={backendJobDone === true && !backendAlive}
-              alwaysShowLabel
-            />
-            <div className="flex min-w-0 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
-              <span className="max-w-[180px] truncate font-medium" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
-                {projectForSession?.name || currentProjectId || '项目'}
-              </span>
-              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-              <span className="max-w-[220px] truncate" style={{ color: 'var(--text-secondary)' }} title={(currentResearch as any)?.title || (currentIssue as any)?.title || ''}>
-                {(currentResearch as any)?.title || (currentIssue as any)?.title || '任务'}
-              </span>
-              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-              <strong className="min-w-0 truncate font-semibold" style={{ color: 'var(--text-primary)' }} title={currentSession?.name || currentTask?.name || sessionId}>
-                {currentSession?.name || currentTask?.name || sessionId}
-              </strong>
+      {layout === 'easy' && shellChromeActive && (
+        chrome === 'shell'
+          ? <WorkbenchShellPortal slot="topbar">{easySessionChrome}</WorkbenchShellPortal>
+          : easySessionChrome
+      )}
+
+      {layout === 'easy' && chrome === 'shell' && shellChromeActive && (
+        <WorkbenchShellPortal slot="right">
+          <SessionToolDrawer
+            open={toolDrawerOpen}
+            activeTab={activeToolTab}
+            sourceLabel={toolSourceLabel}
+            objectLabel={toolObjectLabel}
+            overflow={renderAdvancedSessionActions('overflow')}
+            onSelectTab={openToolTab}
+            onCollapse={closeToolWorkspace}
+          >
+            {toolDrawerContent}
+          </SessionToolDrawer>
+        </WorkbenchShellPortal>
+      )}
+
+      {layout === 'easy' && chrome === 'shell' && shellChromeActive && terminalDockOpen && (
+        <WorkbenchShellPortal slot="dock">
+          <div className="flex h-full min-h-0 flex-col" data-terminal-dock>
+            <div className="flex h-8 flex-shrink-0 items-center gap-2 border-b px-3 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+              <Terminal className="h-3.5 w-3.5" />
+              <span className="flex-1">{terminalMode === 'agent' ? 'Agent 后台' : '当前目录'}终端</span>
+              <button type="button" onClick={() => setTerminalDockOpen(false)} className="workbench-control-sm inline-flex w-7 items-center justify-center hover:bg-[var(--surface-control-hover)]" aria-label="收起终端底坞"><X className="h-3.5 w-3.5" /></button>
             </div>
-            <div className="easy-session-summary" aria-label="会话摘要">
-              <Sparkles className="easy-session-summary__icon" aria-hidden="true" />
-              <span className="easy-session-summary__label">会话</span>
-              <small>{easyRoundCount} 轮</small>
-              {(jsonlTotal > jsonlEntries.length || (jsonlEntries.length > 200 && easyExpandAllSignal === 0)) && (
-                <button
-                  type="button"
-                  className="easy-session-summary__action"
-                  disabled={jsonlLoadingMore}
-                  onClick={() => {
-                    setEasyExpandAllSignal(value => value + 1)
-                    if (jsonlTotal > jsonlEntries.length) handleLoadAllJsonl()
-                  }}
-                  title={jsonlLoadingMore ? '正在加载全部对话' : jsonlTotal > jsonlEntries.length ? `加载全部对话（${jsonlTotal} 条）` : `展开全部对话（${jsonlEntries.length} 条）`}
-                >
-                  {jsonlLoadingMore ? '加载中…' : jsonlTotal > jsonlEntries.length ? `加载全部 · ${jsonlTotal}` : `展开全部 · ${jsonlEntries.length}`}
-                </button>
-              )}
-              {jsonlEntries.length > 200 && easyExpandAllSignal > 0 && (
-                <span className="easy-session-summary__complete">已加载全部</span>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <div className="easy-session-tools relative" ref={easyToolsRef}>
-              <button
-                type="button"
-                onClick={() => setEasyToolsOpen(value => !value)}
-                aria-controls="easy-session-tools-panel"
-                aria-expanded={easyToolsOpen}
-                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                style={{ borderColor: 'var(--border-color)', color: easyToolsOpen ? 'var(--text-primary)' : 'var(--text-secondary)', background: easyToolsOpen ? 'var(--bg-active)' : undefined }}
-              >
-                <Wrench className="h-3.5 w-3.5" />
-                <span>工具</span>
-              </button>
-              {easyToolsOpen && (
-                <div ref={easyToolsPanelRef} id="easy-session-tools-panel" role="group" aria-label="当前会话工具" className="absolute right-0 top-9 z-50 rounded-lg p-1 shadow-lg" style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }} onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setEasyToolsOpen(false)
-                }} onClick={() => {
-                  setEasyToolsOpen(false)
-                }}>
-                  <div className="px-2 pb-2 pt-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>当前会话工具</div>
-                  <button
-                    type="button"
-                    onClick={() => { setEasyToolsOpen(false); void copySessionLink() }}
-                    className="mb-1 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {sessionLinkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    <span>{sessionLinkCopied ? '会话链接已复制' : '复制会话链接'}</span>
-                  </button>
-                  {renderAdvancedSessionActions('menu')}
+            <div className="min-h-0 flex-1">
+              {terminalContextError ? (
+                <div className="workbench-status-danger m-3 rounded-[var(--radius-control)] border p-3 text-[11px]" role="alert">
+                  <div>{terminalContextError}</div>
+                  <button type="button" onClick={() => setTerminalContextReloadKey(key => key + 1)} className="workbench-control-md mt-3 inline-flex items-center gap-1.5 border px-3 text-[11px]" style={{ borderColor: 'var(--status-danger-border)' }}><RefreshCw className="h-3.5 w-3.5" />重试终端</button>
                 </div>
+              ) : terminalContextReady ? (
+                <WebTerminalSurface key={`${sessionId}:${terminalMode}:dock`} sessionId={sessionId} mode={terminalMode} workingDirectoryLabel={terminalWorkingDirectoryLabel} variant="dock" />
+              ) : (
+                <div className="flex h-full items-center justify-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-3.5 w-3.5 animate-spin" />正在定位工作目录…</div>
               )}
             </div>
-            <HeaderActionButton
-              tone="red"
-              title="终止当前智能体正在执行的操作"
-              disabled={!sessionId}
-              aria-live="polite"
-              onClick={handleStopSession}
-              className={`session-stop-button ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}
-            >
-              <span className="session-stop-button__square inline-block h-1.5 w-1.5 rounded-sm bg-current opacity-90" />
-              <span>{stopFeedbackActive ? '已触发' : '停止'}</span>
-            </HeaderActionButton>
           </div>
-        </div>
+        </WorkbenchShellPortal>
       )}
 
       {/* 旧高级布局保留完整会话标题栏；默认工作台使用上方轻量上下文与监督栏。 */}
@@ -4353,6 +4983,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               working={!!(backendAlive && backendWorking)}
               waiting={!!(backendAlive && !backendWorking)}
               done={backendJobDone === true && !backendAlive}
+              onNextAction={backendAlive && !backendWorking ? () => inputRef.current?.focus() : undefined}
+              nextActionLabel={backendAlive && !backendWorking ? '点击继续输入' : undefined}
             />
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
             {/* {currentModelLabel && (
@@ -4426,7 +5058,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               projectId={currentProjectId}
               subPath={currentVscodeSubPath}
               showWorktreeOption={!!currentVscodeSubPath}
-              className="text-[11px] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[11px] rounded-full px-2.5 py-0.5 border border-[var(--accent-border)] text-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
           {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目" 收纳进来 */}
@@ -4450,10 +5082,10 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       </div>}
 
       {stopFeedbackActive && (
-        <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">
-          <div className="session-stop-toast flex items-center gap-2 rounded-xl border border-red-300/45 bg-red-600 px-4 py-2 text-[13px] font-semibold text-white shadow-2xl shadow-red-950/40">
-            <span className="session-stop-toast__icon inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/18">
-              <span className="h-2.5 w-2.5 rounded-sm bg-white" />
+        <div className="workbench-layer-toast pointer-events-none fixed left-1/2 top-16 -translate-x-1/2">
+          <div className="session-stop-toast flex items-center gap-2 rounded-[var(--radius-panel)] border px-4 py-2 text-[13px] font-semibold shadow-[var(--shadow-overlay)]" style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--surface-overlay)' }}>
+            <span className="session-stop-toast__icon inline-flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)]" style={{ background: 'var(--status-danger-soft)' }}>
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--status-danger)' }} />
             </span>
             终止指令已发送
           </div>
@@ -4461,27 +5093,40 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       )}
 
       {bridgeQueueNotice && (
-        <div className="pointer-events-none fixed right-4 top-16 z-[80] max-w-[min(360px,calc(100vw-2rem))]">
-          <div className="flex items-center gap-2 rounded-lg border border-blue-400/30 bg-[var(--bg-card)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-xl">
-            <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
+        <div className="workbench-layer-toast pointer-events-none fixed right-4 top-16 max-w-[min(360px,calc(100vw-2rem))]">
+          <div className="workbench-panel flex items-center gap-2 border px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-[var(--shadow-overlay)]" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-overlay)' }}>
+            <Clock className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--status-waiting)' }} strokeWidth={1.8} />
             <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
           </div>
         </div>
       )}
 
       {lastSendError && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
+        <div className="workbench-status-danger mx-5 mt-3 flex flex-shrink-0 items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
           <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">{lastSendError}</div>
+          {failedSendAttempt?.sessionId === sessionId && (
+            <button
+              type="button"
+              onClick={retryFailedSend}
+              disabled={messageSubmitting}
+              className="workbench-control-sm flex-shrink-0 border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-wait disabled:opacity-55"
+              style={{ color: 'var(--status-danger)', borderColor: 'var(--status-danger-border)', background: 'var(--surface-overlay)' }}
+              aria-label="重试发送上一条消息"
+            >
+              {messageSubmitting ? '重试中…' : '重试'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               if (backendJobFailed === true || isTuiContactTimeoutText(lastSendError)) hideBackendFailure()
               setLastSendError('')
+              setFailedSendAttempt(null)
             }}
-            className="text-red-300/70 hover:text-red-200 transition-colors flex-shrink-0"
+            className="flex-shrink-0 opacity-70 transition-opacity hover:opacity-100"
             title="关闭错误提示">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -4492,7 +5137,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
 
       {/* 持久失败横幅: 取自 failed.flag 的 reason, 可手动关闭; 成功继续对话后也会隐藏. */}
       {showBackendFailureBanner && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
+        <div className="workbench-status-danger mx-5 mt-3 flex flex-shrink-0 items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-[12px]">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
@@ -4500,7 +5145,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           <button
             type="button"
             onClick={() => hideBackendFailure()}
-            className="text-red-300/70 hover:text-red-200 transition-colors flex-shrink-0"
+            className="flex-shrink-0 opacity-70 transition-opacity hover:opacity-100"
             title="关闭错误提示">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -4512,7 +5157,14 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
       {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
           窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
-      <div ref={chatBodyRef} className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
+      <div
+        ref={chatBodyRef}
+        className={`workbench-center-layer mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
+        aria-hidden={layout === 'easy' && chrome === 'shell' && centerMode === 'diff'}
+        {...(layout === 'easy' && chrome === 'shell' && centerMode === 'diff' ? { inert: '' } : {}) as any}
+        data-workbench-chat-layer
+      >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}
@@ -4542,10 +5194,24 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           onEasyRoundCountChange={handleEasyRoundCountChange}
           easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}
+          onOpenArtifact={(request) => {
+            rememberArtifactSource(request)
+            if (request.target.intent === 'diff') {
+              if (chrome === 'shell') {
+                setSelectedToolFilePath(request.target.path)
+                setCenterDiffOpen(true)
+                openToolTab('diff')
+                return
+              }
+              setFileChangesRequest({ target: request.target, trigger: request.trigger })
+              return
+            }
+            setArtifactOpenRequest(request)
+          }}
         />
 
         {/* 右侧: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽。 */}
-        <div ref={chatInputRef} className="mobius-chat-input relative flex flex-shrink-0 flex-col border-l" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        <div ref={chatInputRef} className="mobius-chat-input relative flex flex-shrink-0 flex-col border-l" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-composer)' }}>
           {layout === 'default' && (
             <div
               ref={chatSplitHandleRef}
@@ -4561,8 +5227,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-3">
             <div>
           {replyTo && (
-            <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-500/5 border border-blue-500/15 rounded-xl">
-              <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+            <div className="workbench-panel mb-2 flex items-center gap-2 border px-4 py-2" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)' }}>
+              <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
               <div className="flex-1 min-w-0 text-[12px] text-[var(--text-secondary)] truncate">
                 引用 {replyTo.role === 'assistant' ? '智能体' : '你'}: {(replyTo.content || '').slice(0, 100)}
               </div>
@@ -4572,9 +5238,9 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             </div>
           )}
           {editingMsg && (
-            <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-yellow-500/5 border border-yellow-500/15 rounded-xl">
-              <svg className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-              <div className="flex-1 min-w-0 text-[12px] text-yellow-400/80">编辑消息 (将作为新消息重新发送)</div>
+            <div className="workbench-panel mb-2 flex items-center gap-2 border px-4 py-2" style={{ background: 'var(--surface-control)', borderColor: 'var(--border-default)' }}>
+              <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              <div className="flex-1 min-w-0 text-[12px]" style={{ color: 'var(--text-secondary)' }}>编辑消息 (将作为新消息重新发送)</div>
               <button onClick={() => { setEditingMsg(null); setInput('') }} className="text-[var(--text-dimmed)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -4582,33 +5248,16 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           )}
           <div
             data-tour="session-chat-input"
-            className="relative rounded-lg transition-colors focus-within:ring-2 focus-within:ring-blue-500/15"
-            style={{
-              background: 'var(--input-bg)',
-              border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'}`,
-              boxShadow: layout === 'easy' ? 'none' : inputFocused
-                ? (theme !== 'light'
-                  ? '0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.02) inset'
-                  : '0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.6) inset')
-                : (theme !== 'light'
-                  ? '0 2px 12px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.02) inset'
-                  : '0 2px 12px rgba(0,0,0,0.06), 0 0 0 1px rgba(255,255,255,0.6) inset'),
-            }}
+            className="workbench-composer relative transition-colors"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onPaste={handlePaste}
-            onFocusCapture={() => setInputFocused(true)}
-            onBlurCapture={(event) => {
-              const nextTarget = event.relatedTarget as Node | null
-              if (nextTarget && event.currentTarget.contains(nextTarget)) return
-              setInputFocused(false)
-            }}>
+            onPaste={handlePaste}>
             {isDraggingFile && (
-              <div className="pointer-events-none absolute inset-0 z-20 p-1" style={{ background: 'var(--input-bg)', borderRadius: 8 }}>
-                <div className="flex h-full items-center justify-center rounded-md border border-dashed border-blue-500/55"
-                  style={{ background: 'var(--bg-active)' }}>
-                  <div className="text-[12px] font-medium text-blue-400">松开以添加文件</div>
+              <div className="pointer-events-none absolute inset-0 z-20 p-1" style={{ background: 'var(--surface-control)', borderRadius: 'var(--radius-panel)' }}>
+                <div className="flex h-full items-center justify-center rounded-[var(--radius-control)] border border-dashed"
+                  style={{ background: 'var(--surface-active)', borderColor: 'var(--accent-border)' }}>
+                  <div className="text-[12px] font-medium" style={{ color: 'var(--accent-primary)' }}>松开以添加文件</div>
                 </div>
               </div>
             )}
@@ -4616,13 +5265,13 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             <div className="px-3 pt-3 pb-2.5">
               {!modelAvailable && (
                 <div className="mb-2 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] leading-snug"
-                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                  <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击“修改模型并继续”。</span>
+                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-default)', background: 'var(--surface-base)' }}>
+                  <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续。修改模型会新建 Session，不会热切当前会话。</span>
                   <button type="button" onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                    className="btn-label h-8 shrink-0 rounded-md border px-2.5 text-[12px] font-medium hover:bg-[var(--bg-hover)]"
-                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                    修改模型并继续
+                    className="btn-label workbench-control-md shrink-0 border px-2.5 text-[12px] font-medium hover:bg-[var(--surface-control-hover)]"
+                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                    修改模型并继续（新建 Session）
                   </button>
                 </div>
               )}
@@ -4632,8 +5281,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                     <AttachmentChip
                       key={att.id}
                       att={att}
-                      theme={theme as 'dark' | 'light' | 'purple'}
                       onRemove={() => removeAttachment(att.id)}
+                      onRetry={() => retryAttachment(att.id)}
                       onPreview={openAttachmentImagePreview}
                     />
                   ))}
@@ -4642,16 +5291,16 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               {selectedAgentMentions.length > 0 && (
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {selectedAgentMentions.map((mention) => (
-                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-[var(--radius-control)] border px-2 py-1.5 text-[12px]" style={{ borderColor: 'var(--border-default)', background: 'var(--surface-base)', color: 'var(--text-primary)' }}>
                       <Bot className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} strokeWidth={1.8} />
                       <span className="max-w-48 truncate">@{mention.name}</span>
-                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                      <span className="rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
                         {mention.mode === 'bidirectional' ? '双向' : '只读'}
                       </span>
                       <button
                         type="button"
                         onClick={() => setSelectedAgentMentions((current) => current.filter((item) => item.sessionId !== mention.sessionId))}
-                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]"
+                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--surface-control-hover)]"
                         style={{ color: 'var(--text-muted)' }}
                         aria-label={`移除智能体 ${mention.name}`}
                       >
@@ -4661,7 +5310,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   ))}
                 </div>
               )}
-              <textarea ref={inputRef} value={input} onChange={handleChatInputChange}
+              <textarea ref={inputRef} data-workbench-composer value={input} onChange={handleChatInputChange}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={() => { composingRef.current = false }}
                 onKeyDown={e => {
@@ -4692,11 +5341,29 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   send(autoUrgentOnEnter)
                 }}
                 placeholder={inputPlaceholder}
-                className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[14px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] focus:outline-none overflow-y-auto"
-                style={{ height: inputHeight, minHeight: 60, maxHeight: '70vh', color: 'var(--text-primary)' }}
+                className="w-full resize-none border-0 bg-transparent px-0 pb-1 pt-0 text-[14px] leading-[1.5] placeholder:!text-[var(--placeholder-color)] focus:outline-none"
+                style={{
+                  height: layout === 'easy' ? easyComposerLayout.height : inputHeight,
+                  minHeight: layout === 'easy' ? easyComposerLayout.minHeight : 60,
+                  maxHeight: layout === 'easy' ? easyComposerLayout.maxHeight : undefined,
+                  overflowY: layout === 'easy' ? easyComposerLayout.overflowY : 'auto',
+                  color: 'var(--text-primary)',
+                }}
               />
             </div>
             <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
+              {layout === 'easy' && chrome === 'shell' && (
+                <div className="easy-composer-metabar mr-auto flex min-w-0 items-center gap-1.5 text-[10px]" data-composer-metabar style={{ color: 'var(--text-muted)' }}>
+                  <span className="max-w-[110px] truncate" title={currentModelLabel || '当前模型'}>{currentModelLabel || '当前模型'}</span>
+                  {currentProxyLabel && <span aria-hidden="true">·</span>}
+                  {currentProxyLabel && <span>{currentProxyLabel}</span>}
+                  <span aria-hidden="true">·</span>
+                  <span className="max-w-[140px] truncate" title={projectForSession?.name || currentProjectId}>{projectForSession?.name || currentProjectId || '当前 Project'}</span>
+                  <button type="button" onClick={() => setContinueModalOpen(true)} disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)} className="ml-1 flex-shrink-0 hover:underline disabled:opacity-40" style={{ color: 'var(--accent-primary)' }}>
+                    修改模型并继续
+                  </button>
+                </div>
+              )}
               {layout === 'easy' && easyProjectControl && (
                 <div className="easy-input-project-row relative mr-auto flex min-w-0 items-center" ref={easyProjectMenuRef}>
                   <button
@@ -4705,8 +5372,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                     onClick={() => setEasyProjectMenuOpen(value => !value)}
                     aria-haspopup="menu"
                     aria-expanded={easyProjectMenuOpen}
-                    className="easy-input-project-trigger inline-flex h-8 max-w-[320px] min-w-0 cursor-pointer items-center gap-2 rounded-md px-3 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                    style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}
+                    className="easy-input-project-trigger workbench-control-md inline-flex max-w-[320px] min-w-0 cursor-pointer items-center gap-2 px-3 text-[12px] font-medium transition-colors"
+                    style={{ background: 'var(--surface-active)', color: 'var(--accent-primary)' }}
                     title={easyProjectControl.selectedProjectName || '所有项目'}
                   >
                     <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
@@ -4718,8 +5385,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                     <div
                       role="menu"
                       aria-label="选择项目"
-                      className="easy-input-project-menu absolute bottom-11 left-0 z-40 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden rounded-lg p-2 shadow-lg"
-                      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                      className="easy-input-project-menu workbench-popover absolute bottom-11 left-0 w-[360px] max-w-[calc(100vw-48px)] overflow-hidden p-2"
+                      style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
                     >
                       <label className="flex h-8 items-center gap-2 rounded-md px-3" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
                         <Search className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
@@ -4733,7 +5400,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                           style={{ color: 'var(--text-primary)' }}
                         />
                         {easyProjectQuery && (
-                          <button type="button" onClick={() => setEasyProjectQuery('')} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--bg-hover)]" aria-label="清空项目搜索">
+                          <button type="button" onClick={() => setEasyProjectQuery('')} className="workbench-control-sm inline-flex w-7 items-center justify-center hover:bg-[var(--surface-control-hover)]" aria-label="清空项目搜索">
                             <X className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -4755,19 +5422,19 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                                 setEasyProjectMenuOpen(false)
                                 setEasyProjectQuery('')
                               }}
-                              className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                              style={{ background: active ? 'var(--bg-active)' : undefined, color: 'var(--text-primary)' }}
+                              className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                              style={{ background: active ? 'var(--surface-active)' : undefined, color: active ? 'var(--accent-primary)' : 'var(--text-primary)' }}
                             >
                               <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
                               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
-                              {project.runningCount ? <span className="text-[10px] text-amber-400">运行 {project.runningCount}</span> : null}
+                              {project.runningCount ? <span className="text-[10px]" style={{ color: 'var(--status-running)' }}>运行 {project.runningCount}</span> : null}
                               {active && <Check className="h-4 w-4 flex-shrink-0" strokeWidth={2} />}
                             </button>
                           )
                         })}
                       </div>
 
-                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-default)' }}>
                         <button
                           type="button"
                           role="menuitem"
@@ -4775,7 +5442,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                             setEasyProjectMenuOpen(false)
                             easyProjectControl.onCreateProject()
                           }}
-                          className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--surface-control-hover)]"
                           style={{ color: 'var(--text-primary)' }}
                         >
                           <FolderPlus className="h-4 w-4" strokeWidth={1.8} />
@@ -4789,7 +5456,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                             setEasyProjectMenuOpen(false)
                             setEasyProjectQuery('')
                           }}
-                          className="flex min-h-9 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                          className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-[13px] transition-colors hover:bg-[var(--surface-control-hover)]"
                           style={{ color: 'var(--text-secondary)' }}
                         >
                           <X className="h-4 w-4" strokeWidth={1.8} />
@@ -4800,6 +5467,21 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   )}
                 </div>
               )}
+              <AdvancedInteractionBtn
+                onClick={openFilePicker}
+                label="添加附件"
+                tooltip="添加附件"
+                accent="neutral"
+                motion="breathe"
+                buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                iconClassName="h-[17px] w-[17px]"
+                className="assistant-session-input__attachment"
+                style={{
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-strong)',
+                }}
+                icon={<Paperclip className="h-[17px] w-[17px]" strokeWidth={2.1} />}
+              />
               <div className="relative">
                 <AdvancedInteractionBtn
                   ref={inputMenuButtonRef}
@@ -4810,12 +5492,12 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   tooltip="更多输入功能"
                   accent="neutral"
                   motion="breathe"
-                  buttonClassName="h-8 w-8 rounded-md"
+                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
                   iconClassName="h-[17px] w-[17px]"
                   style={{
-                    color: theme !== 'light' ? '#d1d5db' : '#374151',
-                    border: `1px solid ${inputMenuOpen ? 'rgba(96,165,250,0.38)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
-                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : undefined,
+                    color: inputMenuOpen ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    border: `1px solid ${inputMenuOpen ? 'var(--accent-border)' : 'var(--border-strong)'}`,
+                    background: inputMenuOpen ? 'var(--surface-active)' : undefined,
                   }}
                   icon={<Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />}
                 />
@@ -4823,91 +5505,110 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                   <div
                     ref={inputMenuRef}
                     role="menu"
-                    className="absolute bottom-11 left-0 z-30 min-w-[200px] rounded-lg py-1 shadow-lg"
+                    className="workbench-popover absolute bottom-11 left-0 min-w-[200px] py-1"
                     style={{
-                      background: 'var(--menu-bg)',
-                      border: '1px solid var(--border-color)',
+                      background: 'var(--surface-overlay)',
+                      border: '1px solid var(--border-strong)',
                     }}
                   >
-                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); openFilePicker() }}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                      style={{ color: 'var(--text-primary)' }}>
-                      <Paperclip className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
-                      <span>上传文件</span>
-                    </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setCompactConfirmOpen(true) }}
                       disabled={!sessionId}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      className="flex min-h-[var(--control-height-md)] w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
                       <Archive className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
                       <span>压缩上文</span>
                     </button>
-                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                      style={{ color: 'var(--text-primary)' }}>
-                      {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
-                      <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
-                    </button>
+                    {layout !== 'easy' && (
+                      <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
+                        className="flex min-h-[var(--control-height-md)] w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        style={{ color: 'var(--text-primary)' }}>
+                        {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
+                        <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-              <AdvancedInteractionBtn
-                onClick={toggleVoiceRecording}
-                disabled={messageSubmitting || voiceState === 'transcribing'}
-                aria-pressed={voiceState === 'recording'}
-                label={voiceTip}
-                tooltip={voiceTip}
-                accent="neutral"
-                motion="breathe"
-                buttonClassName="h-8 w-8 rounded-md"
-                iconClassName="h-[17px] w-[17px]"
-                className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
-                style={{
-                  color: voiceState === 'recording' || voiceState === 'transcribing' ? '#38bdf8' : (theme !== 'light' ? '#d1d5db' : '#374151'),
-                  border: `1px solid ${voiceState === 'recording' || voiceState === 'transcribing' ? 'rgba(56,189,248,0.34)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
-                  background: voiceState === 'recording' || voiceState === 'transcribing' ? 'rgba(14,165,233,0.12)' : undefined,
-                }}
-                icon={voiceState === 'recording' ? (
-                  <Square className="w-[17px] h-[17px]" fill="currentColor" />
-                ) : voiceState === 'transcribing' ? (
-                  <RefreshCw className="w-[17px] h-[17px] animate-spin" />
-                ) : (
-                  <Mic className="w-[17px] h-[17px]" />
-                )}
-              />
+              {layout === 'easy' && (
+                <AdvancedInteractionBtn
+                  onClick={toggleInputExpanded}
+                  aria-pressed={inputExpanded}
+                  data-composer-expand-toggle
+                  label={inputExpanded ? '收起输入框' : '展开输入框'}
+                  tooltip={inputExpanded ? '收起输入框' : '展开输入框'}
+                  accent="neutral"
+                  motion="breathe"
+                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                  iconClassName="h-[17px] w-[17px]"
+                  style={{
+                    color: inputExpanded ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    border: `1px solid ${inputExpanded ? 'var(--accent-border)' : 'var(--border-strong)'}`,
+                    background: inputExpanded ? 'var(--surface-active)' : undefined,
+                  }}
+                  icon={inputExpanded ? <ChevronDown className="h-[17px] w-[17px]" /> : <ChevronUp className="h-[17px] w-[17px]" />}
+                />
+              )}
+              {(layout !== 'easy' || voiceState !== 'idle') && (
+                <AdvancedInteractionBtn
+                  onClick={toggleVoiceRecording}
+                  disabled={messageSubmitting || voiceState === 'transcribing'}
+                  aria-pressed={voiceState === 'recording'}
+                  label={voiceTip}
+                  tooltip={voiceTip}
+                  accent="neutral"
+                  motion="breathe"
+                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                  iconClassName="h-[17px] w-[17px]"
+                  className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
+                  style={{
+                    color: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running)' : 'var(--text-secondary)',
+                    border: `1px solid ${voiceState === 'recording' || voiceState === 'transcribing' ? 'color-mix(in srgb, var(--status-running) 34%, transparent)' : 'var(--border-strong)'}`,
+                    background: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running-soft)' : undefined,
+                  }}
+                  icon={voiceState === 'recording' ? (
+                    <Square className="w-[17px] h-[17px]" fill="currentColor" />
+                  ) : voiceState === 'transcribing' ? (
+                    <RefreshCw className="w-[17px] h-[17px] animate-spin" />
+                  ) : (
+                    <Mic className="w-[17px] h-[17px]" />
+                  )}
+                />
+              )}
               {(() => {
                 // 硬约束: 发送按钮永远只执行 send, 不允许根据 agentActive / running / pending
                 // 切换成 "停止生成" 或任何终止语义. 终止必须使用上方独立的 "终止" 按钮.
                 const sendDisabled = (!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy || !modelAvailable
                 const sendBg = sendDisabled
-                  ? (theme !== 'light' ? '#374151' : '#e5e7eb')
-                  : (theme !== 'light' ? '#ffffff' : '#111827')
+                  ? 'var(--surface-control)'
+                  : 'var(--accent-primary)'
                 const sendFg = sendDisabled
-                  ? (theme !== 'light' ? '#6b7280' : '#9ca3af')
-                  : (theme !== 'light' ? '#111827' : '#ffffff')
+                  ? 'var(--text-dimmed)'
+                  : 'var(--accent-foreground)'
                 return (
                   <>
-                    <AdvancedInteractionBtn onClick={() => send(true)} disabled={sendDisabled}
-                      data-tour="session-chat-send-urgent"
-                      label="加急发送"
-                      tooltip="发送（加急）— 打断当前输出并立即发送"
-                      accent="neutral"
-                      motion="breathe"
-                      buttonClassName="h-8 w-8 rounded-md"
-                      iconClassName="h-[17px] w-[17px]"
-                      style={{
-                        color: theme !== 'light' ? '#d1d5db' : '#374151',
-                        border: `1px solid ${theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)'}`,
-                      }}
-                      icon={<Zap className="w-[17px] h-[17px]" />}
-                    />
+                    {layout !== 'easy' && (
+                      <AdvancedInteractionBtn onClick={() => send(true)} disabled={sendDisabled}
+                        data-tour="session-chat-send-urgent"
+                        label="加急发送"
+                        tooltip="发送（加急）— 打断当前输出并立即发送"
+                        accent="neutral"
+                        motion="breathe"
+                        buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                        iconClassName="h-[17px] w-[17px]"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-strong)',
+                        }}
+                        icon={<Zap className="w-[17px] h-[17px]" />}
+                      />
+                    )}
                     <AdvancedInteractionBtn onClick={() => send()} disabled={sendDisabled}
                       data-tour="session-chat-send"
                       label="发送"
                       tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
                       accent="neutral"
                       motion="breathe"
-                      buttonClassName="h-8 w-8 rounded-md"
+                      buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
                       iconClassName="h-[18px] w-[18px]"
                       className="transition-all active:scale-95 hover:brightness-95"
                       style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}
@@ -4921,7 +5622,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 )
               })()}
             </div>
-            <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
+            <div className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px]" style={{ color: sendingHint ? 'var(--status-waiting)' : 'var(--text-muted)' }}>
               {sendingHint ?? ''}
             </div>
           </div>
@@ -4947,8 +5648,31 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
         </div>
       </div>
 
-      {inputExpanded && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+      {layout === 'easy' && chrome === 'shell' && centerMode === 'diff' && (
+        <div className="workbench-center-layer min-h-0 flex-1" data-center-mode="diff">
+          <SessionDiffCenterSurface
+            file={selectedToolFile}
+            requestedPath={selectedToolFilePath}
+            sourceLabel={toolSourceLabel}
+            diff={toolDiff}
+            mode={toolDiffMode}
+            loading={toolDiffLoading || toolFilesLoading}
+            error={toolDiffError || toolFilesError || toolWorkspaceError}
+            onModeChange={setToolDiffMode}
+            onRetry={() => {
+              if (!selectedToolFile) void loadToolFiles()
+              else setToolDiffReloadKey(key => key + 1)
+            }}
+            onOpenArtifact={(request) => {
+              setToolObjectContext(previous => ({ ...previous, target: request.target }))
+              setArtifactOpenRequest(request)
+            }}
+          />
+        </div>
+      )}
+
+      {inputExpanded && layout !== 'easy' && (
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -4956,8 +5680,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
             onClick={() => setInputExpanded(false)}
           />
           <div
-            className="relative flex h-[min(760px,calc(100vh-32px))] w-[min(920px,calc(100vw-32px))] flex-col rounded-2xl p-4 shadow-2xl"
-            style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+            className="workbench-modal relative flex h-[min(760px,calc(100vh-32px))] w-[min(920px,calc(100vw-32px))] flex-col p-4"
+            style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)' }}
             onClick={event => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -4966,8 +5690,8 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 type="button"
                 onClick={() => setInputExpanded(false)}
                 title="收起编辑区"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
-                style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
+                className="workbench-control-md inline-flex items-center gap-1.5 border px-2.5 text-[12px] transition-colors hover:bg-[var(--surface-control-hover)]"
+                style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
               >
                 <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.9} />
                 收起
@@ -4979,50 +5703,50 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               onChange={e => setInput(e.target.value)}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
-              className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              className="min-h-0 flex-1 w-full resize-none rounded-[var(--radius-panel)] px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
               style={{
-                background: 'var(--input-bg)',
-                border: '1px solid var(--input-border)',
+                background: 'var(--surface-control)',
+                border: '1px solid var(--border-strong)',
                 color: 'var(--text-primary)',
               }}
             />
-	            <div className="mt-2 flex items-center justify-between gap-2">
-	              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-	                Enter 发送 · Shift+Enter 换行 · Esc 收起
-	              </span>
-	              <div className="flex items-center gap-1.5">
-	                <button
-	                  type="button"
-	                  onClick={toggleVoiceRecording}
-	                  disabled={messageSubmitting || voiceState === 'transcribing'}
-	                  title={voiceTip}
-	                  aria-label={voiceTip}
-	                  aria-pressed={voiceState === 'recording'}
-	                  className={`assistant-session-input__utility assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
-	                >
-	                  {voiceState === 'recording' ? (
-	                    <Square className="w-[17px] h-[17px]" fill="currentColor" />
-	                  ) : voiceState === 'transcribing' ? (
-	                    <RefreshCw className="w-[17px] h-[17px] animate-spin" />
-	                  ) : (
-	                    <Mic className="w-[17px] h-[17px]" />
-	                  )}
-	                </button>
-	                <button
-	                  type="button"
-	                  onClick={() => {
-	                    setInputExpanded(false)
-	                    send()
-	                  }}
-	                  disabled={(!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy}
-	                  title={voiceBusy ? voiceTip : '发送'}
-	                  aria-label="发送"
-	                  className="assistant-session-input__send disabled:opacity-40 disabled:cursor-not-allowed"
-	                >
-	                  {anyUploading || voiceState === 'transcribing' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <SendHorizontal className="w-4 h-4" />}
-	                </button>
-	              </div>
-	            </div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                Enter 发送 · Shift+Enter 换行 · Esc 收起
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecording}
+                  disabled={messageSubmitting || voiceState === 'transcribing'}
+                  title={voiceTip}
+                  aria-label={voiceTip}
+                  aria-pressed={voiceState === 'recording'}
+                  className={`assistant-session-input__utility assistant-session-input__voice assistant-session-input__voice--${voiceState} disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {voiceState === 'recording' ? (
+                    <Square className="w-[17px] h-[17px]" fill="currentColor" />
+                  ) : voiceState === 'transcribing' ? (
+                    <RefreshCw className="w-[17px] h-[17px] animate-spin" />
+                  ) : (
+                    <Mic className="w-[17px] h-[17px]" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputExpanded(false)
+                    send()
+                  }}
+                  disabled={(!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy}
+                  title={voiceBusy ? voiceTip : '发送'}
+                  aria-label="发送"
+                  className="assistant-session-input__send disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {anyUploading || voiceState === 'transcribing' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <SendHorizontal className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -5035,10 +5759,67 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
         />
       )}
 
-      {fileChangesOpen && sessionId && (
-        <SessionFileChangesModal
+      {artifactOpenRequest && currentProjectId && (
+        <FilePreviewLayer
+          projectId={currentProjectId}
+          request={artifactOpenRequest}
+          suspended={!!fileChangesRequest && !artifactAboveChanges}
+          fallbackFocusRef={chatContainerRef}
+          onClose={() => {
+            if (artifactAboveChanges && fileChangesRequest) {
+              setArtifactOpenRequest(fileChangesRequest.previewRequest || null)
+              setArtifactAboveChanges(false)
+              return
+            }
+            setArtifactOpenRequest(null)
+          }}
+          onViewDiff={(target, trigger) => {
+            setToolObjectContext(previous => ({ ...previous, target }))
+            if (artifactAboveChanges && fileChangesRequest) {
+              setFileChangesRequest({ ...fileChangesRequest, target, trigger })
+              setArtifactOpenRequest(fileChangesRequest.previewRequest || null)
+              setArtifactAboveChanges(false)
+              return
+            }
+            setFileChangesRequest({ target, trigger, returnToPreview: true, previewRequest: artifactOpenRequest })
+          }}
+          onOpenEditor={workspaceEditor?.available && workspaceEditor.supportsFileLocation
+            ? (target) => {
+              setToolObjectContext(previous => ({ ...previous, target }))
+              workspaceEditor.onOpen(target)
+              setArtifactOpenRequest(null)
+              setArtifactAboveChanges(false)
+            }
+            : undefined}
+          onInsertReference={insertArtifactReference}
+        />
+      )}
+
+      {fileChangesRequest && sessionId && (
+        <GitChangesViewer
           sessionId={sessionId}
-          onClose={() => setFileChangesOpen(false)}
+          projectId={currentProjectId}
+          initialPath={fileChangesRequest.target?.path}
+          initialLine={fileChangesRequest.target?.line}
+          endLine={fileChangesRequest.target?.endLine}
+          trigger={fileChangesRequest.trigger}
+          sourceLabel={toolSourceLabel}
+          suspended={artifactAboveChanges}
+          fallbackFocusRef={chatContainerRef}
+          onReturnToPreview={fileChangesRequest.returnToPreview ? () => {
+            setArtifactOpenRequest(fileChangesRequest.previewRequest || artifactOpenRequest)
+            setArtifactAboveChanges(false)
+            setFileChangesRequest(null)
+          } : undefined}
+          onClose={() => {
+            setArtifactAboveChanges(false)
+            setFileChangesRequest(null)
+          }}
+          onOpenArtifact={(request) => {
+            setToolObjectContext(previous => ({ ...previous, target: request.target }))
+            setArtifactOpenRequest(request)
+            setArtifactAboveChanges(true)
+          }}
         />
       )}
 
@@ -5073,19 +5854,19 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
           defaultDescription={(currentSession as any).description || ''}
           defaultModel={projectForSession?.default_model ?? null}
           projectKind={projectForSession?.kind}
-          modalTitle="修改模型并继续"
+          modalTitle="修改模型并继续（新建 Session）"
           continueFromSessionId={currentSession.session_id}
-          modalZIndexClass="z-[70]"
+          modalZIndexClass="workbench-layer-modal"
         />
       )}
 
       {terminalChoiceOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             aria-label="关闭终端打开方式选择"
-            onClick={() => setTerminalChoiceOpen(false)}
+            onClick={() => { setTerminalChoiceOpen(false); restoreToolSourceFocus() }}
           />
           <div
             className="relative flex w-[min(420px,calc(100vw-32px))] flex-col gap-3 rounded-2xl p-4 shadow-2xl"
@@ -5097,7 +5878,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
               <h3 className="min-w-0 flex-1 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>打开终端</h3>
               <button
                 type="button"
-                onClick={() => setTerminalChoiceOpen(false)}
+                onClick={() => { setTerminalChoiceOpen(false); restoreToolSourceFocus() }}
                 title="关闭"
                 className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
@@ -5132,7 +5913,7 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
                 className="flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
               >
-                <Bot className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
+                <Bot className="h-4 w-4 flex-shrink-0 text-[var(--accent-primary)]" strokeWidth={1.9} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
                   <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
@@ -5145,15 +5926,16 @@ export function ChatArea({ layout = 'easy', onNewSession, easyProjectControl }: 
 
       {terminalOpen && (
         <WebTerminalModal
-          key={`${currentSession?.session_id || ''}:${terminalMode}`}
-          sessionId={currentSession?.session_id}
+          key={`${sessionId}:${terminalMode}`}
+          sessionId={sessionId}
           mode={terminalMode}
-          onClose={() => setTerminalOpen(false)}
+          workingDirectoryLabel={terminalWorkingDirectoryLabel}
+          onClose={() => { setTerminalOpen(false); restoreToolSourceFocus() }}
         />
       )}
 
       {showRaw && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="workbench-layer-modal fixed inset-0 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative w-[90vw] max-w-[1100px] h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}

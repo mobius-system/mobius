@@ -1,3 +1,5 @@
+import { issuePath, researchPath, sessionPath } from './workbench-navigation'
+
 export type ProjectHierarchyHitKind = 'issue' | 'research' | 'session' | 'research_agent'
 
 export type ProjectHierarchyHit = {
@@ -51,9 +53,10 @@ export function hierarchyHitLabel(kind: ProjectHierarchyHitKind): string {
   return '会话'
 }
 
-export function hierarchyHitUrl(project: any, hit: ProjectHierarchyHit): string {
-  const base = `/u/${encodeURIComponent(project.created_by || '')}/p/${encodeURIComponent(project.id || '')}`
-  if (hit.kind === 'issue') return `${base}/i/${encodeURIComponent(hit.id)}`
-  if (hit.kind === 'research') return `${base}/r/${encodeURIComponent(hit.id)}`
-  return `/u/${encodeURIComponent(project.created_by || '')}/s/${encodeURIComponent(hit.id)}`
+export function hierarchyHitUrl(project: any, hit: ProjectHierarchyHit, options: { returnTo?: string } = {}): string {
+  const userId = String(project.created_by || '')
+  const projectId = String(project.id || '')
+  if (hit.kind === 'issue') return issuePath(userId, projectId, hit.id, options)
+  if (hit.kind === 'research') return researchPath(userId, projectId, hit.id, options)
+  return sessionPath(userId, hit.id)
 }
