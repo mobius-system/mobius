@@ -4678,10 +4678,9 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
           }}
           aria-controls={chrome === 'shell' ? 'session-tool-drawer' : 'easy-session-tools-panel'}
           aria-expanded={chrome === 'shell' ? toolDrawerOpen : easyToolsOpen}
-          className="workbench-control-md inline-flex cursor-pointer items-center gap-1.5 border px-2.5 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
+          className="workbench-control-md inline-flex cursor-pointer items-center gap-1.5 px-2.5 text-[11px] transition-colors hover:bg-[var(--surface-control-hover)]"
           style={{
-            borderColor: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--accent-border)' : 'var(--border-default)',
-            color: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            color: 'var(--text-secondary)',
             background: (chrome === 'shell' ? toolDrawerOpen : easyToolsOpen) ? 'var(--surface-active)' : undefined,
           }}
         >
@@ -5391,7 +5390,7 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                     aria-haspopup="menu"
                     aria-expanded={easyProjectMenuOpen}
                     className="easy-input-project-trigger workbench-control-md inline-flex max-w-[320px] min-w-0 cursor-pointer items-center gap-2 px-3 text-[12px] font-medium transition-colors"
-                    style={{ background: 'var(--surface-active)', color: 'var(--accent-primary)' }}
+                    style={{ background: 'var(--surface-control)', color: 'var(--text-secondary)' }}
                     title={easyProjectControl.selectedProjectName || '所有项目'}
                   >
                     <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
@@ -5491,14 +5490,11 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                 tooltip="添加附件"
                 accent="neutral"
                 motion="breathe"
-                buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                 iconClassName="h-[17px] w-[17px]"
                 className="assistant-session-input__attachment"
-                style={{
-                  color: 'var(--text-secondary)',
-                  border: '1px solid var(--border-strong)',
-                }}
-                icon={<Paperclip className="h-[17px] w-[17px]" strokeWidth={2.1} />}
+                style={{ color: 'var(--text-secondary)' }}
+                icon={<Paperclip className="h-[17px] w-[17px]" strokeWidth={1.8} />}
               />
               <div className="relative">
                 <AdvancedInteractionBtn
@@ -5510,14 +5506,13 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                   tooltip="更多输入功能"
                   accent="neutral"
                   motion="breathe"
-                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                   iconClassName="h-[17px] w-[17px]"
                   style={{
-                    color: inputMenuOpen ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                    border: `1px solid ${inputMenuOpen ? 'var(--accent-border)' : 'var(--border-strong)'}`,
+                    color: 'var(--text-secondary)',
                     background: inputMenuOpen ? 'var(--surface-active)' : undefined,
                   }}
-                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />}
+                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={1.8} />}
                 />
                 {inputMenuOpen && (
                   <div
@@ -5556,11 +5551,10 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                   tooltip={inputExpanded ? '收起输入框' : '展开输入框'}
                   accent="neutral"
                   motion="breathe"
-                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                   iconClassName="h-[17px] w-[17px]"
                   style={{
-                    color: inputExpanded ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                    border: `1px solid ${inputExpanded ? 'var(--accent-border)' : 'var(--border-strong)'}`,
+                    color: 'var(--text-secondary)',
                     background: inputExpanded ? 'var(--surface-active)' : undefined,
                   }}
                   icon={inputExpanded ? <ChevronDown className="h-[17px] w-[17px]" /> : <ChevronUp className="h-[17px] w-[17px]" />}
@@ -5575,12 +5569,11 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                   tooltip={voiceTip}
                   accent="neutral"
                   motion="breathe"
-                  buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                  buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                   iconClassName="h-[17px] w-[17px]"
                   className={`assistant-session-input__voice assistant-session-input__voice--${voiceState}`}
                   style={{
                     color: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running)' : 'var(--text-secondary)',
-                    border: `1px solid ${voiceState === 'recording' || voiceState === 'transcribing' ? 'color-mix(in srgb, var(--status-running) 34%, transparent)' : 'var(--border-strong)'}`,
                     background: voiceState === 'recording' || voiceState === 'transcribing' ? 'var(--status-running-soft)' : undefined,
                   }}
                   icon={voiceState === 'recording' ? (
@@ -5598,10 +5591,10 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                 const sendDisabled = (!input.trim() && attachments.filter(a => a.status === 'done').length === 0) || anyUploading || !!pendingSendAt || messageSubmitting || voiceBusy || !modelAvailable
                 const sendBg = sendDisabled
                   ? 'var(--surface-control)'
-                  : 'var(--accent-primary)'
+                  : 'var(--text-primary)'
                 const sendFg = sendDisabled
                   ? 'var(--text-dimmed)'
-                  : 'var(--accent-foreground)'
+                  : 'var(--bg-primary)'
                 return (
                   <>
                     {layout !== 'easy' && (
@@ -5611,12 +5604,9 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                         tooltip="发送（加急）— 打断当前输出并立即发送"
                         accent="neutral"
                         motion="breathe"
-                        buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                        buttonClassName="composer-icon-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                         iconClassName="h-[17px] w-[17px]"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          border: '1px solid var(--border-strong)',
-                        }}
+                        style={{ color: 'var(--text-secondary)' }}
                         icon={<Zap className="w-[17px] h-[17px]" />}
                       />
                     )}
@@ -5626,7 +5616,7 @@ export function ChatArea({ layout = 'easy', chrome = 'inline', shellChromeActive
                       tooltip={voiceBusy ? voiceTip : anyUploading ? '附件仍在上传...' : (pendingSendAt || messageSubmitting) ? '正在提交上一条消息...' : '发送 (Enter)'}
                       accent="neutral"
                       motion="breathe"
-                      buttonClassName="h-[var(--control-height-md)] w-[var(--control-height-md)] rounded-[var(--radius-control)]"
+                      buttonClassName="composer-send-btn h-[var(--control-height-md)] w-[var(--control-height-md)]"
                       iconClassName="h-[18px] w-[18px]"
                       className="transition-all active:scale-95 hover:brightness-95"
                       style={{ background: sendBg, color: sendFg, cursor: sendDisabled ? 'not-allowed' : 'pointer' }}

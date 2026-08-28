@@ -124,7 +124,7 @@ label,
   --bg-secondary: #0f141b;
   --bg-tertiary: #131a24;
   --bg-hover: rgba(255, 255, 255, 0.05);
-  --bg-active: rgba(56, 189, 248, 0.13);
+  --bg-active: rgba(255, 255, 255, 0.08);
   --bg-card: rgba(255, 255, 255, 0.04);
   --bg-card-hover: rgba(255, 255, 255, 0.06);
   --border-color: rgba(255, 255, 255, 0.08);
@@ -182,10 +182,11 @@ label,
   --surface-composer: #0d1219;
   --surface-right: #0c1118;
   --surface-card: var(--bg-card, rgba(255, 255, 255, 0.04));
+  --surface-user-bubble: rgba(255, 255, 255, 0.08);
   --surface-overlay: var(--modal-bg, #111820);
   --surface-control: var(--input-bg, rgba(255, 255, 255, 0.05));
   --surface-control-hover: var(--bg-hover, rgba(255, 255, 255, 0.05));
-  --surface-active: var(--bg-active, rgba(56, 189, 248, 0.13));
+  --surface-active: var(--bg-active, rgba(255, 255, 255, 0.08));
   --surface-code: var(--code-bg, var(--prose-bg, #0d1117));
   --surface-scrim: rgba(2, 6, 23, 0.62);
   --border-default: var(--border-color, rgba(255, 255, 255, 0.08));
@@ -224,11 +225,14 @@ label,
   --control-height-sm: 32px;
   --control-height-md: 36px;
   --control-height-lg: 40px;
-  --radius-control: 7px;
-  --radius-panel: 10px;
-  --radius-modal: 12px;
+  --radius-control: 10px;
+  --radius-panel: 14px;
+  --radius-modal: 16px;
+  --radius-composer: 22px;
+  --radius-bubble: 18px;
   --shadow-overlay: 0 18px 40px rgba(0, 0, 0, 0.35);
   --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.14);
+  --shadow-composer: 0 8px 28px rgba(0, 0, 0, 0.08);
   --dur-fast: 120ms;
   --dur-normal: 160ms;
   --dur-slow: 220ms;
@@ -726,27 +730,27 @@ label,
 }
 
 .light {
-  --bg-primary: #f6f7fa;
+  --bg-primary: #f4f4f5;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #eef1f6;
-  --bg-hover: rgba(17, 20, 28, 0.055);
-  --bg-active: rgba(37, 99, 235, 0.10);
-  --bg-card: rgba(255, 255, 255, 0.78);
-  --bg-card-hover: rgba(17, 20, 28, 0.055);
-  --border-color: rgba(17, 20, 28, 0.08);
-  --border-color-strong: rgba(17, 20, 28, 0.14);
-  --text-primary: #1a1d24;
-  --text-strong: #0e1118;
-  --text-secondary: rgba(17, 20, 28, 0.70);
-  --text-muted: rgba(17, 20, 28, 0.52);
-  --text-dimmed: rgba(17, 20, 28, 0.36);
+  --bg-tertiary: #ececec;
+  --bg-hover: rgba(13, 13, 13, 0.045);
+  --bg-active: rgba(13, 13, 13, 0.06);
+  --bg-card: #ffffff;
+  --bg-card-hover: rgba(13, 13, 13, 0.045);
+  --border-color: rgba(13, 13, 13, 0.06);
+  --border-color-strong: rgba(13, 13, 13, 0.10);
+  --text-primary: #1a1a1a;
+  --text-strong: #0d0d0d;
+  --text-secondary: rgba(13, 13, 13, 0.62);
+  --text-muted: rgba(13, 13, 13, 0.44);
+  --text-dimmed: rgba(13, 13, 13, 0.32);
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #94a3b8;
-  --prose-bg: #f1f5f9;
-  --prose-border: #e2e8f0;
-  --prose-code-bg: #e2e8f0;
-  --prose-code-color: #6366f1;
-  --prose-heading: #1e293b;
+  --prose-bg: #f4f4f5;
+  --prose-border: #e8e8e8;
+  --prose-code-bg: #ececec;
+  --prose-code-color: #1a1a1a;
+  --prose-heading: #0d0d0d;
   --code-bg: #f8fafc;
   --code-border: #cbd5e1;
   --code-text: #1e293b;
@@ -770,7 +774,7 @@ label,
   --syntax-built-in: #0e7490;
   --syntax-meta: #c026d3;
   --syntax-attr: #c2410c;
-  --input-bg: rgba(17, 20, 28, 0.035);
+  --input-bg: rgba(13, 13, 13, 0.04);
   --input-border: var(--border-color-strong);
   --modal-bg: #ffffff;
   --menu-bg: rgba(255, 255, 255, 0.99);
@@ -778,19 +782,21 @@ label,
   --accent-primary: #2563eb;
   --accent-secondary: #0d9488;
   --accent-foreground: #ffffff;
-  --surface-sidebar: #f6f7fa;
-  --surface-topbar: #fafbfd;
-  --surface-messages: #eef1f6;
-  --surface-composer: #fafbfd;
-  --surface-right: #f6f7fa;
-  --surface-card: var(--bg-card, rgba(255, 255, 255, 0.78));
+  --surface-sidebar: #f4f4f5;
+  --surface-topbar: #ffffff;
+  --surface-messages: #ffffff;
+  --surface-composer: #ffffff;
+  --surface-right: #f4f4f5;
+  --surface-card: var(--bg-card, #ffffff);
+  --surface-user-bubble: #f0f0f0;
   --status-running: #2563eb;
   --status-waiting: #d77814;
   --status-danger: #c82d2d;
   --status-success: #1e9b6e;
-  --status-unknown: rgba(17, 20, 28, 0.25);
-  --shadow-overlay: 0 18px 40px rgba(15, 23, 42, 0.16);
-  --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.10);
+  --status-unknown: rgba(13, 13, 13, 0.25);
+  --shadow-overlay: 0 18px 40px rgba(13, 13, 13, 0.12);
+  --shadow-control: 0 1px 2px rgba(13, 13, 13, 0.06);
+  --shadow-composer: 0 8px 28px rgba(13, 13, 13, 0.08);
   --assistant-panel-border: rgba(15, 23, 42, .12);
   --assistant-panel-bg:
     linear-gradient(180deg, rgba(255, 255, 255, .96) 0%, rgba(246, 250, 255, .96) 46%, rgba(240, 253, 250, .94) 100%),
@@ -842,7 +848,8 @@ label,
   --surface-overlay: var(--modal-bg, #111820);
   --surface-control: var(--input-bg, rgba(255, 255, 255, 0.05));
   --surface-control-hover: var(--bg-hover, rgba(255, 255, 255, 0.05));
-  --surface-active: var(--bg-active, rgba(56, 189, 248, 0.13));
+  --surface-active: var(--bg-active, rgba(255, 255, 255, 0.08));
+  --surface-user-bubble: rgba(255, 255, 255, 0.08);
   --surface-code: var(--code-bg, var(--prose-bg, #0d1117));
   --surface-scrim: rgba(2, 6, 23, 0.62);
   --border-default: var(--border-color, rgba(255, 255, 255, 0.08));
@@ -971,17 +978,18 @@ label,
 }
 
 .light {
-  --surface-base: var(--bg-primary, #f6f7fa);
+  --surface-base: var(--bg-primary, #f4f4f5);
   --surface-raised: var(--bg-secondary, #ffffff);
   --surface-content: var(--bg-secondary, #ffffff);
   --surface-overlay: var(--modal-bg, #ffffff);
-  --surface-control: var(--input-bg, rgba(17, 20, 28, 0.035));
-  --surface-control-hover: var(--bg-hover, rgba(17, 20, 28, 0.055));
-  --surface-active: var(--bg-active, rgba(37, 99, 235, 0.10));
-  --surface-code: var(--code-bg, var(--prose-bg, #f1f5f9));
-  --surface-scrim: rgba(15, 23, 42, 0.38);
-  --border-default: var(--border-color, rgba(17, 20, 28, 0.08));
-  --border-strong: var(--border-color-strong, rgba(17, 20, 28, 0.14));
+  --surface-control: var(--input-bg, rgba(13, 13, 13, 0.04));
+  --surface-control-hover: var(--bg-hover, rgba(13, 13, 13, 0.045));
+  --surface-active: var(--bg-active, rgba(13, 13, 13, 0.06));
+  --surface-user-bubble: #f0f0f0;
+  --surface-code: var(--code-bg, var(--prose-bg, #f4f4f5));
+  --surface-scrim: rgba(13, 13, 13, 0.32);
+  --border-default: var(--border-color, rgba(13, 13, 13, 0.06));
+  --border-strong: var(--border-color-strong, rgba(13, 13, 13, 0.10));
   --text-on-accent: var(--accent-foreground, #ffffff);
 }
 
@@ -1182,6 +1190,7 @@ label,
   height: var(--workbench-topbar-height);
   min-height: var(--workbench-topbar-height);
   background: var(--surface-topbar);
+  border-bottom: 0;
 }
 
 .workbench-shell__topbar:has([data-workbench-session-topbar]) > .workbench-global-topbar,
@@ -1261,8 +1270,19 @@ label,
 }
 
 .workbench-shell__right:has([data-session-tool-drawer][data-open="true"]) {
+  width: calc(var(--tool-drawer-width) + 16px);
+  padding: 8px 8px 8px 0;
+  background: var(--surface-right);
+  border-left: 0;
+}
+
+.workbench-shell__right:has([data-session-tool-drawer][data-open="true"]) .session-tool-drawer {
   width: var(--tool-drawer-width);
-  border-left: 1px solid var(--border-default);
+  height: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  overflow: hidden;
 }
 
 .workbench-shell__dock:not(:empty) {
@@ -1341,7 +1361,7 @@ label,
 }
 
 .session-tool-drawer__tab.is-active {
-  color: var(--accent-primary);
+  color: var(--text-primary);
   background: var(--surface-active);
 }
 
@@ -1501,16 +1521,16 @@ label,
 
 .workbench-composer {
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-composer, 22px);
   background: color-mix(in srgb, var(--surface-composer) 96%, var(--surface-card) 4%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 5%, transparent);
+  box-shadow: var(--shadow-composer);
   transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 
-/* CodexMonitor：输入区聚焦不换高饱和整圈描边，只靠中性边界和 inset 高光。 */
+/* Codex Desktop：输入区是白底悬浮胶囊，聚焦只加深中性边界和阴影，不用 accent 描边。 */
 .workbench-composer:focus-within {
   border-color: color-mix(in srgb, var(--border-strong) 58%, var(--text-primary) 42%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 8%, transparent);
+  box-shadow: var(--shadow-composer), 0 0 0 1px color-mix(in srgb, var(--border-strong) 40%, transparent);
 }
 
 .workbench-composer textarea {
@@ -1559,6 +1579,34 @@ label,
 
 .mobius-workbench .home-composer-send:hover:not(:disabled) {
   background: var(--text-strong);
+}
+
+.workbench-composer .composer-icon-btn {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.workbench-composer .composer-icon-btn:hover:not(:disabled) {
+  background: var(--surface-control-hover);
+  color: var(--text-primary);
+}
+
+.workbench-composer .composer-send-btn {
+  border: 0 !important;
+  border-radius: 999px !important;
+  color: var(--bg-primary);
+  background: var(--text-primary);
+}
+
+.workbench-composer .composer-send-btn:hover:not(:disabled) {
+  background: var(--text-strong);
+}
+
+.workbench-composer .composer-send-btn:disabled {
+  color: var(--text-dimmed);
+  background: var(--surface-control);
 }
 
 .mobius-workbench [data-home-composer-expand-toggle]:focus-visible,
@@ -6389,7 +6437,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   font-variant-ligatures: none;
   font-feature-settings: 'liga' 0, 'calt' 0;
 }
-.jsonl-compact-md :not(pre) > code { background: var(--prose-code-bg); color: var(--prose-code-color); padding: .1em .32em; border-radius: .25rem; }
+.jsonl-compact-md :not(pre) > code { background: var(--prose-code-bg); color: var(--prose-code-color); padding: .12em .42em; border-radius: 6px; }
 .jsonl-compact-md ul, .jsonl-compact-md ol { padding-left: 1.25rem; margin: .35rem 0; }
 .jsonl-compact-md ul { list-style: disc outside; }
 .jsonl-compact-md ol { list-style: decimal outside; }
@@ -6983,7 +7031,7 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input {
   position: absolute;
   z-index: 20;
-  bottom: 16px;
+  bottom: 20px;
   left: 50%;
   width: min(880px, calc(100% - 40px)) !important;
   min-height: 0;

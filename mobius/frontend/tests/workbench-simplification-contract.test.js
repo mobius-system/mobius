@@ -190,7 +190,7 @@ const lightTextMuted = lightThemeSource.match(/--text-muted:\s*([^;]+);/)?.[1].t
 assert.ok(lightTextSecondary && lightTextMuted, 'Light 必须同时定义 --text-secondary 与 --text-muted')
 assert.notEqual(lightTextSecondary, lightTextMuted, 'Light 的 --text-secondary 与 --text-muted 必须保持可见分层')
 
-// CodexMonitor 消息 / Composer 纪律：默认工作台只用语义表面、细边框和 inset 高光建层。
+// Codex Desktop 消息 / Composer 纪律：白底悬浮胶囊、中性灰选中、用户气泡无硬边框。
 const workbenchComposerRule = cssSource.match(/\.workbench-composer\s*\{([^}]*)\}/)?.[1] || ''
 const workbenchComposerFocusRule = cssSource.match(/\.workbench-composer:focus-within\s*\{([^}]*)\}/)?.[1] || ''
 const workbenchComposerTextareaRule = cssSource.match(/\.workbench-composer textarea\s*\{([^}]*)\}/)?.[1] || ''
@@ -198,7 +198,8 @@ const easyChatInputRule = cssSource.match(/\.mobius-chat-body\.mobius-chat-body-
 const easyChatInputOcclusionRule = cssSource.match(/\.mobius-chat-body\.mobius-chat-body--easy \.mobius-chat-input::before\s*\{([^}]*)\}/)?.[1] || ''
 const homeComposerSendRule = cssSource.match(/\.mobius-workbench \.home-composer-send\s*\{([^}]*)\}/)?.[1] || ''
 assert.match(workbenchComposerRule, /border:\s*1px solid var\(--border-strong\)/, '共享 Composer 必须使用 --border-strong')
-assert.match(workbenchComposerRule, /border-radius:\s*12px/, '共享 Composer 圆角必须收敛为 12px')
+assert.match(workbenchComposerRule, /border-radius:\s*var\(--radius-composer/, '共享 Composer 必须使用胶囊圆角 token')
+assert.match(workbenchComposerRule, /box-shadow:\s*var\(--shadow-composer\)/, '共享 Composer 必须使用悬浮阴影 token')
 assert.match(workbenchComposerRule, /background:\s*color-mix\([^;]*var\(--surface-composer\)[^;]*var\(--surface-card\)/, '共享 Composer 必须使用 composer / card surface token')
 assert.doesNotMatch(workbenchComposerRule, /var\(--surface-card\)\s*78%/, '共享 Composer 不得再让透明 card surface 占混色多数')
 assert.doesNotMatch(workbenchComposerRule, /#[0-9a-f]{3,8}\b|rgba?\(/i, '共享 Composer 不得回退到硬编码 slate / rgba 表面')
@@ -216,17 +217,17 @@ assert.match(cssSource, /\[data-home-composer-expand-toggle\]:focus-visible,[\s\
 const easyPromptRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt\s*\{([^}]*)\}/)?.[1] || ''
 const easyPromptBodyRule = easyJsonlCssSource.match(/\.easy-jsonl-prompt \.jsonl-compact-md\s*\{([^}]*)\}/)?.[1] || ''
 const easyResponseRule = easyJsonlCssSource.match(/\.easy-jsonl-response\s*\{([^}]*)\}/)?.[1] || ''
-assert.match(easyPromptRule, /border:\s*1px solid var\(--border-default\)/, '用户任务卡必须使用四边统一的 1px token 边框')
+assert.match(easyPromptRule, /border:\s*1px solid transparent/, '用户任务气泡不得再用可见硬边框，只保留透明描边占位')
 assert.doesNotMatch(easyPromptRule, /border-left:\s*(?:[23]px|[^;]*var\(--accent-primary\))/, '用户任务卡不得再使用 2–3px 或 accent-primary 左侧装饰条')
-assert.match(easyPromptRule, /background:\s*var\(--surface-card\)/, '用户任务必须使用中性 surface-card')
-assert.match(easyPromptRule, /border-radius:\s*12px/, '用户任务卡圆角必须是 12px')
+assert.match(easyPromptRule, /background:\s*var\(--surface-user-bubble/, '用户任务必须使用中性灰气泡表面')
+assert.match(easyPromptRule, /border-radius:\s*var\(--radius-bubble/, '用户任务气泡必须使用 Codex 式大圆角')
 assert.doesNotMatch(easyPromptRule, /box-shadow/, '用户任务气泡不得再使用 inset 高光或额外阴影')
 assert.match(easyPromptRule, /width:\s*fit-content/, '短用户任务必须按内容收缩，而不是铺满整列')
 assert.match(easyPromptRule, /margin-left:\s*auto/, '用户任务必须靠右，形成 Codex 式气泡')
 assert.match(easyPromptRule, /max-width:\s*100%/, '长用户任务应对齐 880px 对话列，不得再被 560px 截成细长卡')
 assert.doesNotMatch(easyPromptRule, /560px|min\(72%/, '用户任务气泡不得再使用 72% / 560px 窄上限')
 assert.match(easyJsonlCssSource, /\.easy-jsonl-rounds \{ width: min\(880px, 100%\)/, '简易对话列必须对齐 Composer 的 880px 可读宽')
-assert.match(easyPromptRule, /padding:\s*10px 12px/, '用户任务必须使用紧凑内边距')
+assert.match(easyPromptRule, /padding:\s*12px 16px/, '用户任务必须使用 Codex 式气泡内边距')
 assert.doesNotMatch(easyJsonlCssSource, /easy-jsonl-prompt__avatar/, '用户任务不得再占用圆形头像列')
 assert.doesNotMatch(easyJsonlViewSource, /你的任务<\/strong>/, '用户任务不得再渲染可见的「你的任务」标题行')
 assert.match(easyJsonlViewSource, /aria-label="用户任务"/, '用户任务必须保留屏幕阅读器标签')
@@ -245,7 +246,7 @@ assert.match(easyResponseRule, /padding:\s*0/, '助手回复不得再包一层�
 assert.match(easyResponseRule, /border:\s*0/, '助手回复不得再使用卡片边框')
 assert.doesNotMatch(easyResponseRule, /margin-left|padding-left/, '助手回复不得再通过左侧头像偏移塑形')
 assert.match(easyJsonlCssSource, /\.easy-jsonl-activity, \.easy-jsonl-live \{[^}]*min-height:\s*30px/, '折叠活动行高度必须压到 30px')
-assert.match(easyJsonlCssSource, /\.easy-jsonl-activity__summary \{[\s\S]*padding:\s*5px 8px/, '折叠活动摘要必须使用紧凑内边距')
+assert.match(easyJsonlCssSource, /\.easy-jsonl-activity__summary \{[\s\S]*padding:\s*5px 10px 5px 28px/, '折叠活动摘要必须使用 Codex 式芯片内边距')
 assert.doesNotMatch(easyJsonlCssSource, /#22c55e|#4ade80/i, '简易时间线不得硬编码完成态绿色')
 
 // P0/P1：默认入口与短路由，不再要求用户选择布局模式。

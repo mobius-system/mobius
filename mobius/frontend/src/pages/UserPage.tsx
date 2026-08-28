@@ -463,7 +463,7 @@ function HomeSurface() {
                   }} />
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t pt-2" style={{ borderColor: 'color-mix(in srgb, var(--border-default) 72%, transparent)' }}>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-default)' }}>
+                    <label className="home-composer-project-select workbench-control-md flex min-w-0 items-center gap-2 px-2.5 text-[11px]" style={{ color: 'var(--text-muted)', background: 'var(--surface-control)' }}>
                       <Folder className="h-3.5 w-3.5 flex-shrink-0" />
                       <select value={selectedProjectId} onChange={event => selectHomeProject(event.target.value)}
                         aria-label="项目"

@@ -295,11 +295,11 @@ export function ConversationRail({
 
   const renderRail = (drawer = false) => (
     <aside
-      className={`conversation-rail relative flex h-full w-[280px] flex-shrink-0 flex-col border-r ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
-      style={{ width: 'var(--rail-width)', borderColor: 'var(--border-default)', background: 'var(--surface-sidebar)' }}
+      className={`conversation-rail relative flex h-full w-[280px] flex-shrink-0 flex-col ${drawer ? 'z-10 max-w-[calc(100vw-32px)] shadow-lg' : ''}`}
+      style={{ width: 'var(--rail-width)', background: 'var(--surface-sidebar)' }}
       aria-label="最近会话"
     >
-      <div data-rail-slot="header" className="border-b p-2" style={{ borderColor: 'var(--border-default)' }}>
+      <div data-rail-slot="header" className="p-2">
         <div className="flex items-center gap-1">
           <button type="button" onClick={openHome} aria-label="回到 Home" title="回到 Home"
             className="workbench-control-md inline-flex min-w-0 flex-1 items-center gap-2 px-2 text-left hover:bg-[var(--surface-control-hover)]"
@@ -374,12 +374,12 @@ export function ConversationRail({
                   <section key={folderKey}>
                     <button type="button" onClick={() => toggleFolder(folder)}
                       aria-expanded={expanded} aria-controls={folderPanelId}
-                      className="flex min-h-[var(--control-height-sm)] w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                      className="flex min-h-[var(--control-height-sm)] w-full min-w-0 items-center gap-1.5 rounded-[12px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
                       style={{ background: focused ? 'var(--surface-active)' : undefined }}>
                       {expanded
                         ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                         : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
-                      <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: focused ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                      <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
                       <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
                         {folder.projectName}
                       </span>
@@ -396,7 +396,7 @@ export function ConversationRail({
                           const relativeTime = relativeActivityTime(item)
                           return (
                             <button key={item.session_id} type="button" onClick={() => openConversation(item)}
-                              className="flex min-h-[var(--control-height-sm)] w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] py-1.5 pl-7 pr-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
+                              className="flex min-h-[var(--control-height-sm)] w-full min-w-0 items-center gap-2 rounded-[12px] py-1.5 pl-7 pr-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
                               style={{ background: active ? 'var(--surface-active)' : undefined }} aria-current={active ? 'page' : undefined}>
                               <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
                                 {item.name || '未命名会话'}
@@ -421,7 +421,7 @@ export function ConversationRail({
         )}
       </div>
 
-      <div data-rail-slot="bottom" className="relative border-t p-2" style={{ borderColor: 'var(--border-default)' }}>
+      <div data-rail-slot="bottom" className="relative p-2">
         {accountMenuOpen && (
           <div className="workbench-popover absolute bottom-11 left-2 right-2 border p-1" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface-overlay)' }}>
             <div className="truncate px-2 py-2 text-[11px]" style={{ color: 'var(--text-primary)' }}>{user?.display_name || user?.id || userId}</div>

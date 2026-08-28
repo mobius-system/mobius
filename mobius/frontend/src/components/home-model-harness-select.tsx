@@ -83,10 +83,11 @@ export function HomeModelHarnessSelect({
   return (
     <label
       data-home-model-harness-select
-      className="workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[11px]"
+      className="workbench-control-md flex min-w-0 items-center gap-2 px-2.5 text-[11px]"
       style={{
         color: optionsError ? 'var(--status-danger)' : 'var(--text-muted)',
-        borderColor: optionsError ? 'var(--status-danger)' : 'var(--border-default)',
+        background: 'var(--surface-control)',
+        borderColor: optionsError ? 'var(--status-danger)' : 'transparent',
       }}
       title={optionsError || (selectedLabel ? `当前组合：${optionLabel(selectedLabel)}` : '选择模型与 Harness 组合')}
     >

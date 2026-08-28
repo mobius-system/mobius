@@ -200,8 +200,8 @@ export function WorkbenchShell({
         <section className="workbench-shell__workspace min-h-0 min-w-0">
           <header
             ref={setTopbarTarget}
-            className="workbench-shell__topbar min-w-0 border-b"
-            style={{ borderColor: 'var(--border-default)', background: 'var(--surface-topbar)' }}
+            className="workbench-shell__topbar min-w-0"
+            style={{ background: 'var(--surface-topbar)' }}
             data-workbench-topbar
           >
             {topbar ?? (
