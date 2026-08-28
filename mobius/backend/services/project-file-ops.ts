@@ -167,6 +167,12 @@ export function contentDispositionAttachment(name: string): string {
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
+export function contentDispositionInline(name: string): string {
+  const fallback = String(name || 'preview').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_').slice(0, 100) || 'preview';
+  const encoded = encodeURIComponent(name).replace(/['()]/g, escape).replace(/\*/g, '%2A');
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 // 常见类型 -> Content-Type, 其余回退 application/octet-stream (设计文档 §8.1)。
 const MIME_BY_EXT: Record<string, string> = {
   txt: 'text/plain', md: 'text/markdown', json: 'application/json',
@@ -175,8 +181,9 @@ const MIME_BY_EXT: Record<string, string> = {
   xml: 'application/xml', yaml: 'text/yaml', yml: 'text/yaml', toml: 'application/toml',
   csv: 'text/csv',
   pdf: 'application/pdf', zip: 'application/zip', gz: 'application/gzip', tar: 'application/x-tar',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-  svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+  png: 'image/png', apng: 'image/apng', jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg',
+  gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp', avif: 'image/avif',
+  bmp: 'image/bmp', ico: 'image/x-icon',
   mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav',
 };
 export function contentTypeFor(name: string): string {

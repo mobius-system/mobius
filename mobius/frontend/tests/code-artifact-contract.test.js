@@ -54,6 +54,10 @@ assert.match(diff, /<CodeBlockHeader[\s\S]*target=\{target\}/, 'Edit headers mus
 assert.match(sessionPanel, /CodeArtifactOpenProvider onOpenArtifact=\{onOpenArtifact\}/, 'the JSONL panel must only dispatch artifact requests to its Chat host')
 assert.doesNotMatch(sessionPanel, /VSCodeOpenProvider/, 'the JSONL panel must no longer default file clicks to VSCode')
 assert.match(preview, /\/api\/projects\/\$\{encodeURIComponent\(projectId\)\}\/file\?path=/, 'preview must use the existing read-only project file API')
+assert.match(preview, /IMAGE_PREVIEW_EXTENSIONS[\s\S]*'avif'[\s\S]*'gif'[\s\S]*'png'[\s\S]*'svg'[\s\S]*'webp'/, 'preview must recognize common raster and vector image formats')
+assert.match(preview, /projectFilePreviewUrl[\s\S]*inline: '1'[\s\S]*query\.set\('token', token\)/, 'image previews must use the project-scoped authenticated file stream')
+assert.match(preview, /data-code-artifact-image-preview[\s\S]*<img[\s\S]*onLoad[\s\S]*onError/, 'image files must render in the preview with explicit loading and failure states')
+assert.match(preview, /alt=\{`\$\{data\.name\} 图片预览`\}/, 'image previews must expose a useful accessible name')
 assert.match(preview, /role="dialog"[\s\S]*aria-modal="false"/, 'preview must stay a complementary dialog so chat remains readable')
 assert.match(preview, /useWorkbenchShellSlot\('preview'\)/, 'preview must occupy the workbench preview slot when the shell is present')
 assert.match(preview, /createPortal\(panel, previewSlot\)/, 'preview must portal into the stable preview slot without remounting chat')
@@ -92,6 +96,7 @@ assert.match(preview, /trigger\?\.isConnected[\s\S]*fallbackFocusRef/, 'preview 
 assert.match(styles, /@media \(max-width: 767px\)[\s\S]*height: min\(88dvh, 880px\)/, 'narrow preview must become a bottom sheet')
 assert.match(styles, /scroll-margin-block: 4\.5rem/, 'target rows must clear the sticky preview chrome')
 assert.match(styles, /\.code-artifact-preview \.hljs-keyword/, 'preview syntax colors must reuse the shared syntax tokens')
+assert.match(styles, /\.code-artifact-preview__image[\s\S]*object-fit:\s*contain/, 'image previews must preserve aspect ratio within the available pane')
 
 assert.match(chat, /artifactOpenRequest[\s\S]*fileChangesRequest/, 'Chat must own preview and diff targets without remounting the message list')
 assert.match(chat, /document\.execCommand\('insertText', false, insertion\)/, 'Composer references must retain native undo when available')

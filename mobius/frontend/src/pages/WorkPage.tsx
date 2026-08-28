@@ -67,7 +67,12 @@ export default function WorkPage() {
         }
       })
       .catch((reason: any) => {
-        if (!cancelled) setError(reason?.message || '无法打开这个会话')
+        if (cancelled) return
+        if (useStore.getState().currentSession?.session_id === sessionId) {
+          setCurrentSession(null)
+          setCurrentTask(null)
+        }
+        setError(reason?.message || '无法打开这个会话')
       })
     return () => { cancelled = true }
   }, [retryKey, sessionId])
@@ -186,7 +191,7 @@ export default function WorkPage() {
           hidden={!activeSessionLoaded}
           aria-hidden={!activeSessionLoaded}
           {...(!activeSessionLoaded ? { inert: '' } : {}) as any}
-          className="workbench-session-chat__surface flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          className={`workbench-session-chat__surface ${activeSessionLoaded ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 overflow-hidden`}
         >
           <ChatArea
             layout="easy"

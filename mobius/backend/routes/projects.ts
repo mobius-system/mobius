@@ -7,7 +7,7 @@ import multer from 'multer';
 import { extractArchiveFile, removeIfExists, detectArchiveKind } from '../services/context-import-utils';
 import { v4 as uuid } from 'uuid';
 import { db } from '../../db';
-import { auth } from '../middleware/auth';
+import { auth, downloadAuth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
 import { ProjectMemberships, PROJECT_ROLE_LABELS } from '../repositories/project-memberships';
 import { ProjectTodos } from '../repositories/project-todos';
@@ -37,6 +37,7 @@ import {
   isDirEqualOrChild,
   copyEntryRecursive,
   contentDispositionAttachment,
+  contentDispositionInline,
   contentTypeFor,
 } from '../services/project-file-ops';
 import { resolveProjectPath } from '../services/project-path';
@@ -3605,24 +3606,31 @@ router.post('/:id/import-zip', auth, importZipUpload.single('file'), (req: expre
 
 // GET /:id/file/download?path=<rel> - 流式下载单个文件 (设计文档 §8.1, §14.3)。
 // 只读, 不要求写权限; 拒绝符号链接与目录; 客户端断开时销毁 stream。
-router.get('/:id/file/download', auth, async (req: express.Request, res: express.Response) => {
+router.get('/:id/file/download', downloadAuth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径', code: 'READ_ONLY' });
   const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error, code: 'OUTSIDE_ROOT' });
-  const { absPath } = resolved;
+  const { absPath, root } = resolved;
   let lst: fs.Stats;
   try {
+    await assertNoSymlink(root, absPath);
     lst = await fs.promises.lstat(absPath);
-  } catch {
+  } catch (error) {
+    if (error instanceof FileOpError && error.code === 'SYMLINK_UNSUPPORTED') {
+      return res.status(400).json({ error: error.message, code: error.code });
+    }
     return res.status(404).json({ error: '文件不存在', code: 'NOT_FOUND' });
   }
   if (lst.isSymbolicLink()) return res.status(400).json({ error: '不支持下载符号链接', code: 'SYMLINK_UNSUPPORTED' });
   if (!lst.isFile()) return res.status(400).json({ error: '只能下载文件，目录打包下载暂不支持', code: 'INVALID_NAME' });
   const name = path.basename(absPath);
   res.setHeader('Content-Type', contentTypeFor(name));
-  res.setHeader('Content-Disposition', contentDispositionAttachment(name));
+  res.setHeader(
+    'Content-Disposition',
+    req.query.inline === '1' ? contentDispositionInline(name) : contentDispositionAttachment(name),
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   const stream = fs.createReadStream(absPath);
   stream.on('error', () => {
