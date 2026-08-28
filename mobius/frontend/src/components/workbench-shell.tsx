@@ -14,6 +14,7 @@ import { ConversationRail, type ConversationRailItem } from './conversation-rail
 import { LayoutModeSwitch } from './layout-mode-switch'
 import { SearchModal } from './search-modal'
 import { SettingsPanel, type SettingsSection } from './settings-panel'
+import { GlobalCreateRoot, type CreateKind } from './global-create'
 import { prepareWorkbenchObjectNavigation } from '../services/workbench-navigation'
 
 type WorkbenchShellSlot = 'topbar' | 'preview' | 'right' | 'dock'
@@ -106,6 +107,7 @@ export function WorkbenchShell({
   const [targets, setTargets] = useState<WorkbenchShellTargets>({ topbar: null, preview: null, right: null, dock: null })
   const [showSearch, setShowSearch] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [createKind, setCreateKind] = useState<CreateKind | null>(null)
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const searchReturnFocusRef = useRef<HTMLElement | null>(null)
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null)
@@ -194,6 +196,7 @@ export function WorkbenchShell({
           activeSessionId={activeSessionId}
           projectId={projectId}
           onNewConversation={startNewConversation}
+          onNewProject={() => setCreateKind('project')}
           onOpenConversation={onOpenConversation}
           onOpenSearch={trigger => openSearch(trigger)}
           onOpenSettings={trigger => openSettings(trigger)}
@@ -236,6 +239,14 @@ export function WorkbenchShell({
           onClose={() => setShowSearch(false)}
           onNavigate={navigate}
           returnFocusRef={searchReturnFocusRef}
+        />
+      )}
+      {createKind && (
+        <GlobalCreateRoot
+          kind={createKind}
+          ctx={{ projectId: projectId || undefined }}
+          onClose={() => setCreateKind(null)}
+          onNavigate={path => navigate(path)}
         />
       )}
       {showSettings && (
