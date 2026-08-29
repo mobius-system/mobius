@@ -30,7 +30,7 @@
 >
 > Mobius 是一个把模型、Agent、项目、设备和算力放进同一个工作网络的自进化 Agent OS。它不是一套固定的工具箱，而是一个持续生长、全程可追溯的生产力系统。
 
-## 先把它跑起来
+## 快速开始
 
 已有 Docker 环境？从下面的路径开始，启动后就能进入 Mobius 工作台。首次构建会下载镜像和依赖，耗时取决于网络与机器配置。
 
@@ -77,7 +77,7 @@ python3 start.py
 
 完整部署指南见[文档](https://mobius-system.github.io/mobius/)。开始后的第一个动作，可以参考[导入项目并开始任务](https://mobius-system.github.io/mobius/tutorial/02a_import_project_and_begin_first_job.html)、[监控 Agent](https://mobius-system.github.io/mobius/tutorial/08_monitor_agents.html)和[创建研究 Agent 团队](https://mobius-system.github.io/mobius/tutorial/20_research_agent_team.html)。
 
-## 一个工作台，接住所有场景
+## 一个工作台，覆盖所有场景
 
 - **服务所有场景**——按手头任务切换到最顺手的界面
 
@@ -91,7 +91,7 @@ python3 start.py
   <img src="https://github.com/user-attachments/assets/7868ef41-068f-4316-ae6b-b17561a119ac" alt="项目总览仪表盘：智能体状态与任务进度" width="480" />
 </p>
 
-## 一条任务线，装不下复杂现实任务
+## 单线任务流难以承载复杂现实任务
 
 大模型通常沿着一条因果链推进问题。模型越强，这一条线可以走得越远，却不会因此同时出现在多个地方：它仍然需要在同一个上下文里排队、判断和切换。
 
@@ -101,7 +101,7 @@ python3 start.py
 
 Mobius 作为一个智能体操作系统，原生协调**不同模型**、**不同 Harness**的 Agent，在**不同硬件设备**上无缝合作。
 
-## 让彼此独立的 Agent 组成队伍
+## 多智能体协作
 
 Mobius 通过两个层次实现多智能体合作。第一层是临时建立的跨会话连接：计划之外出现了信息互通需求，人在对话中按下键盘上的 **@** 键即可选择另一个 Agent。选择**“只读引用”**，当前 Agent 读取对方的完整上下文，但不干预或唤醒对方；选择**“开启交流”**，两个 Agent 便能双向交换信息。
 
@@ -122,7 +122,7 @@ Mobius 通过两个层次实现多智能体合作。第一层是临时建立的�
   <img src="https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/authcode/?code=ZDQ2ZTY1MzM2N2FiYzA2ODE2NGQxZjllY2Q2YjZjMzhfZmQxYTA3OWNhZWVhZWYwZDUyNDA4ODNlZTQyNGY3MzdfSUQ6NzY3NTc4OTUxNzQyMDMwMTUxNF8xNzg3MTU5MDQzOjE3ODcxNjI2NDNfVjM" alt="Mobius 多智能体协作" width="720" />
 </p>
 
-## Mobius 的触手，联通一切
+## 跨设备联通
 
 Agent 不必都住在同一台机器上。Mobius 在同一个任务网络里调度浏览器、终端、GPU 集群、嵌入式开发板、云服务器和工作站，让不同模型、不同 Harness 驱动的 Agent 在各自擅长的设备上工作。
 
@@ -132,7 +132,7 @@ Agent 不必都住在同一台机器上。Mobius 在同一个任务网络里调�
   <img src="https://github.com/user-attachments/assets/cd5ef0ba-1d38-4017-bf8a-e7b93d17fca0" alt="SSH 与 AIMUX 接入路径" width="480" />
 </p>
 
-## 一个科研目标，不止一次问答
+## 自动科研流水线
 
 Mobius 把多个 Agent 编排成一条自主科研流水线：读论文、抽取方法、复现实验、绘制曲线、追踪 Research 流图、汇总并撰写报告。一个科研目标会变成一个能持续推进的多智能体系统，而不是一次单轮问答。
 
@@ -140,7 +140,7 @@ Mobius 把多个 Agent 编排成一条自主科研流水线：读论文、抽取
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-research.gif" alt="自动科研演示" width="480" />
 </p>
 
-## 小莫：不用记命令的入口
+## 小莫：自然语言交互入口
 
 小莫是整个系统的自然语言入口。创建项目、拆分任务、启动 Agent、追踪进度、审批决策，直接对它说就行。界面上能点的，小莫都能做；界面上做不到的，小莫也能处理。它支持语音输入、多端使用（Web、PC、移动端）和可配置的提醒。
 
@@ -168,7 +168,7 @@ Mobius 把多个 Agent 编排成一条自主科研流水线：读论文、抽取
 
 Mobius 与具体模型解耦。GPT、Claude、**GLM-5.2**、Codex 都可以在同一个项目和任务网络中充当执行引擎，再按任务类型、成本或性能自由组合。
 
-## 让系统按你的需要继续生长
+## 自进化能力
 
 Mobius 会根据你的输入改写自身。发一个**修改需求**、一张**截图**，或一个**参考链接**，Mobius 就把它们变成真实的代码、界面、插件或流程更新，全程不打断你的工作。每一次迭代，都在后台悄悄替换“忒修斯之船”上的一块木板。
 
@@ -211,7 +211,7 @@ Mobius 还会按你的需求孵化新的拓展：金融看板、PPT 生成器、
   </tr>
 </table>
 
-## 人和 Agent，在同一个团队里
+## 人机协作团队
 
 成员、Agent、任务和交付物集中在同一个视图。负责人一眼就能看到谁在做什么、每个 Agent 在哪、哪些需要确认、风险在哪里——不再有碎片化的沟通。
 
@@ -219,7 +219,7 @@ Mobius 还会按你的需求孵化新的拓展：金融看板、PPT 生成器、
   <img src="https://serve.nutshellai.cn/publish/auto/readme/can-do-team-collab.gif" alt="团队协作演示" width="480" />
 </p>
 
-## 继续深入
+## 延伸阅读
 
 ### 最新动态
 
