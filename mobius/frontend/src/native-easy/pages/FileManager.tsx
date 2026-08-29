@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api, useStore } from '../store'
+import { ArrowLeft, Code2, File, FileCode2, FileImage, FileJson2, FileText, Folder, FolderOpen, Home, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 
@@ -18,16 +19,13 @@ function formatSize(bytes: number | null) {
 }
 
 function getFileIcon(name: string, type: string) {
-  if (type === 'dir') return '📁'
+  if (type === 'dir') return <Folder className="h-4 w-4" aria-hidden />
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  const icons: Record<string, string> = {
-    ts: '🔷', tsx: '🔷', js: '🟡', jsx: '🟡', py: '🐍', go: '🔵', rs: '🦀',
-    md: '📝', json: '📋', yaml: '📋', yml: '📋', toml: '📋',
-    sh: '⚙️', bash: '⚙️', css: '🎨', html: '🌐', sql: '🗄️',
-    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️',
-    txt: '📄', log: '📄', env: '🔒',
-  }
-  return icons[ext] || '📄'
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext)) return <FileImage className="h-4 w-4" aria-hidden />
+  if (ext === 'json' || ext === 'yaml' || ext === 'yml' || ext === 'toml') return <FileJson2 className="h-4 w-4" aria-hidden />
+  if (ext === 'md' || ext === 'txt' || ext === 'log') return <FileText className="h-4 w-4" aria-hidden />
+  if (['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'sh', 'bash', 'css', 'html', 'sql'].includes(ext)) return <FileCode2 className="h-4 w-4" aria-hidden />
+  return <File className="h-4 w-4" aria-hidden />
 }
 
 function extToMime(ext: string): string {
@@ -48,6 +46,13 @@ function extToLang(ext: string): string {
   return map[ext] || 'text'
 }
 
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp']
+const RENDERABLE_EXTENSIONS = [...IMAGE_EXTENSIONS, '.md', '.html']
+
+function isRenderable(ext: string) {
+  return RENDERABLE_EXTENSIONS.includes(ext.toLowerCase())
+}
+
 export default function FileManager({ onClose, onSendToChat }: {
   onClose: () => void
   onSendToChat: (content: string) => void
@@ -59,6 +64,7 @@ export default function FileManager({ onClose, onSendToChat }: {
   const [loading, setLoading] = useState(false)
   const [viewFile, setViewFile] = useState<{ path: string; content: string; ext: string; size: number; url?: string } | null>(null)
   const [viewLoading, setViewLoading] = useState(false)
+  const [viewMode, setViewMode] = useState<'preview' | 'source'>('preview')
 
   const loadDir = useCallback(async (dirPath: string) => {
     setLoading(true)
@@ -90,8 +96,10 @@ export default function FileManager({ onClose, onSendToChat }: {
         const data = await api(`/api/files/read?path=${encodeURIComponent(newPath)}`)
         if (data.type === 'text') {
           setViewFile({ path: newPath, content: data.content, ext: data.ext, size: data.size })
+          setViewMode(isRenderable(String(data.ext || '')) ? 'preview' : 'source')
         } else if (data.type === 'image') {
           setViewFile({ path: newPath, content: data.url || '', ext: data.ext || '', size: data.size, url: data.url })
+          setViewMode('preview')
         }
       } catch { setViewFile(null) }
       setViewLoading(false)
@@ -110,20 +118,18 @@ export default function FileManager({ onClose, onSendToChat }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative w-full max-w-[900px] h-[70vh] rounded-2xl shadow-2xl shadow-black/40 overflow-hidden flex flex-col"
+      <div className="relative w-full max-w-[1040px] h-[78vh] rounded-xl shadow-2xl shadow-black/40 overflow-hidden flex flex-col"
         style={{ background: isDark ? '#141820' : '#ffffff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' }}>
           <div className="flex items-center gap-3 min-w-0">
-            <svg className="w-5 h-5 text-[var(--accent-primary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
+            <FolderOpen className="h-5 w-5 flex-shrink-0 text-[var(--accent-primary)]" />
             <span className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>文件浏览器</span>
             {/* Breadcrumb */}
             <div className="flex items-center gap-1 text-[12px] min-w-0" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
-              <button onClick={() => { setViewFile(null); loadDir('/') }} className="hover:opacity-80 transition-colors">~</button>
+              <button onClick={() => { setViewFile(null); loadDir('/') }} className="inline-flex items-center gap-1 hover:opacity-80 transition-colors"><Home className="h-3 w-3" />项目</button>
               {breadcrumbs.map((seg, i) => (
                 <span key={i} className="flex items-center gap-1">
                   <span style={{ color: isDark ? '#374151' : '#d1d5db' }}>/</span>
@@ -154,7 +160,7 @@ export default function FileManager({ onClose, onSendToChat }: {
             {/* Go up */}
             {currentPath !== '/' && (
               <button onClick={goUp} className="w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
-                <span className="text-[13px]">📂</span>
+                <ArrowLeft className="h-3.5 w-3.5" />
                 <span className="text-[13px]">..</span>
               </button>
             )}
@@ -167,7 +173,7 @@ export default function FileManager({ onClose, onSendToChat }: {
                 className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left ${
                   viewFile?.path?.endsWith('/' + entry.name) ? 'bg-[var(--surface-active)] border-l-2 border-[var(--accent-primary)]' : ''
                 }`}>
-                <span className="text-[13px] flex-shrink-0">{getFileIcon(entry.name, entry.type)}</span>
+                  <span className="flex-shrink-0 text-[var(--text-muted)]">{getFileIcon(entry.name, entry.type)}</span>
                 <span className="text-[13px] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
                 {entry.type === 'file' && entry.size !== null && (
                   <span className="text-[10px] flex-shrink-0" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(entry.size)}</span>
@@ -181,19 +187,25 @@ export default function FileManager({ onClose, onSendToChat }: {
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', background: isDark ? '#0d1117' : '#f9fafb' }}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[13px]">{getFileIcon(viewFile.path.split('/').pop() || '', 'file')}</span>
+                  <span className="text-[var(--text-muted)]">{getFileIcon(viewFile.path.split('/').pop() || '', 'file')}</span>
                   <span className="text-[12px] truncate" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{viewFile.path.split('/').pop()}</span>
                   <span className="text-[10px]" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(viewFile.size)}</span>
                 </div>
-                <button onClick={() => setViewFile(null)} className="transition-colors p-1" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <div className="flex items-center gap-1">
+                  {isRenderable(viewFile.ext) && (
+                    <div className="flex items-center rounded-md border p-0.5" style={{ borderColor: isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)' }}>
+                      <button type="button" onClick={() => setViewMode('preview')} className={`rounded px-2 py-1 text-[10px] ${viewMode === 'preview' ? 'bg-[var(--surface-active)] text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>预览</button>
+                      <button type="button" onClick={() => setViewMode('source')} className={`rounded px-2 py-1 text-[10px] ${viewMode === 'source' ? 'bg-[var(--surface-active)] text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}><Code2 className="mr-1 inline h-3 w-3" />源代码</button>
+                    </div>
+                  )}
+                  <button onClick={() => setViewFile(null)} className="transition-colors p-1" style={{ color: isDark ? '#6b7280' : '#94a3b8' }} aria-label="关闭预览"><X className="h-4 w-4" /></button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto" style={{ background: isDark ? '#0a0e14' : '#ffffff' }}>
                 {viewLoading ? (
                   <div className="text-center text-[13px] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>加载中...</div>
                 ) : (
-                  viewFile.ext === '.md' ? (
+                  viewFile.ext === '.md' && viewMode === 'preview' ? (
                     <div className="px-6 py-4 max-w-none" style={{ color: isDark ? '#e2e8f0' : '#1e293b', fontSize: '13px', lineHeight: '1.6' }}>
                       {viewFile.content
                         ? (() => {
@@ -206,9 +218,19 @@ export default function FileManager({ onClose, onSendToChat }: {
                         : <span style={{ color: isDark ? '#6b7280' : '#9ca3af' }}>（文件内容为空）</span>
                       }
                     </div>
-                  ) : viewFile.ext && ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'].includes(viewFile.ext.toLowerCase()) ? (
+                  ) : viewFile.ext === '.html' && viewMode === 'preview' ? (
+                    <iframe
+                      title={viewFile.path.split('/').pop() || 'HTML 预览'}
+                      sandbox="allow-scripts"
+                      srcDoc={viewFile.content}
+                      className="h-full min-h-[320px] w-full border-0 bg-white"
+                    />
+                  ) : viewFile.ext && IMAGE_EXTENSIONS.includes(viewFile.ext.toLowerCase()) && viewMode === 'preview' ? (
                     <div className="flex items-center justify-center p-4" style={{ minHeight: '200px' }}>
-                      <img src={`${viewFile.url || viewFile.content}${viewFile.url?.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`} alt={viewFile.path.split('/').pop()}
+                      <img src={viewFile.ext.toLowerCase() === '.svg' && !viewFile.url
+                        ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(viewFile.content)}`
+                        : `${viewFile.url || viewFile.content}${viewFile.url?.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`}
+                        alt={viewFile.path.split('/').pop()}
                         className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
                     </div>
                   ) : (

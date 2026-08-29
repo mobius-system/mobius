@@ -1339,18 +1339,19 @@ label,
   align-items: center;
   gap: 3px;
   min-width: 0;
-  padding: 5px 4px 4px;
+  padding: 6px 6px 5px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--accent-primary));
 }
 
 .session-tool-drawer__tabs {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   padding: 2px;
   border: 1px solid var(--border-default);
-  border-radius: 999px;
+  border-radius: 9px;
   background: var(--surface-control);
 }
 
@@ -1360,10 +1361,10 @@ label,
   align-items: center;
   justify-content: center;
   min-width: 21px;
-  height: 24px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-muted);
   box-shadow: none;
@@ -1380,6 +1381,7 @@ label,
 .session-tool-drawer__tab.is-active {
   color: var(--text-primary);
   background: var(--surface-active);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
 }
 
 .session-tool-drawer__tab:focus-visible,
@@ -1415,6 +1417,45 @@ label,
   color: var(--text-muted);
   box-shadow: none;
 }
+
+.session-tool-drawer__add,
+.session-tool-drawer__overflow {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 34px;
+  z-index: 20;
+  width: 192px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-overlay);
+}
+.session-tool-drawer__add-title {
+  padding: 5px 8px 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  border-bottom: 1px solid var(--border-default);
+}
+.session-tool-drawer__add-item {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.session-tool-drawer__add-item:hover { color: var(--text-primary); background: var(--surface-control-hover); }
+.session-tool-drawer__add-current { margin-left: auto; color: var(--accent-primary); font-size: 9px; }
 
 .session-tool-drawer__header-action:hover:not(:disabled) {
   transform: none;

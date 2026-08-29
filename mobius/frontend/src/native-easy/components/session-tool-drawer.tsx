@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Brain, Code2, Files, FileDiff, GitBranch, MoreHorizontal, PanelRightClose, Puzzle, Terminal } from 'lucide-react'
+import { Brain, Code2, Files, FileDiff, GitBranch, MoreHorizontal, PanelRightClose, Plus, Puzzle, Terminal } from 'lucide-react'
 
 export type SessionToolTab = 'files' | 'diff' | 'terminal' | 'editor' | 'skill' | 'memory' | 'git'
 
@@ -46,25 +46,32 @@ export function SessionToolDrawer({
   const overflowButtonRef = useRef<HTMLButtonElement | null>(null)
   const overflowPanelRef = useRef<HTMLDivElement | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const activeIndex = TOOL_TABS.findIndex(tab => tab.id === activeTab)
   const focusableIndex = activeIndex >= 0 ? activeIndex : 0
   const visibleObjectLabel = objectLabel?.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || objectLabel
 
   useEffect(() => {
-    if (!open) setOverflowOpen(false)
+    if (!open) {
+      setOverflowOpen(false)
+      setAddOpen(false)
+    }
   }, [open])
 
   useEffect(() => {
-    if (!overflowOpen) return
+    if (!overflowOpen && !addOpen) return
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
       if (overflowButtonRef.current?.contains(target) || overflowPanelRef.current?.contains(target)) return
+      if ((event.target as Element)?.closest('.session-tool-drawer__add')) return
+      if ((event.target as Element)?.closest('[aria-controls="session-tool-add"]')) return
       setOverflowOpen(false)
+      setAddOpen(false)
     }
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [overflowOpen])
+  }, [addOpen, overflowOpen])
 
   const selectByIndex = (index: number) => {
     const normalized = (index + TOOL_TABS.length) % TOOL_TABS.length
@@ -135,6 +142,17 @@ export function SessionToolDrawer({
             ))}
           </div>
           <div className="session-tool-drawer__header-actions">
+            <button
+              type="button"
+              onClick={() => { setAddOpen(value => !value); setOverflowOpen(false) }}
+              className="session-tool-drawer__header-action"
+              aria-label="添加工具面板"
+              aria-controls="session-tool-add"
+              aria-expanded={addOpen}
+              title="添加工具面板"
+            >
+              <Plus aria-hidden />
+            </button>
             {overflow && (
               <button
                 ref={overflowButtonRef}
@@ -159,6 +177,29 @@ export function SessionToolDrawer({
               <PanelRightClose aria-hidden />
             </button>
           </div>
+          {addOpen && (
+            <div
+              id="session-tool-add"
+              className="session-tool-drawer__add workbench-popover"
+              role="menu"
+              aria-label="添加工具面板"
+            >
+              <div className="session-tool-drawer__add-title">添加工具面板</div>
+              {TOOL_TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="menuitem"
+                  className="session-tool-drawer__add-item"
+                  onClick={() => { setAddOpen(false); onSelectTab(tab.id) }}
+                >
+                  <span className="session-tool-drawer__tab-icon" aria-hidden>{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  {activeTab === tab.id && <span className="session-tool-drawer__add-current">当前</span>}
+                </button>
+              ))}
+            </div>
+          )}
           {overflow && overflowOpen && (
             <div
               ref={overflowPanelRef}

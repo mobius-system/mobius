@@ -4298,7 +4298,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   )
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0" style={{ background: 'var(--bg-secondary)' }}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" style={{ background: 'var(--bg-secondary)' }}>
       <RemoteFileMentionDrawer
         projectId={currentProjectId}
         issueId={currentIssueId || undefined}
@@ -4655,7 +4655,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
           窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
-      <div ref={chatBodyRef} className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
+      <div ref={chatBodyRef} className={`mobius-chat-body flex min-h-0 flex-1 overflow-hidden${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}>
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}
