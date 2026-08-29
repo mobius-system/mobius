@@ -6,10 +6,12 @@ import {
   ChevronDown,
   Folder,
   LoaderCircle,
+  Mic,
   Paperclip,
   Plus,
   Search,
   Send,
+  Square,
   X,
 } from 'lucide-react'
 import { api, useStore } from '../../store'
@@ -18,6 +20,8 @@ import { NewProjectModal } from '../modals'
 import { HomeComposerAttachments, useHomeComposerAttachments } from './home-composer-attachments'
 import { HomeModelHarnessSelect } from './home-model-harness-select'
 import { useComposerInputLayout, useComposerMobileLayout } from './useComposerInputLayout'
+import { useHomeVoiceInput } from './useHomeVoiceInput'
+import { formatVoiceSeconds } from '../../services/assistant-voice'
 import {
   ConversationCreationError,
   createDefaultConversation,
@@ -108,6 +112,24 @@ export function EasyWorkbenchHome() {
     expanded: false,
     isMobile,
   })
+  const appendVoiceTranscript = useCallback((text: string) => {
+    setPrompt(current => current
+      ? `${current}${/\s$/.test(current) ? '' : ' '}${text}`
+      : text)
+    invalidateCheckpoint()
+    window.requestAnimationFrame(() => composerRef.current?.focus())
+  }, [invalidateCheckpoint])
+  const {
+    state: voiceState,
+    recordingSeconds,
+    toggle: toggleVoiceRecording,
+    cancel: cancelVoiceInput,
+  } = useHomeVoiceInput({
+    disabled: sending,
+    onError: setSendError,
+    onTranscript: appendVoiceTranscript,
+  })
+  const voiceBusy = voiceState === 'recording' || voiceState === 'transcribing'
 
   useEffect(() => {
     logUiEvent('home_arrived', { user_id: userId })
@@ -118,13 +140,14 @@ export function EasyWorkbenchHome() {
   }, [setCurrentIssue, setCurrentResearch, setCurrentSession, setCurrentTask, userId])
 
   const resetComposer = useCallback(() => {
+    cancelVoiceInput()
     setPrompt('')
     setSendError('')
     setCheckpoint(null)
     setSubmissionQueued(false)
     clearAttachments()
     window.setTimeout(() => composerRef.current?.focus(), 0)
-  }, [clearAttachments])
+  }, [cancelVoiceInput, clearAttachments])
 
   useEffect(() => {
     window.addEventListener('mobius:new-conversation', resetComposer)
@@ -199,6 +222,7 @@ export function EasyWorkbenchHome() {
 
   const selectProject = (projectId: string) => {
     prepareWorkbenchObjectNavigation()
+    cancelVoiceInput()
     setProjectMenuOpen(false)
     setSelectedProjectId(projectId)
     setLastProjectId(projectId)
@@ -225,6 +249,10 @@ export function EasyWorkbenchHome() {
 
   const send = async () => {
     if (!selectedProjectId || sending) return
+    if (voiceBusy) {
+      setSendError(voiceState === 'recording' ? '请先停止录音并等待转写完成。' : '语音正在转写，请稍候。')
+      return
+    }
     if (anyUploading) {
       setSendError('附件仍在上传，请稍候…')
       return
@@ -273,7 +301,14 @@ export function EasyWorkbenchHome() {
   }
 
   const hasSendableContent = !!prompt.trim() || readyAttachments.length > 0
-  const canRequestSend = hasSendableContent && !anyUploading
+  const canRequestSend = hasSendableContent && !anyUploading && !voiceBusy
+  const voiceTip = voiceState === 'recording'
+    ? `停止录音 ${formatVoiceSeconds(recordingSeconds)}`
+    : voiceState === 'transcribing'
+      ? '正在转写语音'
+      : voiceState === 'error'
+        ? '重新录制语音'
+        : '语音输入'
 
   if (loadingProjects) {
     return (
@@ -411,6 +446,22 @@ export function EasyWorkbenchHome() {
             </div>
             <div className="flex items-center gap-2">
               <button type="button" data-home-composer-attachment-button onClick={openFilePicker} disabled={sending} className="composer-icon-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40" aria-label="选择附件" title="添加附件"><Paperclip className="h-4 w-4" strokeWidth={1.8} /></button>
+              <button
+                type="button"
+                data-home-composer-voice-button
+                onClick={toggleVoiceRecording}
+                disabled={sending || voiceState === 'transcribing'}
+                className={`composer-icon-btn home-composer-voice home-composer-voice--${voiceState} inline-flex h-8 w-8 flex-shrink-0 items-center justify-center disabled:opacity-40`}
+                aria-label={voiceTip}
+                aria-pressed={voiceState === 'recording'}
+                title={voiceTip}
+              >
+                {voiceState === 'recording'
+                  ? <Square className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true" />
+                  : voiceState === 'transcribing'
+                    ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Mic className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />}
+              </button>
               <button type="button" onClick={() => void send()} disabled={!canRequestSend || !selectedModel || sending}
                 aria-label={sending ? '正在开始会话' : anyUploading ? '附件仍在上传' : '发送'}
                 title={sending ? '正在开始会话' : anyUploading ? '附件仍在上传，请稍候' : '发送'}
@@ -419,6 +470,7 @@ export function EasyWorkbenchHome() {
               </button>
             </div>
           </div>
+          <span className="sr-only" role="status" aria-live="polite">{voiceState === 'recording' ? `正在录音 ${formatVoiceSeconds(recordingSeconds)}` : voiceState === 'transcribing' ? '正在转写语音' : ''}</span>
         </div>
 
         {submissionQueued && <div className="mt-2 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite"><span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--status-running)' }} aria-hidden="true" />已提交，正在打开会话…</div>}
