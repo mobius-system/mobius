@@ -177,6 +177,8 @@ Full deployment guide at [Docs](https://mobius-system.github.io/mobius/en/).
 >
 > One-line install for Windows: `irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`.
 
+For professional users, we recommend installing with the commands below, which are equivalent to the one-line install.
+
 ```bash
 # 1. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
 git clone https://github.com/mobius-system/mobius.git && cd mobius

@@ -8,11 +8,22 @@
 import type { AnyEntry, JsonlViewItem, Round, RoundItem } from './types'
 import { isNewRound } from '../jsonl-round-helpers'
 
-// 提取一个"开新轮"候选条目里实际呈现给用户的归一化文本, 仅用于 buildRounds 内部去重比较.
+const USER_QUESTION_MARKERS = [
+  /(?:^|\n)\s*【?\s*##\s*用户的问题\s*】?\s*(?:\r?\n|$)/,
+  /(?:^|\n)\s*【用户的问题】\s*(?:\r?\n|$)/,
+  /(?:^|\n)\s*【?\s*##\s*User'?s Question\s*】?\s*(?:\r?\n|$)/i,
+  /(?:^|\n)\s*【User'?s Question】\s*(?:\r?\n|$)/i,
+]
+
+export type BuildRoundsOptions = {
+  preferFramedUser?: boolean
+}
+
+// 提取一个"开新轮"候选条目里实际呈现给用户的文本, 仅用于 buildRounds 内部去重比较.
 // 三种格式对应同一次输入: mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
-function userTextOf(e: AnyEntry): string {
+function userTextOf(e: AnyEntry, preferFramedUser: boolean): string {
   if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') {
-    return String(e?.payload?.message || '').trim()
+    return String(e?.payload?.message || (preferFramedUser ? e?.payload?.content : '') || '').trim()
   }
   if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
     const c = e?.payload?.content
@@ -29,8 +40,32 @@ function userTextOf(e: AnyEntry): string {
   return ''
 }
 
+function findUserQuestionMarker(text: string): { index: number; length: number } | null {
+  let best: { index: number; length: number } | null = null
+  for (const marker of USER_QUESTION_MARKERS) {
+    const match = text.match(marker)
+    if (match && match.index != null && (!best || match.index < best.index)) {
+      best = { index: match.index, length: match[0].length }
+    }
+  }
+  return best
+}
+
+function canonicalUserText(text: string): string {
+  if (!text) return text
+  const marker = findUserQuestionMarker(text)
+  const unframed = marker
+    ? text.slice(marker.index + marker.length).trim() || text
+    : text
+  return unframed.replace(/\s+/g, ' ').trim()
+}
+
+function isFramedUserText(text: string): boolean {
+  return !!findUserQuestionMarker(text)
+}
+
 // 该 entry 是否承载 agent 侧输出 — 用来判断上一轮"是否已经开始接收回复"(用以拒绝把真正的二次提问误判为重复入口).
-function isAssistantOutput(e: AnyEntry): boolean {
+function isAssistantOutput(e: AnyEntry, preferFramedUser: boolean): boolean {
   if (e?.type === 'assistant') return true
   if (e?.type === 'event_msg' && e?.payload?.type === 'agent_message') return true
   if (e?.type === 'response_item') {
@@ -38,7 +73,7 @@ function isAssistantOutput(e: AnyEntry): boolean {
     if (pt === 'function_call' || pt === 'function_call_output' || pt === 'custom_tool_call' || pt === 'custom_tool_call_output' || pt === 'reasoning') return true
     if (pt === 'message') {
       const role = e?.payload?.role
-      return !!role && role !== 'user'
+      return preferFramedUser ? role === 'assistant' : !!role && role !== 'user'
     }
   }
   return false
@@ -46,21 +81,32 @@ function isAssistantOutput(e: AnyEntry): boolean {
 
 export function buildRounds(
   visibleItems: JsonlViewItem[],
+  options: BuildRoundsOptions = {},
 ): { preItems: JsonlViewItem[]; rounds: Round[] } {
+  const preferFramedUser = options.preferFramedUser === true
   const preItems: JsonlViewItem[] = []
   const rounds: Round[] = []
   for (const item of visibleItems) {
     const e = item.entry
     if (isNewRound(e)) {
-      // 去重: 同一次用户输入会以多种形态出现 (mobius type:user 写一条, codex 紧接着写
-      // response_item.message[role=user] + event_msg.user_message). 若上一轮的"开篇用户
-      // 文本"与当前候选相同, 且上一轮还没出现任何 agent 输出, 则视为同一轮的重复入口,
-      // 直接丢弃而不开新轮 — 既避免生成中出现 10.0 / 11.0 重复条目, 也不会误合并真正的二次提问.
-      const text = userTextOf(e)
+      // 默认沿用正常模式的原文全等去重。Easy 模式显式打开 preferFramedUser 后，
+      // 则剥掉「## 用户的问题」框架比较正文，并优先保留带框架的条目，供界面折叠注入上下文。
+      const raw = userTextOf(e, preferFramedUser)
+      const text = preferFramedUser ? canonicalUserText(raw) : raw
       const prev = rounds[rounds.length - 1]
-      const prevText = prev ? userTextOf(prev.items[0]?.entry) : ''
-      const prevHasAssistant = !!prev && prev.items.some((it) => isAssistantOutput(it.entry))
-      if (text && prev && text === prevText && !prevHasAssistant) continue
+      const prevRaw = prev ? userTextOf(prev.items[0]?.entry, preferFramedUser) : ''
+      const prevText = preferFramedUser ? canonicalUserText(prevRaw) : prevRaw
+      const prevHasAssistant = !!prev && prev.items.some((it) => isAssistantOutput(it.entry, preferFramedUser))
+      // 首条消息常见顺序: Codex 先写下裸原文, 中间夹 reasoning / 401 agent_message,
+      // Mobius 稍后才补上 wrapUserMessage 框架。这类 "framed 覆盖同题裸原文" 是同一轮,
+      // 不能因为中间噪声就被拆成两张用户气泡。
+      const upgradeToFramed = preferFramedUser && isFramedUserText(raw) && !isFramedUserText(prevRaw)
+      if (text && prev && text === prevText && (!prevHasAssistant || upgradeToFramed)) {
+        if (upgradeToFramed && prev.items[0]) {
+          prev.items[0] = { ...(item as RoundItem), relIdx: 0 }
+        }
+        continue
+      }
       rounds.push({ roundNum: rounds.length + 1, items: [] })
     }
     if (rounds.length === 0) {

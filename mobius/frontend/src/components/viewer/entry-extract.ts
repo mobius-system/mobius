@@ -574,6 +574,10 @@ function functionCallArguments(payload: any): Record<string, any> | null {
     || parseCustomToolInput(payload?.input)
 }
 
+export function functionCallInput(payload: any): Record<string, any> {
+  return functionCallArguments(payload) || {}
+}
+
 export function functionCallCommand(payload: any): string | null {
   const args = functionCallArguments(payload)
   const cmd = args?.cmd ?? args?.command ?? args?.input?.cmd ?? args?.input?.command
@@ -586,6 +590,23 @@ export function functionCallCommand(payload: any): string | null {
     if (input) return input
   }
   return null
+}
+
+export function stripExecEnvelope(text: string): string {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n')
+  const isBlank = (line: string) => /^\s*$/.test(line)
+  const isMeta = (line: string) =>
+    /^Script completed\.?\s*$/i.test(line)
+    || /^Wall time\b/i.test(line)
+    || /^Exit code:\s*\d+\s*$/i.test(line)
+  let index = 0
+  while (index < lines.length && (isBlank(lines[index]) || isMeta(lines[index]))) index += 1
+  if (index < lines.length && /^Output:\s*$/i.test(lines[index])) index += 1
+  else if (index < lines.length && /^Output:/i.test(lines[index])) {
+    lines[index] = lines[index].replace(/^Output:\s*/i, '')
+  }
+  while (index < lines.length && isBlank(lines[index])) index += 1
+  return lines.slice(index).join('\n').replace(/\s+$/, '')
 }
 
 export function functionOutputBody(output: any): string {
