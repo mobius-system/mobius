@@ -21,6 +21,7 @@ import {
   filePathSegments,
   formatFileTarget,
   resolveProjectRelativePath,
+  projectPathCandidates,
   withFileTargetRange,
   workspaceTabKey,
   type CodeArtifactOpenRequest,
@@ -283,11 +284,25 @@ export function FilePreviewLayer({
           vscodeWorkspacePath: projectMeta?.vscode_workspace_path,
         })
         if (!resolved.ok) throw new Error(resolved.error)
-        setResolvedPath(resolved.path)
+        const candidates = projectPathCandidates(resolved.path)
+        let file: any = null
+        let resolvedFilePath = resolved.path
         readingFile = true
-        const file = await api(`/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(resolved.path)}`, { signal: controller.signal })
+        let lastError: unknown = null
+        for (const candidate of candidates) {
+          try {
+            file = await api(`/api/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(candidate)}`, { signal: controller.signal })
+            resolvedFilePath = candidate
+            break
+          } catch (candidateError: any) {
+            lastError = candidateError
+            if (!/HTTP 404|Not found|文件不存在/i.test(String(candidateError?.message || ''))) throw candidateError
+          }
+        }
+        if (!file) throw lastError || new Error('Not found')
+        setResolvedPath(resolvedFilePath)
         const nextData = {
-          path: String(file?.path || resolved.path),
+          path: String(file?.path || resolvedFilePath),
           name: String(file?.name || formatted.basename),
           abs_path: typeof file?.abs_path === 'string' ? file.abs_path : undefined,
           size: Number(file?.size || 0),
@@ -302,7 +317,7 @@ export function FilePreviewLayer({
           error: '',
           data: nextData,
           meta: nextMeta,
-          resolvedPath: resolved.path,
+          resolvedPath: resolvedFilePath,
           selectedRange: cacheRef.current.get(tabKey)?.selectedRange ?? null,
           scrollTop: cacheRef.current.get(tabKey)?.scrollTop ?? 0,
         })

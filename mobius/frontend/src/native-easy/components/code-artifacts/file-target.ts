@@ -364,3 +364,22 @@ export function resolveProjectRelativePath(target: CodeArtifactTarget, metadata?
     ? { ok: true, path: relative }
     : { ok: false, code: 'outside-workspace', error: '文件路径超出当前项目' }
 }
+
+/**
+ * Historical sessions can retain paths from before the native-easy snapshot
+ * moved shared workbench files. Keep the exact path first, then expose only
+ * the known snapshot aliases for a 404 retry in the preview layer.
+ */
+export function projectPathCandidates(path: string): string[] {
+  const normalized = normalizeSeparators(String(path || '').trim())
+  if (!normalized) return []
+  const candidates = [normalized]
+  const add = (candidate: string) => {
+    if (candidate && !candidates.includes(candidate)) candidates.push(candidate)
+  }
+  const nativeEasy = normalized.replace('/frontend/src/components/', '/frontend/src/native-easy/components/')
+  const regular = normalized.replace('/frontend/src/native-easy/components/', '/frontend/src/components/')
+  add(nativeEasy)
+  add(regular)
+  return candidates
+}
