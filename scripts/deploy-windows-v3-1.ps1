@@ -7,7 +7,7 @@
   脚本可通过 irm <url> | iex 执行，不要求管理员权限；Docker Desktop、Git 和 Python 3
   需要用户预先安装。安装目录可用 -InstallDir 覆盖（直接运行保存后的脚本时）。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v3.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v3-1.ps1 | iex
 #>
 
 param(
