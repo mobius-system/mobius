@@ -3393,7 +3393,9 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
     switch (wizard.step) {
       case 1: return wizard.label.trim().length > 0 && wizard.label.trim().length <= 80
       case 2: return wizard.harness === 'claude-code' || wizard.harness === 'codex' || sub
-      case 3: return sub ? wizard.subPrepared
+      // 订阅路径第3步恒可点"下一步"(点击时才调 prepare 落盘占位文件); subPrepared 仅用于回显状态,
+      // 不能作为 gate — 否则按钮被禁用而 subPrepared 又只在点击后才置 true, 死锁.
+      case 3: return sub ? true
         : wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
       case 4: return sub ? true
         : isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
