@@ -141,10 +141,7 @@ module.exports = {
     }
     return secret;
   })(),
-  // 默认免登录并自动使用 AUTO_LOGIN_USER_ID；公网/多人部署必须显式开启登录。
-  ENABLE_LOGIN: process.env.ENABLE_LOGIN === 'true',
-  AUTO_LOGIN_USER_ID: process.env.AUTO_LOGIN_USER_ID || 'admin',
-  // ENABLE_LOGIN=true 时控制是否校验密码。
+  // 默认关闭密码校验; 设为 'true' 可重新启用密码登录
   ENABLE_PASSWORD_LOGIN: process.env.ENABLE_PASSWORD_LOGIN === 'true',
   // VSCode Web (code-server) 基础 URL, 例: http://localhost:8443. 留空则前端不展示"在 VSCode 打开"按钮.
   VSCODE_WEB_URL: process.env.VSCODE_WEB_URL || '',
