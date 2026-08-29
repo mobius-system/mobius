@@ -38,7 +38,9 @@
 
 > macOS 一键安装（一行命令）：`bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v21.sh)`，[演示视频](https://www.bilibili.com/video/BV1AAtT6aEoR)
 >
-> Windows 一键安装：`irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`。
+> Windows 一键安装：`irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`，[演示视频](https://www.bilibili.com/video/BV1yk4y6iER9/)
+
+对专业用户，我们推荐用下面的命令手动安装，效果与一键安装完全等价。
 
 ```bash
 # 1. 克隆仓库（建议先 fork，再 clone；这样自进化后可直接提交到自己的仓库）
