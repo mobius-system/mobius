@@ -3628,7 +3628,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
               {([
                 { k: 'claude-code' as WizardHarness, name: 'Claude Code', desc: 'Anthropic 兼容接口, 走 --settings 直连', icon: <Terminal className="h-4 w-4 text-cyan-400" /> },
                 { k: 'codex' as WizardHarness, name: 'Codex', desc: 'Responses 接口, 走 --profile 渠道加载', icon: <Cpu className="h-4 w-4 text-orange-400" /> },
-                { k: 'codex-subscription' as WizardHarness, name: 'Codex订阅', desc: 'ChatGPT 付费订阅认证, 设备码登录接入', icon: <Shield className="h-4 w-4 text-emerald-400" /> },
+                { k: 'codex-subscription' as WizardHarness, name: 'Codex订阅（调试中勿使用）', desc: 'ChatGPT 付费订阅认证, 设备码登录接入', icon: <Shield className="h-4 w-4 text-emerald-400" /> },
               ]).map(opt => {
                 const active = wizard.harness === opt.k
                 return (
