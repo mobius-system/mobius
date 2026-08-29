@@ -227,6 +227,7 @@
 
 .workbench-shell__workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: var(--workbench-topbar-height) minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
@@ -234,6 +235,8 @@
 }
 
 .workbench-shell__topbar {
+  grid-column: 1;
+  grid-row: 1;
   height: var(--workbench-topbar-height);
   min-height: var(--workbench-topbar-height);
   background: var(--surface-topbar);
@@ -253,6 +256,8 @@
 
 .workbench-shell__content {
   display: flex;
+  grid-column: 1;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -272,6 +277,16 @@
   width: 0;
   flex: 0 0 auto;
   overflow: hidden;
+}
+
+.workbench-shell__right {
+  grid-column: 2;
+  grid-row: 1 / -1;
+}
+
+.workbench-shell__dock {
+  grid-column: 1;
+  grid-row: 3;
 }
 
 .workbench-session-chat {
@@ -1419,7 +1434,7 @@
   .workbench-shell__right:has([data-session-tool-drawer][data-open="true"]) {
     position: fixed;
     z-index: var(--layer-drawer);
-    top: var(--workbench-topbar-height);
+    top: 0;
     right: 0;
     bottom: 0;
     width: min(360px, calc(100vw - 24px));

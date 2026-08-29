@@ -275,12 +275,12 @@ export function WorkbenchShell({
               aria-label="文件预览"
               data-workbench-preview
             />
-            <aside
-              ref={setRightTarget}
-              className="workbench-shell__right min-h-0"
-              aria-label="会话工作区"
-            />
           </div>
+          <aside
+            ref={setRightTarget}
+            className="workbench-shell__right min-h-0"
+            aria-label="会话工作区"
+          />
           <div ref={setDockTarget} className="workbench-shell__dock empty:hidden" />
         </section>
       </div>
