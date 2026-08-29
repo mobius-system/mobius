@@ -34,15 +34,9 @@
 
 已有 Docker 环境？从下面的路径开始，启动后就能进入 Mobius 工作台。首次构建会下载镜像和依赖，耗时取决于网络与机器配置。
 
-### 方法0：macOS 本地一键安装（一行命令）
-
-```bash
-bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v20.sh)
-```
-
-安装演示视频：[莫比乌斯 MacOS 本地一键安装](https://www.bilibili.com/video/BV1AAtT6aEoR)
-
 ### 方法1：容器（推荐，适用于 Windows / Linux / macOS）
+
+> macOS 一键安装（一行命令）：`bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v20.sh)`，[演示视频](https://www.bilibili.com/video/BV1AAtT6aEoR)
 
 ```bash
 # 1. 克隆仓库（建议先 fork，再 clone；这样自进化后可直接提交到自己的仓库）
