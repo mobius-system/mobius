@@ -771,8 +771,14 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
     created_at: existing?.created_at || nowIso(),
     updated_at: nowIso(),
   }
-  // 订阅渠道空 TOML: 不覆盖磁盘占位文件 (保留 prepare 创建的注释与用户手工加的偏好字段).
-  if (toml.trim()) writeCodexConfigToml(key, toml)
+  // 订阅渠道空 TOML: 不覆盖磁盘占位文件 (保留 prepare 创建的注释与用户手工加的偏好字段);
+  // 但 model-registry 的 dynamicCodexEntryFor 要求 config 文件必须存在, 否则渠道不进模型列表 —
+  // 文件缺失时补建与 prepare 端点相同的纯注释占位.
+  if (toml.trim()) {
+    writeCodexConfigToml(key, toml)
+  } else if (isSubscription && !fs.existsSync(codexConfigPathForKey(key))) {
+    writeCodexConfigToml(key, '# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)\n# Managed by mobius admin wizard; do not put api_key here.\n')
+  }
   // 用户编辑 codex config 会覆盖整个 toml, 重新应用管理员配置的 auto-compact (若开启), 防字段丢失.
   try {
     const ac = adminSettings.getModelAutoCompact(sessionModelForCodexKey(key))
