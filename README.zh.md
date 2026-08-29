@@ -39,6 +39,8 @@
 > macOS 一键安装（一行命令）：`bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v21.sh)`，[演示视频](https://www.bilibili.com/video/BV1AAtT6aEoR)
 >
 > Windows 一键安装：`irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`，[演示视频](https://www.bilibili.com/video/BV1yk4y6iER9/)
+>
+> 模型配置：接入国内外 CodingPlan 订阅，一次接入，全平台、全系统、全设备可用，[演示视频](https://www.bilibili.com/video/BV1oC4m6aENv/)
 
 对专业用户，我们推荐用下面的命令手动安装，效果与一键安装完全等价。
 
@@ -170,7 +172,7 @@ Mobius 把多个 Agent 编排成一条自主科研流水线：读论文、抽取
 
 ## 任意模型，任意智能体
 
-Mobius 与具体模型解耦。GPT、Claude、GLM-5.2、Codex 都可以在同一个项目和任务网络中做执行引擎，按任务类型、成本或性能自由组合。
+Mobius 与具体模型解耦。GPT、Claude、GLM、Codex 都可以在同一个项目和任务网络中做执行引擎，按任务类型、成本或性能自由组合。
 
 模型配置演示：[莫比乌斯接入国内外 CodingPlan 订阅，一次接入，全平台、全系统、全设备可用](https://www.bilibili.com/video/BV1oC4m6aENv/)
 
