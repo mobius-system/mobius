@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -6,18 +6,25 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   BarChart3,
   Building2,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
   Clock,
   Copy,
+  Cpu,
   Download,
   Eye,
   EyeOff,
   FileText,
   FolderInput,
   FolderOpen,
+  Globe,
+  KeyRound,
   LayoutDashboard,
   Loader2,
   MessageSquare,
@@ -38,6 +45,7 @@ import {
   Upload,
   UserPlus,
   Users as UsersIcon,
+  WandSparkles,
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import {
@@ -3129,6 +3137,88 @@ function emptyClaudeForm(): ClaudeCodeModelForm {
   }
 }
 
+// ── 模型接入向导 · 辅助函数 ─────────────────────────────────────────────
+// 第3.5步(隐藏): 从模型真名派生 key/渠道/env_key. 派生规则:
+//   ① 只保留英文字母; ② 空则纯随机兜底; ③ 前缀截断 24 字符;
+//   ④ 追加 4 位随机小写字母后缀; ⑤ 撞库时重摇(查重含内置 mobiusdefault —
+//   POST 是 upsert 语义, 撞上会静默整条覆盖现有配置).
+function randomLowerLetters(len: number): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+  let out = ''
+  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
+  if (cryptoObj?.getRandomValues) {
+    const buf = new Uint32Array(len)
+    cryptoObj.getRandomValues(buf)
+    for (let i = 0; i < len; i += 1) out += alphabet[buf[i] % alphabet.length]
+  } else {
+    for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  }
+  return out
+}
+
+function deriveModelKeyFromName(modelName: string): string {
+  const prefix = String(modelName || '').replace(/[^A-Za-z]/g, '').slice(0, 24)
+  return `${prefix || randomLowerLetters(6)}${randomLowerLetters(4)}`
+}
+
+// Codex 渠道业务约束为纯英文字母(后端 CODEX_CHANNEL_RE), 派生 key 天然满足.
+function deriveCodexEnvKey(channel: string): string {
+  const stem = String(channel || '').replace(/[^A-Za-z]/g, '').toUpperCase() || 'MOBIUS'
+  return `${stem.slice(0, 24)}_API_KEY`
+}
+
+// TOML basic string 转义: 用户输入(模型名/URL/秘钥)拼进 config_toml 模板前必须过这里,
+// 否则值里的引号/反斜杠/换行会破坏 TOML 结构或注入任意键.
+function escapeTomlString(value: string): string {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ')
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(String(value || '').trim())
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+type WizardHarness = 'claude-code' | 'codex'
+
+type ModelWizardState = {
+  step: number                    // 1..5 (3.5 为隐藏步骤, 不占 UI 编号)
+  label: string                   // 第1步 显示名称
+  harness: WizardHarness          // 第2步 Harness
+  modelName: string               // 第3步 模型真名
+  derivedKey: string              // 第3.5步(隐藏) 生成结果: 模型 Key / Codex 渠道
+  baseUrl: string                 // 第4步 URL
+  secret: string                  // 第4步 秘钥
+}
+
+function initialWizardState(): ModelWizardState {
+  return {
+    step: 1,
+    label: '',
+    harness: 'claude-code',
+    modelName: '',
+    derivedKey: '',
+    baseUrl: '',
+    secret: '',
+  }
+}
+
+const WIZARD_TOTAL_STEPS = 5
+
+const WIZARD_STEP_META: { title: string; hint: string }[] = [
+  { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
+  { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
+  { title: '模型真名', hint: '调用上游 API 时使用的真实模型标识符' },
+  { title: '接入地址与秘钥', hint: '上游服务的 base URL 与 API key' },
+  { title: '创建', hint: '确认以上信息并创建模型' },
+]
+
 function emptyCodexForm(): CodexModelForm {
   return {
     key: 'mobiusdefault',
@@ -3155,8 +3245,414 @@ function emptyHarnessForm(): HarnessModelForm {
   }
 }
 
+// ── 模型接入向导 · 组件 ─────────────────────────────────────────────────
+// 5 步向导: 显示名称 → Harness → 模型真名 → (隐藏3.5 派生 key/渠道/env_key, 查重)
+//           → URL+秘钥 → 调旧后端 API 创建. 生成的模型与文件配置模式完全同构,
+// 可在文件配置 Tab 里继续编辑/删除.
+function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
+  const [wizard, setWizard] = useState<ModelWizardState>(() => initialWizardState())
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [created, setCreated] = useState<{ key: string; session_model: string } | null>(null)
+  const [revealSecret, setRevealSecret] = useState(false)
+
+  const patch = (next: Partial<ModelWizardState>) => setWizard(w => ({ ...w, ...next }))
+
+  const stepMeta = WIZARD_STEP_META[wizard.step - 1] || WIZARD_STEP_META[0]
+
+  // 各步通过才能"下一步".
+  const stepValid = useMemo(() => {
+    switch (wizard.step) {
+      case 1: return wizard.label.trim().length > 0 && wizard.label.trim().length <= 80
+      case 2: return wizard.harness === 'claude-code' || wizard.harness === 'codex'
+      case 3: return wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
+      case 4: return isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
+      case 5: return true
+      default: return false
+    }
+  }, [wizard])
+
+  const stepError = useMemo(() => {
+    if (wizard.step === 1 && wizard.label.trim()) {
+      if (wizard.label.trim().length > 80) return '显示名称最多 80 个字符'
+    }
+    if (wizard.step === 3 && wizard.modelName.trim()) {
+      if (wizard.modelName.trim().length > 160) return '模型真名最多 160 个字符'
+      if (/[\r\n"]/.test(wizard.modelName.trim())) return '模型真名不能包含引号或换行'
+    }
+    if (wizard.step === 4 && wizard.baseUrl.trim() && !isValidHttpUrl(wizard.baseUrl)) {
+      return 'URL 必须是合法的 http/https 地址 (例如 https://api.example.com/anthropic)'
+    }
+    return ''
+  }, [wizard])
+
+  // 进入第4步时执行隐藏的 3.5 步: 派生 key 并查重.
+  // 撞库时重摇(最多 8 次); 仍撞则留在当前步让用户改模型真名. 查重含内置 mobiusdefault —
+  // 后端 POST 是 upsert 语义, 撞上会静默覆盖现有配置.
+  const deriveUniqueKey = async (): Promise<string | null> => {
+    const endpoint = wizard.harness === 'codex' ? '/api/admin/model-access/codex' : '/api/admin/model-access/claude-code'
+    let existingKeys: string[] = []
+    try {
+      const rows = await api(endpoint) as any[]
+      existingKeys = (Array.isArray(rows) ? rows : []).map(r => String(r?.key || ''))
+    } catch {
+      // 查重接口失败不阻断: 保留随机后缀(4^4=45万空间), 创建时后端仍会正常落库.
+    }
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = deriveModelKeyFromName(wizard.modelName)
+      if (!existingKeys.includes(candidate)) return candidate
+    }
+    return null
+  }
+
+  const nextStep = async () => {
+    setError('')
+    if (wizard.step === 3) {
+      // 3 → 4 之间插入隐藏的 3.5 步.
+      setCreating(true)
+      try {
+        const key = await deriveUniqueKey()
+        if (!key) {
+          setError('无法生成唯一的模型 Key, 请修改模型真名后重试 (派生前缀与现有模型冲突)')
+          return
+        }
+        patch({ derivedKey: key })
+        setWizard(w => ({ ...w, derivedKey: key, step: 4 }))
+      } catch (e: any) {
+        setError(e?.message || String(e))
+      } finally {
+        setCreating(false)
+      }
+      return
+    }
+    if (wizard.step >= WIZARD_TOTAL_STEPS) return
+    setWizard(w => ({ ...w, step: w.step + 1 }))
+  }
+
+  const prevStep = () => {
+    setError('')
+    if (wizard.step <= 1) return
+    setWizard(w => ({ ...w, step: w.step - 1 }))
+  }
+
+  const reset = () => {
+    setWizard(initialWizardState())
+    setError('')
+    setCreated(null)
+    setRevealSecret(false)
+  }
+
+  // 第5步: 组装 payload 调旧后端 API. settings/TOML 均由向导字段模板化生成,
+  // 用户后续可在文件配置 Tab 微调 (wire_api / 超时等).
+  const createModel = async () => {
+    setCreating(true)
+    setError('')
+    try {
+      const label = wizard.label.trim()
+      const modelName = wizard.modelName.trim()
+      const baseUrl = wizard.baseUrl.trim().replace(/\/+$/, '')
+      const secret = wizard.secret.trim()
+      if (wizard.harness === 'claude-code') {
+        const settings = {
+          env: {
+            ANTHROPIC_BASE_URL: baseUrl,
+            ANTHROPIC_AUTH_TOKEN: secret,
+            API_TIMEOUT_MS: '3000000',
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+            ANTHROPIC_MODEL: modelName,
+            ANTHROPIC_DEFAULT_SONNET_MODEL: modelName,
+            ANTHROPIC_DEFAULT_OPUS_MODEL: modelName,
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: modelName,
+          },
+          model: modelName,
+        }
+        const row = await api('/api/admin/model-access/claude-code', {
+          method: 'POST',
+          body: JSON.stringify({
+            key: wizard.derivedKey,
+            label,
+            claude_model: modelName,
+            enabled: true,
+            settings_json: JSON.stringify(settings, null, 2),
+          }),
+        }) as any
+        setCreated({ key: row?.key || wizard.derivedKey, session_model: row?.session_model || `claude-code:${wizard.derivedKey}` })
+      } else {
+        const channel = wizard.derivedKey
+        const envKey = deriveCodexEnvKey(channel)
+        const provider = channel
+        const configToml = [
+          `model_provider = "${escapeTomlString(provider)}"`,
+          `model = "${escapeTomlString(modelName)}"`,
+          `model_reasoning_effort = "xhigh"`,
+          `model_verbosity = "high"`,
+          ``,
+          `[model_providers.${provider}]`,
+          `name = "${escapeTomlString(provider)}"`,
+          `base_url = "${escapeTomlString(baseUrl)}"`,
+          `wire_api = "responses"`,
+          `env_key = "${envKey}"`,
+          `api_key = "${escapeTomlString(secret)}"`,
+        ].join('\n') + '\n'
+        const row = await api('/api/admin/model-access/codex', {
+          method: 'POST',
+          body: JSON.stringify({
+            channel,
+            label,
+            codex_model: modelName,
+            secret_env_key: envKey,
+            secret_value: secret,
+            enabled: true,
+            config_toml: configToml,
+          }),
+        }) as any
+        setCreated({ key: row?.key || channel, session_model: row?.session_model || `codex:${channel}` })
+      }
+      onCreated?.()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const wizardInputCls = 'h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--bg-card)] px-2.5 text-[12px] text-[var(--text-primary)] outline-none focus:border-blue-500/60'
+
+  const renderWizardBody = () => {
+    if (created) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <CircleCheck className="h-10 w-10 text-emerald-400" />
+          <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            模型创建成功
+          </div>
+          <div className="space-y-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+            <div>模型 Key: <span className="font-mono">{created.key}</span></div>
+            <div>会话模型: <span className="font-mono">{created.session_model}</span></div>
+            <div>现在可在新建 Session 时选择该模型, 也可切换到"文件配置"Tab 继续微调.</div>
+          </div>
+          <button type="button" onClick={reset}
+            className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500">
+            <Plus className="h-3.5 w-3.5" />
+            再接入一个模型
+          </button>
+        </div>
+      )
+    }
+    switch (wizard.step) {
+      case 1:
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>模型显示名称</div>
+              <input autoFocus value={wizard.label} onChange={e => patch({ label: e.target.value })}
+                placeholder="例如: MiniMax 旗舰 (展示给团队成员看)" maxLength={80} className={wizardInputCls} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                展示给你和你的同事, 不一定是模型的真名
+              </div>
+            </label>
+          </div>
+        )
+      case 2:
+        return (
+          <div className="space-y-3">
+            <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择使用的 Harness</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([
+                { k: 'claude-code' as WizardHarness, name: 'Claude Code', desc: 'Anthropic 兼容接口, 走 --settings 直连', icon: <Terminal className="h-4 w-4 text-cyan-400" /> },
+                { k: 'codex' as WizardHarness, name: 'Codex', desc: 'Responses 接口, 走 --profile 渠道加载', icon: <Cpu className="h-4 w-4 text-orange-400" /> },
+              ]).map(opt => {
+                const active = wizard.harness === opt.k
+                return (
+                  <button key={opt.k} type="button" onClick={() => patch({ harness: opt.k })}
+                    className="rounded-lg border p-3 text-left transition-colors"
+                    style={{
+                      borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                      background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+                    }}>
+                    <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {opt.icon}{opt.name}
+                      {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+                    </div>
+                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              DSH (DeepSeek Harness) 暂不支持向导, 需要时请切换到"文件配置"Tab 添加
+            </div>
+          </div>
+        )
+      case 3:
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>模型真名</div>
+              <input autoFocus value={wizard.modelName} onChange={e => patch({ modelName: e.target.value })}
+                placeholder={wizard.harness === 'claude-code' ? '例如: MiniMax-M3' : '例如: gpt-5.5'}
+                maxLength={160} className={`${wizardInputCls} font-mono`} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code'
+                  ? '将写入 settings JSON 的 model 与 ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL'
+                  : '将写入 config TOML 顶层 model, 启动时经 -m 传给 Codex'}
+              </div>
+            </label>
+          </div>
+        )
+      case 4:
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                <Globe className="h-3.5 w-3.5" />接入地址 (Base URL)
+              </div>
+              <input autoFocus value={wizard.baseUrl} onChange={e => patch({ baseUrl: e.target.value })}
+                placeholder={wizard.harness === 'claude-code' ? 'https://api.example.com/anthropic' : 'https://api.example.com/codex/v1'}
+                className={`${wizardInputCls} font-mono`} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code' ? '对应 ANTHROPIC_BASE_URL' : '对应 config TOML 的 base_url'}
+              </div>
+            </label>
+            <label className="block">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                <KeyRound className="h-3.5 w-3.5" />秘钥 (API Key)
+              </div>
+              <div className="relative">
+                <input autoFocus type={revealSecret ? 'text' : 'password'} value={wizard.secret}
+                  onChange={e => patch({ secret: e.target.value })} placeholder="sk-..."
+                  className={`${wizardInputCls} pr-9 font-mono`} />
+                <button type="button" onClick={() => setRevealSecret(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                  {revealSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code' ? '对应 ANTHROPIC_AUTH_TOKEN (Bearer)' : '对应秘钥值 / config TOML 的 api_key'}
+              </div>
+            </label>
+          </div>
+        )
+      case 5:
+        return (
+          <div className="space-y-2.5">
+            {([
+              ['显示名称', wizard.label.trim()],
+              ['Harness', wizard.harness === 'claude-code' ? 'Claude Code' : 'Codex'],
+              ['模型真名', wizard.modelName.trim()],
+              ['模型 Key (自动生成)', wizard.derivedKey],
+              ['接入地址', wizard.baseUrl.trim()],
+              ['秘钥', wizard.secret.trim() ? `${wizard.secret.trim().slice(0, 6)}${'•'.repeat(Math.max(4, Math.min(20, wizard.secret.trim().length - 6)))}` : ''],
+            ] as Array<[string, string]>).map(([k, v]) => (
+              <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+              </div>
+            ))}
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {wizard.harness === 'codex' && (
+                <>Codex 渠道默认使用 responses 协议 (wire_api), 兼容 OpenAI chat-completions 的网关请创建后在"文件配置"Tab 修改.<br /></>
+              )}
+              创建后立即在模型选择器可用, 无需重启.
+            </div>
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div>
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      {/* 步骤指示器: 3.5 是隐藏步骤, UI 上只显示 1-5 */}
+      <div className="mb-4 flex items-center gap-1">
+        {WIZARD_STEP_META.map((meta, idx) => {
+          const n = idx + 1
+          const active = wizard.step === n
+          const done = created || wizard.step > n
+          return (
+            <Fragment key={n}>
+              {idx > 0 && (
+                <div className="h-px flex-1" style={{ background: done ? 'rgba(59,130,246,0.5)' : 'var(--border-color)' }} />
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
+                  style={{
+                    borderColor: active ? 'rgba(59,130,246,0.7)' : done ? 'rgba(16,185,129,0.6)' : 'var(--border-color)',
+                    background: active ? 'rgba(59,130,246,0.12)' : done ? 'rgba(16,185,129,0.10)' : 'transparent',
+                    color: active ? '#3b82f6' : done ? '#10b981' : 'var(--text-muted)',
+                  }}>
+                  {done ? <Check className="h-3 w-3" /> : n}
+                </div>
+                <span className={`hidden text-[11px] sm:inline ${active ? 'font-medium' : ''}`}
+                  style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {meta.title}
+                </span>
+              </div>
+            </Fragment>
+          )
+        })}
+      </div>
+
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] p-4">
+        {!created && (
+          <div className="mb-3">
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              第 {wizard.step} 步 · {stepMeta.title}
+            </div>
+            <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>{stepMeta.hint}</div>
+          </div>
+        )}
+        {renderWizardBody()}
+      </div>
+
+      {!created && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            {stepError && <span className="text-amber-400">{stepError}</span>}
+          </div>
+          <div className="flex flex-shrink-0 gap-2">
+            {wizard.step > 1 && (
+              <button type="button" onClick={prevStep} disabled={creating}
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+                <ChevronLeft className="h-3.5 w-3.5" />上一步
+              </button>
+            )}
+            {wizard.step < WIZARD_TOTAL_STEPS && (
+              <button type="button" onClick={nextStep} disabled={!stepValid || !!stepError || creating}
+                className="inline-flex h-9 items-center gap-1 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                下一步
+              </button>
+            )}
+            {wizard.step === WIZARD_TOTAL_STEPS && (
+              <button type="button" onClick={createModel} disabled={creating}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
+                创建模型
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type AdminModelsMode = 'wizard' | 'file'
+
 function AdminModelsPanel() {
+  const [mode, setMode] = useState<AdminModelsMode>('wizard')
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
+  // 向导创建成功后 ping 一下文件配置子面板刷新 (子面板自身挂载时也会 load).
+  const [wizardRefreshNonce, setWizardRefreshNonce] = useState(0)
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
@@ -3166,23 +3662,25 @@ function AdminModelsPanel() {
             模型接入
           </h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {backend === 'claude-code'
-              ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
-              : backend === 'codex'
-                ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
-                : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
+            {mode === 'wizard'
+              ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+              : backend === 'claude-code'
+                ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
+                : backend === 'codex'
+                  ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
+                  : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
           </div>
         </div>
+        {/* 一级 Tab: 向导模式 | 文件配置 (原有三通道整体移入文件配置作为二级 sub-tab) */}
         <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
-          style={{ background: 'var(--input-bg)' }}>
+          style={{ background: 'var(--input-bg)' }} data-tour="admin-models-mode-tabs">
           {([
-            ['claude-code', 'Claude Code'],
-            ['codex', 'Codex'],
-            ['deepseek-harness', 'DeepSeek Harness'],
-          ] as Array<[AdminModelsBackend, string]>).map(([k, label]) => {
-            const active = backend === k
+            ['wizard', '向导模式'],
+            ['file', '文件配置'],
+          ] as Array<[AdminModelsMode, string]>).map(([k, label]) => {
+            const active = mode === k
             return (
-              <button key={k} type="button" onClick={() => setBackend(k)}
+              <button key={k} type="button" onClick={() => setMode(k)}
                 className="h-7 rounded px-3 transition-colors"
                 style={{
                   background: active ? 'var(--bg-card)' : 'transparent',
@@ -3196,13 +3694,47 @@ function AdminModelsPanel() {
         </div>
       </div>
 
-      {backend === 'claude-code'
-        ? <ClaudeCodeModelsSubPanel />
-        : backend === 'codex'
-          ? <CodexModelsSubPanel />
-          : <HarnessModelsSubPanel />}
+      {mode === 'wizard' ? (
+        <ModelAccessWizard onCreated={() => setWizardRefreshNonce(n => n + 1)} />
+      ) : (
+        <div>
+          {/* 二级 sub-tab: Claude Code / Codex / DeepSeek Harness (原有文件配置模式原样保留) */}
+          <div className="mb-3 flex justify-start">
+            <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
+              style={{ background: 'var(--input-bg)' }} data-tour="admin-models-backend-tabs">
+              {([
+                ['claude-code', 'Claude Code'],
+                ['codex', 'Codex'],
+                ['deepseek-harness', 'DeepSeek Harness'],
+              ] as Array<[AdminModelsBackend, string]>).map(([k, label]) => {
+                const active = backend === k
+                return (
+                  <button key={k} type="button" onClick={() => setBackend(k)}
+                    className="h-7 rounded px-3 transition-colors"
+                    style={{
+                      background: active ? 'var(--bg-card)' : 'transparent',
+                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      fontWeight: active ? 600 : 400,
+                    }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <FileModelsModeRenderer key={wizardRefreshNonce} backend={backend} />
+        </div>
+      )}
     </section>
   )
+}
+
+// 文件配置模式的渲染器. key={wizardRefreshNonce} 使向导创建过模型后切回文件配置时强制重挂载,
+// 子面板 useEffect 会重新 load 列表 (否则显示的还是挂载前的旧列表).
+function FileModelsModeRenderer({ backend }: { backend: AdminModelsBackend }) {
+  if (backend === 'claude-code') return <ClaudeCodeModelsSubPanel />
+  if (backend === 'codex') return <CodexModelsSubPanel />
+  return <HarnessModelsSubPanel />
 }
 
 function ClaudeCodeModelsSubPanel() {
