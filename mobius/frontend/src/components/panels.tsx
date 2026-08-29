@@ -67,6 +67,7 @@ import {
   type TextRedactionRule,
 } from '../services/text-redaction'
 import { pollRecursive } from '../services/polling'
+import { InlineWebTerminal } from './web-terminal-modal'
 import { ToggleSwitch } from './toggle-switch'
 import { SkillMarketLink } from './skill-market-link'
 
@@ -3185,16 +3186,24 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
-type WizardHarness = 'claude-code' | 'codex'
+type WizardHarness = 'claude-code' | 'codex' | 'codex-subscription'
+
+// Codex 订阅通道固定渠道名 (与后端 prepare 端点一致), 走 ChatGPT 订阅认证 (auth.json), 无 api_key.
+const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription'
+
+function isSubscriptionHarness(h: WizardHarness): boolean {
+  return h === 'codex-subscription'
+}
 
 type ModelWizardState = {
-  step: number                    // 1..5 (3.5 为隐藏步骤, 不占 UI 编号)
+  step: number                    // 普通路径 1..5; 订阅路径 1..5 (3/4/5 含义不同)
   label: string                   // 第1步 显示名称
   harness: WizardHarness          // 第2步 Harness
-  modelName: string               // 第3步 模型真名
-  derivedKey: string              // 第3.5步(隐藏) 生成结果: 模型 Key / Codex 渠道
-  baseUrl: string                 // 第4步 URL
-  secret: string                  // 第4步 秘钥
+  modelName: string               // 第3步 模型真名 (订阅路径不使用)
+  derivedKey: string              // 隐藏3.5步生成结果: 模型 Key / Codex 渠道 (订阅路径固定渠道名)
+  baseUrl: string                 // 第4步 URL (订阅路径不使用)
+  secret: string                  // 第4步 秘钥 (订阅路径不使用)
+  subPrepared: boolean            // 订阅路径: 空配置文件已创建 (进入第4步的门槛)
 }
 
 function initialWizardState(): ModelWizardState {
@@ -3206,17 +3215,27 @@ function initialWizardState(): ModelWizardState {
     derivedKey: '',
     baseUrl: '',
     secret: '',
+    subPrepared: false,
   }
 }
 
 const WIZARD_TOTAL_STEPS = 5
 
+// 普通路径与订阅路径的第 3/4/5 步含义不同, 订阅路径单独给文案.
 const WIZARD_STEP_META: { title: string; hint: string }[] = [
   { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
   { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
   { title: '模型真名', hint: '调用上游 API 时使用的真实模型标识符' },
   { title: '接入地址与秘钥', hint: '上游服务的 base URL 与 API key' },
   { title: '创建', hint: '确认以上信息并创建模型' },
+]
+
+const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
+  { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
+  { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
+  { title: '配置代理网络', hint: 'Codex 订阅需要访问 OpenAI 网络; 按需编辑模型代理配置, 完成后点下一步' },
+  { title: '登录认证', hint: '在下方终端完成 ChatGPT 设备码登录, 成功后点击"我已登录"' },
+  { title: '注册', hint: '把订阅渠道注册进 mobius 模型列表' },
 ]
 
 function emptyCodexForm(): CodexModelForm {
@@ -3249,6 +3268,113 @@ function emptyHarnessForm(): HarnessModelForm {
 // 5 步向导: 显示名称 → Harness → 模型真名 → (隐藏3.5 派生 key/渠道/env_key, 查重)
 //           → URL+秘钥 → 调旧后端 API 创建. 生成的模型与文件配置模式完全同构,
 // 可在文件配置 Tab 里继续编辑/删除.
+// ── 订阅路径第3步: 配置代理网络 ─────────────────────────────────────────
+// 复刻 管理中心-系统设置-Proxychains 配置-模型(LLM) 的编辑卡片 (同一 GET/PUT proxy-files
+// 端点, 只编辑 model 一侧), 并提供"创建订阅配置文件"动作 (点下一步时由父级统一触发).
+function SubscriptionProxyStep({ prepared, onPrepared }: { prepared: boolean; onPrepared: () => void }) {
+  const [modelText, setModelText] = useState('')
+  const [meta, setMeta] = useState<ProxyFilesPayload | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const next = await api('/api/admin/settings/proxy-files') as ProxyFilesPayload
+      setMeta(next)
+      setModelText(next.model || '')
+      setDirty(false)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const next = await api('/api/admin/settings/proxy-files', {
+        method: 'PUT',
+        body: JSON.stringify({ model: modelText }),
+      }) as Partial<ProxyFilesPayload>
+      if (next.model !== undefined) setModelText(next.model)
+      if (meta && next.modelExists !== undefined) {
+        setMeta({ ...meta, modelExists: next.modelExists, ...(next.modelWritable !== undefined ? { modelWritable: next.modelWritable } : {}) })
+      }
+      setDirty(false)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>模型 (LLM) 代理 · proxychains</div>
+            <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.modelPath || '~/proxy_claude.conf'}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {meta && !meta.modelWritable && (
+              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">无写权限</span>
+            )}
+            <button type="button" onClick={load} disabled={loading}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-color)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60">
+              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />刷新
+            </button>
+          </div>
+        </div>
+        <textarea
+          value={modelText}
+          onChange={e => { setModelText(e.target.value); setDirty(true) }}
+          spellCheck={false}
+          placeholder={'strict_chain\nproxy_dns\n[ProxyList]\nsocks5 127.0.0.1 1080'}
+          className="h-44 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+        />
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Codex 订阅需访问 OpenAI 网络; 保存即落盘, 该配置与系统设置的模型代理是同一份文件
+          </span>
+          <button type="button" onClick={save} disabled={saving || loading || !dirty}
+            className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] font-medium text-white hover:bg-blue-500 disabled:opacity-60">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {savedFlash ? '已保存' : '保存代理配置'}
+          </button>
+        </div>
+      </div>
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+        <div className="flex items-center gap-2">
+          {prepared ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <FileText className="h-4 w-4 text-[var(--text-muted)]" />}
+          <span className="font-mono text-[11px]">~/.codex/{CODEX_SUBSCRIPTION_CHANNEL}.config.toml</span>
+          {prepared
+            ? <span className="text-[11px] text-emerald-400">已创建</span>
+            : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>点"下一步"时自动创建</span>}
+        </div>
+      </div>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   const [wizard, setWizard] = useState<ModelWizardState>(() => initialWizardState())
   const [creating, setCreating] = useState(false)
@@ -3258,33 +3384,37 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
 
   const patch = (next: Partial<ModelWizardState>) => setWizard(w => ({ ...w, ...next }))
 
-  const stepMeta = WIZARD_STEP_META[wizard.step - 1] || WIZARD_STEP_META[0]
+  const sub = isSubscriptionHarness(wizard.harness)
+  const stepMetaList = sub ? WIZARD_STEP_META_SUBSCRIPTION : WIZARD_STEP_META
+  const stepMeta = stepMetaList[wizard.step - 1] || stepMetaList[0]
 
-  // 各步通过才能"下一步".
+  // 各步通过才能"下一步". 订阅路径与普通路径的第 3/4 步含义不同.
   const stepValid = useMemo(() => {
     switch (wizard.step) {
       case 1: return wizard.label.trim().length > 0 && wizard.label.trim().length <= 80
-      case 2: return wizard.harness === 'claude-code' || wizard.harness === 'codex'
-      case 3: return wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
-      case 4: return isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
+      case 2: return wizard.harness === 'claude-code' || wizard.harness === 'codex' || sub
+      case 3: return sub ? wizard.subPrepared
+        : wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
+      case 4: return sub ? true
+        : isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
       case 5: return true
       default: return false
     }
-  }, [wizard])
+  }, [wizard, sub])
 
   const stepError = useMemo(() => {
     if (wizard.step === 1 && wizard.label.trim()) {
       if (wizard.label.trim().length > 80) return '显示名称最多 80 个字符'
     }
-    if (wizard.step === 3 && wizard.modelName.trim()) {
+    if (wizard.step === 3 && !sub && wizard.modelName.trim()) {
       if (wizard.modelName.trim().length > 160) return '模型真名最多 160 个字符'
       if (/[\r\n"]/.test(wizard.modelName.trim())) return '模型真名不能包含引号或换行'
     }
-    if (wizard.step === 4 && wizard.baseUrl.trim() && !isValidHttpUrl(wizard.baseUrl)) {
+    if (wizard.step === 4 && !sub && wizard.baseUrl.trim() && !isValidHttpUrl(wizard.baseUrl)) {
       return 'URL 必须是合法的 http/https 地址 (例如 https://api.example.com/anthropic)'
     }
     return ''
-  }, [wizard])
+  }, [wizard, sub])
 
   // 进入第4步时执行隐藏的 3.5 步: 派生 key 并查重.
   // 撞库时重摇(最多 8 次); 仍撞则留在当前步让用户改模型真名. 查重含内置 mobiusdefault —
@@ -3307,6 +3437,25 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
 
   const nextStep = async () => {
     setError('')
+    if (sub) {
+      // ── 订阅路径 ──
+      if (wizard.step === 3) {
+        // 3 → 4: 调 prepare 端点确保 ~/.codex/mobiusopenaisubscription.config.toml 存在.
+        setCreating(true)
+        try {
+          await api('/api/admin/model-access/codex-subscription/prepare', { method: 'POST' })
+          setWizard(w => ({ ...w, subPrepared: true, derivedKey: CODEX_SUBSCRIPTION_CHANNEL, step: 4 }))
+        } catch (e: any) {
+          setError(e?.message || String(e))
+        } finally {
+          setCreating(false)
+        }
+        return
+      }
+      if (wizard.step >= WIZARD_TOTAL_STEPS) return
+      setWizard(w => ({ ...w, step: w.step + 1 }))
+      return
+    }
     if (wizard.step === 3) {
       // 3 → 4 之间插入隐藏的 3.5 步.
       setCreating(true)
@@ -3377,6 +3526,22 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
           }),
         }) as any
         setCreated({ key: row?.key || wizard.derivedKey, session_model: row?.session_model || `claude-code:${wizard.derivedKey}` })
+      } else if (sub) {
+        // 订阅路径注册: 固定渠道, TOML 不含 env_key/api_key — 凭据在 ~/.codex/auth.json
+        // (codex login 产物), 启动时 tmux-codex 不 export 任何秘钥.
+        // config_toml 留空 → 后端 upsert 落库时沿用 prepare 已创建的磁盘文件, 不覆盖已有内容
+        // (例如用户预设的 cli_auth_credentials_store).
+        const channel = CODEX_SUBSCRIPTION_CHANNEL
+        const row = await api('/api/admin/model-access/codex', {
+          method: 'POST',
+          body: JSON.stringify({
+            channel,
+            label,
+            codex_model: 'gpt-5.1-codex',
+            enabled: true,
+          }),
+        }) as any
+        setCreated({ key: row?.key || channel, session_model: row?.session_model || `codex:${channel}` })
       } else {
         const channel = wizard.derivedKey
         const envKey = deriveCodexEnvKey(channel)
@@ -3457,10 +3622,11 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
         return (
           <div className="space-y-3">
             <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择使用的 Harness</div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               {([
                 { k: 'claude-code' as WizardHarness, name: 'Claude Code', desc: 'Anthropic 兼容接口, 走 --settings 直连', icon: <Terminal className="h-4 w-4 text-cyan-400" /> },
                 { k: 'codex' as WizardHarness, name: 'Codex', desc: 'Responses 接口, 走 --profile 渠道加载', icon: <Cpu className="h-4 w-4 text-orange-400" /> },
+                { k: 'codex-subscription' as WizardHarness, name: 'Codex订阅', desc: 'ChatGPT 付费订阅认证, 设备码登录接入', icon: <Shield className="h-4 w-4 text-emerald-400" /> },
               ]).map(opt => {
                 const active = wizard.harness === opt.k
                 return (
@@ -3485,6 +3651,15 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
           </div>
         )
       case 3:
+        if (sub) {
+          // 订阅路径第3步: 配置代理网络 + 创建占位配置文件 (点"下一步"时落盘).
+          return (
+            <SubscriptionProxyStep
+              prepared={wizard.subPrepared}
+              onPrepared={() => patch({ subPrepared: true })}
+            />
+          )
+        }
         return (
           <div className="space-y-3">
             <label className="block">
@@ -3501,6 +3676,22 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
           </div>
         )
       case 4:
+        if (sub) {
+          // 订阅路径第4步: 内嵌 Web 终端自动执行 codex login --device-auth, 旁边提示引导用户操作.
+          return (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                <div className="font-medium">请在下方终端中完成登录</div>
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  终端已自动运行 <span className="font-mono">codex login --device-auth</span>。
+                  请选择 <span className="font-medium">Sign in with Device Code</span>，跟随提示完成认证；
+                  认证成功后点击下方「我已登录」按钮。
+                </div>
+              </div>
+              <InlineWebTerminal mode="adhoc" adhocCommandKey="codex-subscription-login" height={320} />
+            </div>
+          )
+        }
         return (
           <div className="space-y-3">
             <label className="block">
@@ -3534,6 +3725,27 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
           </div>
         )
       case 5:
+        if (sub) {
+          return (
+            <div className="space-y-2.5">
+              {([
+                ['显示名称', wizard.label.trim()],
+                ['Harness', 'Codex订阅 (ChatGPT 认证)'],
+                ['渠道', wizard.derivedKey || CODEX_SUBSCRIPTION_CHANNEL],
+                ['默认模型', 'gpt-5.1-codex'],
+                ['凭据', '~/.codex/auth.json (订阅登录产物)'],
+              ] as Array<[string, string]>).map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                  <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                  <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+                </div>
+              ))}
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                注册后立即在模型选择器可用; 模型名等参数可在"文件配置"Tab 继续调整.
+              </div>
+            </div>
+          )
+        }
         return (
           <div className="space-y-2.5">
             {([
@@ -3573,7 +3785,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
 
       {/* 步骤指示器: 3.5 是隐藏步骤, UI 上只显示 1-5 */}
       <div className="mb-4 flex items-center gap-1">
-        {WIZARD_STEP_META.map((meta, idx) => {
+        {stepMetaList.map((meta, idx) => {
           const n = idx + 1
           const active = wizard.step === n
           const done = created || wizard.step > n
@@ -3628,15 +3840,15 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
             {wizard.step < WIZARD_TOTAL_STEPS && (
               <button type="button" onClick={nextStep} disabled={!stepValid || !!stepError || creating}
                 className="inline-flex h-9 items-center gap-1 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
-                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                下一步
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (sub && wizard.step === 4 ? <CircleCheck className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                {sub && wizard.step === 4 ? '我已登录' : (sub && wizard.step === 3 ? '完成配置并创建文件' : '下一步')}
               </button>
             )}
             {wizard.step === WIZARD_TOTAL_STEPS && (
               <button type="button" onClick={createModel} disabled={creating}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
-                创建模型
+                {sub ? '注册到 mobius' : '创建模型'}
               </button>
             )}
           </div>

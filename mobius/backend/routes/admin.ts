@@ -1454,6 +1454,24 @@ router.delete('/model-access/claude-code/:key', adminAuth, (req: express.Request
   }
 });
 
+// ── Codex 订阅通道预备 (向导用) ──
+// 确保 ~/.codex/mobiusopenaisubscription.config.toml 存在 (不存在则创建纯注释占位),
+// 供订阅模型以 --profile 方式启动. 文件不含任何秘钥 — 订阅凭据由 codex login 写入 auth.json.
+const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription';
+router.post('/model-access/codex-subscription/prepare', adminAuth, (_req: express.Request, res: express.Response) => {
+  try {
+    const file = path.join(os.homedir(), '.codex', `${CODEX_SUBSCRIPTION_CHANNEL}.config.toml`);
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { /* ignore */ }
+    if (!fs.existsSync(file)) {
+      const placeholder = `# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)\n# Managed by mobius admin wizard; do not put api_key here.\n`;
+      fs.writeFileSync(file, placeholder, { mode: 0o600 });
+    }
+    res.json({ ok: true, channel: CODEX_SUBSCRIPTION_CHANNEL, config_file: file });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
+  }
+});
+
 // ── Codex 模型接入 (TOML 配置, --profile 加载) ──
 router.get('/model-access/codex', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelAccess.listCodexModels({ includeConfig: false }));
