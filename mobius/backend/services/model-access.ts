@@ -28,6 +28,9 @@ const BUILTIN_CLAUDE_KEY = 'mobiusdefault'
 const BUILTIN_CLAUDE_SETTINGS_FILENAME = 'mobiusdefault.settings.json'
 // Codex 渠道就是 --profile 的 plain name, 业务约束为纯英文字母.
 const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
+// 订阅渠道 (ChatGPT 付费订阅认证): 凭据在 ~/.codex/auth.json, config TOML 允许为空/占位 —
+// 不含 env_key/api_key, 与 admin 路由 prepare 端点创建的占位文件同名.
+const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription'
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 const HARNESS_KEY_RE = /^[A-Za-z0-9_-]+$/
 const HARNESS_RUNTIME_VERSION = '0.0.1-rc.5'
@@ -735,8 +738,12 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
   const hasConfig = Object.prototype.hasOwnProperty.call(input || {}, 'config_toml')
     || Object.prototype.hasOwnProperty.call(input || {}, 'configToml')
   const configText = input?.config_toml ?? input?.configToml
-  const toml = hasConfig ? normalizeConfigToml(configText) : readCodexConfigToml(key)
-  if (!toml.trim()) throw new Error(`config_toml 不能为空, 请填写 TOML 配置 (${key})`)
+  const isSubscription = key === CODEX_SUBSCRIPTION_CHANNEL
+  // 订阅渠道: config_toml 允许为空 (prepare 端点已创建占位文件; 凭据在 ~/.codex/auth.json, 无 api_key).
+  const toml = isSubscription
+    ? (hasConfig ? (String(configText ?? '').trim() ? normalizeConfigToml(configText) : '') : readCodexConfigToml(key))
+    : (hasConfig ? normalizeConfigToml(configText) : readCodexConfigToml(key))
+  if (!toml.trim() && !isSubscription) throw new Error(`config_toml 不能为空, 请填写 TOML 配置 (${key})`)
   const configEnvKey = envKeyFromConfigToml(toml)
   const secretEnvKey = configEnvKey
     ? normalizeSecretEnvKey(input?.secret_env_key ?? input?.secretEnvKey ?? input?.env_key ?? input?.envKey ?? existing?.secret_env_key ?? configEnvKey)
@@ -764,7 +771,8 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
     created_at: existing?.created_at || nowIso(),
     updated_at: nowIso(),
   }
-  writeCodexConfigToml(key, toml)
+  // 订阅渠道空 TOML: 不覆盖磁盘占位文件 (保留 prepare 创建的注释与用户手工加的偏好字段).
+  if (toml.trim()) writeCodexConfigToml(key, toml)
   // 用户编辑 codex config 会覆盖整个 toml, 重新应用管理员配置的 auto-compact (若开启), 防字段丢失.
   try {
     const ac = adminSettings.getModelAutoCompact(sessionModelForCodexKey(key))
