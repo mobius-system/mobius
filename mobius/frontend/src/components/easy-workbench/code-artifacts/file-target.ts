@@ -204,7 +204,11 @@ export function isUnambiguousFileCandidate(raw: string, context: FileCandidateCo
     || path.startsWith('/')
     || path.startsWith('./')
     || path.startsWith('../')
-  if (context === 'inline-code') return likelyName || explicitPath || path.includes('/')
+  // A slash alone is not enough evidence that inline code names a file. Git
+  // refs (`origin/main`, `feature/chat-render`) and directory names
+  // (`src/components`) use the same shape. Keep ambiguous relative values as
+  // ordinary code; file extensions and explicit path prefixes still opt in.
+  if (context === 'inline-code') return likelyName || explicitPath
   return likelyName || explicitPath || location.line !== null || pathSegmentCount(path) >= 3
 }
 
