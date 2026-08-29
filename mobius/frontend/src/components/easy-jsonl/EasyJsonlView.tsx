@@ -207,16 +207,18 @@ export default function EasyJsonlView({
               data-easy-round-id={round.id}
               data-testid="easy-jsonl-round"
             >
-              <header className="easy-jsonl-prompt">
-                <span className="easy-jsonl-prompt__avatar"><UserRound /></span>
-                <div>
-                  <div className="easy-jsonl-prompt__meta">
-                    <strong>你的任务</strong>
-                    <time>{formatRoundTime(round.startedAt)}</time>
+              {round.userPrompt && (
+                <header className="easy-jsonl-prompt">
+                  <span className="easy-jsonl-prompt__avatar"><UserRound /></span>
+                  <div>
+                    <div className="easy-jsonl-prompt__meta">
+                      <strong>你的任务</strong>
+                      <time>{formatRoundTime(round.startedAt)}</time>
+                    </div>
+                    <p>{round.userPrompt}</p>
                   </div>
-                  <p>{round.userPrompt || '继续处理当前任务'}</p>
-                </div>
-              </header>
+                </header>
+              )}
 
               {(round.activities.length > 0 || roundWorking) && (
                 <div className="easy-jsonl-rail" aria-label="执行过程">

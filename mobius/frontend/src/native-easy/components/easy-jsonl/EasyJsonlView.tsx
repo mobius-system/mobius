@@ -217,7 +217,9 @@ function EasyUserPrompt({ text, images }: { text: string; images: string[] }) {
   const visible = useMemo(() => stripEasyUserImageAttachmentBlocks(parts.visible), [parts.visible])
   const hidden = parts.hidden
   const systemOnly = !visible && !!hidden
-  const showBubble = !!visible || !!hidden || images.length === 0
+  // Continuation rounds can begin with tool/assistant entries and have no user prompt.
+  // Do not manufacture a "continue current task" bubble for those rounds.
+  const showBubble = !!visible || !!hidden || images.length > 0
 
   return (
     <>
@@ -233,7 +235,6 @@ function EasyUserPrompt({ text, images }: { text: string; images: string[] }) {
         {showBubble && (
           <div className="easy-jsonl-prompt__bubble">
             {visible ? <JsonlCompactMarkdown text={visible} /> : null}
-            {!visible && !hidden && images.length === 0 ? <JsonlCompactMarkdown text="继续处理当前任务" /> : null}
             {hidden ? (
               <div className="easy-jsonl-prompt__context">
                 <button
