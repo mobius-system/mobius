@@ -1298,8 +1298,9 @@ class TmuxCodexBackend extends AgentBackend {
     ]
     // 按四挡分流: env 挡加载环境变量代理; proxychains 挡套 chains; env_proxychains 双轨; direct 裸启.
     if (finalProxyMode === 'env' || finalProxyMode === 'env_proxychains') {
-      // 加载代理相关环境变量 (新名优先, 老 .bash 兜底).
-      cmdLines.push(`source ${shellQuote(resolveProxyEnvsFile())}`)
+      // 加载代理相关环境变量 (新名优先, 老 .bash 兜底). set -a 让 source 里的裸赋值
+      // (无 export 前缀的存量 conf) 也进环境被子进程继承; 结束后 set +a 收回.
+      cmdLines.push(`set -a && source ${shellQuote(resolveProxyEnvsFile())} && set +a`)
     }
     if (finalProxyMode === 'proxychains' || finalProxyMode === 'env_proxychains') {
       // 通过 proxychains 启动 Codex，并传入 profile、子命令和参数。

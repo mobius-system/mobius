@@ -2908,14 +2908,16 @@ function parseEnvsProxy(text: string): { scheme: string; host: string; port: str
 function buildEnvsFile(scheme: string, host: string, port: string, username = '', password = ''): string {
   const auth = username ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@` : ''
   const url = `${scheme}://${auth}${host}:${port}`
+  // 每行必须带 export: source 后的变量才会进环境, 被 exec 出去的 codex/claude 子进程继承;
+  // 裸 KEY=VALUE 只是 shell 变量, 子进程看不到 (实测坑).
   return [
     `# 模型环境变量代理 (由 管理中心-系统设置-模型代理 维护; 模型代理模式选"环境变量代理"时 source 本文件)`,
-    `http_proxy=${url}`,
-    `https_proxy=${url}`,
-    `HTTP_PROXY=${url}`,
-    `HTTPS_PROXY=${url}`,
-    `no_proxy=localhost,127.0.0.1,::1`,
-    `NO_PROXY=localhost,127.0.0.1,::1`,
+    `export http_proxy=${url}`,
+    `export https_proxy=${url}`,
+    `export HTTP_PROXY=${url}`,
+    `export HTTPS_PROXY=${url}`,
+    `export no_proxy=localhost,127.0.0.1,::1`,
+    `export NO_PROXY=localhost,127.0.0.1,::1`,
     ``,
   ].join('\n')
 }

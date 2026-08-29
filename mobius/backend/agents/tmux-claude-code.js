@@ -1100,16 +1100,18 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // bash -lc 链: 按 Session 配置决定是否用 proxychains, 但都清理 IDE IPC 环境。
     // 构造 bash -lc 要执行的命令片段；数组里的 null 会在后面过滤掉。
     const cmd = [
-      // 走代理时先加载代理环境变量。
-      finalUseProxy ? `source "$HOME/proxy_envs.bash"` : null,
+      // env 挡: 加载环境变量代理 (新名优先, 老 .bash 兜底).
+      (finalProxyMode === 'env' || finalProxyMode === 'env_proxychains')
+        ? `set -a && (source "$HOME/proxy_envs.conf" 2>/dev/null || source "$HOME/proxy_envs.bash") && set +a`
+        : null,
       // 清掉 VS Code 相关 IPC 环境，避免 CLI 误连到宿主 IDE。
       `unset VSCODE_IPC_HOOK_CLI VSCODE_GIT_IPC_HANDLE VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_ASKPASS_MAIN`,
       // 标记当前进程运行在受控沙箱环境中。
       `export IS_SANDBOX=1`,
-      // 根据代理开关选择 proxychains 包裹 claude，或直接 exec claude。
+      // 四挡分流: direct/env 裸 exec; proxychains/env_proxychains 套 chains。
       // settingsArg 两分支都要带: 代理分支此前漏拼 --settings, 导致开代理的 session
       // settings 文件 (channel/key/权限/withproxy.json) 被静默丢弃回退全局默认。
-      finalUseProxy
+      (finalProxyMode === 'proxychains' || finalProxyMode === 'env_proxychains')
         ? `exec proxychains -q -f "$HOME/proxychains_config_for_llm_models.conf" claude ${settingsArg} ${claudeArgs.join(' ')}`
         : `exec claude ${settingsArg} ${claudeArgs.join(' ')}`,
       // 删除空片段，并用 && 保证前一步失败时不继续执行。
