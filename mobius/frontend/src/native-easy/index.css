@@ -7836,12 +7836,26 @@ body.mobius-resizing .mobius-resizable-handle {
   border-right: 1px solid var(--border-default);
 }
 .code-artifact-preview__tab-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   min-width: 0;
   padding: 0.35rem 0.45rem 0.35rem 0.65rem;
   overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-artifact-preview__tab-icon,
+.code-artifact-preview__tab-icon svg {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.code-artifact-preview__tab-label {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

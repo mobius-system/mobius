@@ -399,6 +399,7 @@ export function FilePreviewLayer({
     ? projectFilePreviewUrl(projectId, resolvedPath)
     : ''
   const crumbs = filePathSegments(currentPath)
+  const directoryCrumbs = crumbs.filter(crumb => !crumb.isFile)
   const editorFilePath = absoluteFilePath(meta, data, resolvedPath)
   const editorUrl = meta?.vscodeWebUrl && meta.vscodeWorkspacePath && editorFilePath
     ? buildVscodeUrl(meta.vscodeWebUrl, meta.vscodeWorkspacePath, editorFilePath)
@@ -501,8 +502,8 @@ export function FilePreviewLayer({
                     title={label.title}
                     onClick={() => setActiveKey(key)}
                   >
-                    <span aria-hidden="true">{fileIcon(label.basename, 'file')}</span>
-                    {label.basename}
+                    <span className="code-artifact-preview__tab-icon" aria-hidden="true">{fileIcon(label.basename, 'file')}</span>
+                    <span className="code-artifact-preview__tab-label">{label.basename}</span>
                   </button>
                   <button
                     type="button"
@@ -533,30 +534,28 @@ export function FilePreviewLayer({
               </button>
             </div>
           </div>
-          <header className="code-artifact-preview__header">
-            <h2 id="code-artifact-preview-title" ref={headingRef} tabIndex={-1} className="sr-only">
-              {currentPath}
-            </h2>
-            <nav className="code-artifact-preview__crumb" aria-label="文件路径">
-              {crumbs.map((crumb, index) => (
+          <h2 id="code-artifact-preview-title" ref={headingRef} tabIndex={-1} className="sr-only">
+            {currentPath}
+          </h2>
+          {directoryCrumbs.length > 0 && (
+            <header className="code-artifact-preview__header">
+              <nav className="code-artifact-preview__crumb" aria-label="文件所在目录">
+                {directoryCrumbs.map((crumb, index) => (
                 <span key={crumb.path} className="code-artifact-preview__crumb-item">
                   {index > 0 && <span aria-hidden="true">›</span>}
-                  {crumb.isFile ? (
-                    <span className="is-file" title={crumb.path}>{crumb.name}</span>
-                  ) : (
-                    <button type="button" title={crumb.path} onClick={() => setRevealDir(crumb.path)}>
-                      {crumb.name}
-                    </button>
-                  )}
+                  <button type="button" title={crumb.path} onClick={() => setRevealDir(crumb.path)}>
+                    {crumb.name}
+                  </button>
                 </span>
-              ))}
-            </nav>
-            <span className="sr-only" aria-live="polite">
-              {!loading && !error && !data?.binary
-                ? selectedRange ? `已选 ${lineRangeLabel(selectedRange)}` : '点击、Shift+点击或拖选代码行'
-                : ''}
-            </span>
-          </header>
+                ))}
+              </nav>
+            </header>
+          )}
+          <span className="sr-only" aria-live="polite">
+            {!loading && !error && !data?.binary
+              ? selectedRange ? `已选 ${lineRangeLabel(selectedRange)}` : '点击、Shift+点击或拖选代码行'
+              : ''}
+          </span>
         </div>
 
         {data?.truncated && !previewingImage && (
