@@ -1522,7 +1522,15 @@ router.post('/model-access/codex-subscription/prepare', adminAuth, (_req: expres
     const file = path.join(os.homedir(), '.codex', `${CODEX_SUBSCRIPTION_CHANNEL}.config.toml`);
     try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { /* ignore */ }
     if (!fs.existsSync(file)) {
-      const placeholder = `# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)\n# Managed by mobius admin wizard; do not put api_key here.\n`;
+      const placeholder = [
+        '# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)',
+        '# Managed by mobius admin wizard; do not put api_key here.',
+        '',
+        '[features]',
+        'apps = false',
+        'enable_mcp_apps = false',
+        '',
+      ].join('\n');
       fs.writeFileSync(file, placeholder, { mode: 0o600 });
     }
     res.json({ ok: true, channel: CODEX_SUBSCRIPTION_CHANNEL, config_file: file });

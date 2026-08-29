@@ -31,6 +31,16 @@ const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 // 订阅渠道 (ChatGPT 付费订阅认证): 凭据在 ~/.codex/auth.json, config TOML 允许为空/占位 —
 // 不含 env_key/api_key, 与 admin 路由 prepare 端点创建的占位文件同名.
 const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription'
+// 订阅渠道占位 TOML (prepare 端点与 upsert 补建共用同一份): 关闭 apps/mcp_apps 功能.
+const CODEX_SUBSCRIPTION_PLACEHOLDER_TOML = [
+  '# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)',
+  '# Managed by mobius admin wizard; do not put api_key here.',
+  '',
+  '[features]',
+  'apps = false',
+  'enable_mcp_apps = false',
+  '',
+].join('\n')
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 const HARNESS_KEY_RE = /^[A-Za-z0-9_-]+$/
 const HARNESS_RUNTIME_VERSION = '0.0.1-rc.5'
@@ -777,7 +787,7 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
   if (toml.trim()) {
     writeCodexConfigToml(key, toml)
   } else if (isSubscription && !fs.existsSync(codexConfigPathForKey(key))) {
-    writeCodexConfigToml(key, '# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)\n# Managed by mobius admin wizard; do not put api_key here.\n')
+    writeCodexConfigToml(key, CODEX_SUBSCRIPTION_PLACEHOLDER_TOML)
   }
   // 用户编辑 codex config 会覆盖整个 toml, 重新应用管理员配置的 auto-compact (若开启), 防字段丢失.
   try {

@@ -3376,6 +3376,7 @@ type ModelWizardState = {
   secret: string                  // 第4步 秘钥 (订阅路径不使用)
   subPrepared: boolean            // 订阅路径: 空配置文件已创建 (进入认证步骤的门槛)
   subAuthMethod: SubAuthMethod    // 订阅路径: 认证方式 (设备码 | 上传 auth.json)
+  subModel: string                // 订阅路径: Codex 订阅模型 (sol/terra/luna)
 }
 
 function initialWizardState(): ModelWizardState {
@@ -3389,6 +3390,7 @@ function initialWizardState(): ModelWizardState {
     secret: '',
     subPrepared: false,
     subAuthMethod: 'device-code',
+    subModel: CODEX_SUBSCRIPTION_MODELS[0],
   }
 }
 
@@ -3405,13 +3407,15 @@ const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
   { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
   { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
   { title: '配置代理网络', hint: 'Codex 订阅需要访问 OpenAI 网络; 按需编辑模型代理配置, 完成后点下一步' },
-  { title: '选择认证方式', hint: '设备码在线登录, 或直接上传本地已登录的 Codex 认证文件' },
+  { title: '选择认证方式', hint: '选择订阅模型 (GPT-5.6 家族), 以及设备码登录或上传本地认证文件' },
   { title: '登录认证', hint: '在下方终端完成 ChatGPT 设备码登录, 成功后点击"我已登录"' },
   { title: '注册', hint: '把订阅渠道注册进 mobius 模型列表' },
 ]
 
 // 订阅路径认证方式: 设备码在线登录 | 上传本地 ~/.codex/auth.json.
 type SubAuthMethod = 'device-code' | 'upload-auth'
+// 订阅渠道可选的 Codex 订阅模型 (ChatGPT 付费计划内的 GPT-5.6 家族).
+const CODEX_SUBSCRIPTION_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const
 
 const WIZARD_TOTAL_STEPS = 5
 const WIZARD_TOTAL_STEPS_SUBSCRIPTION = 6
@@ -3646,8 +3650,13 @@ function SubscriptionProxyStep({ prepared, onPrepared }: { prepared: boolean; on
   )
 }
 function SubscriptionAuthMethodStep({
-  method, onMethodChange,
-}: { method: SubAuthMethod; onMethodChange: (m: SubAuthMethod) => void }) {
+  method, onMethodChange, model, onModelChange,
+}: {
+  method: SubAuthMethod
+  onMethodChange: (m: SubAuthMethod) => void
+  model: string
+  onModelChange: (m: string) => void
+}) {
   const options: Array<{ k: SubAuthMethod; name: string; desc: string; icon: ReactNode }> = [
     {
       k: 'device-code',
@@ -3691,6 +3700,30 @@ function SubscriptionAuthMethodStep({
           <div className="font-mono" style={{ color: 'var(--text-secondary)' }}>macOS / Linux: ~/.codex/auth.json</div>
         </div>
       )}
+      <div className="pt-1">
+        <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>订阅模型</div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {CODEX_SUBSCRIPTION_MODELS.map(m => {
+            const active = model === m
+            return (
+              <button key={m} type="button" onClick={() => onModelChange(m)}
+                className="rounded-lg border px-3 py-2 text-left transition-colors"
+                style={{
+                  borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                  background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+                }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{m}</span>
+                  {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          ChatGPT 付费订阅内的 GPT-5.6 家族模型; 注册后可在"文件配置"Tab 修改 codex_model.
+        </div>
+      </div>
     </div>
   )
 }
@@ -3937,7 +3970,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
           body: JSON.stringify({
             channel,
             label,
-            codex_model: 'gpt-5.1-codex',
+            codex_model: wizard.subModel,
             enabled: true,
           }),
         }) as any
@@ -4082,6 +4115,8 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
             <SubscriptionAuthMethodStep
               method={wizard.subAuthMethod}
               onMethodChange={m => patch({ subAuthMethod: m })}
+              model={wizard.subModel}
+              onModelChange={m => patch({ subModel: m })}
             />
           )
         }
@@ -4170,7 +4205,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
                 ['Harness', 'Codex订阅 (ChatGPT 认证)'],
                 ['认证方式', wizard.subAuthMethod === 'upload-auth' ? '上传本地 auth.json' : '设备码在线登录'],
                 ['渠道', wizard.derivedKey || CODEX_SUBSCRIPTION_CHANNEL],
-                ['默认模型', 'gpt-5.1-codex'],
+                ['默认模型', wizard.subModel],
                 ['凭据', '~/.codex/auth.json (订阅登录产物)'],
               ] as Array<[string, string]>).map(([k, v]) => (
                 <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
