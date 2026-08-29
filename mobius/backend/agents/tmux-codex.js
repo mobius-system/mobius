@@ -115,17 +115,20 @@ const CODEX_PENDING_ITEM_RE = /^\s*↳\s+(.*)$/
 // anchored to the notice prefix so ordinary conversation text mentioning the phrase is not
 // suppressed.
 const CODEX_USER_INTERRUPT_NOTICE_RE = /^■\s*Conversation interrupted\b/i
+const CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE =
+  /^⚠\s*Model metadata for `[^`]+` not found\. Defaulting to fallback metadata;/
 
 function findCodexRecentErrorInPane(paneText) {
   const ANSI_RE = /\x1b\[[0-9;]*m/g
   const lines = String(paneText || '').split('\n')
   // Reverse scan so the newest Codex notice wins. If that newest notice is the normal
-  // user-interrupt banner, stop immediately instead of falling through to an older stale error.
+  // user-interrupt or fallback metadata banner, stop immediately instead of falling through to an older stale error.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
     const cleaned = line.replace(ANSI_RE, '').trimStart()
     if (!cleaned.startsWith('■') && !cleaned.startsWith('⚠')) continue
     if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
+    if (CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE.test(cleaned)) return null
     return {
       message: cleaned.trim(),
       rawLine: line,
