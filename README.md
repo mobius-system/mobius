@@ -107,6 +107,8 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 
 Mobius is model-agnostic. GPT, Claude, **GLM-5.2**, Codex — all serve as execution engines inside the same project. Choose by task type, cost, or performance.
 
+Model setup demo: [Connect domestic and overseas CodingPlan subscriptions once, use them across every platform and device](https://www.bilibili.com/video/BV1oC4m6aENv/)
+
 
 
 ## Connect Everything
