@@ -23,6 +23,8 @@ const TOOL_TABS: Array<{ id: SessionToolTab; label: string; icon: ReactNode }> =
   { id: 'git', label: SESSION_TOOL_TAB_LABELS.git, icon: <GitBranch className="h-3.5 w-3.5" /> },
 ]
 
+const SESSION_TOOL_SELECTION_KEY = 'mobius:session-tool-selection'
+
 export function SessionToolDrawer({
   open,
   activeTab,
@@ -47,7 +49,18 @@ export function SessionToolDrawer({
   const overflowPanelRef = useRef<HTMLDivElement | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const activeIndex = TOOL_TABS.findIndex(tab => tab.id === activeTab)
+  const [selectedTabs, setSelectedTabs] = useState<SessionToolTab[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(SESSION_TOOL_SELECTION_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter((value): value is SessionToolTab => TOOL_TABS.some(tab => tab.id === value))
+    } catch {
+      return []
+    }
+  })
+  const activeIndex = selectedTabs.findIndex(tab => tab === activeTab)
   const focusableIndex = activeIndex >= 0 ? activeIndex : 0
   const visibleObjectLabel = objectLabel?.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) || objectLabel
 
@@ -73,10 +86,23 @@ export function SessionToolDrawer({
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [addOpen, overflowOpen])
 
-  const selectByIndex = (index: number) => {
-    const normalized = (index + TOOL_TABS.length) % TOOL_TABS.length
+  const selectTab = (tab: SessionToolTab) => {
+    setSelectedTabs(previous => {
+      if (previous.includes(tab)) return previous
+      const next = [...previous, tab]
+      try { window.localStorage.setItem(SESSION_TOOL_SELECTION_KEY, JSON.stringify(next)) } catch { /* storage is optional */ }
+      return next
+    })
+    setAddOpen(false)
     setOverflowOpen(false)
-    onSelectTab(TOOL_TABS[normalized].id)
+    onSelectTab(tab)
+  }
+
+  const selectByIndex = (index: number) => {
+    if (selectedTabs.length === 0) return
+    const normalized = (index + selectedTabs.length) % selectedTabs.length
+    setOverflowOpen(false)
+    onSelectTab(selectedTabs[normalized])
     tabRefs.current[normalized]?.focus()
   }
 
@@ -99,7 +125,7 @@ export function SessionToolDrawer({
     }
     if (event.key === 'End') {
       event.preventDefault()
-      selectByIndex(TOOL_TABS.length - 1)
+      selectByIndex(selectedTabs.length - 1)
     }
   }
 
@@ -115,8 +141,12 @@ export function SessionToolDrawer({
     >
       <header className="session-tool-drawer__header">
         <div className="session-tool-drawer__chrome">
+          {selectedTabs.length > 0 ? (
           <div className="session-tool-drawer__tabs" role="tablist" aria-label="会话工具" aria-orientation="horizontal">
-            {TOOL_TABS.map((tab, index) => (
+            {selectedTabs.map((tabId, index) => {
+              const tab = TOOL_TABS.find(item => item.id === tabId)
+              if (!tab) return null
+              return (
               <button
                 id={`session-tool-tab-${tab.id}`}
                 key={tab.id}
@@ -129,42 +159,31 @@ export function SessionToolDrawer({
                 ref={element => {
                   tabRefs.current[index] = element
                 }}
-                onClick={() => {
-                  setOverflowOpen(false)
-                  onSelectTab(tab.id)
-                }}
+                onClick={() => { setOverflowOpen(false); onSelectTab(tab.id) }}
                 onKeyDown={event => handleTabKeyDown(event, index)}
                 className={`session-tool-drawer__tab${activeTab === tab.id ? ' is-active' : ''}`}
                 title={tab.label}
               >
                 <span className="session-tool-drawer__tab-icon" aria-hidden>{tab.icon}</span>
               </button>
-            ))}
+              )
+            })}
           </div>
+          ) : (
+            <div className="session-tool-drawer__empty-title">工具面板</div>
+          )}
           <div className="session-tool-drawer__header-actions">
-            <button
-              type="button"
-              onClick={() => { setAddOpen(value => !value); setOverflowOpen(false) }}
-              className="session-tool-drawer__header-action"
-              aria-label="添加工具面板"
-              aria-controls="session-tool-add"
-              aria-expanded={addOpen}
-              title="添加工具面板"
-            >
-              <Plus aria-hidden />
-            </button>
-            {overflow && (
+            {selectedTabs.length > 0 && (
               <button
-                ref={overflowButtonRef}
                 type="button"
-                onClick={() => setOverflowOpen(value => !value)}
+                onClick={() => { setAddOpen(value => !value); setOverflowOpen(false) }}
                 className="session-tool-drawer__header-action"
-                aria-label="更多会话动作"
-                aria-controls="session-tool-overflow"
-                aria-expanded={overflowOpen}
-                title="更多会话动作"
+                aria-label="添加工具面板"
+                aria-controls="session-tool-add"
+                aria-expanded={addOpen}
+                title="添加工具面板"
               >
-                <MoreHorizontal aria-hidden />
+                <Plus aria-hidden />
               </button>
             )}
             <button
@@ -186,18 +205,31 @@ export function SessionToolDrawer({
             >
               <div className="session-tool-drawer__add-title">添加工具面板</div>
               {TOOL_TABS.map(tab => (
+                selectedTabs.includes(tab.id) ? null : (
                 <button
                   key={tab.id}
                   type="button"
                   role="menuitem"
                   className="session-tool-drawer__add-item"
-                  onClick={() => { setAddOpen(false); onSelectTab(tab.id) }}
+                  onClick={() => selectTab(tab.id)}
                 >
                   <span className="session-tool-drawer__tab-icon" aria-hidden>{tab.icon}</span>
                   <span>{tab.label}</span>
                   {activeTab === tab.id && <span className="session-tool-drawer__add-current">当前</span>}
                 </button>
+                )
               ))}
+              {overflow && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="session-tool-drawer__add-item"
+                  onClick={() => { setAddOpen(false); setOverflowOpen(true) }}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  <span>更多操作</span>
+                </button>
+              )}
             </div>
           )}
           {overflow && overflowOpen && (
@@ -237,7 +269,26 @@ export function SessionToolDrawer({
         role="tabpanel"
         aria-labelledby={`session-tool-tab-${activeTab}`}
       >
-        {children}
+        {selectedTabs.length === 0 ? (
+          <div className="session-tool-drawer__chooser" role="list" aria-label="选择工具面板">
+            <div className="session-tool-drawer__chooser-heading">选择要显示的工具</div>
+            <div className="session-tool-drawer__chooser-copy">常用工具会以 Tab 保留在侧边栏，可随时通过 + 添加。</div>
+            {TOOL_TABS.map(tab => (
+              <button key={tab.id} type="button" className="session-tool-drawer__chooser-item" onClick={() => selectTab(tab.id)}>
+                <span className="session-tool-drawer__chooser-icon" aria-hidden>{tab.icon}</span>
+                <span>{tab.label}</span>
+                <span className="session-tool-drawer__chooser-hint">添加</span>
+              </button>
+            ))}
+            {overflow && (
+              <button type="button" className="session-tool-drawer__chooser-item" onClick={() => setOverflowOpen(true)}>
+                <span className="session-tool-drawer__chooser-icon" aria-hidden><MoreHorizontal className="h-4 w-4" /></span>
+                <span>更多操作</span>
+                <span className="session-tool-drawer__chooser-hint">打开</span>
+              </button>
+            )}
+          </div>
+        ) : children}
       </div>
     </div>
   )
