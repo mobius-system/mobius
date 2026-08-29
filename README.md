@@ -171,6 +171,14 @@ Mobius ships with built-in extensions and grows new ones from your needs — fin
 
 Full deployment guide at [Docs](https://mobius-system.github.io/mobius/en/).
 
+### Option 0: One-line install for macOS
+
+```bash
+bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v20.sh)
+```
+
+Demo video: [Mobius one-line install on macOS](https://www.bilibili.com/video/BV1AAtT6aEoR)
+
 ### Containers (recommended)
 
 ```bash
