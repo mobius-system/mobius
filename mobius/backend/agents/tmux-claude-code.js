@@ -894,7 +894,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
