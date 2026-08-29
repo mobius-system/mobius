@@ -207,8 +207,8 @@
 
 .workbench-project-option[data-active="true"] {
   color: var(--text-primary) !important;
-  background: color-mix(in srgb, var(--accent-primary) 7%, var(--surface-overlay)) !important;
-  border-color: color-mix(in srgb, var(--accent-primary) 22%, var(--border-default));
+  background: color-mix(in srgb, var(--accent-primary) 4%, var(--surface-overlay)) !important;
+  border-color: transparent;
   box-shadow: inset 3px 0 0 var(--accent-primary);
 }
 
@@ -221,7 +221,7 @@
 }
 
 .workbench-project-option[data-active="true"]:hover {
-  background: color-mix(in srgb, var(--accent-primary) 11%, var(--surface-overlay)) !important;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface-overlay)) !important;
 }
 
 .workbench-layer-drawer { z-index: var(--layer-drawer, 4000) !important; }
