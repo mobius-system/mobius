@@ -175,9 +175,7 @@ Full deployment guide at [Docs](https://mobius-system.github.io/mobius/en/).
 
 > One-line install for macOS: `bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v21.sh)` — [demo video](https://www.bilibili.com/video/BV1AAtT6aEoR)
 >
-> One-line install for Windows (PowerShell 5.1+): `irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`. Install and start Docker Desktop, Git for Windows, and Python 3.10+ first; the script automatically uses `docker.1ms.run` for the base image and disables Git line-ending conversion during the initial clone.
->
-> Both one-key installers use the shared `deploy/onekey/` files: `Dockerfile4zh-base` and `Dockerfile4zh-app`.
+> One-line install for Windows: `irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex`.
 
 ```bash
 # 1. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)
