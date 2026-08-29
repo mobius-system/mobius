@@ -247,6 +247,7 @@ function adminLimitsPayload(): any {
       backend: opt.backend,
       imported: !!opt.imported,
       use_proxy: opt.use_proxy === true || opt.use_proxy === 1 ? 1 : 0,
+      proxy_mode: (opt as any).proxy_mode || 'direct',
       capture_stream: adminSettings.getModelCaptureStream(opt.key) ? 1 : 0,
       // 手动上下文限制: { enabled, tokenLimit }. enabled && tokenLimit>0 时已注入 settings/toml.
       auto_compact: adminSettings.getModelAutoCompact(opt.key),

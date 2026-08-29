@@ -3,7 +3,7 @@
  *
  * 在专用 tmux server 的固定 session `imac_claude_code_agent_hub` 里, 每个
  * MOBIUS session_id → 一个 tmux window, window 名 = session_id. window 内跑 `proxychains -q -f
- * ~/proxy_claude.conf claude --dangerously-skip-permissions ...` (交互式 TUI 模式).
+ * ~/proxychains_config_for_llm_models.conf claude --dangerously-skip-permissions ...` (交互式 TUI 模式).
  *
  * 写入: tmux load-buffer + paste-buffer -p (bracketed) + send-keys Enter×3
  * 读取: ~/.claude/projects/<cwd-enc>/<uuid>.jsonl 文件 tail
@@ -52,8 +52,14 @@ const { take_tmux_window_text } = require('./tmux_utils')
 // ── 常量 ────────────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
 const HOME = os.homedir()
-const PROXY_ENVS = path.join(HOME, 'proxy_envs.bash')
-const PROXY_CONF = path.join(HOME, 'proxy_claude.conf')
+// 环境变量代理配置 (曾名 proxy_envs.bash): 读新名优先, 老文件兜底.
+const PROXY_ENVS_FILE = path.join(HOME, 'proxy_envs.conf')
+const PROXY_ENVS_FILE_LEGACY = path.join(HOME, 'proxy_envs.bash')
+function resolveProxyEnvsFile() {
+  return fs.existsSync(PROXY_ENVS_FILE) ? PROXY_ENVS_FILE : PROXY_ENVS_FILE_LEGACY
+}
+// 模型 proxychains 配置 (曾名 proxy_claude.conf); 兼容期老文件存在则沿用.
+const PROXY_CONF = path.join(HOME, 'proxychains_config_for_llm_models.conf')
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'hub-runtime.json')
 // archive: 任何启动过的 session 都留一条 (sessionId → jsonlPath/agentSessionId/cwd...),
 // terminate 时不删. 用来在 admin 关 window / cleaner 清理之后, getHistory 仍能找到 jsonl 文件读历史.
@@ -326,25 +332,44 @@ function normalizeUseProxy(value, fallback = true) {
   return !!fallback
 }
 
-function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy = false) {
+// 四挡代理模式归一: direct | env | proxychains | env_proxychains.
+// 兼容旧 boolean: true→env_proxychains (旧行为 env+proxychains 双轨), false/null→direct.
+function normalizeProxyMode4(value, fallback = 'direct') {
+  if (value === 'env' || value === 'proxychains' || value === 'env_proxychains') return value
+  if (value === 'direct') return 'direct'
+  if (value === true || value === 1 || value === '1' || value === 'true') return 'env_proxychains'
+  if (value === false || value === 0 || value === '0' || value === 'false') return 'direct'
+  return fallback
+}
+
+function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy = false, proxyMode = null) {
   const forced = !!forceNoProxy
+  const mode = forced
+    ? 'direct'
+    : normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, fallbackUseProxy) ? 'env_proxychains' : 'direct')
   return {
     forceNoProxy: forced,
-    useProxy: forced ? false : normalizeUseProxy(useProxy, fallbackUseProxy),
+    useProxy: mode !== 'direct',
+    proxyMode: mode,
   }
 }
 
-function proxyPrereqMissing() {
+// 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
+function proxyPrereqMissing(mode = 'env_proxychains') {
   const missing = []
-  if (!fs.existsSync(PROXY_ENVS)) missing.push(`file: ${PROXY_ENVS}`)
-  if (!fs.existsSync(PROXY_CONF)) missing.push(`file: ${PROXY_CONF}`)
-  if (spawnSync('which', ['proxychains']).status !== 0) missing.push('bin (PATH): proxychains')
+  const needEnv = mode === 'env' || mode === 'env_proxychains'
+  const needChains = mode === 'proxychains' || mode === 'env_proxychains'
+  if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
+  if (needChains) {
+    if (!fs.existsSync(PROXY_CONF) && !fs.existsSync(path.join(HOME, 'proxy_claude.conf'))) missing.push(`file: ${PROXY_CONF}`)
+    if (spawnSync('which', ['proxychains']).status !== 0) missing.push('bin (PATH): proxychains')
+  }
   return missing
 }
 
-function assertProxyAvailable() {
-  const missing = proxyPrereqMissing()
-  if (missing.length) throw new Error(`use_proxy=true 但代理依赖缺失: ${missing.join(', ')}`)
+function assertProxyAvailable(mode = 'env_proxychains') {
+  const missing = proxyPrereqMissing(mode)
+  if (missing.length) throw new Error(`代理依赖缺失 (${mode}): ${missing.join(', ')}`)
 }
 
 // 任务运行标记: <root>/.imac/flags/<sessionId>/running.flag
@@ -402,9 +427,9 @@ function pickInitialContextGreeting() {
     for (const m of missing) console.error('   - ' + m)
     process.exit(1)
   }
-  const proxyMissing = proxyPrereqMissing()
+  const proxyMissing = proxyPrereqMissing('env_proxychains')
   if (proxyMissing.length) {
-    console.warn(`[tmux-claude-code] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
+    console.warn(`[tmux-claude-code] ⚠️  代理依赖不完整; 直连/纯 env 挡的会话仍可启动: ${proxyMissing.join(', ')}`)
   }
   log(`[tmux-claude-code] ✅ preflight pass (SOCKET=${AGENT_TMUX_SOCKET}, HUB=${HUB})`)
 })()
@@ -828,7 +853,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -836,21 +861,21 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 模式特点: window 可跨后端重启存活. 已有活窗口 → 复用 (跟原 hub.startSession
     // idempotent 一致). 这跟 stream-json 那版"严格新建"语义不同, 是有意为之.
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp })
+      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp })
     } else {
       // 窗口在但 runtime entry 可能不在 (后端首次 reload) — 兜底建一个
       if (!this.runtime.has(sessionId) && agentSessionId) {
         const jp = jsonlPathOf(cwd, agentSessionId)
         const finalSettingsPath = settingsPath || null
-        const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy)
+        const resolved = resolveClaudeProxyMode(useProxy, forceNoProxy, false, proxyMode)
         this.runtime.set(sessionId, {
-          agentSessionId, cwd, flagRoot: flagRoot || cwd, model: model || null, useProxy: proxyMode.useProxy,
-          settingsPath: finalSettingsPath, forceNoProxy: proxyMode.forceNoProxy, displayName: displayName || null,
+          agentSessionId, cwd, flagRoot: flagRoot || cwd, model: model || null, useProxy: resolved.useProxy,
+          settingsPath: finalSettingsPath, forceNoProxy: resolved.forceNoProxy, displayName: displayName || null,
           jsonlPath: jp, startedAt: Date.now(), watch: null,
         })
         this._persistEntry(sessionId, {
-          agentSessionId, cwd, flagRoot: flagRoot || cwd, model, useProxy: proxyMode.useProxy,
-          settingsPath: finalSettingsPath, forceNoProxy: proxyMode.forceNoProxy, displayName,
+          agentSessionId, cwd, flagRoot: flagRoot || cwd, model, useProxy: resolved.useProxy,
+          settingsPath: finalSettingsPath, forceNoProxy: resolved.forceNoProxy, displayName,
           jsonlPath: jp, startedAt: Date.now(),
         })
         this._ensureWatcher(sessionId)
@@ -883,6 +908,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         useProxy,
         forceNoProxy || persisted?.forceNoProxy,
         persisted?.useProxy ?? false,
+        proxyModeArg ?? persisted?.proxyMode,
       )
       if (!finalCwd) throw new Error(`session ${sessionId} 没活 window 且无 cwd, 无法 spawn`)
       await this._spawnWindow({
@@ -891,6 +917,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         flagRoot: flagRoot || persisted?.flagRoot || finalCwd,
         model: model || persisted?.model,
         useProxy: proxyMode.useProxy,
+        proxyMode: proxyMode.proxyMode,
         settingsPath: finalSettingsPath,
         forceNoProxy: proxyMode.forceNoProxy,
         displayName: displayName || persisted?.displayName,
@@ -990,7 +1017,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 运行标记默认写在 cwd 下；调用方传 flagRoot 时优先使用仓库根等稳定路径。
@@ -1004,11 +1031,12 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       throw new Error(`Claude Code settings 文件不存在: ${finalSettingsPath}`)
     }
     // Settings and proxy are independent: the proxy branch passes --settings too.
-    const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy)
+    const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy, false, proxyModeArg)
     const finalForceNoProxy = proxyMode.forceNoProxy
     const finalUseProxy = proxyMode.useProxy
-    // 需要代理时先检查 proxychains 相关文件和命令是否可用。
-    if (finalUseProxy) assertProxyAvailable()
+    const finalProxyMode = proxyMode.proxyMode
+    // 需要代理时按挡位检查依赖 (env 挡只查 env 文件, proxychains 挡只查 conf+bin).
+    if (finalUseProxy) assertProxyAvailable(finalProxyMode)
 
     // resume 保护: 老 session 的 jsonl 可能不在我们的路径下 (旧 SDK 链路来源).
     // agentSessionId 存在表示希望恢复旧 Claude 会话。
@@ -1082,7 +1110,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // settingsArg 两分支都要带: 代理分支此前漏拼 --settings, 导致开代理的 session
       // settings 文件 (channel/key/权限/withproxy.json) 被静默丢弃回退全局默认。
       finalUseProxy
-        ? `exec proxychains -q -f "$HOME/proxy_claude.conf" claude ${settingsArg} ${claudeArgs.join(' ')}`
+        ? `exec proxychains -q -f "$HOME/proxychains_config_for_llm_models.conf" claude ${settingsArg} ${claudeArgs.join(' ')}`
         : `exec claude ${settingsArg} ${claudeArgs.join(' ')}`,
       // 删除空片段，并用 && 保证前一步失败时不继续执行。
     ].filter(Boolean).join(' && ')
@@ -1096,7 +1124,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)
     // 记录窗口、目录、Claude 会话、代理和 settings 信息。
-    log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} use_proxy=${finalUseProxy ? 1 : 0}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
+    log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} proxy_mode=${finalProxyMode}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
 
     // 等 TUI ready (底栏 "bypass permissions on" 出现)
     // 设置等待 TUI ready 的截止时间。
@@ -1183,7 +1211,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // Claude 内部会话 id。
       agentSessionId: claudeSessionId,
       // 工作目录、运行标记根目录、模型和代理设置。
-      cwd, flagRoot: effFlagRoot, model: model || null, useProxy: finalUseProxy,
+      cwd, flagRoot: effFlagRoot, model: model || null, useProxy: finalUseProxy, proxyMode: finalProxyMode,
       // settings、强制不走代理、展示名等启动参数。
       settingsPath: finalSettingsPath, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
       // jsonl 路径、启动时间和 watcher 占位。

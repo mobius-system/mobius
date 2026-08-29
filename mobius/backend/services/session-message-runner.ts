@@ -514,6 +514,8 @@ async function runSessionMessage({
       settingsPath: launch.settingsPath,
       forceNoProxy: launch.forceNoProxy,
       useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
+      // 四挡代理模式: direct | env | proxychains | env_proxychains (agent driver 分流用).
+      proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || 'direct'),
       codexProfileKey: launch.codexProfileKey || undefined,
       codexChannel: launch.codexChannel || undefined,
       codexConfigPath: launch.codexConfigPath || undefined,

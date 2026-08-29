@@ -33,7 +33,7 @@ const DEFAULT_RUNTIME_BIN = path.join(RUNTIME_PACKAGE, 'node_modules', '.bin', '
 const DEFAULT_CONFIG = path.join(RUNTIME_PACKAGE, 'cordis.yml')
 const DEFAULT_NODE = path.join(os.homedir(), '.nvm', 'versions', 'node', 'v22.22.2', 'bin', 'node')
 const DEFAULT_PROXY_BIN = '/usr/bin/proxychains'
-const DEFAULT_PROXY_CONFIG = path.join(os.homedir(), 'proxy_claude.conf')
+const DEFAULT_PROXY_CONFIG = path.join(os.homedir(), 'proxychains_config_for_llm_models.conf')
 const MAX_STDERR_BYTES = 64 * 1024
 
 function pidAlive(pid) {

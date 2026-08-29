@@ -237,6 +237,18 @@ function normalizeModelPromptLimitsForRead(value: any): any {
   return out
 }
 
+// 模型网络代理四挡: direct=直连 | env=环境变量代理 | proxychains=proxychains代理 | env_proxychains=环境变量+proxychains.
+// 历史值 boolean 归一: true→env_proxychains (旧行为 env+proxychains 双轨), false→direct.
+const MODEL_PROXY_MODES = ['direct', 'env', 'proxychains', 'env_proxychains'] as const
+type ModelProxyMode = typeof MODEL_PROXY_MODES[number]
+
+function normalizeModelProxyMode(value: any): ModelProxyMode | null {
+  if (value === 'direct' || value === 'env' || value === 'proxychains' || value === 'env_proxychains') return value
+  if (value === true) return 'env_proxychains'
+  if (value === false) return 'direct'
+  return null
+}
+
 function normalizeModelNetworkProxyForRead(value: any): any {
   const out: { perModel: Record<string, any> } = { perModel: {} }
   const rawMap: any = value?.perModel || value?.models || {}
@@ -245,9 +257,10 @@ function normalizeModelNetworkProxyForRead(value: any): any {
       try {
         const key = normalizeModelKey(rawKey)
         const value = rawValue && typeof rawValue === 'object'
-          ? ((rawValue as any).useProxy ?? (rawValue as any).use_proxy)
+          ? ((rawValue as any).useProxy ?? (rawValue as any).use_proxy ?? (rawValue as any).mode)
           : rawValue
-        if (typeof value === 'boolean') out.perModel[key] = value
+        const mode = normalizeModelProxyMode(value)
+        if (mode) out.perModel[key] = mode
       } catch {}
     }
   }
@@ -745,25 +758,29 @@ function getModelPromptLimitConfig(modelKey: any): any {
     : normalizeModelLimitConfigForRead({})
 }
 
-function getModelNetworkProxy(modelKey: any, fallback: boolean = false): boolean {
+function getModelNetworkProxy(modelKey: any, fallback: any = 'direct'): ModelProxyMode {
   const key = normalizeModelKey(modelKey)
   const proxy = loadSettings().modelNetworkProxy || normalizeModelNetworkProxyForRead({})
-  return Object.prototype.hasOwnProperty.call(proxy.perModel || {}, key)
-    ? proxy.perModel[key] === true
-    : !!fallback
+  if (Object.prototype.hasOwnProperty.call(proxy.perModel || {}, key)) {
+    const mode = normalizeModelProxyMode(proxy.perModel[key])
+    if (mode) return mode
+  }
+  const fallbackMode = normalizeModelProxyMode(fallback)
+  return fallbackMode || 'direct'
 }
 
 function setModelNetworkProxy(modelKey: any, value: any): any {
   const key = normalizeModelKey(modelKey)
-  if (typeof value !== 'boolean') {
-    throw new Error(`useProxy 必须是 boolean, 收到: ${typeof value}`)
+  const mode = normalizeModelProxyMode(value)
+  if (!mode) {
+    throw new Error(`代理模式必须是 direct/env/proxychains/env_proxychains 或 boolean, 收到: ${String(value)}`)
   }
   const next = loadSettings()
   if (!next.modelNetworkProxy) next.modelNetworkProxy = normalizeModelNetworkProxyForRead({})
   if (!next.modelNetworkProxy.perModel || typeof next.modelNetworkProxy.perModel !== 'object') {
     next.modelNetworkProxy.perModel = {}
   }
-  next.modelNetworkProxy.perModel[key] = value
+  next.modelNetworkProxy.perModel[key] = mode
   writeSettings(next)
   return next.modelNetworkProxy
 }
