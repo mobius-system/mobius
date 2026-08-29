@@ -111,7 +111,7 @@
 .easy-jsonl-response .jsonl-compact-md p { margin: .45rem 0; }
 .easy-jsonl-response .jsonl-compact-md pre { max-height: 34rem; border-radius: 12px; }
 
-.easy-jsonl-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.easy-jsonl-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .easy-jsonl-gallery a { display: block; overflow: hidden; border-radius: 11px; border: 1px solid var(--easy-line); background: var(--bg-primary); }
 .easy-jsonl-gallery img { display: block; width: 100%; max-height: 300px; object-fit: contain; }
 

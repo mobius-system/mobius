@@ -17,7 +17,7 @@ function ImageOutputItem({ url, index, onOpen }: { url: string; index: number; o
   const [err, setErr] = useState(false)
   const { label, display } = describeImageSrc(url)
   return (
-    <figure className="m-0 flex w-56 max-w-full flex-col gap-1">
+    <figure className="m-0 flex min-w-0 max-w-full flex-col gap-1">
       {err ? (
         <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] px-3 text-center text-[11px] text-[var(--text-muted)]">
           图片解码失败
@@ -50,7 +50,7 @@ export function ImageOutputPanel({ imageUrls, textBody }: { imageUrls: string[];
   const hasText = !!textBody && textBody.trim().length > 0
   return (
     <>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
         {imageUrls.map((url, i) => (
           <ImageOutputItem key={i + '·' + url.slice(0, 32)} url={url} index={i} onOpen={setPreviewSrc} />
         ))}

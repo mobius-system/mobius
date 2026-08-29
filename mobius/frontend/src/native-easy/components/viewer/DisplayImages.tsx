@@ -203,7 +203,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
           <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
           <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{sourceLabel} · {images.length} 张</span>
         </summary>
-        <div className="px-3 pb-3 pt-1 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+        <div className="px-3 pb-3 pt-1 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
           {images.map((src, i) => <DisplayImageItem key={i + '·' + src} src={src} onOpen={setPreviewSrc} />)}
         </div>
       </details>
