@@ -36,7 +36,11 @@
 
 ### 方法1：容器（推荐，适用于 Windows / Linux / macOS）
 
-> macOS 一键安装（一行命令）：`bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v20.sh)`，[演示视频](https://www.bilibili.com/video/BV1AAtT6aEoR)
+> macOS 一键安装（一行命令）：`bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v21.sh)`，[演示视频](https://www.bilibili.com/video/BV1AAtT6aEoR)
+>
+> Windows 一键安装（PowerShell 5.1+）：`irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v4.ps1 | iex`。运行前请安装并启动 Docker Desktop、Git for Windows 和 Python 3.10+；脚本会自动使用 `docker.1ms.run` 拉取基础镜像。
+>
+> 两个平台的一键部署都使用仓库 `deploy/onekey/` 下的 `Dockerfile4zh-base` 和 `Dockerfile4zh-app`。
 
 ```bash
 # 1. 克隆仓库（建议先 fork，再 clone；这样自进化后可直接提交到自己的仓库）
