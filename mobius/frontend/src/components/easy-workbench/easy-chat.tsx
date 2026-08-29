@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from './markdown'
 import { CODE_MARKDOWN_COMPONENTS } from './code-artifacts/CodeMarkdownComponents'
 import { CodeArtifactOpenProvider } from './code-artifacts/CodeArtifactOpenContext'
-import { FilePreviewLayer } from './code-artifacts/FilePreviewLayer'
+import { FilePreviewLayer, ProjectFileWorkspace } from './code-artifacts/FilePreviewLayer'
 import { targetFromTrustedPath, type CodeArtifactOpenRequest, type CodeArtifactTarget } from './code-artifacts/file-target'
 import { GitChangesViewer } from './code-git/GitChangesViewer'
 import { DiffRows as UnifiedDiffRows, parseUnifiedDiff, unifiedDiffNoHunkMessage } from './code-git/DiffRows'
@@ -2466,6 +2466,7 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [artifactOpenRequest, setArtifactOpenRequest] = useState<CodeArtifactOpenRequest | null>(null)
+  const [projectFileWorkspaceOpen, setProjectFileWorkspaceOpen] = useState(false)
   const [artifactAboveChanges, setArtifactAboveChanges] = useState(false)
   const [fileChangesRequest, setFileChangesRequest] = useState<{
     target?: CodeArtifactTarget
@@ -2553,6 +2554,7 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
     setSessionMoreOpen(false)
     setEasyExpandAllSignal(0)
     setArtifactOpenRequest(null)
+    setProjectFileWorkspaceOpen(false)
     setArtifactAboveChanges(false)
     setFileChangesRequest(null)
     setToolDrawerOpen(false)
@@ -2627,6 +2629,7 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
   }, [currentPageToolSourceLabel, toolOrigin])
 
   const rememberArtifactSource = useCallback((request: CodeArtifactOpenRequest) => {
+    setProjectFileWorkspaceOpen(false)
     setToolObjectContext({
       origin: 'message',
       originLabel: sessionToolOriginLabel('message'),
@@ -4565,7 +4568,9 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
       onOpenProjectFiles={() => {
         setEasyToolsOpen(false)
         if (chrome === 'shell') {
-          openToolTab('files')
+          captureCurrentToolSource()
+          setToolDrawerOpen(false)
+          setProjectFileWorkspaceOpen(true)
           return
         }
         captureCurrentToolSource()
@@ -4796,12 +4801,10 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
             </div>
           )}
           <button type="button" onClick={() => {
-            remoteMentionRangeRef.current = null
-            setMentionQuery('')
-            setRemoteFileDrawerInitialTab('files')
-            setRemoteFileDrawerOpen(true)
+            setToolDrawerOpen(false)
+            setProjectFileWorkspaceOpen(true)
           }} className="mb-1 flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-control)] px-2 text-left text-[11px] hover:bg-[var(--surface-control-hover)]" style={{ color: 'var(--text-secondary)' }}>
-            <FolderOpen className="h-3.5 w-3.5" /> 浏览项目文件 / 引用
+            <FolderOpen className="h-3.5 w-3.5" /> 打开项目文件工作台
           </button>
           <SessionFilesDrawerSurface
             files={toolFiles}
@@ -5505,8 +5508,8 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
                                 setEasyProjectMenuOpen(false)
                                 setEasyProjectQuery('')
                               }}
-                              className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
-                              style={{ background: active ? 'var(--surface-active)' : undefined, color: active ? 'var(--accent-primary)' : 'var(--text-primary)' }}
+                              data-active={active ? 'true' : 'false'}
+                              className="workbench-project-option flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
                             >
                               <FolderOpen className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
                               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
@@ -5866,6 +5869,18 @@ export function ChatArea({ layout = 'default', chrome = 'inline', shellChromeAct
             }
             : undefined}
           onInsertReference={insertArtifactReference}
+        />
+      )}
+      {projectFileWorkspaceOpen && !artifactOpenRequest && currentProjectId && (
+        <ProjectFileWorkspace
+          projectId={currentProjectId}
+          fallbackFocusRef={chatContainerRef}
+          onClose={() => setProjectFileWorkspaceOpen(false)}
+          onOpenRequest={(request) => {
+            setProjectFileWorkspaceOpen(false)
+            rememberArtifactSource(request)
+            setArtifactOpenRequest(request)
+          }}
         />
       )}
 

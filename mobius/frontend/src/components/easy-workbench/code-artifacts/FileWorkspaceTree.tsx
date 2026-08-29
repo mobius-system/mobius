@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import { api } from '../../../store'
 import { FileTreeLevel, type DirState, type Entry } from '../project-files'
+import { useWorkbenchPaneResize } from '../../../services/easy-workbench/pane-resize'
 import { targetFromTrustedPath } from './file-target'
 import type { CodeArtifactOpenRequest } from './file-target'
 
@@ -42,6 +43,14 @@ export function FileWorkspaceTree({
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['/']))
   const loadedRef = useRef<Set<string>>(new Set())
+  const treeResize = useWorkbenchPaneResize({
+    storageKey: 'mobius:ui:workbench:file-tree-width',
+    cssVariable: '--file-tree-width',
+    defaultWidth: 280,
+    minWidth: 220,
+    maxWidth: 520,
+    side: 'right',
+  })
 
   const loadDir = useCallback(async (relPath: string) => {
     if (loadedRef.current.has(relPath)) return
@@ -113,6 +122,20 @@ export function FileWorkspaceTree({
 
   return (
     <aside className="code-artifact-preview__tree" data-code-artifact-tree aria-label="项目文件">
+      <div
+        className="workbench-pane-resize-handle workbench-pane-resize-handle--file-tree"
+        role="separator"
+        aria-label="调整文件树宽度"
+        aria-orientation="vertical"
+        aria-valuemin={220}
+        aria-valuemax={520}
+        aria-valuenow={treeResize.width}
+        tabIndex={0}
+        onPointerDown={treeResize.handlePointerDown}
+        onDoubleClick={treeResize.handleDoubleClick}
+        onKeyDown={treeResize.handleKeyDown}
+        title="拖拽调整文件树宽度 · 双击恢复默认"
+      />
       <label className="code-artifact-preview__tree-filter-wrap">
         <Search aria-hidden="true" strokeWidth={1.8} />
         <input

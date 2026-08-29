@@ -331,7 +331,7 @@ export function AdvancedSessionActions({
               onClick={onOpenProjectFiles}
               disabled={!projectId}
               label="项目文件"
-              tooltip="浏览项目文件并插入当前输入框；也可直接键入 @"
+              tooltip="在文件工作台中浏览和预览项目文件；引用路径可直接键入 @"
               accent="neutral"
               displayLabel
               icon={<FolderOpen className="h-4 w-4" strokeWidth={1.9} />}

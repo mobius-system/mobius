@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, ExternalLink, FileDiff, FileQuestion, Loader2, Quote, RefreshCw, X } from 'lucide-react'
+import { Copy, ExternalLink, FileDiff, FileQuestion, FolderOpen, Loader2, Quote, RefreshCw, X } from 'lucide-react'
 import { api } from '../../../store'
 import { buildVscodeUrl, fileIcon } from '../project-files'
 import { useWorkbenchShellSlot } from '../workbench-shell'
@@ -98,6 +98,92 @@ export function formatCodeReference(path: string, language: string, lines: strin
   const longestFence = Math.max(2, ...Array.from(snippet.matchAll(/`{3,}/g), match => match[0].length))
   const fence = '`'.repeat(longestFence + 1)
   return `${path}#L${range.start}-L${range.end}\n${fence}${language}\n${snippet}\n${fence}`
+}
+
+export function ProjectFileWorkspace({
+  projectId,
+  fallbackFocusRef,
+  onClose,
+  onOpenRequest,
+}: {
+  projectId: string
+  fallbackFocusRef?: RefObject<HTMLElement>
+  onClose: () => void
+  onOpenRequest: (request: CodeArtifactOpenRequest) => void
+}) {
+  const previewSlot = useWorkbenchShellSlot('preview')
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  useLayoutEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  const closeWorkspace = useCallback(() => {
+    onClose()
+    window.requestAnimationFrame(() => fallbackFocusRef?.current?.focus())
+  }, [fallbackFocusRef, onClose])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closeWorkspace()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [closeWorkspace])
+
+  const panel = (
+    <section
+      className="code-artifact-preview"
+      data-code-artifact-preview
+      data-code-artifact-workspace
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="project-file-workspace-title"
+    >
+      <div className="code-artifact-preview__chrome">
+        <div className="code-artifact-preview__tabs" role="tablist" aria-label="项目文件">
+          <div className="code-artifact-preview__tab is-active">
+            <div className="code-artifact-preview__tab-button" role="tab" aria-selected="true">
+              <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="code-artifact-preview__tab-label">文件</span>
+            </div>
+          </div>
+          <div className="code-artifact-preview__tab-actions">
+            <button
+              type="button"
+              className="code-artifact-preview__icon-button"
+              onClick={closeWorkspace}
+              title="关闭文件工作台"
+              aria-label="关闭文件工作台"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        <h2 id="project-file-workspace-title" ref={headingRef} tabIndex={-1} className="sr-only">项目文件</h2>
+      </div>
+      <div className="code-artifact-preview__workspace">
+        <div className="code-artifact-preview__body">
+          <div className="code-artifact-preview__empty">
+            <FolderOpen aria-hidden="true" />
+            <strong>项目文件</strong>
+            <span>从文件树中选择一个文件</span>
+          </div>
+        </div>
+        <FileWorkspaceTree
+          projectId={projectId}
+          activePath=""
+          onOpenRequest={onOpenRequest}
+        />
+      </div>
+    </section>
+  )
+
+  if (previewSlot) return createPortal(panel, previewSlot)
+  return <div className="code-artifact-layer code-artifact-layer--docked workbench-layer-drawer">{panel}</div>
 }
 
 export function FilePreviewLayer({

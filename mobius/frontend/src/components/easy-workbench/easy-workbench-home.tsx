@@ -426,7 +426,7 @@ export function EasyWorkbenchHome() {
                       ) : filteredProjects.map((project: any) => {
                         const active = project.id === selectedProjectId
                         return (
-                          <button key={project.id} type="button" role="menuitemradio" aria-checked={active} onClick={() => selectProject(project.id)} className="flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-primary)', background: active ? 'var(--surface-active)' : undefined }} title={project.name}>
+                          <button key={project.id} type="button" role="menuitemradio" aria-checked={active} data-active={active ? 'true' : 'false'} onClick={() => selectProject(project.id)} className="workbench-project-option flex min-h-9 w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--focus-ring)]" title={project.name}>
                             <Folder className="h-3.5 w-3.5 flex-shrink-0" />
                             <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{project.name}</span>
                             {active && <Check className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden="true" />}

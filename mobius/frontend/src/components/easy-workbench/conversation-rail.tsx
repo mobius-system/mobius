@@ -23,6 +23,7 @@ import {
   sessionNavigation,
   sessionPath,
 } from '../../services/easy-workbench/workbench-navigation'
+import { useWorkbenchPaneResize } from '../../services/easy-workbench/pane-resize'
 
 const COLLAPSED_PROJECTS_STORAGE_KEY = 'mobius:ui:conversation-rail:collapsed'
 const UNNAMED_PROJECT_KEY = '__unnamed_project__'
@@ -109,6 +110,7 @@ export function ConversationRail({
   onOpenSearch,
   onOpenSettings,
   refreshKey,
+  resizeHandle,
 }: {
   userId: string
   activeSessionId?: string | null
@@ -119,6 +121,7 @@ export function ConversationRail({
   onOpenSearch?: (trigger: HTMLElement) => void
   onOpenSettings?: (trigger: HTMLElement) => void
   refreshKey?: number
+  resizeHandle?: ReturnType<typeof useWorkbenchPaneResize>
 }) {
   const navigate = useNavigate()
   const { user, logout } = useStore()
@@ -299,6 +302,23 @@ export function ConversationRail({
       style={{ width: 'var(--rail-width)', background: 'var(--surface-sidebar)' }}
       aria-label="最近会话"
     >
+      {!drawer && resizeHandle && (
+        <div
+          className="workbench-pane-resize-handle workbench-pane-resize-handle--left"
+          data-testid="workbench-rail-resize-handle"
+          role="separator"
+          aria-label="调整左侧会话栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={208}
+          aria-valuemax={420}
+          aria-valuenow={resizeHandle.width}
+          tabIndex={0}
+          onPointerDown={resizeHandle.handlePointerDown}
+          onDoubleClick={resizeHandle.handleDoubleClick}
+          onKeyDown={resizeHandle.handleKeyDown}
+          title="拖拽调整左侧会话栏宽度 · 双击恢复默认"
+        />
+      )}
       <div data-rail-slot="header" className="flex-shrink-0 p-2">
         <div className="flex items-center gap-1">
           <button type="button" onClick={openHome} aria-label="回到 Home" title="回到 Home"

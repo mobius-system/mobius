@@ -40,6 +40,7 @@
   --rail-width: 280px;
   --tool-drawer-width: 260px;
   --file-preview-width: clamp(520px, 48vw, 820px);
+  --file-tree-width: 280px;
   --terminal-dock-height: 220px;
   --control-height-sm: 32px;
   --control-height-md: 36px;
@@ -196,6 +197,33 @@
   box-shadow: var(--shadow-overlay);
 }
 
+/* 项目菜单的选中态用结构化强调代替整块高饱和填充，避免在浅色主题里形成突兀的蓝框。 */
+.workbench-project-option {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 8px !important;
+  color: var(--text-primary);
+}
+
+.workbench-project-option[data-active="true"] {
+  color: var(--text-primary) !important;
+  background: color-mix(in srgb, var(--accent-primary) 7%, var(--surface-overlay)) !important;
+  border-color: color-mix(in srgb, var(--accent-primary) 22%, var(--border-default));
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+
+.workbench-project-option[data-active="true"] > svg {
+  color: var(--accent-primary);
+}
+
+.workbench-project-option:hover:not([data-active="true"]) {
+  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+}
+
+.workbench-project-option[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--accent-primary) 11%, var(--surface-overlay)) !important;
+}
+
 .workbench-layer-drawer { z-index: var(--layer-drawer, 4000) !important; }
 .workbench-layer-modal { z-index: var(--layer-modal, 10000) !important; }
 
@@ -224,6 +252,31 @@
 }
 
 .conversation-rail { border-right: 1px solid var(--border-default); }
+
+/* 工作台左右栏的统一拖拽热区。手柄比可见边框略宽，便于鼠标与触控命中，
+   但不改变栏内内容的布局尺寸。 */
+.workbench-pane-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  transition: background-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+
+.workbench-pane-resize-handle--left { right: -5px; }
+.workbench-pane-resize-handle--right { left: -5px; }
+
+.workbench-pane-resize-handle:hover,
+.workbench-pane-resize-handle:focus-visible,
+.workbench-pane-resize-handle:active {
+  background: color-mix(in srgb, var(--focus-ring) 58%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus-ring) 24%, transparent);
+  outline: none;
+}
 
 .workbench-shell__workspace {
   display: grid;
@@ -276,8 +329,11 @@
 .workbench-shell__right {
   width: 0;
   flex: 0 0 auto;
-  overflow: hidden;
+  position: relative;
 }
+
+.workbench-shell__preview { overflow: hidden; }
+.workbench-shell__right { overflow: visible; }
 
 .workbench-shell__right {
   grid-column: 2;
@@ -561,11 +617,17 @@
   transition: width var(--dur-normal) ease;
 }
 
+.workbench-shell__content:has([data-code-artifact-preview]) .workbench-shell__main {
+  width: 0;
+  flex: 0 0 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
 .workbench-shell__preview:has([data-code-artifact-preview]) {
-  width: var(--file-preview-width);
-  min-width: var(--file-preview-width);
-  flex: 0 0 var(--file-preview-width);
-  border-left: 1px solid var(--border-default);
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .mobius-file-context-menu {
   min-width: 190px;
@@ -835,13 +897,40 @@
   flex: 1;
 }
 .code-artifact-preview__tree {
+  position: relative;
   display: flex;
-  width: 200px;
+  width: var(--file-tree-width);
   flex: none;
   flex-direction: column;
   border-left: 1px solid var(--border-default);
   background: var(--surface-raised);
 }
+.workbench-pane-resize-handle--file-tree {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+}
+.workbench-pane-resize-handle--file-tree::after {
+  right: auto;
+  left: 3px;
+}
+.code-artifact-preview__empty {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.code-artifact-preview__empty > svg { width: 1.6rem; height: 1.6rem; opacity: 0.72; }
+.code-artifact-preview__empty > strong { color: var(--text-secondary); font-size: 0.82rem; font-weight: 650; }
+.code-artifact-preview__empty > span { font-size: 0.72rem; }
 .code-artifact-preview__tree-filter {
   flex: none;
   min-width: 0;
@@ -1136,6 +1225,7 @@
     border-radius: var(--radius-panel, 12px) var(--radius-panel, 12px) 0 0;
   }
   .code-artifact-preview__tree { display: none; }
+  .workbench-pane-resize-handle--file-tree { display: none; }
   .code-artifact-preview__header { min-height: 1.7rem; }
   .code-artifact-preview__action { flex: 1 1 auto; }
 }
@@ -1145,6 +1235,11 @@
   padding: 0;
   background: var(--surface-right);
   border-left: 1px solid var(--border-default);
+}
+
+.workbench-shell__right:not(:has([data-session-tool-drawer][data-open="true"])) .workbench-pane-resize-handle {
+  pointer-events: none;
+  opacity: 0;
 }
 
 .workbench-shell__right:has([data-session-tool-drawer][data-open="true"]) .session-tool-drawer {
@@ -1461,7 +1556,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(360px, calc(100vw - 24px));
+    width: min(var(--tool-drawer-width), calc(100vw - 24px));
     border-left: 1px solid var(--border-strong);
     box-shadow: var(--shadow-overlay);
   }

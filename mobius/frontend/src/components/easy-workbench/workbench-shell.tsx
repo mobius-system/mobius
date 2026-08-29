@@ -16,6 +16,7 @@ import { SearchModal } from '../search-modal'
 import { SettingsPanel, type SettingsSection } from './settings-panel'
 import { GlobalCreateRoot, type CreateKind } from '../global-create'
 import { prepareWorkbenchObjectNavigation, sessionPath } from '../../services/easy-workbench/workbench-navigation'
+import { useWorkbenchPaneResize } from '../../services/easy-workbench/pane-resize'
 
 type WorkbenchShellSlot = 'topbar' | 'preview' | 'right' | 'dock'
 
@@ -148,6 +149,22 @@ export function WorkbenchShell({
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const searchReturnFocusRef = useRef<HTMLElement | null>(null)
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null)
+  const railResize = useWorkbenchPaneResize({
+    storageKey: 'mobius:ui:workbench:rail-width',
+    cssVariable: '--rail-width',
+    defaultWidth: 280,
+    minWidth: 208,
+    maxWidth: 420,
+    side: 'left',
+  })
+  const toolDrawerResize = useWorkbenchPaneResize({
+    storageKey: 'mobius:ui:workbench:tool-drawer-width',
+    cssVariable: '--tool-drawer-width',
+    defaultWidth: 260,
+    minWidth: 220,
+    maxWidth: 520,
+    side: 'right',
+  })
 
   const setSlotTarget = useCallback((slot: WorkbenchShellSlot, element: HTMLElement | null) => {
     setTargets(current => current[slot] === element ? current : { ...current, [slot]: element })
@@ -251,6 +268,7 @@ export function WorkbenchShell({
           onOpenSearch={trigger => openSearch(trigger)}
           onOpenSettings={trigger => openSettings(trigger)}
           refreshKey={refreshKey}
+          resizeHandle={railResize}
         />
         <section className="workbench-shell__workspace min-h-0 min-w-0">
           <header
@@ -280,7 +298,23 @@ export function WorkbenchShell({
             ref={setRightTarget}
             className="workbench-shell__right min-h-0"
             aria-label="会话工作区"
-          />
+          >
+            <div
+              className="workbench-pane-resize-handle workbench-pane-resize-handle--right"
+              data-testid="workbench-tool-drawer-resize-handle"
+              role="separator"
+              aria-label="调整右侧工作区宽度"
+              aria-orientation="vertical"
+              aria-valuemin={220}
+              aria-valuemax={520}
+              aria-valuenow={toolDrawerResize.width}
+              tabIndex={0}
+              onPointerDown={toolDrawerResize.handlePointerDown}
+              onDoubleClick={toolDrawerResize.handleDoubleClick}
+              onKeyDown={toolDrawerResize.handleKeyDown}
+              title="拖拽调整右侧工作区宽度 · 双击恢复默认"
+            />
+          </aside>
           <div ref={setDockTarget} className="workbench-shell__dock empty:hidden" />
         </section>
       </div>
