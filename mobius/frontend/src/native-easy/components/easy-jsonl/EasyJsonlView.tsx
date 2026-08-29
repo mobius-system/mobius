@@ -302,10 +302,11 @@ export default function EasyJsonlView({
   const recent = useMemo(() => entries.slice(-(showAll ? entries.length : EASY_INITIAL_WINDOW_SIZE)), [entries, showAll])
   const windowOffset = entries.length - recent.length
   const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset).filter(item => !isHiddenJsonlNoiseEntry(item.entry)), [recent, windowOffset])
-  const { rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
-  const easyRounds = useMemo(() => buildEasyJsonlRounds(rounds), [rounds])
-  const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
+  const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
+  const easyRounds = useMemo(() => buildEasyJsonlRounds(rounds, preItems), [preItems, rounds])
   const hasRemoteMore = typeof total === 'number' && total > entries.length
+  const needsFullHistory = hasRemoteMore && (rounds.length === 0 || easyRounds.length === 0)
+  const autoLoadKeyRef = useRef('')
   const targetHandledRef = useRef('')
   const [focusedLineNo, setFocusedLineNo] = useState<number | null>(null)
 
@@ -316,6 +317,15 @@ export default function EasyJsonlView({
   useEffect(() => {
     if (expandAllSignal > 0) setShowAll(true)
   }, [expandAllSignal])
+
+  useEffect(() => {
+    if (initialLoading || loadingMore || !needsFullHistory || !onLoadMore) return
+    const requestKey = `${entries.length}:${total}`
+    if (autoLoadKeyRef.current === requestKey) return
+    autoLoadKeyRef.current = requestKey
+    setShowAll(true)
+    onLoadMore()
+  }, [entries.length, initialLoading, loadingMore, needsFullHistory, onLoadMore, total])
 
   useEffect(() => {
     const targetKey = `${scrollToEntryUuid || ''}:${scrollToMatchTs || ''}`
@@ -353,6 +363,15 @@ export default function EasyJsonlView({
       <div className="easy-jsonl-empty" role="status">
         {emptyLoadingText ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
         <span>{emptyLoadingText || '还没有对话内容'}</span>
+      </div>
+    )
+  }
+
+  if (easyRounds.length === 0) {
+    return (
+      <div className="easy-jsonl-empty" role="status">
+        {hasRemoteMore || loadingMore ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
+        <span>{hasRemoteMore || loadingMore ? '正在加载完整对话...' : '这段历史没有可显示的对话记录'}</span>
       </div>
     )
   }

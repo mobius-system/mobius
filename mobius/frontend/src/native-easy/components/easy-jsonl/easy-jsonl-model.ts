@@ -1,4 +1,4 @@
-import type { AnyEntry, Round } from '../viewer/types'
+import type { AnyEntry, JsonlViewItem, Round } from '../viewer/types'
 import {
   entryDisplayImages,
   entryReadImagePaths,
@@ -497,8 +497,18 @@ function matchingResult(results: BashToolResult[], id: string | undefined, index
 
 type PendingActivity = { activity: EasyActivity; toolCount: number; callId?: string }
 
-export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
-  return rounds.map((round) => {
+export function buildEasyJsonlRounds(rounds: Round[], leadingItems: JsonlViewItem[] = []): EasyJsonlRound[] {
+  // The backend initially returns only the JSONL tail. If that window starts in
+  // the middle of a turn, buildRounds() puts every leading entry in preItems.
+  // Keep those entries as a continuation round instead of rendering a blank view.
+  const displayRounds: Round[] = leadingItems.length > 0
+    ? [{
+        roundNum: 0,
+        items: leadingItems.map((item, relIdx) => ({ ...item, relIdx })),
+      }, ...rounds]
+    : rounds
+
+  return displayRounds.map((round) => {
     const timeline: EasyTimelineSegment[] = []
     const pending: PendingActivity[] = []
     const activitiesByCallId = new Map<string, EasyActivity[]>()
@@ -746,7 +756,9 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
           // 加密或空 thinking 不伪造可见内容，也不切断相邻工具。
         }
       } else {
-        const response = index > 0 ? easyAssistantText(entry) : ''
+        // A continuation window can begin with an assistant entry because its
+        // user prompt is outside the loaded tail. Do not discard that response.
+        const response = easyAssistantText(entry)
         if (response) {
           if (index === finalAssistantIndex) {
             flush()
