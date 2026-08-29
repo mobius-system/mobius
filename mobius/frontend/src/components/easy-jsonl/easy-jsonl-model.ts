@@ -298,8 +298,28 @@ function collapseEasyDuplicateUserRounds(rounds: EasyJsonlRound[]): EasyJsonlRou
   return merged
 }
 
+type ProviderToolWrapperKind = 'input' | 'output'
+
+function providerToolWrapperKind(text: string): ProviderToolWrapperKind | null {
+  const normalized = String(text || '').trim()
+  if (
+    /^\*\*[^\n*]*Built-in Tool:\s*[^\n*]+\*\*/i.test(normalized)
+    && /\*\*Input:\*\*/i.test(normalized)
+    && /Executing on server/i.test(normalized)
+  ) return 'input'
+  if (
+    /^\*\*Output:\*\*/i.test(normalized)
+    && /\*\*[^\n*]+_result_summary:\*\*/i.test(normalized)
+  ) return 'output'
+  return null
+}
+
 function easyAssistantText(entry: AnyEntry): string {
   const direct = assistantEntryText(entry).trim()
+  // Some providers emit a human-readable Markdown mirror immediately around a
+  // structured server_tool_use/tool_result pair. The mirror is transport UI,
+  // not assistant prose; showing both leaks raw arguments and duplicates output.
+  if (providerToolWrapperKind(direct)) return ''
   if (direct) return direct
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'agent_message') {
     return String(entry.payload.message || entry.payload.content || '').trim()
@@ -516,6 +536,36 @@ function outputText(result: BashToolResult): string {
   return stripExecEnvelope([result.stdout, result.stderr].filter(Boolean).join('\n') || result.content || '')
 }
 
+function toolResultBlockText(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((part: any) => {
+      if (typeof part === 'string') return part
+      return typeof part?.text === 'string' ? part.text : (typeof part?.content === 'string' ? part.content : '')
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+}
+
+function toolResultFailed(block: any, output: string): boolean {
+  if (block?.is_error === true || block?.status === 'failed') return true
+  return /(?:MCP\s+error|bad request|\b(?:error|failed|failure)\b|错误|失败)/i.test(output)
+}
+
+function entryHasToolProtocol(entry: AnyEntry): boolean {
+  if (entry?.type === 'response_item') {
+    return isFunctionCallPayload(entry?.payload) || isFunctionCallOutputPayload(entry?.payload)
+  }
+  const content = entry?.message?.content
+  return Array.isArray(content) && content.some((block: any) => (
+    block?.type === 'tool_use'
+    || block?.type === 'server_tool_use'
+    || block?.type === 'tool_result'
+  ))
+}
+
 function attachResult(activity: EasyActivity, result?: BashToolResult): void {
   if (!result) return
   activity.lineNos = unique([...activity.lineNos.map(String), String(result.lineNo)]).map(Number)
@@ -630,7 +680,13 @@ export function buildEasyJsonlRounds(rounds: Round[], leadingItems: JsonlViewIte
     const assistantIndexes = round.items
       .map((item, index) => easyAssistantText(item.entry) ? index : -1)
       .filter(index => index >= 0)
-    const finalAssistantIndex = assistantIndexes[assistantIndexes.length - 1] ?? -1
+    const finalAssistantCandidate = assistantIndexes[assistantIndexes.length - 1] ?? -1
+    // A prose update followed by another tool call is progress, not the final
+    // answer. This matters when provider wrapper messages are intentionally hidden.
+    const finalAssistantIndex = finalAssistantCandidate >= 0
+      && !round.items.slice(finalAssistantCandidate + 1).some(item => entryHasToolProtocol(item.entry))
+      ? finalAssistantCandidate
+      : -1
 
     round.items.forEach((item, index) => {
       const entry = item.entry
@@ -779,9 +835,28 @@ export function buildEasyJsonlRounds(rounds: Round[], leadingItems: JsonlViewIte
         entry.message.content.forEach((block: any) => {
           if (block?.type === 'thinking') {
             addReasoning(entry, item.lineNo, block)
-          } else if (block?.type === 'tool_use') {
+          } else if (block?.type === 'tool_use' || block?.type === 'server_tool_use') {
             processTool(block, { ...entry, message: { ...entry.message, content: [block] } })
+          } else if (block?.type === 'tool_result') {
+            const callId = String(block?.tool_use_id || '')
+            const output = toolResultBlockText(block?.content)
+            const registered = callId ? activitiesByCallId.get(callId) : undefined
+            if (registered?.length) {
+              registered.forEach(activity => attachResult(activity, {
+                entry,
+                lineNo: item.lineNo,
+                toolUseId: callId,
+                stdout: output,
+                stderr: '',
+                content: output,
+                isError: toolResultFailed(block, output),
+                interrupted: false,
+                isImage: false,
+                noOutputExpected: false,
+              }))
+            }
           } else if ((block?.type === 'text' || block?.type === 'output_text') && typeof block.text === 'string' && block.text.trim()) {
+            if (providerToolWrapperKind(block.text)) return
             if (finalText) {
               if (!finalHandled) {
                 flush()

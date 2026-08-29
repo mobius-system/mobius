@@ -90,4 +90,66 @@ const secondQuestionItems: JsonlViewItem[] = [
 ]
 assert.equal(buildRounds(secondQuestionItems, { preferFramedUser: true }).rounds.length, 2)
 
+// GLM/Z.ai mirrors a server-side tool call as Markdown around the structured
+// server_tool_use/tool_result entries. Easy mode should show one compact tool
+// activity, never the raw signed URL or duplicated Output block.
+const providerToolItems: JsonlViewItem[] = [
+  { entry: { type: 'user', message: { content: '检查这个页面' } }, lineNo: 40 },
+  { entry: { type: 'assistant', message: { content: [{ type: 'text', text: '我先检查截图。' }] } }, lineNo: 41 },
+  {
+    entry: {
+      type: 'assistant',
+      message: {
+        content: [{
+          type: 'text',
+          text: '**🌐 Z.ai Built-in Tool: analyze_image**\n\n**Input:**\n```json\n{"imageSource":"https://example.test/private.png?Signature=secret"}\n```\n*Executing on server...*',
+        }],
+      },
+    },
+    lineNo: 42,
+  },
+  {
+    entry: {
+      type: 'assistant',
+      message: { content: [{ type: 'server_tool_use', id: 'server-call-1', name: 'analyze_image', input: {} }] },
+    },
+    lineNo: 43,
+  },
+  {
+    entry: {
+      type: 'assistant',
+      message: {
+        content: [{
+          type: 'text',
+          text: '**Output:**\n**analyze_image_result_summary:** [{"text":"MCP error 400: 图片输入格式/解析错误"}]',
+        }],
+      },
+    },
+    lineNo: 44,
+  },
+  {
+    entry: {
+      type: 'assistant',
+      message: {
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'server-call-1',
+          content: [{ type: 'text', text: 'MCP error 400: 图片输入格式/解析错误' }],
+        }],
+      },
+    },
+    lineNo: 45,
+  },
+]
+const providerToolResult = buildEasyJsonlRounds(buildRounds(providerToolItems).rounds)
+assert.equal(providerToolResult.length, 1)
+assert.equal(providerToolResult[0].assistantResponse, '')
+assert.ok(providerToolResult[0].timeline.some(segment => segment.type === 'message' && segment.text === '我先检查截图。'))
+assert.ok(!providerToolResult[0].timeline.some(segment => segment.type === 'message' && /Built-in Tool|Signature=secret|result_summary/.test(segment.text)))
+const providerToolActivity = providerToolResult[0].activities.find(activity => activity.title === 'analyze_image')
+assert.ok(providerToolActivity)
+assert.equal(providerToolActivity?.state, 'error')
+assert.deepEqual(providerToolActivity?.lineNos, [43, 45])
+assert.match(providerToolActivity?.outputTail || '', /图片输入格式\/解析错误/)
+
 console.log('easy jsonl model tests passed')
