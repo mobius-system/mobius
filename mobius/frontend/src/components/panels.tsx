@@ -3196,14 +3196,15 @@ function isSubscriptionHarness(h: WizardHarness): boolean {
 }
 
 type ModelWizardState = {
-  step: number                    // 普通路径 1..5; 订阅路径 1..5 (3/4/5 含义不同)
+  step: number                    // 普通路径 1..5; 订阅路径 1..6 (3/4/5/6 含义不同)
   label: string                   // 第1步 显示名称
   harness: WizardHarness          // 第2步 Harness
   modelName: string               // 第3步 模型真名 (订阅路径不使用)
   derivedKey: string              // 隐藏3.5步生成结果: 模型 Key / Codex 渠道 (订阅路径固定渠道名)
   baseUrl: string                 // 第4步 URL (订阅路径不使用)
   secret: string                  // 第4步 秘钥 (订阅路径不使用)
-  subPrepared: boolean            // 订阅路径: 空配置文件已创建 (进入第4步的门槛)
+  subPrepared: boolean            // 订阅路径: 空配置文件已创建 (进入认证步骤的门槛)
+  subAuthMethod: SubAuthMethod    // 订阅路径: 认证方式 (设备码 | 上传 auth.json)
 }
 
 function initialWizardState(): ModelWizardState {
@@ -3216,10 +3217,9 @@ function initialWizardState(): ModelWizardState {
     baseUrl: '',
     secret: '',
     subPrepared: false,
+    subAuthMethod: 'device-code',
   }
 }
-
-const WIZARD_TOTAL_STEPS = 5
 
 // 普通路径与订阅路径的第 3/4/5 步含义不同, 订阅路径单独给文案.
 const WIZARD_STEP_META: { title: string; hint: string }[] = [
@@ -3234,9 +3234,16 @@ const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
   { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
   { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
   { title: '配置代理网络', hint: 'Codex 订阅需要访问 OpenAI 网络; 按需编辑模型代理配置, 完成后点下一步' },
+  { title: '选择认证方式', hint: '设备码在线登录, 或直接上传本地已登录的 Codex 认证文件' },
   { title: '登录认证', hint: '在下方终端完成 ChatGPT 设备码登录, 成功后点击"我已登录"' },
   { title: '注册', hint: '把订阅渠道注册进 mobius 模型列表' },
 ]
+
+// 订阅路径认证方式: 设备码在线登录 | 上传本地 ~/.codex/auth.json.
+type SubAuthMethod = 'device-code' | 'upload-auth'
+
+const WIZARD_TOTAL_STEPS = 5
+const WIZARD_TOTAL_STEPS_SUBSCRIPTION = 6
 
 function emptyCodexForm(): CodexModelForm {
   return {
@@ -3375,20 +3382,148 @@ function SubscriptionProxyStep({ prepared, onPrepared }: { prepared: boolean; on
   )
 }
 
+// ── 订阅路径第4步: 选择认证方式 ─────────────────────────────────────────
+// 设备码 = 服务器在线跑 codex login --device-auth (下一步内嵌终端);
+// 上传 = 用户在本地机器 codex login 后, 把 ~/.codex/auth.json 上传到服务器同名路径.
+function SubscriptionAuthMethodStep({
+  method, onMethodChange,
+}: { method: SubAuthMethod; onMethodChange: (m: SubAuthMethod) => void }) {
+  const options: Array<{ k: SubAuthMethod; name: string; desc: string; icon: ReactNode }> = [
+    {
+      k: 'device-code',
+      name: '设备码认证',
+      desc: '服务器在线发起 ChatGPT 设备码登录, 在终端里完成认证',
+      icon: <Terminal className="h-4 w-4 text-emerald-400" />,
+    },
+    {
+      k: 'upload-auth',
+      name: '上传本地认证文件',
+      desc: '本地已 codex login 的机器上取 ~/.codex/auth.json 上传, 免在线登录',
+      icon: <Upload className="h-4 w-4 text-blue-400" />,
+    },
+  ]
+  return (
+    <div className="space-y-3">
+      <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择认证方式</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map(opt => {
+          const active = method === opt.k
+          return (
+            <button key={opt.k} type="button" onClick={() => onMethodChange(opt.k)}
+              className="rounded-lg border p-3 text-left transition-colors"
+              style={{
+                borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+              }}>
+              <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                {opt.icon}{opt.name}
+                {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
+            </button>
+          )
+        })}
+      </div>
+      {method === 'upload-auth' && (
+        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          上传后凭据写入服务器 <span className="font-mono">~/.codex/auth.json</span>; 本地文件路径:
+          <div className="mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>Windows: %USERPROFILE%\.codex\auth.json</div>
+          <div className="font-mono" style={{ color: 'var(--text-secondary)' }}>macOS / Linux: ~/.codex/auth.json</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 订阅路径第5步 (上传方式): 上传 auth.json ─────────────────────────────
+// 读文件 → POST upload-auth 端点校验并落盘. 上传成功后"下一步"放行 (gate 在父级 stepValid).
+function SubscriptionUploadAuthStep({ onUploaded }: { onUploaded: () => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+  const [fileInfo, setFileInfo] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const upload = async (file: File) => {
+    setUploading(true)
+    setError('')
+    try {
+      const text = await file.text()
+      let parsed: any
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        throw new Error('文件不是合法的 JSON, 请确认上传的是 codex login 产生的 auth.json')
+      }
+      const row = await api('/api/admin/model-access/codex-subscription/upload-auth', {
+        method: 'POST',
+        body: JSON.stringify(parsed),
+      }) as any
+      setFileInfo(row?.auth_file || '~/.codex/auth.json')
+      setDone(true)
+      onUploaded()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
+        <div className="font-medium">上传本地 Codex 认证文件</div>
+        <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          在本地已 <span className="font-mono">codex login</span> 的机器上找到{' '}
+          <span className="font-mono">~/.codex/auth.json</span>, 上传到服务器完成认证。
+          文件包含访问令牌, 请勿通过聊天工具传输。
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept=".json,application/json" className="hidden"
+        onChange={e => {
+          const f = e.target.files?.[0]
+          if (f) upload(f)
+          e.target.value = ''
+        }} />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
+          className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {uploading ? '上传中…' : '选择 auth.json 上传'}
+        </button>
+        {done && (
+          <span className="inline-flex items-center gap-1 text-[12px] text-emerald-400">
+            <CircleCheck className="h-3.5 w-3.5" />已上传 {fileInfo}
+          </span>
+        )}
+      </div>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   const [wizard, setWizard] = useState<ModelWizardState>(() => initialWizardState())
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ key: string; session_model: string } | null>(null)
   const [revealSecret, setRevealSecret] = useState(false)
+  // 订阅路径第5步 (上传方式): auth.json 已成功上传才放行"下一步". 设备码方式靠"我已登录"自证.
+  const [subAuthUploaded, setSubAuthUploaded] = useState(false)
 
   const patch = (next: Partial<ModelWizardState>) => setWizard(w => ({ ...w, ...next }))
 
   const sub = isSubscriptionHarness(wizard.harness)
+  const totalSteps = sub ? WIZARD_TOTAL_STEPS_SUBSCRIPTION : WIZARD_TOTAL_STEPS
   const stepMetaList = sub ? WIZARD_STEP_META_SUBSCRIPTION : WIZARD_STEP_META
   const stepMeta = stepMetaList[wizard.step - 1] || stepMetaList[0]
 
-  // 各步通过才能"下一步". 订阅路径与普通路径的第 3/4 步含义不同.
+  // 各步通过才能"下一步". 订阅路径与普通路径的步骤含义不同.
   const stepValid = useMemo(() => {
     switch (wizard.step) {
       case 1: return wizard.label.trim().length > 0 && wizard.label.trim().length <= 80
@@ -3397,12 +3532,15 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
       // 不能作为 gate — 否则按钮被禁用而 subPrepared 又只在点击后才置 true, 死锁.
       case 3: return sub ? true
         : wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
+      // 订阅路径第4步 (认证方式) 恒可点 — 两种方式都是合法选择; 上传动作在步骤内完成.
       case 4: return sub ? true
         : isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
-      case 5: return true
+      // 订阅路径第5步 (登录认证): 设备码由用户点"我已登录"自证放行; 上传方式必须上传成功.
+      case 5: return sub ? (wizard.subAuthMethod !== 'upload-auth' || subAuthUploaded)
+        : true
       default: return false
     }
-  }, [wizard, sub])
+  }, [wizard, sub, subAuthUploaded])
 
   const stepError = useMemo(() => {
     if (wizard.step === 1 && wizard.label.trim()) {
@@ -3454,7 +3592,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
         }
         return
       }
-      if (wizard.step >= WIZARD_TOTAL_STEPS) return
+      if (wizard.step >= WIZARD_TOTAL_STEPS_SUBSCRIPTION) return
       setWizard(w => ({ ...w, step: w.step + 1 }))
       return
     }
@@ -3679,19 +3817,12 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
         )
       case 4:
         if (sub) {
-          // 订阅路径第4步: 内嵌 Web 终端自动执行 codex login --device-auth, 旁边提示引导用户操作.
+          // 订阅路径第4步: 选择认证方式 (设备码 | 上传 auth.json).
           return (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
-                <div className="font-medium">请在下方终端中完成登录</div>
-                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  终端已自动运行 <span className="font-mono">codex login --device-auth</span>。
-                  请选择 <span className="font-medium">Sign in with Device Code</span>，跟随提示完成认证；
-                  认证成功后点击下方「我已登录」按钮。
-                </div>
-              </div>
-              <InlineWebTerminal mode="adhoc" adhocCommandKey="codex-subscription-login" height={320} />
-            </div>
+            <SubscriptionAuthMethodStep
+              method={wizard.subAuthMethod}
+              onMethodChange={m => patch({ subAuthMethod: m })}
+            />
           )
         }
         return (
@@ -3728,11 +3859,56 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
         )
       case 5:
         if (sub) {
+          // 订阅路径第5步: 按第4步选择的认证方式分流.
+          if (wizard.subAuthMethod === 'upload-auth') {
+            return <SubscriptionUploadAuthStep onUploaded={() => setSubAuthUploaded(true)} />
+          }
+          // 设备码方式: 内嵌 Web 终端自动执行 codex login --device-auth, 旁边提示引导用户操作.
+          return (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                <div className="font-medium">请在下方终端中完成登录</div>
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  终端已自动运行 <span className="font-mono">codex login --device-auth</span>。
+                  请选择 <span className="font-medium">Sign in with Device Code</span>，跟随提示完成认证；
+                  认证成功后点击下方「我已登录」按钮。
+                </div>
+              </div>
+              <InlineWebTerminal mode="adhoc" adhocCommandKey="codex-subscription-login" height={320} />
+            </div>
+          )
+        }
+        return (
+          <div className="space-y-2.5">
+            {([
+              ['显示名称', wizard.label.trim()],
+              ['Harness', wizard.harness === 'claude-code' ? 'Claude Code' : 'Codex'],
+              ['模型真名', wizard.modelName.trim()],
+              ['模型 Key (自动生成)', wizard.derivedKey],
+              ['接入地址', wizard.baseUrl.trim()],
+              ['秘钥', wizard.secret.trim() ? `${wizard.secret.trim().slice(0, 6)}${'•'.repeat(Math.max(4, Math.min(20, wizard.secret.trim().length - 6)))}` : ''],
+            ] as Array<[string, string]>).map(([k, v]) => (
+              <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+              </div>
+            ))}
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {wizard.harness === 'codex' && (
+                <>Codex 渠道默认使用 responses 协议 (wire_api), 兼容 OpenAI chat-completions 的网关请创建后在"文件配置"Tab 修改.<br /></>
+              )}
+              创建后立即在模型选择器可用, 无需重启.
+            </div>
+          </div>
+        )
+      case 6:
+        if (sub) {
           return (
             <div className="space-y-2.5">
               {([
                 ['显示名称', wizard.label.trim()],
                 ['Harness', 'Codex订阅 (ChatGPT 认证)'],
+                ['认证方式', wizard.subAuthMethod === 'upload-auth' ? '上传本地 auth.json' : '设备码在线登录'],
                 ['渠道', wizard.derivedKey || CODEX_SUBSCRIPTION_CHANNEL],
                 ['默认模型', 'gpt-5.1-codex'],
                 ['凭据', '~/.codex/auth.json (订阅登录产物)'],
@@ -3839,14 +4015,14 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
                 <ChevronLeft className="h-3.5 w-3.5" />上一步
               </button>
             )}
-            {wizard.step < WIZARD_TOTAL_STEPS && (
+            {wizard.step < totalSteps && (
               <button type="button" onClick={nextStep} disabled={!stepValid || !!stepError || creating}
                 className="inline-flex h-9 items-center gap-1 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
-                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (sub && wizard.step === 4 ? <CircleCheck className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
-                {sub && wizard.step === 4 ? '我已登录' : (sub && wizard.step === 3 ? '完成配置并创建文件' : '下一步')}
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (sub && wizard.step === 5 ? <CircleCheck className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                {sub && wizard.step === 5 ? (wizard.subAuthMethod === 'upload-auth' ? '下一步' : '我已登录') : (sub && wizard.step === 3 ? '完成配置并创建文件' : '下一步')}
               </button>
             )}
-            {wizard.step === WIZARD_TOTAL_STEPS && (
+            {wizard.step === totalSteps && (
               <button type="button" onClick={createModel} disabled={creating}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}

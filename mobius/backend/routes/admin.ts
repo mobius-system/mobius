@@ -1472,6 +1472,34 @@ router.post('/model-access/codex-subscription/prepare', adminAuth, (_req: expres
   }
 });
 
+// ── Codex 订阅认证文件上传 (向导用) ──
+// 把用户本地已登录的 ~/.codex/auth.json 上传到服务器同名路径, 免设备码流程.
+// 内容必须是含 OPENAI_API_KEY 或 tokens 字段的 JSON (codex login 产物结构), 校验后才落盘.
+router.post('/model-access/codex-subscription/upload-auth', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const parsed = req.body;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      res.status(400).json({ error: 'auth.json 内容必须是 JSON 对象' });
+      return;
+    }
+    // codex login 产物: {OPENAI_API_KEY: "..."} 或 {tokens: {access_token, refresh_token, ...}}
+    const hasApiKey = typeof parsed.OPENAI_API_KEY === 'string' && parsed.OPENAI_API_KEY.length > 0;
+    const tokens = parsed.tokens && typeof parsed.tokens === 'object' && !Array.isArray(parsed.tokens) ? parsed.tokens : null;
+    const hasTokens = !!(tokens && typeof tokens.access_token === 'string' && typeof tokens.refresh_token === 'string');
+    if (!hasApiKey && !hasTokens) {
+      res.status(400).json({ error: '未识别的 auth.json: 缺少 OPENAI_API_KEY 或 tokens.access_token/refresh_token 字段' });
+      return;
+    }
+    const dir = path.join(os.homedir(), '.codex');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+    const file = path.join(dir, 'auth.json');
+    fs.writeFileSync(file, JSON.stringify(parsed, null, 2) + '\n', { mode: 0o600 });
+    res.json({ ok: true, auth_file: file, plan: typeof tokens?.account_plan === 'string' ? tokens.account_plan : null });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
+  }
+});
+
 // ── Codex 模型接入 (TOML 配置, --profile 加载) ──
 router.get('/model-access/codex', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelAccess.listCodexModels({ includeConfig: false }));
