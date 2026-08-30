@@ -238,10 +238,10 @@ jobs:
 
             # 从文件名解析 platform + arch: mobius-desktop-0.0.22-win-x64.zip
             # 格式: mobius-desktop-<version>-<platform>-<arch>.zip
-            rest="${filename#mobius-desktop-}"    # 0.0.22-win-x64.zip
-            rest="${rest%.zip}"                    # 0.0.22-win-x64
-            # 去掉版本号 (三段数字: x.y.z-)
-            plat_arch="${rest#*-*-*-}"             # win-x64 (去掉 0.0.22-)
+            # 用 sed 精确剥版本号 (x.y.z 三段数字), 老写法 ${rest#*-*-*-} 只对
+            # 带预发布后缀的版本 (0.0.22-rc1-win-x64) 才剥得掉, 纯 x.y.z 时会把
+            # platform 剥成 "0.0.29-mac" 这种坏值。
+            plat_arch=$(echo "${filename#mobius-desktop-}" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-//; s/\.zip$//')
             plat="${plat_arch%-*}"                 # win
             arch="${plat_arch##*-}"                # x64
 
