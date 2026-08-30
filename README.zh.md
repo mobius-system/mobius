@@ -6,7 +6,7 @@
 
 <div align="center">
 
-# <img src="logo.png" alt="Mobius logo" height="42" valign="middle" /> Mobius
+# <img src="mobius/frontend/public/logo.png" alt="Mobius logo" height="42" valign="middle" /> Mobius
 
 <h3>
 首个自进化的开源 Agent OS<br />
