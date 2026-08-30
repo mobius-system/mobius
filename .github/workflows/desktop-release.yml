@@ -193,7 +193,19 @@ jobs:
             DRAFT_FLAG="--draft"
           fi
 
-          NOTES="Mobius Desktop v${V} 三平台客户端。
+          NOTES="Mobius Desktop v${V} clients for all three platforms (note: this package is the client only; it does not install Mobius itself).
+
+          ## Download
+          - Windows x64 (Intel/AMD 64-bit): \`mobius-desktop-${V}-win-x64.zip\`
+          - macOS Apple Silicon (M1/M2/M3/M4): \`mobius-desktop-${V}-mac-arm64.zip\`
+          - macOS Intel x64: \`mobius-desktop-${V}-mac-x64.zip\`
+
+          ## Notes
+          - macOS packages are unsigned: right-click -> Open on first launch.
+
+          ---
+
+          Mobius Desktop v${V} 三平台客户端（注意此包仅为客户端，不会安装Mobius本体）。
 
           ## 下载
           - Windows x64 (Intel/AMD 64位): \`mobius-desktop-${V}-win-x64.zip\`
@@ -201,9 +213,7 @@ jobs:
           - macOS Intel x64: \`mobius-desktop-${V}-mac-x64.zip\`
 
           ## 说明
-          - 首次启动自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)
-          - macOS 包未签名, 首次打开需右键 -> 打开
-          - 登录后桌面端以 desktop-<主机名> 注册到 AIMUX 节点列表"
+          - macOS 包未签名, 首次打开需右键 -> 打开"
 
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG 已存在, 追加资产 (clobber)"
