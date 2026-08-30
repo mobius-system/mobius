@@ -68,7 +68,7 @@ jobs:
             arch: arm64
             os: mac
           - target: mac-x64
-            runner: macos-13 # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
+            runner: macos-15-intel # Intel, 原生 x64; macos-13 已于 2025-12-04 退役(排队 24h 超时), Intel 过渡镜像
             plat: mac
             arch: x64
             os: mac
