@@ -106,10 +106,10 @@ class DeepSeekHarnessBackend extends AgentBackend {
     entry.recentError = { message: String(error?.message || error), rawLine: String(rawLine || ''), capturedAt: new Date().toISOString() }
   }
 
-  _appendMobiusPromptEntry(entry, mobiusJsonl) {
-    if (!entry?.jsonlPath || !mobiusJsonl) return false
+  _appendMobiusPromptEntry(entry, mobiusPromptRecord) {
+    if (!entry?.jsonlPath || !mobiusPromptRecord) return false
     try {
-      const append = mobiusJsonl.kind === 'external_session_message'
+      const append = mobiusPromptRecord.kind === 'external_session_message'
         ? appendMobiusExternalEntry
         : appendMobiusPromptEntry
       append({
@@ -118,7 +118,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         agentSessionId: entry.agentSessionId,
         cwd: entry.cwd,
         backendName: this.name,
-        ...mobiusJsonl,
+        ...mobiusPromptRecord,
       })
       return true
     } catch (error) {
@@ -202,7 +202,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         model: entry.model,
         ...(entry.maxTokens ? { maxTokens: entry.maxTokens } : {}),
       })
-      this._appendMobiusPromptEntry(entry, opts.mobiusJsonl)
+      this._appendMobiusPromptEntry(entry, opts.mobiusPromptRecord)
       await this._sendPrompt(entry, prompt)
       if (!opts.suppressRunningFlag) {
         safeWriteRunningFlag(flagRoot, sessionId, { backend: this.name }, this.name)
@@ -242,7 +242,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         await this._start(opts.sessionId, { ...entry, ...opts, agentSessionId: entry?.agentSessionId || opts.agentSessionId }, opts.prompt)
         return
       }
-      this._appendMobiusPromptEntry(entry, opts.mobiusJsonl)
+      this._appendMobiusPromptEntry(entry, opts.mobiusPromptRecord)
       await this._sendPrompt(entry, opts.prompt)
       if (!opts.suppressRunningFlag) {
         safeWriteRunningFlag(opts.flagRoot || entry.flagRoot || entry.cwd, opts.sessionId, { backend: this.name }, this.name)

@@ -859,15 +859,15 @@ class TmuxCodexBackend extends AgentBackend {
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId, mobiusJsonl) {
-    if (!mobiusJsonl) return false
+  _appendMobiusPromptEntry(sessionId, mobiusPromptRecord) {
+    if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
       console.warn(`[tmux-codex] mobius jsonl skipped (${sessionId}): original jsonl path missing`)
       return false
     }
     try {
-      const append = mobiusJsonl?.kind === 'external_session_message'
+      const append = mobiusPromptRecord?.kind === 'external_session_message'
         ? appendMobiusExternalEntry
         : appendMobiusPromptEntry
       append({
@@ -876,7 +876,7 @@ class TmuxCodexBackend extends AgentBackend {
         agentSessionId: entry.agentSessionId || null,
         cwd: entry.cwd || null,
         backendName: this.name,
-        ...mobiusJsonl,
+        ...mobiusPromptRecord,
       })
       return true
     } catch (e) {
@@ -931,7 +931,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName }) {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
@@ -980,9 +980,9 @@ class TmuxCodexBackend extends AgentBackend {
     const bindSinceMs = spawnInfo?.startedAt || Date.now()
     const entry = this.runtime.get(sessionId)
     if (entry) entry.working = true
-    let mobiusJsonlWritten = false
+    let mobiusPromptWritten = false
     if (entry?.jsonlPath) {
-      mobiusJsonlWritten = this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
+      mobiusPromptWritten = this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
     }
     await this._sendPromptToWindow(sessionId, prompt)
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
@@ -1002,13 +1002,13 @@ class TmuxCodexBackend extends AgentBackend {
         knownThreadIds: bindKnownThreadIds,
         allowUpdatedThreadFallback,
       })
-      if (!mobiusJsonlWritten) {
-        mobiusJsonlWritten = this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
+      if (!mobiusPromptWritten) {
+        mobiusPromptWritten = this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
       }
     }
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }) {
     if (!sessionId) throw new Error('sessionId required')
     const persisted = this.runtime.get(sessionId)
 
@@ -1064,7 +1064,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexSecretEnvKey: persisted?.codexSecretEnvKey,
       displayName: persisted?.displayName,
       agentSessionId: persisted?.agentSessionId,
-      mobiusJsonl,
+      mobiusPromptRecord,
     })
   }
 

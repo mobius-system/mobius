@@ -366,7 +366,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   const backend = agents.get(launch.backend);
   const workDir = path.resolve(assistantSession.bind_path || APP_DIR);
   const turnNum = (Messages.maxTurnFor(assistantSession.session_id) || 0) + 1;
-  const mobiusJsonl = {
+  const mobiusPromptRecord = {
     source: 'assistant.lifecycle-callback',
     kind: event.type,
     content: storedPrompt,
@@ -398,7 +398,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
     harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
     displayName: assistantSession.name || undefined,
     agentSessionId: assistantSession.claude_session_id || undefined,
-    mobiusJsonl,
+    mobiusPromptRecord,
   });
 
   try {

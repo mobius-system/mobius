@@ -1179,7 +1179,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
   Messages.insertUser(session.session_id, displayContent, turnNumber);
   Sessions.touchActive(session.session_id);
 
-  const mobiusJsonl = {
+  const mobiusPromptRecord = {
     source: 'assistant.question',
     kind: String(questionText || '').trim().startsWith('/compact') ? 'compact' : 'user_input',
     content: displayContent,
@@ -1229,7 +1229,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
       harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
       displayName: session.name,
       agentSessionId: session.claude_session_id || undefined,
-      mobiusJsonl,
+      mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(session?.pc_client_metadata),
       // 小莫 assistant 注入 guling 实盘 MCP (HTTP), 让 claude 直接读资金/持仓.
       // resolveGulingMcp() 未配置 env 时返回 null, 这里恒传 true 是安全 no-op.

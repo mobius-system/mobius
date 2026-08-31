@@ -333,7 +333,9 @@ async function runSessionMessage({
     }
   }
 
-  const mobiusJsonl = {
+  // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 _appendMobiusPromptEntry
+  // 把它同步写进 <uuid>.mobius.jsonl 边车文件 (与主 jsonl 双轨, 见 services/mobius-jsonl.ts).
+  const mobiusPromptRecord = {
     source,
     kind: isExternalEvent ? 'external_session_message' : mobiusPromptKind(displayContent),
     content: isExternalEvent ? '' : displayContent,
@@ -528,7 +530,7 @@ async function runSessionMessage({
       harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
       displayName: sess.name,
       agentSessionId: sess.claude_session_id || undefined,
-      mobiusJsonl,
+      mobiusPromptRecord,
       suppressRunningFlag: isExternalEvent,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };

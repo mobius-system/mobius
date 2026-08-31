@@ -13,4 +13,4 @@ description: What to do after self iter
 - python3 start.py 会调用 pm2 无缝编译新代码和重新部署
 
 commit 时：
-- commit message需要是“英文代码变动说明 (中文代码变动说明)”，commit message 不允许包含人名，确保 git commit 的邮箱是 mobius_os@163.com
+- commit message需要是“英文代码变动说明”，commit message 不允许包含人名，确保 git commit 的邮箱是 mobius_os@163.com

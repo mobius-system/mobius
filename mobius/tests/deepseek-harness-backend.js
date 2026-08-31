@@ -64,7 +64,7 @@ async function main() {
       model: 'deepseek-test',
       harnessSecretValue: 'never-persist-this-secret',
       runtimeEnv: { MOBIUS_HARNESS_TOKEN: 'never-persist-this-scoped-token' },
-      mobiusJsonl: {
+      mobiusPromptRecord: {
         source: 'test',
         kind: 'user_input',
         content: 'hello',
@@ -91,7 +91,7 @@ async function main() {
     )
     await backend.noPauseCurrentAndQueueQueryAtSession({
       sessionId, cwd, flagRoot, prompt: 'follow up', model: 'deepseek-test',
-      mobiusJsonl: {
+      mobiusPromptRecord: {
         source: 'test',
         kind: 'user_input',
         content: 'follow up',

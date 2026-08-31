@@ -826,15 +826,15 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId, mobiusJsonl) {
-    if (!mobiusJsonl) return false
+  _appendMobiusPromptEntry(sessionId, mobiusPromptRecord) {
+    if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
       console.warn(`[tmux-claude-code] mobius jsonl skipped (${sessionId}): original jsonl path missing`)
       return false
     }
     try {
-      const append = mobiusJsonl?.kind === 'external_session_message'
+      const append = mobiusPromptRecord?.kind === 'external_session_message'
         ? appendMobiusExternalEntry
         : appendMobiusPromptEntry
       append({
@@ -843,7 +843,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         agentSessionId: entry.agentSessionId || null,
         cwd: entry.cwd || null,
         backendName: this.name,
-        ...mobiusJsonl,
+        ...mobiusPromptRecord,
       })
       return true
     } catch (e) {
@@ -894,7 +894,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -926,13 +926,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         enableGulingMcp,
       })
     }
-    this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
+    this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
     await this._sendMaybeInitialContextPrompt(sessionId, prompt, isInitialContextPrompt)
     const entry = this.runtime.get(sessionId)
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }) {
     if (!sessionId) throw new Error('需要 sessionId')
     const persisted = this.runtime.get(sessionId)
 
@@ -988,7 +988,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       displayName: persisted?.displayName,
       agentSessionId: persisted?.agentSessionId,
       isInitialContextPrompt: false,
-      mobiusJsonl,
+      mobiusPromptRecord,
     })
   }
 
