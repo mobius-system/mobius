@@ -7,7 +7,6 @@ const { HarnessJsonRpcPeer } = require('./deepseek-harness-protocol')
 const { projectHarnessEvent } = require('./deepseek-harness-events')
 const {
   appendMobiusPromptEntry,
-  appendMobiusExternalEntry,
   watchMergedJsonl,
   readMergedJsonlHistory,
 } = require('../services/mobius-jsonl')
@@ -124,10 +123,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
   _appendMobiusPromptEntry(entry, mobiusPromptRecord) {
     if (!entry?.jsonlPath || !mobiusPromptRecord) return false
     try {
-      const append = mobiusPromptRecord.kind === 'external_session_message'
-        ? appendMobiusExternalEntry
-        : appendMobiusPromptEntry
-      append({
+      appendMobiusPromptEntry({
         jsonlPath: entry.jsonlPath,
         sessionId: entry.sessionId,
         agentSessionId: entry.agentSessionId,

@@ -325,95 +325,6 @@ function buildMobiusUserEntry({
   return entry;
 }
 
-function buildMobiusExternalEntry(args: BuildMobiusUserEntryArgs & {
-  sourceSessionId?: string | null;
-  targetSessionId?: string | null;
-  messageId?: number | string | null;
-  channelId?: string | null;
-  batchId?: string | null;
-  threadId?: string | null;
-  externalMessages?: Array<Record<string, unknown>> | null;
-}): any {
-  const {
-    sessionId,
-    agentSessionId,
-    cwd,
-    backendName,
-    content,
-    inputText,
-    requestId,
-    source,
-    userId,
-    timestamp,
-    sourceSessionId,
-    targetSessionId,
-    messageId,
-    channelId,
-    batchId,
-    threadId,
-    externalMessages,
-  } = args;
-  const ts = timestamp || new Date().toISOString();
-  const body = String(content || '');
-  return {
-    parentUuid: null,
-    isSidechain: true,
-    type: 'external_session_message',
-    message: {
-      role: 'external',
-      content: body,
-    },
-    uuid: crypto.randomUUID(),
-    timestamp: ts,
-    permissionMode: 'default',
-    userType: 'external_session',
-    entrypoint: 'mobius',
-    cwd: cwd || null,
-    sessionId: agentSessionId || sessionId,
-    version: `mobius-jsonl/${MOBIUS_JSONL_VERSION}`,
-    mobius: {
-      schema_version: MOBIUS_JSONL_VERSION,
-      source: source || 'session.external',
-      kind: 'external_session_message',
-      backend: backendName || null,
-      session_id: sessionId || null,
-      agent_session_id: agentSessionId || null,
-      user_id: userId || null,
-      request_id: requestId || null,
-      input_text: inputText == null ? null : String(inputText),
-      content_length: body.length,
-      source_session_id: sourceSessionId || null,
-      target_session_id: targetSessionId || sessionId || null,
-      message_id: messageId == null ? null : String(messageId),
-      channel_id: channelId || null,
-      batch_id: batchId || null,
-      thread_id: threadId || null,
-      external_messages: Array.isArray(externalMessages) ? externalMessages : null,
-      trust: 'untrusted',
-      executable: false,
-      user_consent: false,
-      captured_at: ts,
-    },
-  };
-}
-
-function appendMobiusExternalEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & {
-  jsonlPath: any;
-  sourceSessionId?: string | null;
-  targetSessionId?: string | null;
-  messageId?: number | string | null;
-  channelId?: string | null;
-  batchId?: string | null;
-  threadId?: string | null;
-  externalMessages?: Array<Record<string, unknown>> | null;
-}): { filePath: string; entry: any } {
-  const filePath = mobiusJsonlPathOf(jsonlPath);
-  if (!filePath) throw new Error('缺少原始 JSONL 路径, 无法写入 mobius 外部事件');
-  const entry = buildMobiusExternalEntry(entryOpts);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n');
-  return { filePath, entry };
-}
 
 function appendMobiusPromptEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & { jsonlPath: any }): { filePath: string; entry: any } {
   const filePath = mobiusJsonlPathOf(jsonlPath);
@@ -504,8 +415,6 @@ function readLastMobiusEntryType(jsonlPath: string | null | undefined): string |
 
 export {
   mobiusJsonlPathOf,
-  buildMobiusExternalEntry,
-  appendMobiusExternalEntry,
   readMergedJsonlHistory,
   readMergedJsonlSlice,
   countMergedJsonl,

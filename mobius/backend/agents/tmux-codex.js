@@ -31,7 +31,6 @@ function resolveAimuxBin() {
 const { AgentBackend } = require('./base')
 const {
   appendMobiusPromptEntry,
-  appendMobiusExternalEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -884,10 +883,7 @@ class TmuxCodexBackend extends AgentBackend {
       return false
     }
     try {
-      const append = mobiusPromptRecord?.kind === 'external_session_message'
-        ? appendMobiusExternalEntry
-        : appendMobiusPromptEntry
-      append({
+      appendMobiusPromptEntry({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,

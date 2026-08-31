@@ -15,10 +15,6 @@ import { db } from '../../db';
 
 const LINK_TTL_HOURS = 48;
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
 function expiresAtIso(from: Date = new Date()): string {
   return new Date(from.getTime() + LINK_TTL_HOURS * 3600 * 1000).toISOString();
 }
@@ -72,18 +68,6 @@ export function registerMultiagentLinks(ownerUserId: string, selfSessionId: stri
     }
   });
   tx();
-}
-
-/** 查链接: 返回未过期的行, 否则 null. */
-function findActiveLink(selfSessionId: string, targetSessionId: string): any | null {
-  const row = db.prepare(`
-    SELECT * FROM multiagent_links
-    WHERE source_session_id = ? AND target_session_id = ?
-    ORDER BY id DESC LIMIT 1
-  `).get(selfSessionId, targetSessionId) as any;
-  if (!row) return null;
-  if (new Date(row.expires_at).getTime() <= Date.now()) return null;
-  return row;
 }
 
 /**
@@ -187,5 +171,3 @@ export async function deliverMultiagentMessage(args: {
     return { ok: false, status: 500, error: `投递失败：${(e as Error).message || String(e)}` };
   }
 }
-
-export { findActiveLink, LINK_TTL_HOURS };
