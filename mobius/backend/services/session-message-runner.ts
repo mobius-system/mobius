@@ -214,7 +214,7 @@ async function runSessionMessage({
     }
   }
 
-  // 接缝 2 (源侧): 处理 @ 提及 — read_only 把对端快照拼进本方 prompt;
+  // 处理 @ 其他 Agent （只读模式） 把对端快照拼进本方 prompt;
   // bidirectional 建桥接通道并收集待唤醒清单 pendingBridgeWakeups.
   const mentionResult = isExternalEvent
     ? { prompt: finalContent, pendingBridgeWakeups: [] as ReturnType<typeof applyAgentMentions>['pendingBridgeWakeups'] }
