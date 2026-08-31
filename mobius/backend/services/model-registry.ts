@@ -39,12 +39,13 @@ function applyDisplayOrder(options: any[]): any[] {
     .map(item => item.option)
 }
 
-function defaultUseProxyForBackend(backend: any): boolean {
+function defaultUseProxyForBackend(_backend: any): boolean {
   return false
 }
 
-function modelUseProxy(key: any, fallback: any): any {
-  return adminSettings.getModelNetworkProxy(key, fallback)
+// 四挡代理模式: direct | env | proxychains | env_proxychains (DSH 后端忽略代理配置, 调用方过滤).
+function modelProxyMode(key: any): any {
+  return adminSettings.getModelNetworkProxy(key, 'direct')
 }
 
 // 黑客帝国数字雨 · 若该模型开启了"捕获实时输出"且 .withproxy.json 已生成 (保存开关时落盘),
@@ -83,7 +84,7 @@ function builtinEntryFor(modelOrKey: any): any {
   const codexConfigPath = opt.backend === 'tmux-codex' && opt.profileKey ? builtinCodexConfigPath(opt.profileKey) : null
   const configPath = codexConfigPath || settingsPath
   if (!fileExists(configPath)) return null
-  const useProxy = modelUseProxy(key, defaultUseProxyForBackend(opt.backend))
+  const proxyMode = modelProxyMode(key)
   return {
     key,
     value: key,
@@ -94,7 +95,8 @@ function builtinEntryFor(modelOrKey: any): any {
     sub: subForBuiltin(key),
     backend: opt.backend,
     imported: false,
-    useProxy,
+    useProxy: proxyMode !== 'direct',
+    proxyMode,
     settingsPath,
     // built-in codex 也必须显式指定渠道.
     codexProfileKey: opt.profileKey || null,
@@ -126,7 +128,7 @@ function dynamicEntryFor(modelOrKey: any): any {
   const m = modelAccess.findClaudeCodeModel(modelOrKey)
   if (!m || !m.enabled) return null
   if (!fileExists(m.settings_path)) return null
-  const useProxy = modelUseProxy(m.session_model, false)
+  const proxyMode = modelProxyMode(m.session_model)
   return {
     key: m.session_model,
     value: m.session_model,
@@ -137,7 +139,8 @@ function dynamicEntryFor(modelOrKey: any): any {
     sub: 'Claude Code',
     backend: 'tmux-claude-code',
     imported: true,
-    useProxy,
+    useProxy: proxyMode !== 'direct',
+    proxyMode,
     settingsPath: m.settings_path,
     settingsFile: m.settings_file,
     settingsExists: m.settings_exists,
@@ -155,7 +158,7 @@ function dynamicCodexEntryFor(modelOrKey: any): any {
   const m = modelAccess.findCodexModel(modelOrKey, { includeSecret: true })
   if (!m || !m.enabled) return null
   if (!fileExists(m.config_path)) return null
-  const useProxy = modelUseProxy(m.session_model, false)
+  const proxyMode = modelProxyMode(m.session_model)
   return {
     key: m.session_model,
     value: m.session_model,
@@ -166,7 +169,8 @@ function dynamicCodexEntryFor(modelOrKey: any): any {
     sub: 'Codex',
     backend: 'tmux-codex',
     imported: true,
-    useProxy,
+    useProxy: proxyMode !== 'direct',
+    proxyMode,
     settingsPath: null,
     codexConfigPath: m.config_path,
     codexSecretEnvKey: m.secret_env_key,
@@ -180,7 +184,7 @@ function dynamicHarnessEntryFor(modelOrKey: any): any {
   if (!modelAccess || typeof modelAccess.findHarnessModel !== 'function') return null
   const m = modelAccess.findHarnessModel(modelOrKey, { includeSecret: true })
   if (!m || !m.enabled || !m.secret_value) return null
-  const useProxy = modelUseProxy(m.session_model, m.use_proxy === true)
+  const proxyMode = modelProxyMode(m.session_model)
   return {
     key: m.session_model,
     value: m.session_model,
@@ -191,7 +195,8 @@ function dynamicHarnessEntryFor(modelOrKey: any): any {
     sub: 'DeepSeek Harness',
     backend: 'deepseek-harness',
     imported: true,
-    useProxy,
+    useProxy: proxyMode !== 'direct',
+    proxyMode,
     settingsPath: null,
     harnessProvider: m.provider,
     harnessBaseUrl: m.base_url,
@@ -349,6 +354,7 @@ function listSessionModelOptions(): any[] {
     backend: m.backend,
     imported: m.imported,
     use_proxy: m.useProxy === false ? 0 : (m.useProxy === true ? 1 : null),
+    proxy_mode: m.proxyMode || 'direct',
     codex_config_path: m.codexConfigPath || null,
     codex_channel: m.codexChannel || (m.backend === 'tmux-codex' ? m.model : null),
     codex_secret_env_key: m.codexSecretEnvKey || null,
@@ -371,6 +377,7 @@ function launchOptionsForSession(session: any): any {
       harnessMaxTokens: resolved.harnessMaxTokens,
       harnessRuntimeVersion: resolved.harnessRuntimeVersion,
       useProxy: resolved.useProxy,
+      proxyMode: resolved.proxyMode || 'direct',
       forceNoProxy: false,
       imported: true,
       label: resolved.label,
@@ -387,6 +394,7 @@ function launchOptionsForSession(session: any): any {
       codexSecretEnvKey: resolved.codexSecretEnvKey,
       codexSecretValue: resolved.codexSecretValue,
       useProxy: resolved.useProxy,                    // 每模型独立, 不再读 admin-settings
+      proxyMode: resolved.proxyMode || 'direct',
       forceNoProxy: false,
       imported: true,
       label: resolved.label,
@@ -399,6 +407,7 @@ function launchOptionsForSession(session: any): any {
       model: resolved.claudeModel,
       settingsPath: effectiveClaudeSettingsPath(resolved),
       useProxy: resolved.useProxy,
+      proxyMode: resolved.proxyMode || 'direct',
       forceNoProxy: false,
       imported: true,
       label: resolved.label,
@@ -410,6 +419,7 @@ function launchOptionsForSession(session: any): any {
     model: resolved.model,
     settingsPath: effectiveClaudeSettingsPath(resolved) || undefined,
     useProxy: resolved.useProxy,
+    proxyMode: resolved.proxyMode || 'direct',
     codexProfileKey: resolved.codexProfileKey || undefined,
     codexChannel: resolved.codexChannel || resolved.codexProfileKey || undefined,
     codexConfigPath: resolved.codexConfigPath || undefined,

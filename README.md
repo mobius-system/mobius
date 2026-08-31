@@ -6,7 +6,7 @@
 
 <div align="center">
 
-# <img src="logo.png" alt="Mobius logo" height="42" valign="middle" /> Mobius
+# <img src="mobius/frontend/public/logo.png" alt="Mobius logo" height="42" valign="middle" /> Mobius
 
 <h3>
 The first self-evolving open-source Agent OS<br />
@@ -105,7 +105,9 @@ XiaoMo is the natural-language interface to the entire system. Talk to it: creat
 
 ## Any Model, Any Agent
 
-Mobius is model-agnostic. GPT, Claude, **GLM-5.2**, Codex — all serve as execution engines inside the same project. Choose by task type, cost, or performance.
+Mobius is model-agnostic. GPT, Claude, **GLM**, Codex — all serve as execution engines inside the same project. Choose by task type, cost, or performance.
+
+Model setup demo: [Connect domestic and overseas CodingPlan subscriptions once, use them across every platform and device](https://www.bilibili.com/video/BV1oC4m6aENv/)
 
 
 
@@ -172,6 +174,14 @@ Mobius ships with built-in extensions and grows new ones from your needs — fin
 Full deployment guide at [Docs](https://mobius-system.github.io/mobius/en/).
 
 ### Containers (recommended)
+
+> One-line install for macOS: `bash <(curl -fsSL https://serve.nutshellai.cn/publish/auto/tutorial/deploy-mac-v21.sh)` — [demo video](https://www.bilibili.com/video/BV1AAtT6aEoR)
+>
+> One-line install for Windows: `irm https://serve.nutshellai.cn/publish/auto/tutorial/deploy-windows-v6.ps1 | iex` — [demo video](https://www.bilibili.com/video/BV1yk4y6iER9/)
+>
+> Model setup: connect domestic and overseas CodingPlan subscriptions once, use them across every platform and device — [demo video](https://www.bilibili.com/video/BV1oC4m6aENv/)
+
+For professional users, we recommend installing with the commands below, which are equivalent to the one-line install.
 
 ```bash
 # 1. Clone the repo (tip: fork first, then clone — after self-evolution you can commit directly to your own repo)

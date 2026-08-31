@@ -68,7 +68,7 @@ jobs:
             arch: arm64
             os: mac
           - target: mac-x64
-            runner: macos-13 # Intel, 原生 x64; 若将来弃用改 macos-latest 交叉
+            runner: macos-15-intel # Intel, 原生 x64; macos-13 已于 2025-12-04 退役(排队 24h 超时), Intel 过渡镜像
             plat: mac
             arch: x64
             os: mac
@@ -193,7 +193,19 @@ jobs:
             DRAFT_FLAG="--draft"
           fi
 
-          NOTES="Mobius Desktop v${V} 三平台客户端。
+          NOTES="Mobius Desktop v${V} clients for all three platforms (note: this package is the client only; it does not install Mobius itself).
+
+          ## Download
+          - Windows x64 (Intel/AMD 64-bit): \`mobius-desktop-${V}-win-x64.zip\`
+          - macOS Apple Silicon (M1/M2/M3/M4): \`mobius-desktop-${V}-mac-arm64.zip\`
+          - macOS Intel x64: \`mobius-desktop-${V}-mac-x64.zip\`
+
+          ## Notes
+          - macOS packages are unsigned: right-click -> Open on first launch.
+
+          ---
+
+          Mobius Desktop v${V} 三平台客户端（注意此包仅为客户端，不会安装Mobius本体）。
 
           ## 下载
           - Windows x64 (Intel/AMD 64位): \`mobius-desktop-${V}-win-x64.zip\`
@@ -201,9 +213,7 @@ jobs:
           - macOS Intel x64: \`mobius-desktop-${V}-mac-x64.zip\`
 
           ## 说明
-          - 首次启动自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)
-          - macOS 包未签名, 首次打开需右键 -> 打开
-          - 登录后桌面端以 desktop-<主机名> 注册到 AIMUX 节点列表"
+          - macOS 包未签名, 首次打开需右键 -> 打开"
 
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG 已存在, 追加资产 (clobber)"
@@ -238,10 +248,10 @@ jobs:
 
             # 从文件名解析 platform + arch: mobius-desktop-0.0.22-win-x64.zip
             # 格式: mobius-desktop-<version>-<platform>-<arch>.zip
-            rest="${filename#mobius-desktop-}"    # 0.0.22-win-x64.zip
-            rest="${rest%.zip}"                    # 0.0.22-win-x64
-            # 去掉版本号 (三段数字: x.y.z-)
-            plat_arch="${rest#*-*-*-}"             # win-x64 (去掉 0.0.22-)
+            # 用 sed 精确剥版本号 (x.y.z 三段数字), 老写法 ${rest#*-*-*-} 只对
+            # 带预发布后缀的版本 (0.0.22-rc1-win-x64) 才剥得掉, 纯 x.y.z 时会把
+            # platform 剥成 "0.0.29-mac" 这种坏值。
+            plat_arch=$(echo "${filename#mobius-desktop-}" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-//; s/\.zip$//')
             plat="${plat_arch%-*}"                 # win
             arch="${plat_arch##*-}"                # x64
 

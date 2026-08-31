@@ -56,8 +56,14 @@ try { Database = require('better-sqlite3') } catch {}
 
 const HUB = 'imac_codex_agent_hub'
 const HOME = os.homedir()
-const PROXY_ENVS = path.join(HOME, 'proxy_envs.bash')
-const PROXY_CONF = path.join(HOME, 'proxy_claude.conf')
+// 环境变量代理配置 (曾名 proxy_envs.bash): 读新名优先, 老文件兜底.
+const PROXY_ENVS_FILE = path.join(HOME, 'proxy_envs.conf')
+const PROXY_ENVS_FILE_LEGACY = path.join(HOME, 'proxy_envs.bash')
+function resolveProxyEnvsFile() {
+  return fs.existsSync(PROXY_ENVS_FILE) ? PROXY_ENVS_FILE : PROXY_ENVS_FILE_LEGACY
+}
+// 模型 proxychains 配置 (曾名 proxy_claude.conf); 兼容期老文件存在则沿用.
+const PROXY_CONF = path.join(HOME, 'proxychains_config_for_llm_models.conf')
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, '.codex')
 const CODEX_CONFIG = path.join(CODEX_HOME, 'config.toml')
 const CODEX_STATE_DB = path.join(CODEX_HOME, 'state_5.sqlite')
@@ -115,17 +121,20 @@ const CODEX_PENDING_ITEM_RE = /^\s*↳\s+(.*)$/
 // anchored to the notice prefix so ordinary conversation text mentioning the phrase is not
 // suppressed.
 const CODEX_USER_INTERRUPT_NOTICE_RE = /^■\s*Conversation interrupted\b/i
+const CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE =
+  /^⚠\s*Model metadata for `[^`]+` not found\. Defaulting to fallback metadata;/
 
 function findCodexRecentErrorInPane(paneText) {
   const ANSI_RE = /\x1b\[[0-9;]*m/g
   const lines = String(paneText || '').split('\n')
   // Reverse scan so the newest Codex notice wins. If that newest notice is the normal
-  // user-interrupt banner, stop immediately instead of falling through to an older stale error.
+  // user-interrupt or fallback metadata banner, stop immediately instead of falling through to an older stale error.
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
     const cleaned = line.replace(ANSI_RE, '').trimStart()
     if (!cleaned.startsWith('■') && !cleaned.startsWith('⚠')) continue
     if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
+    if (CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE.test(cleaned)) return null
     return {
       message: cleaned.trim(),
       rawLine: line,
@@ -258,17 +267,32 @@ function normalizeUseProxy(value, fallback = false) {
   return !!fallback
 }
 
-function proxyPrereqMissing() {
+// 四挡代理模式归一: direct | env | proxychains | env_proxychains.
+// 兼容旧 boolean: true→env_proxychains, false/null→direct.
+function normalizeProxyMode4(value, fallback = 'direct') {
+  if (value === 'env' || value === 'proxychains' || value === 'env_proxychains') return value
+  if (value === 'direct') return 'direct'
+  if (value === true || value === 1 || value === '1' || value === 'true') return 'env_proxychains'
+  if (value === false || value === 0 || value === '0' || value === 'false') return 'direct'
+  return fallback
+}
+
+// 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
+function proxyPrereqMissing(mode = 'env_proxychains') {
   const missing = []
-  if (!fs.existsSync(PROXY_ENVS)) missing.push(`file: ${PROXY_ENVS}`)
-  if (!fs.existsSync(PROXY_CONF)) missing.push(`file: ${PROXY_CONF}`)
-  if (spawnSync('which', ['proxychains']).status !== 0) missing.push('bin (PATH): proxychains')
+  const needEnv = mode === 'env' || mode === 'env_proxychains'
+  const needChains = mode === 'proxychains' || mode === 'env_proxychains'
+  if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
+  if (needChains) {
+    if (!fs.existsSync(PROXY_CONF) && !fs.existsSync(path.join(HOME, 'proxy_claude.conf'))) missing.push(`file: ${PROXY_CONF}`)
+    if (spawnSync('which', ['proxychains']).status !== 0) missing.push('bin (PATH): proxychains')
+  }
   return missing
 }
 
-function assertProxyAvailable() {
-  const missing = proxyPrereqMissing()
-  if (missing.length) throw new Error(`use_proxy=true but proxy prerequisites are missing: ${missing.join(', ')}`)
+function assertProxyAvailable(mode = 'env_proxychains') {
+  const missing = proxyPrereqMissing(mode)
+  if (missing.length) throw new Error(`代理依赖缺失 (${mode}): ${missing.join(', ')}`)
 }
 
 function tomlBasicString(s) {
@@ -526,6 +550,7 @@ class TmuxCodexBackend extends AgentBackend {
             codexConfigPath: p.codexConfigPath || null,
             codexSecretEnvKey: p.codexSecretEnvKey || null,
             useProxy: normalizeUseProxy(p.useProxy, false),
+            proxyMode: normalizeProxyMode4(p?.proxyMode, 'direct'),
             displayName: p.displayName || null,
             jsonlPath: recoveredJsonl,
             startedAt: recovered.created_ms || p.startedAt || 0,
@@ -542,6 +567,7 @@ class TmuxCodexBackend extends AgentBackend {
             codexConfigPath: entry.codexConfigPath,
             codexSecretEnvKey: entry.codexSecretEnvKey,
             useProxy: entry.useProxy,
+            proxyMode: entry.proxyMode,
             displayName: entry.displayName,
             jsonlPath: entry.jsonlPath,
             startedAt: entry.startedAt,
@@ -560,6 +586,7 @@ class TmuxCodexBackend extends AgentBackend {
           codexConfigPath: p.codexConfigPath || null,
           codexSecretEnvKey: p.codexSecretEnvKey || null,
           useProxy: normalizeUseProxy(p.useProxy, false),
+        proxyMode: normalizeProxyMode4(p?.proxyMode, 'direct'),
           displayName: p.displayName || null,
           jsonlPath: null,
           startedAt: p.startedAt || 0,
@@ -583,6 +610,7 @@ class TmuxCodexBackend extends AgentBackend {
         codexConfigPath: p.codexConfigPath || null,
         codexSecretEnvKey: p.codexSecretEnvKey || null,
         useProxy: normalizeUseProxy(p.useProxy, false),
+        proxyMode: normalizeProxyMode4(p?.proxyMode, 'direct'),
         displayName: p.displayName || null,
         jsonlPath,
         startedAt: p.startedAt || 0,
@@ -857,7 +885,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
@@ -865,9 +893,9 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
+      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
     } else {
-      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
+      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
     }
 
@@ -883,6 +911,7 @@ class TmuxCodexBackend extends AgentBackend {
         flagRoot: flagRoot || cwd,
         model: model || DEFAULT_MODEL,
         useProxy: normalizeUseProxy(useProxy, false),
+        proxyMode: normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct'),
         codexProfileKey: codexChannel || codexProfileKey,
         codexConfigPath,
         codexSecretEnvKey,
@@ -902,7 +931,7 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
@@ -912,7 +941,8 @@ class TmuxCodexBackend extends AgentBackend {
       const persisted = this.runtime.get(sessionId)
       const finalCwd = cwd || persisted?.cwd
       const finalAgentSid = agentSessionId || persisted?.agentSessionId
-      const finalUseProxy = normalizeUseProxy(useProxy, persisted?.useProxy ?? false)
+      const finalProxyMode = normalizeProxyMode4(proxyMode ?? persisted?.proxyMode, normalizeUseProxy(useProxy, persisted?.useProxy ?? false) ? 'env_proxychains' : 'direct')
+      const finalUseProxy = finalProxyMode !== 'direct'
       const finalProfileKey = codexChannel || codexProfileKey || persisted?.codexProfileKey
       const finalConfigPath = codexConfigPath || persisted?.codexConfigPath
       const finalSecretEnvKey = codexSecretEnvKey || persisted?.codexSecretEnvKey
@@ -923,6 +953,7 @@ class TmuxCodexBackend extends AgentBackend {
         flagRoot: flagRoot || persisted?.flagRoot || finalCwd,
         model: model || persisted?.model || DEFAULT_MODEL,
         useProxy: finalUseProxy,
+        proxyMode: finalProxyMode,
         codexProfileKey: finalProfileKey,
         codexConfigPath: finalConfigPath,
         codexSecretEnvKey: finalSecretEnvKey,
@@ -935,12 +966,13 @@ class TmuxCodexBackend extends AgentBackend {
       flagRoot = flagRoot || persisted?.flagRoot || finalCwd
       model = model || persisted?.model || DEFAULT_MODEL
       useProxy = finalUseProxy
+      proxyMode = finalProxyMode
       codexProfileKey = finalProfileKey
       codexConfigPath = finalConfigPath
       codexSecretEnvKey = finalSecretEnvKey
       displayName = displayName || persisted?.displayName
     } else {
-      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
+      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
     }
 
@@ -961,6 +993,7 @@ class TmuxCodexBackend extends AgentBackend {
         flagRoot: flagRoot || cwd,
         model: model || DEFAULT_MODEL,
         useProxy: normalizeUseProxy(useProxy, false),
+        proxyMode: normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct'),
         codexProfileKey: codexChannel || codexProfileKey,
         codexConfigPath,
         codexSecretEnvKey,
@@ -1053,7 +1086,7 @@ class TmuxCodexBackend extends AgentBackend {
     return { sessionId, killed: wasAlive, wasWorking }
   }
 
-  async _ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }) {
+  async _ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }) {
     if (this.runtime.has(sessionId)) return this.runtime.get(sessionId)
     if (!agentSessionId) return null
     const jsonlPath = codexRolloutPathOf(agentSessionId)
@@ -1067,6 +1100,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexConfigPath: codexConfigPath || null,
       codexSecretEnvKey: codexSecretEnvKey || null,
       useProxy: normalizeUseProxy(useProxy, false),
+      proxyMode: normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct'),
       displayName: displayName || null,
       jsonlPath,
       startedAt: Date.now(),
@@ -1083,6 +1117,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexConfigPath: entry.codexConfigPath,
       codexSecretEnvKey: entry.codexSecretEnvKey,
       useProxy: normalizeUseProxy(useProxy, false),
+      proxyMode: normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct'),
       displayName: displayName || null,
       jsonlPath,
       startedAt: entry.startedAt,
@@ -1092,7 +1127,7 @@ class TmuxCodexBackend extends AgentBackend {
     return entry
   }
 
-  async _bindRuntimeAfterPrompt({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, sinceMs, knownThreadIds, allowUpdatedThreadFallback = false }) {
+  async _bindRuntimeAfterPrompt({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, sinceMs, knownThreadIds, allowUpdatedThreadFallback = false }) {
     const deadline = Date.now() + THREAD_BIND_TIMEOUT_MS
     let found = null
     let foundBy = 'created'
@@ -1133,6 +1168,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexConfigPath: codexConfigPath || null,
       codexSecretEnvKey: codexSecretEnvKey || null,
       useProxy: normalizeUseProxy(useProxy, false),
+      proxyMode: normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct'),
       displayName: displayName || null,
       jsonlPath,
       startedAt: found.created_ms || Date.now(),
@@ -1149,6 +1185,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexConfigPath: entry.codexConfigPath,
       codexSecretEnvKey: entry.codexSecretEnvKey,
       useProxy: entry.useProxy,
+      proxyMode: entry.proxyMode,
       displayName: displayName || null,
       jsonlPath,
       startedAt: entry.startedAt,
@@ -1171,7 +1208,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1203,11 +1240,12 @@ class TmuxCodexBackend extends AgentBackend {
       ? resolveSecretValue(secretEnvKey, tomlStringValue(configText, 'api_key') || codexSecretValue)
       // 没有 env_key 时不导出秘钥。
       : ''
-    // useProxy 与 profile 完全解耦: 只决定是否套 proxychains 网络层.
-    // 把调用方的代理参数归一化成布尔值，默认不走代理。
-    const finalUseProxy = normalizeUseProxy(useProxy, false)
-    // 需要代理时先检查 proxychains 相关文件和命令是否可用。
-    if (finalUseProxy) assertProxyAvailable()
+    // useProxy 与 profile 完全解耦: 只决定网络层挡位.
+    // 四挡: direct | env | proxychains | env_proxychains (兼容旧 boolean).
+    const finalProxyMode = normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct')
+    const finalUseProxy = finalProxyMode !== 'direct'
+    // 需要代理时按挡位检查依赖 (env 挡只查 env 文件, proxychains 挡只查 conf+bin).
+    if (finalUseProxy) assertProxyAvailable(finalProxyMode)
 
     // agentSessionId 存在表示希望恢复已有 Codex thread。
     let useResume = !!agentSessionId
@@ -1258,14 +1296,17 @@ class TmuxCodexBackend extends AgentBackend {
       // 标记当前进程运行在受控沙箱环境中。
       'export IS_SANDBOX=1',
     ]
-    // 按代理开关决定是否加载代理环境并套 proxychains。
-    if (finalUseProxy) {
-      // 加载代理相关环境变量。
-      cmdLines.push(`source ${shellQuote(PROXY_ENVS)}`)
+    // 按四挡分流: env 挡加载环境变量代理; proxychains 挡套 chains; env_proxychains 双轨; direct 裸启.
+    if (finalProxyMode === 'env' || finalProxyMode === 'env_proxychains') {
+      // 加载代理相关环境变量 (新名优先, 老 .bash 兜底). set -a 让 source 里的裸赋值
+      // (无 export 前缀的存量 conf) 也进环境被子进程继承; 结束后 set +a 收回.
+      cmdLines.push(`set -a && source ${shellQuote(resolveProxyEnvsFile())} && set +a`)
+    }
+    if (finalProxyMode === 'proxychains' || finalProxyMode === 'env_proxychains') {
       // 通过 proxychains 启动 Codex，并传入 profile、子命令和参数。
       cmdLines.push(`exec proxychains -q -f ${shellQuote(PROXY_CONF)} codex ${profileArg} ${subcommand}${argStr}`)
     } else {
-      // 不走代理时直接启动 Codex。
+      // direct / env 挡直接启动 Codex。
       cmdLines.push(`exec codex ${profileArg} ${subcommand}${argStr}`)
     }
     // 用 && 串联命令，确保任何前置步骤失败都会阻止后续 exec。

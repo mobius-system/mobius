@@ -341,9 +341,9 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                   工具调用 · 下轨
                 </span>
               </div>
-              <div className="relative h-24 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
+              <div className="relative h-28 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
                 <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed" style={{ borderColor: 'rgba(255,255,255,0.10)' }} />
-                <div className="absolute inset-x-0 top-0 h-full">
+                <div className="absolute inset-x-0 inset-y-1">
                   {timelineSegments.map((segment) => {
                     const onModelTrack = segment.kind === 'model'
                     return (

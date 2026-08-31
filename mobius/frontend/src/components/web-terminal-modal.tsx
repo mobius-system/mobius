@@ -11,9 +11,9 @@ import '@xterm/xterm/css/xterm.css'
 import { useStore } from '../store'
 
 type Status = 'connecting' | 'connected' | 'closed' | 'error' | 'reconnecting'
-export type WebTerminalMode = 'cwd' | 'agent'
+export type WebTerminalMode = 'cwd' | 'agent' | 'adhoc'
 
-export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { sessionId: string | undefined; mode?: WebTerminalMode; onClose: () => void }) {
+export function WebTerminalModal({ sessionId, mode = 'cwd', adhocCommandKey, title, inline = false, onClose }: { sessionId: string | undefined; mode?: WebTerminalMode; adhocCommandKey?: string; title?: string; inline?: boolean; onClose: () => void }) {
   const { theme, token } = useStore()
   const isDark = theme !== 'light'
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -24,7 +24,8 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
   const [errMsg, setErrMsg] = useState('')
 
   useEffect(() => {
-    if (!sessionId) { setErrMsg('当前没有活动会话, 无法打开终端'); setStatus('error'); return }
+    if (mode !== 'adhoc' && !sessionId) { setErrMsg('当前没有活动会话, 无法打开终端'); setStatus('error'); return }
+    if (mode === 'adhoc' && !adhocCommandKey) { setErrMsg('缺少终端命令标识, 无法打开终端'); setStatus('error'); return }
     if (!token) { setErrMsg('未登录, 无法打开终端'); setStatus('error'); return }
 
     // xterm 只创建一次, 重连复用同一个实例 (不清屏, 保留 scrollback).
@@ -46,7 +47,9 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
     term.focus()
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${proto}//${location.host}/api/terminal/ws?sid=${encodeURIComponent(sessionId)}&mode=${encodeURIComponent(mode)}&token=${encodeURIComponent(token)}`
+    const url = mode === 'adhoc'
+      ? `${proto}//${location.host}/api/terminal/ws?mode=adhoc&cmd=${encodeURIComponent(adhocCommandKey || '')}&token=${encodeURIComponent(token)}`
+      : `${proto}//${location.host}/api/terminal/ws?sid=${encodeURIComponent(sessionId || '')}&mode=${encodeURIComponent(mode)}&token=${encodeURIComponent(token)}`
 
     // 心跳 + 重连状态 (闭包内, 卸载时统一清理).
     const PING_INTERVAL = 25_000        // 每 25s 发一次 ping (< nginx 默认 proxy_read_timeout 60s, 让链路持续有数据流穿越反代, 否则空闲 WS 被反代掐断 = "终端频繁断开").
@@ -178,18 +181,20 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
   const sm = statusMeta[status]
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+    <div className={inline ? 'relative flex h-full w-full flex-col' : 'fixed inset-0 z-[60] flex items-center justify-center'}>
+      {!inline && <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />}
       <div
-        className="relative flex flex-col overflow-hidden rounded-2xl shadow-2xl"
-        style={{ width: 'min(92vw, 1100px)', height: 'min(82vh, 720px)', background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
+        className={inline ? 'relative flex h-full w-full flex-col overflow-hidden rounded-lg' : 'relative flex flex-col overflow-hidden rounded-2xl shadow-2xl'}
+        style={inline
+          ? { background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }
+          : { width: 'min(92vw, 1100px)', height: 'min(82vh, 720px)', background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* 头部 */}
         <div className="flex items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <Terminal className="h-4 w-4 flex-shrink-0" strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} />
           <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {mode === 'agent' ? 'Agent 后台终端' : 'Web 终端'}
+            {title || (mode === 'agent' ? 'Agent 后台终端' : 'Web 终端')}
           </span>
           {sessionId && (
             <span className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -200,13 +205,15 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: sm.color }} />
             {sm.label}
           </span>
-          <button
-            onClick={onClose}
-            title="关闭"
-            className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </button>
+          {!inline && (
+            <button
+              onClick={onClose}
+              title="关闭"
+              className="flex h-7 w-7 items-center justify-center rounded-xl border transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              <X className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          )}
         </div>
 
         {/* 终端主体 (padding 框颜色与 xterm 背景一致, 避免亮色主题出现暗框) */}
@@ -222,6 +229,25 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', onClose }: { session
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// 内联 Web 终端 (向导等嵌入场景): 复用 WebTerminalModal 的 WS+xterm 全套逻辑, 但渲染为
+// 页面内嵌块而非全屏弹窗, 且不渲染关闭按钮 (生命周期由父组件控制)。
+// 拆出共享 hook 太重; 这里用轻量代理 — 渲染 WebTerminalModal 但外层是普通容器。
+// 实现上直接复制主体: 弹窗布局由 fixed inset-0 改为 relative h-full。
+export function InlineWebTerminal({ mode = 'adhoc', adhocCommandKey, className, height = 360 }: {
+  mode?: WebTerminalMode
+  adhocCommandKey?: string
+  className?: string
+  height?: number
+}) {
+  // 复用弹窗实现, 通过 CSS 把 fixed 全屏层压回内联块: 外层 wrapper relative + 内层样式覆盖。
+  // 更直接的做法是给 WebTerminalModal 加 inline prop — 这里就这么做: 包一层并隐藏遮罩。
+  return (
+    <div className={`relative overflow-hidden rounded-lg border border-[var(--border-color)] ${className || ''}`} style={{ height }}>
+      <WebTerminalModal sessionId={undefined} mode={mode} adhocCommandKey={adhocCommandKey} onClose={() => {}} inline />
     </div>
   )
 }

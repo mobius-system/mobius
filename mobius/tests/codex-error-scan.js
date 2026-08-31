@@ -20,6 +20,23 @@ assert.strictEqual(
   null,
   'a newer user interruption must not expose an older stale error',
 )
+assert.strictEqual(
+  findCodexRecentErrorInPane('\x1b[33m⚠ Model metadata for `GLM-5.3` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\x1b[0m'),
+  null,
+  'fallback model metadata is a normal upstream warning, not an agent failure',
+)
+assert.strictEqual(
+  findCodexRecentErrorInPane(`■ API request failed with status 403\n⚠ Model metadata for \`GLM-5.3\` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.`),
+  null,
+  'a newer fallback metadata warning must not expose an older stale error',
+)
+assert.deepStrictEqual(
+  findCodexRecentErrorInPane(`⚠ Model metadata for \`GLM-5.3\` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\n■ API request failed with status 403`),
+  {
+    message: '■ API request failed with status 403',
+    rawLine: '■ API request failed with status 403',
+  },
+)
 assert.deepStrictEqual(findCodexRecentErrorInPane('\x1b[31m■ API request failed with status 403\x1b[0m'), {
   message: '■ API request failed with status 403',
   rawLine: '\x1b[31m■ API request failed with status 403\x1b[0m',

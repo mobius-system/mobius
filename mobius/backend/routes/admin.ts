@@ -901,6 +901,8 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
     max_prompts_per_5h,
     useProxy,
     use_proxy,
+    proxyMode,
+    proxy_mode,
     captureStream,
     capture_stream,
     autoCompact,
@@ -937,9 +939,13 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
         maxPromptsPerWindow ?? max_prompts_per_5h ?? limit,
       );
     }
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'useProxy')
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'proxyMode')
+      || Object.prototype.hasOwnProperty.call(req.body || {}, 'proxy_mode')
+      || Object.prototype.hasOwnProperty.call(req.body || {}, 'useProxy')
       || Object.prototype.hasOwnProperty.call(req.body || {}, 'use_proxy')) {
-      adminSettings.setModelNetworkProxy(modelKey, (useProxy ?? use_proxy) === true);
+      // 四挡 proxyMode 优先; 兼容旧 boolean (true→env_proxychains, false→direct).
+      const mode = proxyMode ?? proxy_mode ?? ((useProxy ?? use_proxy) === true);
+      adminSettings.setModelNetworkProxy(modelKey, mode);
     }
     // 黑客帝国数字雨 · 捕获实时输出 (仅 claude code). 开启=生成 .withproxy.json,
     // 关闭=删除. 持久化到 admin-settings.modelCaptureStream, 启动时由 model-registry 选用.
@@ -1307,10 +1313,15 @@ router.put('/text-redaction/global', adminAuth, (req: express.Request, res: expr
   }
 });
 
-// ── Proxychains 配置文件直编: 系统 /etc/proxychains.conf + 模型 ~/proxy_claude.conf ──
-// 直接读写两个文件本身, 不引入新落盘路径, 不加 enable 开关 / availability 检测.
-const PROXYCHAINS_SYSTEM_PATH = '/etc/proxychains.conf';
-const PROXYCHAINS_MODEL_PATH = path.join(os.homedir(), 'proxy_claude.conf');
+// ── 模型代理配置文件直编: proxychains ~/proxychains_config_for_llm_models.conf + 环境变量代理 ~/proxy_envs.conf ──
+// 直接读写文件本身, 不引入新落盘路径, 不加 enable 开关 / availability 检测.
+// 曾名 proxy_claude.conf — 读时老文件兜底, 写时永远写新名 (首次保存即完成迁移).
+const PROXYCHAINS_MODEL_PATH = path.join(os.homedir(), 'proxychains_config_for_llm_models.conf');
+const PROXYCHAINS_MODEL_PATH_LEGACY = path.join(os.homedir(), 'proxy_claude.conf');
+// 环境变量代理 (http_proxy/https_proxy) 的持久化文件: 与 proxychains conf 同目录的 .conf.
+// 格式为 KEY=VALUE 行 (http_proxy=..., https_proxy=..., 可含 no_proxy), source 即生效.
+const PROXY_ENVS_PATH = path.join(os.homedir(), 'proxy_envs.conf');
+const PROXY_ENVS_PATH_LEGACY = path.join(os.homedir(), 'proxy_envs.bash');
 
 interface ProxyFileReadResult {
   content: string;
@@ -1351,19 +1362,24 @@ function proxyFileWritable(p: string): boolean {
 
 router.get('/settings/proxy-files', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
-    const system = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
-    const model = readProxyFile(PROXYCHAINS_MODEL_PATH);
+    // 读: 新文件优先, 老文件兜底 (未迁移时仍能看到旧配置).
+    const model = readProxyFile(PROXYCHAINS_MODEL_PATH).exists
+      ? readProxyFile(PROXYCHAINS_MODEL_PATH)
+      : readProxyFile(PROXYCHAINS_MODEL_PATH_LEGACY);
+    const envs = readProxyFile(PROXY_ENVS_PATH).exists
+      ? readProxyFile(PROXY_ENVS_PATH)
+      : readProxyFile(PROXY_ENVS_PATH_LEGACY);
     res.json({
-      systemPath: PROXYCHAINS_SYSTEM_PATH,
       modelPath: PROXYCHAINS_MODEL_PATH,
-      system: system.content,
-      systemExists: !!system.exists,
-      systemError: system.error || '',
-      systemWritable: proxyFileWritable(PROXYCHAINS_SYSTEM_PATH),
       model: model.content,
       modelExists: !!model.exists,
       modelError: model.error || '',
       modelWritable: proxyFileWritable(PROXYCHAINS_MODEL_PATH),
+      envsPath: PROXY_ENVS_PATH,
+      envs: envs.content,
+      envsExists: !!envs.exists,
+      envsError: envs.error || '',
+      envsWritable: proxyFileWritable(PROXY_ENVS_PATH),
     });
   } catch (e) {
     res.status(500).json({ error: (e as Error)?.message || String(e) });
@@ -1372,22 +1388,9 @@ router.get('/settings/proxy-files', adminAuth, (_req: express.Request, res: expr
 
 router.put('/settings/proxy-files', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    const body = (req.body || {}) as { system?: unknown; model?: unknown };
+    const body = (req.body || {}) as { model?: unknown; envs?: unknown };
     const out: Record<string, any> = {};
     const adminId = adminReqUser(req).id;
-    if (Object.prototype.hasOwnProperty.call(body, 'system')) {
-      writeProxyFile(PROXYCHAINS_SYSTEM_PATH, body.system);
-      const r = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
-      out.system = r.content;
-      out.systemExists = !!r.exists;
-      out.systemWritable = proxyFileWritable(PROXYCHAINS_SYSTEM_PATH);
-      AdminAuditLog.record({
-        adminId,
-        action: 'update-system',
-        resourceType: 'proxy-files',
-        resourceId: PROXYCHAINS_SYSTEM_PATH,
-      });
-    }
     if (Object.prototype.hasOwnProperty.call(body, 'model')) {
       writeProxyFile(PROXYCHAINS_MODEL_PATH, body.model);
       const r = readProxyFile(PROXYCHAINS_MODEL_PATH);
@@ -1401,9 +1404,65 @@ router.put('/settings/proxy-files', adminAuth, (req: express.Request, res: expre
         resourceId: PROXYCHAINS_MODEL_PATH,
       });
     }
+    if (Object.prototype.hasOwnProperty.call(body, 'envs')) {
+      writeProxyFile(PROXY_ENVS_PATH, body.envs);
+      const r = readProxyFile(PROXY_ENVS_PATH);
+      out.envs = r.content;
+      out.envsExists = !!r.exists;
+      out.envsWritable = proxyFileWritable(PROXY_ENVS_PATH);
+      AdminAuditLog.record({
+        adminId,
+        action: 'update-envs',
+        resourceType: 'proxy-files',
+        resourceId: PROXY_ENVS_PATH,
+      });
+    }
     res.json(out);
   } catch (e) {
     res.status(400).json({ error: (e as Error)?.message || String(e) });
+  }
+});
+
+// ── 环境变量代理连通性测试 ──
+// body: { scheme, host, port } (与保存界面同参, 未保存直接测: 不落盘, 仅拼 URL 起子进程试).
+// 测试目标 cip.cc: 成功返回出口 IP 文本片段; 失败返回 stderr/超时信息.
+router.post('/settings/proxy-envs-test', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const { scheme, host, port, username, password } = (req.body || {}) as { scheme?: string; host?: string; port?: string; username?: string; password?: string };
+    const schemeNorm = scheme === 'http' ? 'http' : scheme === 'socks5' ? 'socks5' : 'https';
+    const hostNorm = String(host || '').trim();
+    const portNorm = String(port || '').trim();
+    if (!hostNorm || !/^\d{1,5}$/.test(portNorm) || Number(portNorm) < 1 || Number(portNorm) > 65535) {
+      res.status(400).json({ error: '代理地址不完整 (需要协议 + 主机 + 端口)' });
+      return;
+    }
+    // 可选认证: user:pass 嵌入 URL (与 proxy_envs 文件同格式).
+    const userRaw = String(username || '').trim();
+    const passRaw = String(password || '');
+    const authPart = userRaw ? `${encodeURIComponent(userRaw)}:${encodeURIComponent(passRaw)}@` : '';
+    const proxyUrl = `${schemeNorm}://${authPart}${hostNorm}:${portNorm}`;
+    // 用 curl 走该代理访问 cip.cc; --connect-timeout 控制建连, -m 控制总时长.
+    // 环境变量只挂在子进程上, 不污染后端进程本身.
+    const { execFile } = require('child_process') as typeof import('child_process');
+    execFile('curl', ['-s', '--connect-timeout', '8', '-m', '15', '-x', proxyUrl, 'https://cip.cc'],
+      { env: { ...process.env, https_proxy: proxyUrl, http_proxy: proxyUrl }, timeout: 20_000 },
+      (err: (Error & { killed?: boolean }) | null, stdout: string, stderr: string) => {
+        const text = String(stdout || '').trim();
+        if (err && !text) {
+          const reason = err.killed ? '测试超时 (20s)' : (err.message || stderr || '连接失败');
+          res.json({ ok: false, error: `通过 ${proxyUrl} 访问 cip.cc 失败: ${reason}` });
+          return;
+        }
+        // cip.cc 返回含 IP 的纯文本; 截取前几行足够判断出口.
+        const lines = text.split(/\r?\n/).filter(Boolean).slice(0, 6).join('\n');
+        if (!lines) {
+          res.json({ ok: false, error: `通过 ${proxyUrl} 访问 cip.cc 返回空响应${stderr ? ` (${stderr.trim().slice(0, 200)})` : ''}` });
+          return;
+        }
+        res.json({ ok: true, proxy: proxyUrl, response: lines });
+      });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
   }
 });
 
@@ -1451,6 +1510,60 @@ router.delete('/model-access/claude-code/:key', adminAuth, (req: express.Request
     res.json({ ok: true, affected_session_count: usage.count, session_model: sessionModel });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+// ── Codex 订阅通道预备 (向导用) ──
+// 确保 ~/.codex/mobiusopenaisubscription.config.toml 存在 (不存在则创建纯注释占位),
+// 供订阅模型以 --profile 方式启动. 文件不含任何秘钥 — 订阅凭据由 codex login 写入 auth.json.
+const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription';
+router.post('/model-access/codex-subscription/prepare', adminAuth, (_req: express.Request, res: express.Response) => {
+  try {
+    const file = path.join(os.homedir(), '.codex', `${CODEX_SUBSCRIPTION_CHANNEL}.config.toml`);
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { /* ignore */ }
+    if (!fs.existsSync(file)) {
+      const placeholder = [
+        '# Codex subscription channel (ChatGPT plan auth via ~/.codex/auth.json)',
+        '# Managed by mobius admin wizard; do not put api_key here.',
+        '',
+        '[features]',
+        'apps = false',
+        'enable_mcp_apps = false',
+        '',
+      ].join('\n');
+      fs.writeFileSync(file, placeholder, { mode: 0o600 });
+    }
+    res.json({ ok: true, channel: CODEX_SUBSCRIPTION_CHANNEL, config_file: file });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
+  }
+});
+
+// ── Codex 订阅认证文件上传 (向导用) ──
+// 把用户本地已登录的 ~/.codex/auth.json 上传到服务器同名路径, 免设备码流程.
+// 内容必须是含 OPENAI_API_KEY 或 tokens 字段的 JSON (codex login 产物结构), 校验后才落盘.
+router.post('/model-access/codex-subscription/upload-auth', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const parsed = req.body;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      res.status(400).json({ error: 'auth.json 内容必须是 JSON 对象' });
+      return;
+    }
+    // codex login 产物: {OPENAI_API_KEY: "..."} 或 {tokens: {access_token, refresh_token, ...}}
+    const hasApiKey = typeof parsed.OPENAI_API_KEY === 'string' && parsed.OPENAI_API_KEY.length > 0;
+    const tokens = parsed.tokens && typeof parsed.tokens === 'object' && !Array.isArray(parsed.tokens) ? parsed.tokens : null;
+    const hasTokens = !!(tokens && typeof tokens.access_token === 'string' && typeof tokens.refresh_token === 'string');
+    if (!hasApiKey && !hasTokens) {
+      res.status(400).json({ error: '未识别的 auth.json: 缺少 OPENAI_API_KEY 或 tokens.access_token/refresh_token 字段' });
+      return;
+    }
+    const dir = path.join(os.homedir(), '.codex');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+    const file = path.join(dir, 'auth.json');
+    fs.writeFileSync(file, JSON.stringify(parsed, null, 2) + '\n', { mode: 0o600 });
+    res.json({ ok: true, auth_file: file, plan: typeof tokens?.account_plan === 'string' ? tokens.account_plan : null });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error)?.message || String(e) });
   }
 });
 

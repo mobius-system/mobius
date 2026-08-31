@@ -33,6 +33,7 @@ try {
   pty = null;
 }
 import fs from 'fs';
+import os from 'os';
 import { AGENT_TMUX_SOCKET, JWT_SECRET } from '../config';
 // @ts-ignore — repository 仍是 .js 语义, tsx 透明转译
 import { Sessions } from '../repositories/sessions';
@@ -74,14 +75,30 @@ function verifyUser(token: string | null): { id: string; role?: string } | null 
 }
 
 // 解析终端 cwd: session 归属校验 + 取项目 bind_path. 返回 denied=true 表示无权/不存在.
-type TerminalMode = 'cwd' | 'agent';
+type TerminalMode = 'cwd' | 'agent' | 'adhoc';
 
 const AGENT_TMUX_HUBS: Record<string, string> = {
   'tmux-codex': 'imac_codex_agent_hub',
   'tmux-claude-code': 'imac_claude_code_agent_hub',
 };
 function terminalMode(rawUrl: string): TerminalMode {
-  return queryParam(rawUrl, 'mode') === 'agent' ? 'agent' : 'cwd';
+  const m = queryParam(rawUrl, 'mode');
+  if (m === 'agent') return 'agent';
+  if (m === 'adhoc') return 'adhoc';
+  return 'cwd';
+}
+
+// adhoc 模式: 不绑定 session, cwd 固定 $HOME, 允许调用方指定一条初始命令 (例如向导里的
+// `codex login --device-auth`). 命令必须来自服务端白名单, 不接受前端任意传参 — terminal 本身
+// 就是任意命令执行面, 这里只需保证"打开终端时自动敲的那条命令"不被注入.
+const ADHOC_COMMANDS: Record<string, string> = {
+  'codex-subscription-login': 'codex login --device-auth',
+};
+function adhocCommand(key: string): string | null {
+  return ADHAC_COMMANDS_SAFE(key);
+}
+function ADHAC_COMMANDS_SAFE(key: string): string | null {
+  return Object.prototype.hasOwnProperty.call(ADHOC_COMMANDS, key) ? ADHOC_COMMANDS[key] : null;
 }
 
 function shellQuote(s: string): string {
@@ -113,12 +130,26 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
   const user = verifyUser(extractToken(req));
   if (!user) { socket.destroy(); return; }
 
-  const sid = queryParam(req.url, 'sid');
-  if (!sid) { socket.destroy(); return; }
-
   const mode = terminalMode(req.url);
-  const { cwd, denied, session } = resolveSessionTerminal(sid, user.id);
-  if (denied) { socket.destroy(); return; }
+
+  // adhoc 模式: 仅 admin, 不需要 session. 用于管理中心向导等"命令行引导"场景.
+  let adhocCmd: string | null = null;
+  let cwd = process.cwd();
+  let session: any = null;
+  let sid = 'adhoc';
+  if (mode === 'adhoc') {
+    if (user.role !== 'admin') { socket.destroy(); return; }
+    const cmdKey = queryParam(req.url, 'cmd');
+    adhocCmd = cmdKey ? adhocCommand(cmdKey) : null;
+    cwd = os.homedir();
+  } else {
+    sid = queryParam(req.url, 'sid');
+    if (!sid) { socket.destroy(); return; }
+    const resolved = resolveSessionTerminal(sid, user.id);
+    if (resolved.denied) { socket.destroy(); return; }
+    cwd = resolved.cwd;
+    session = resolved.session;
+  }
 
   wss.handleUpgrade(req, socket, head, (ws: any) => {
     if (!pty) {
@@ -164,6 +195,12 @@ export function handleUpgrade(req: any, socket: any, head: Buffer): void {
         : `printf '%s\\n' ${shellQuote('当前 Session 的模型没有可 attach 的 Agent tmux 后台')}`;
       setTimeout(() => {
         try { term.write(`${attachCommand}\r`); } catch { /* ignore */ }
+      }, 200);
+    }
+    if (mode === 'adhoc' && adhocCmd) {
+      // 初始命令注入: 仅白名单命令, 200ms 等 shell prompt 就绪.
+      setTimeout(() => {
+        try { term.write(`${adhocCmd}\r`); } catch { /* ignore */ }
       }, 200);
     }
 

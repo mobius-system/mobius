@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -6,18 +6,25 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   BarChart3,
   Building2,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
   Clock,
   Copy,
+  Cpu,
   Download,
   Eye,
   EyeOff,
   FileText,
   FolderInput,
   FolderOpen,
+  Globe,
+  KeyRound,
   LayoutDashboard,
   Loader2,
   MessageSquare,
@@ -38,6 +45,7 @@ import {
   Upload,
   UserPlus,
   Users as UsersIcon,
+  WandSparkles,
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import {
@@ -59,6 +67,7 @@ import {
   type TextRedactionRule,
 } from '../services/text-redaction'
 import { pollRecursive } from '../services/polling'
+import { InlineWebTerminal } from './web-terminal-modal'
 import { ToggleSwitch } from './toggle-switch'
 import { SkillMarketLink } from './skill-market-link'
 
@@ -1430,6 +1439,7 @@ type ModelPromptLimitRow = {
   backend: string
   imported?: boolean
   use_proxy?: number | boolean
+  proxy_mode?: string
   capture_stream?: number | boolean
   auto_compact?: { enabled: boolean; tokenLimit: number | null }
   config_path?: string
@@ -1587,12 +1597,14 @@ function ModelPromptLimitsCard() {
     return !!values.allUsers5h || !!values.allUsers5m || !!values.perUser5h || !!values.perUser5m || (values.tmuxWindows !== '' && values.tmuxWindows !== '12')
   }
 
-  const toggleProxy = async (row: ModelPromptLimitRow, nextUseProxy: boolean) => {
+  // 四挡代理模式: direct=直连 | env=环境变量代理 | proxychains=proxychains代理 | env_proxychains=环境变量+proxychains.
+  // 推荐直连/环境变量代理 (proxychains 对部分 CLI 如 codex 无效).
+  const setProxyMode = async (row: ModelPromptLimitRow, nextMode: string) => {
     setSavingProxyKey(row.key)
     try {
       const next = await api('/api/admin/settings/model-prompt-limits', {
         method: 'PUT',
-        body: JSON.stringify({ model: row.key, useProxy: nextUseProxy }),
+        body: JSON.stringify({ model: row.key, proxyMode: nextMode }),
       }) as ModelPromptLimitsPayload
       setPayload(next)
       syncInputs(next)
@@ -1762,6 +1774,7 @@ function ModelPromptLimitsCard() {
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>模型创建限制</h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             每个模型 4 个提问硬限制只阻止创建新 Session，不影响已有 Session 继续提问；tmux 窗口数量是软提醒，默认 12。
+            代理模式推荐「直连」或「环境变量代理」(proxychains 对部分 CLI 如 Codex 无效)。
           </div>
         </div>
         <button type="button" onClick={load} disabled={loading}
@@ -1835,13 +1848,15 @@ function ModelPromptLimitsCard() {
           const savingProxy = savingProxyKey === row.key
           const savingCapture = savingCaptureKey === row.key
           const configured = hasCustomLimits(row)
-          const useProxy = row.use_proxy === true || row.use_proxy === 1
+          const proxyMode = row.proxy_mode || (row.use_proxy === true || row.use_proxy === 1 ? 'env_proxychains' : 'direct')
           const capture = row.capture_stream === true || row.capture_stream === 1
           const compactEnabled = row.auto_compact?.enabled === true
           const savingCompact = savingCompactKey === row.key
           const savingCompactToken = savingCompactTokenKey === row.key
           const savingOrder = savingOrderKey === row.key
           const isClaudeCode = row.backend === 'tmux-claude-code'
+          // DSH (deepseek-harness) 无视代理配置, 不给选择器.
+          const isDsh = row.backend === 'deepseek-harness'
           return (
             <div key={row.key}
               className="rounded-lg border px-3 py-2.5"
@@ -1901,22 +1916,34 @@ function ModelPromptLimitsCard() {
                   )
                 })}
               </div>
-              <ToggleSwitch
-                checked={useProxy}
-                disabled={savingProxy || loading}
-                loading={savingProxy}
-                onChange={next => toggleProxy(row, next)}
-                switchPosition="end"
-                activeColor="#10b981"
-                className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
+              {isDsh ? (
+                <div className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
+                  style={{ background: 'var(--bg-card)', borderColor: 'var(--input-border)' }}>
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>代理模式</span>
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>DSH 不使用代理 (直连)</span>
+                </div>
+              ) : (
+              <div className="mb-2 flex items-center justify-between gap-3 rounded-md border px-2 py-1.5"
                 style={{
-                  background: useProxy ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
-                  borderColor: useProxy ? 'rgba(16,185,129,0.36)' : 'var(--input-border)',
+                  background: proxyMode !== 'direct' ? 'rgba(16,185,129,0.10)' : 'var(--bg-card)',
+                  borderColor: proxyMode !== 'direct' ? 'rgba(16,185,129,0.36)' : 'var(--input-border)',
                 }}>
-                <span className="text-[11px]" style={{ color: useProxy ? '#16a34a' : 'var(--text-muted)' }}>
-                  {useProxy ? '使用 proxychains' : '直连'}
+                <span className="text-[11px]" style={{ color: proxyMode !== 'direct' ? '#16a34a' : 'var(--text-muted)' }}>
+                  代理模式
                 </span>
-              </ToggleSwitch>
+                <select
+                  value={proxyMode}
+                  disabled={savingProxy || loading}
+                  onChange={e => setProxyMode(row, e.target.value)}
+                  className="h-7 rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-1.5 text-[11px]"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <option value="direct">直连</option>
+                  <option value="env">环境变量代理</option>
+                  <option value="proxychains">proxychains 代理</option>
+                  <option value="env_proxychains">环境变量代理 + proxychains</option>
+                </select>
+              </div>
+              )}
               {isClaudeCode && (
                 <ToggleSwitch
                   checked={capture}
@@ -2845,38 +2872,93 @@ function AdminLightModelApiCard() {
   )
 }
 
-// ── Proxychains 配置文件直编 (仅 admin 可见) ──
+// ── 模型代理配置 (仅 admin 可见) ──
 type ProxyFilesPayload = {
-  systemPath: string
   modelPath: string
-  system: string
-  systemExists: boolean
-  systemError: string
-  systemWritable: boolean
   model: string
   modelExists: boolean
   modelError: string
   modelWritable: boolean
+  envsPath: string
+  envs: string
+  envsExists: boolean
+  envsError: string
+  envsWritable: boolean
+}
+
+// 从 proxy_envs.conf 文本解析出 http(s)_proxy 的 协议/地址/端口 三元组.
+// 支持的行形如 http_proxy=http://1.2.3.4:8080 (大小写不敏感, 值可带认证 user:pass@).
+function parseEnvsProxy(text: string): { scheme: string; host: string; port: string; username: string; password: string } {
+  const lines = String(text || '').split(/\r?\n/)
+  const pick = (name: string): string => {
+    const re = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*['"]?([^'"\n#]+)['"]?`, 'i')
+    for (const line of lines) {
+      const m = line.match(re)
+      if (m) return m[1].trim()
+    }
+    return ''
+  }
+  const raw = pick('https_proxy') || pick('HTTPS_PROXY') || pick('http_proxy') || pick('HTTP_PROXY') || ''
+  const m = raw.match(/^(https?|socks5):\/\/(?:([^:@/]+)(?::([^@/]*))?@)?([^/:]+):(\d+)/i)
+  if (m) return { scheme: m[1].toLowerCase(), username: m[2] || '', password: m[3] || '', host: m[4], port: m[5] }
+  return { scheme: 'http', host: '', port: '', username: '', password: '' }
+}
+
+// 三元组 → proxy_envs.conf 全文 (覆盖式: http_proxy/https_proxy/no_proxy).
+function buildEnvsFile(scheme: string, host: string, port: string, username = '', password = ''): string {
+  const auth = username ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@` : ''
+  const url = `${scheme}://${auth}${host}:${port}`
+  // 每行必须带 export: source 后的变量才会进环境, 被 exec 出去的 codex/claude 子进程继承;
+  // 裸 KEY=VALUE 只是 shell 变量, 子进程看不到 (实测坑).
+  return [
+    `# 模型环境变量代理 (由 管理中心-系统设置-模型代理 维护; 模型代理模式选"环境变量代理"时 source 本文件)`,
+    `export http_proxy=${url}`,
+    `export https_proxy=${url}`,
+    `export HTTP_PROXY=${url}`,
+    `export HTTPS_PROXY=${url}`,
+    `export no_proxy=localhost,127.0.0.1,::1`,
+    `export NO_PROXY=localhost,127.0.0.1,::1`,
+    ``,
+  ].join('\n')
 }
 
 function AdminProxyFilesCard() {
-  const [systemText, setSystemText] = useState('')
   const [modelText, setModelText] = useState('')
+  const [envsText, setEnvsText] = useState('')
   const [meta, setMeta] = useState<ProxyFilesPayload | null>(null)
-  const [dirty, setDirty] = useState(false)
+  const [modelDirty, setModelDirty] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingModel, setSavingModel] = useState(false)
+  const [savedModelFlash, setSavedModelFlash] = useState(false)
+  // 环境变量代理三框 (协议/地址/端口) + 保存/测试
+  const [scheme, setScheme] = useState('http')
+  const [host, setHost] = useState('')
+  const [port, setPort] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [envsDirty, setEnvsDirty] = useState(false)
+  const [savingEnvs, setSavingEnvs] = useState(false)
+  const [savedEnvsFlash, setSavedEnvsFlash] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [error, setError] = useState('')
-  const [savedFlash, setSavedFlash] = useState(false)
 
   const load = async () => {
     setLoading(true)
     try {
       const next = await api('/api/admin/settings/proxy-files') as ProxyFilesPayload
       setMeta(next)
-      setSystemText(next.system || '')
       setModelText(next.model || '')
-      setDirty(false)
+      setEnvsText(next.envs || '')
+      const parsed = parseEnvsProxy(next.envs || '')
+      setScheme(parsed.scheme || 'http')
+      setHost(parsed.host)
+      setPort(parsed.port)
+      setUsername(parsed.username || '')
+      setPassword(parsed.password || '')
+      setModelDirty(false)
+      setEnvsDirty(false)
+      setTestResult(null)
       setError('')
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -2887,44 +2969,88 @@ function AdminProxyFilesCard() {
 
   useEffect(() => { load() }, [])
 
-  const save = async () => {
-    setSaving(true)
+  const saveModel = async () => {
+    setSavingModel(true)
     setError('')
     try {
       const next = await api('/api/admin/settings/proxy-files', {
         method: 'PUT',
-        body: JSON.stringify({ system: systemText, model: modelText }),
+        body: JSON.stringify({ model: modelText }),
       }) as Partial<ProxyFilesPayload>
-      if (next.system !== undefined) setSystemText(next.system)
       if (next.model !== undefined) setModelText(next.model)
       if (meta) {
         setMeta({
           ...meta,
-          ...(next.systemExists !== undefined ? { systemExists: next.systemExists } : {}),
-          ...(next.systemWritable !== undefined ? { systemWritable: next.systemWritable } : {}),
           ...(next.modelExists !== undefined ? { modelExists: next.modelExists } : {}),
           ...(next.modelWritable !== undefined ? { modelWritable: next.modelWritable } : {}),
         })
       }
-      setDirty(false)
-      setSavedFlash(true)
-      window.setTimeout(() => setSavedFlash(false), 1500)
+      setModelDirty(false)
+      setSavedModelFlash(true)
+      window.setTimeout(() => setSavedModelFlash(false), 1500)
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
-      setSaving(false)
+      setSavingModel(false)
     }
   }
+
+  const saveEnvs = async () => {
+    setSavingEnvs(true)
+    setError('')
+    try {
+      const nextText = buildEnvsFile(scheme, host.trim(), port.trim(), username.trim(), password)
+      const next = await api('/api/admin/settings/proxy-files', {
+        method: 'PUT',
+        body: JSON.stringify({ envs: nextText }),
+      }) as Partial<ProxyFilesPayload>
+      if (next.envs !== undefined) setEnvsText(next.envs)
+      if (meta) {
+        setMeta({
+          ...meta,
+          ...(next.envsExists !== undefined ? { envsExists: next.envsExists } : {}),
+          ...(next.envsWritable !== undefined ? { envsWritable: next.envsWritable } : {}),
+        })
+      }
+      setEnvsDirty(false)
+      setSavedEnvsFlash(true)
+      window.setTimeout(() => setSavedEnvsFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSavingEnvs(false)
+    }
+  }
+
+  // 测试适配未保存状态: 用当前三框输入值 (而非磁盘文件) 拼代理 URL, 后端子进程 curl cip.cc.
+  const testEnvs = async () => {
+    setTesting(true)
+    setTestResult(null)
+    setError('')
+    try {
+      const r = await api('/api/admin/settings/proxy-envs-test', {
+        method: 'POST',
+        body: JSON.stringify({ scheme, host: host.trim(), port: port.trim(), username: username.trim(), password }),
+      }) as any
+      setTestResult({ ok: r?.ok === true, text: r?.ok ? String(r.response || '') : String(r?.error || '测试失败') })
+    } catch (e: any) {
+      setTestResult({ ok: false, text: e?.message || String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const envsFormValid = host.trim().length > 0 && /^\d{1,5}$/.test(port.trim())
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Proxychains 配置
+            模型代理
           </h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            直接编辑两个 proxychains 配置文件 (保存即落盘)
+            模型级代理的两份配置: proxychains (网络层拦截) 与 环境变量代理 (http/https_proxy)
           </div>
         </div>
         <button type="button" onClick={load} disabled={loading}
@@ -2942,38 +3068,12 @@ function AdminProxyFilesCard() {
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
+        {/* 左: proxychains conf */}
         <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <div>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>系统</div>
-              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.systemPath || '/etc/proxychains.conf'}</div>
-            </div>
-            {meta && !meta.systemWritable && (
-              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">
-                无写权限
-              </span>
-            )}
-          </div>
-          <textarea
-            value={systemText}
-            onChange={e => { setSystemText(e.target.value); setDirty(true) }}
-            spellCheck={false}
-            placeholder={'strict_chain\nproxy_dns\n[ProxyList]\nsocks5 127.0.0.1 1080'}
-            className="h-56 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
-            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
-          />
-          {meta && !meta.systemWritable && (
-            <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              提示: sudo touch {meta.systemPath} &amp;&amp; sudo chown $(whoami) {meta.systemPath}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <div>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>模型 (LLM)</div>
-              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.modelPath || '~/proxy_claude.conf'}</div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>proxychains 配置</div>
+              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.modelPath || '~/proxychains_config_for_llm_models.conf'}</div>
             </div>
             {meta && !meta.modelWritable && (
               <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">
@@ -2983,28 +3083,108 @@ function AdminProxyFilesCard() {
           </div>
           <textarea
             value={modelText}
-            onChange={e => { setModelText(e.target.value); setDirty(true) }}
+            onChange={e => { setModelText(e.target.value); setModelDirty(true) }}
             spellCheck={false}
             placeholder={'strict_chain\nproxy_dns\n[ProxyList]\nsocks5 127.0.0.1 1080'}
             className="h-56 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={saveModel} disabled={savingModel || loading || !modelDirty}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60">
+              {savingModel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {savedModelFlash ? '已确认' : '确认'}
+            </button>
+            {modelDirty && (
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动</span>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-color)] pt-3">
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving || loading || !dirty}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {savedFlash ? '已保存' : '保存'}
-        </button>
-        {dirty && (
-          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动</span>
-        )}
+        {/* 右: 环境变量代理 */}
+        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>环境变量代理 (http_proxy / https_proxy)</div>
+              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.envsPath || '~/proxy_envs.conf'}</div>
+            </div>
+            {meta && !meta.envsWritable && (
+              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">
+                无写权限
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-[100px_1fr_90px] gap-2">
+            <label>
+              <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>协议</div>
+              <select value={scheme} onChange={e => { setScheme(e.target.value); setEnvsDirty(true) }}
+                className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-1.5 text-[12px]"
+                style={{ color: 'var(--text-primary)' }}>
+                <option value="http">http</option>
+                <option value="https">https</option>
+                <option value="socks5">socks5</option>
+              </select>
+            </label>
+            <label>
+              <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>地址</div>
+              <input value={host} onChange={e => { setHost(e.target.value); setEnvsDirty(true) }}
+                placeholder="111.36.208.22" spellCheck={false}
+                className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                style={{ color: 'var(--text-primary)' }} />
+            </label>
+            <label>
+              <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>端口</div>
+              <input value={port} onChange={e => { setPort(e.target.value.replace(/[^\d]/g, '')); setEnvsDirty(true) }}
+                placeholder="12321" inputMode="numeric" maxLength={5}
+                className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                style={{ color: 'var(--text-primary)' }} />
+            </label>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <label>
+              <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>用户名 (可选)</div>
+              <input value={username} onChange={e => { setUsername(e.target.value); setEnvsDirty(true) }}
+                placeholder="代理认证用户名" spellCheck={false} autoComplete="off"
+                className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                style={{ color: 'var(--text-primary)' }} />
+            </label>
+            <label>
+              <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>密码 (可选)</div>
+              <input type="password" value={password} onChange={e => { setPassword(e.target.value); setEnvsDirty(true) }}
+                placeholder="代理认证密码" autoComplete="new-password"
+                className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                style={{ color: 'var(--text-primary)' }} />
+            </label>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={saveEnvs} disabled={savingEnvs || loading || !envsFormValid}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60">
+              {savingEnvs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {savedEnvsFlash ? '已保存' : '保存'}
+            </button>
+            <button type="button" onClick={testEnvs} disabled={testing || !envsFormValid}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+              测试 (访问 cip.cc)
+            </button>
+            {envsDirty && (
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动 (测试用当前输入值, 无需先保存)</span>
+            )}
+          </div>
+          {testResult && (
+            <div className={`mt-2 rounded-md border px-3 py-2 text-[11px] ${testResult.ok
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-red-500/25 bg-red-500/10 text-red-400'}`}>
+              <div className="mb-0.5 font-medium">{testResult.ok ? '✓ 代理可用' : '✗ 代理不可用'}</div>
+              <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{testResult.text}</pre>
+            </div>
+          )}
+          <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            保存写入 {meta?.envsPath || '~/proxy_envs.conf'}; 模型代理模式选「环境变量代理」或「环境变量+proxychains」的模型启动时加载. 当前文件内容:
+          </div>
+          <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] p-2 font-mono text-[10px]"
+            style={{ color: 'var(--text-secondary)' }}>{envsText || '(空)'}</pre>
+        </div>
       </div>
     </section>
   )
@@ -3129,6 +3309,118 @@ function emptyClaudeForm(): ClaudeCodeModelForm {
   }
 }
 
+// ── 模型接入向导 · 辅助函数 ─────────────────────────────────────────────
+// 第3.5步(隐藏): 从模型真名派生 key/渠道/env_key. 派生规则:
+//   ① 只保留英文字母; ② 空则纯随机兜底; ③ 前缀截断 24 字符;
+//   ④ 追加 4 位随机小写字母后缀; ⑤ 撞库时重摇(查重含内置 mobiusdefault —
+//   POST 是 upsert 语义, 撞上会静默整条覆盖现有配置).
+function randomLowerLetters(len: number): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+  let out = ''
+  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
+  if (cryptoObj?.getRandomValues) {
+    const buf = new Uint32Array(len)
+    cryptoObj.getRandomValues(buf)
+    for (let i = 0; i < len; i += 1) out += alphabet[buf[i] % alphabet.length]
+  } else {
+    for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  }
+  return out
+}
+
+function deriveModelKeyFromName(modelName: string): string {
+  const prefix = String(modelName || '').replace(/[^A-Za-z]/g, '').slice(0, 24)
+  return `${prefix || randomLowerLetters(6)}${randomLowerLetters(4)}`
+}
+
+// Codex 渠道业务约束为纯英文字母(后端 CODEX_CHANNEL_RE), 派生 key 天然满足.
+function deriveCodexEnvKey(channel: string): string {
+  const stem = String(channel || '').replace(/[^A-Za-z]/g, '').toUpperCase() || 'MOBIUS'
+  return `${stem.slice(0, 24)}_API_KEY`
+}
+
+// TOML basic string 转义: 用户输入(模型名/URL/秘钥)拼进 config_toml 模板前必须过这里,
+// 否则值里的引号/反斜杠/换行会破坏 TOML 结构或注入任意键.
+function escapeTomlString(value: string): string {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, ' ')
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(String(value || '').trim())
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+type WizardHarness = 'claude-code' | 'codex' | 'codex-subscription'
+
+// Codex 订阅通道固定渠道名 (与后端 prepare 端点一致), 走 ChatGPT 订阅认证 (auth.json), 无 api_key.
+const CODEX_SUBSCRIPTION_CHANNEL = 'mobiusopenaisubscription'
+
+function isSubscriptionHarness(h: WizardHarness): boolean {
+  return h === 'codex-subscription'
+}
+
+type ModelWizardState = {
+  step: number                    // 普通路径 1..5; 订阅路径 1..6 (3/4/5/6 含义不同)
+  label: string                   // 第1步 显示名称
+  harness: WizardHarness          // 第2步 Harness
+  modelName: string               // 第3步 模型真名 (订阅路径不使用)
+  derivedKey: string              // 隐藏3.5步生成结果: 模型 Key / Codex 渠道 (订阅路径固定渠道名)
+  baseUrl: string                 // 第4步 URL (订阅路径不使用)
+  secret: string                  // 第4步 秘钥 (订阅路径不使用)
+  subPrepared: boolean            // 订阅路径: 空配置文件已创建 (进入认证步骤的门槛)
+  subAuthMethod: SubAuthMethod    // 订阅路径: 认证方式 (设备码 | 上传 auth.json)
+  subModel: string                // 订阅路径: Codex 订阅模型 (sol/terra/luna)
+}
+
+function initialWizardState(): ModelWizardState {
+  return {
+    step: 1,
+    label: '',
+    harness: 'claude-code',
+    modelName: '',
+    derivedKey: '',
+    baseUrl: '',
+    secret: '',
+    subPrepared: false,
+    subAuthMethod: 'device-code',
+    subModel: CODEX_SUBSCRIPTION_MODELS[0],
+  }
+}
+
+// 普通路径与订阅路径的第 3/4/5 步含义不同, 订阅路径单独给文案.
+const WIZARD_STEP_META: { title: string; hint: string }[] = [
+  { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
+  { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
+  { title: '模型真名', hint: '调用上游 API 时使用的真实模型标识符' },
+  { title: '接入地址与秘钥', hint: '上游服务的 base URL 与 API key' },
+  { title: '创建', hint: '确认以上信息并创建模型' },
+]
+
+const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
+  { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
+  { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
+  { title: '配置代理网络', hint: 'Codex 订阅需要访问 OpenAI 网络; 按需编辑模型代理配置, 完成后点下一步' },
+  { title: '选择模型', hint: '选择 ChatGPT 订阅内的 GPT-5.6 家族模型' },
+  { title: '选择认证方式', hint: '设备码在线登录, 或直接上传本地已登录的 Codex 认证文件' },
+  { title: '登录认证', hint: '在下方终端完成 ChatGPT 设备码登录, 成功后点击"我已登录"' },
+  { title: '注册', hint: '把订阅渠道注册进 mobius 模型列表' },
+]
+
+// 订阅路径认证方式: 设备码在线登录 | 上传本地 ~/.codex/auth.json.
+type SubAuthMethod = 'device-code' | 'upload-auth'
+// 订阅渠道可选的 Codex 订阅模型 (ChatGPT 付费计划内的 GPT-5.6 家族).
+const CODEX_SUBSCRIPTION_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const
+
+const WIZARD_TOTAL_STEPS = 5
+const WIZARD_TOTAL_STEPS_SUBSCRIPTION = 7
+
 function emptyCodexForm(): CodexModelForm {
   return {
     key: 'mobiusdefault',
@@ -3155,8 +3447,912 @@ function emptyHarnessForm(): HarnessModelForm {
   }
 }
 
+// ── 模型接入向导 · 组件 ─────────────────────────────────────────────────
+// 5 步向导: 显示名称 → Harness → 模型真名 → (隐藏3.5 派生 key/渠道/env_key, 查重)
+//           → URL+秘钥 → 调旧后端 API 创建. 生成的模型与文件配置模式完全同构,
+// 可在文件配置 Tab 里继续编辑/删除.
+// ── 订阅路径第3步: 配置代理网络 ─────────────────────────────────────────
+// 复刻 管理中心-系统设置-Proxychains 配置-模型(LLM) 的编辑卡片 (同一 GET/PUT proxy-files
+// 端点, 只编辑 model 一侧), 并提供"创建订阅配置文件"动作 (点下一步时由父级统一触发).
+function SubscriptionProxyStep({ prepared, onPrepared }: { prepared: boolean; onPrepared: () => void }) {
+  const [proxyOn, setProxyOn] = useState(false)
+  const [scheme, setScheme] = useState('http')
+  const [host, setHost] = useState('')
+  const [port, setPort] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [meta, setMeta] = useState<ProxyFilesPayload | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [error, setError] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [touched, setTouched] = useState(false)
+
+  // 挂载即拉当前 proxy_envs.conf: 有已配置代理则默认开开关并回填三框.
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      try {
+        const next = await api('/api/admin/settings/proxy-files') as ProxyFilesPayload
+        setMeta(next)
+        const parsed = parseEnvsProxy(next.envs || '')
+        if (parsed.host) {
+          setScheme(parsed.scheme || 'http')
+          setHost(parsed.host)
+          setPort(parsed.port)
+          setUsername(parsed.username || '')
+          setPassword(parsed.password || '')
+          setProxyOn(true)
+        }
+      } catch { /* 后续保存/测试会再报错, 这里静默 */ } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  const envsFormValid = host.trim().length > 0 && /^\d{1,5}$/.test(port.trim())
+
+  // 保存: 写 proxy_envs.conf (开启且填写完整时); 并把订阅渠道代理模式设为 环境变量代理.
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      if (proxyOn) {
+        if (!envsFormValid) throw new Error('开启代理时需要完整的 协议/地址/端口')
+        await api('/api/admin/settings/proxy-files', {
+          method: 'PUT',
+          body: JSON.stringify({ envs: buildEnvsFile(scheme, host.trim(), port.trim(), username.trim(), password) }),
+        })
+      }
+      // 自动联动: 订阅渠道的模型代理模式 → 环境变量代理 (开启) / 直连 (关闭).
+      await api('/api/admin/settings/model-prompt-limits', {
+        method: 'PUT',
+        body: JSON.stringify({ model: `codex:${CODEX_SUBSCRIPTION_CHANNEL}`, proxyMode: proxyOn ? 'env' : 'direct' }),
+      })
+      setSavedFlash(true)
+      setTouched(false)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const testEnvs = async () => {
+    setTesting(true)
+    setTestResult(null)
+    setError('')
+    try {
+      const r = await api('/api/admin/settings/proxy-envs-test', {
+        method: 'POST',
+        body: JSON.stringify({ scheme, host: host.trim(), port: port.trim(), username: username.trim(), password }),
+      }) as any
+      setTestResult({ ok: r?.ok === true, text: r?.ok ? String(r.response || '') : String(r?.error || '测试失败') })
+    } catch (e: any) {
+      setTestResult({ ok: false, text: e?.message || String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>模型代理 · 环境变量 (http_proxy / https_proxy)</div>
+            <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {meta?.envsPath || '~/proxy_envs.conf'}; Codex 订阅走环境变量代理 (proxychains 对 codex 无效)
+            </div>
+          </div>
+          <ToggleSwitch
+            checked={proxyOn}
+            disabled={loading || saving}
+            loading={saving}
+            onChange={next => { setProxyOn(next); setTouched(true) }}
+            switchPosition="end"
+            activeColor="#10b981" />
+        </div>
+        {proxyOn && (
+          <>
+            <div className="grid grid-cols-[100px_1fr_90px] gap-2">
+              <label>
+                <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>协议</div>
+                <select value={scheme} onChange={e => { setScheme(e.target.value); setTouched(true) }}
+                  className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-1.5 text-[12px]"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <option value="http">http</option>
+                  <option value="https">https</option>
+                  <option value="socks5">socks5</option>
+                </select>
+              </label>
+              <label>
+                <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>地址</div>
+                <input value={host} onChange={e => { setHost(e.target.value); setTouched(true) }}
+                  placeholder="111.36.208.22" spellCheck={false}
+                  className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                  style={{ color: 'var(--text-primary)' }} />
+              </label>
+              <label>
+                <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>端口</div>
+                <input value={port} onChange={e => { setPort(e.target.value.replace(/[^\d]/g, '')); setTouched(true) }}
+                  placeholder="12321" inputMode="numeric" maxLength={5}
+                  className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                  style={{ color: 'var(--text-primary)' }} />
+              </label>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label>
+                <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>用户名 (可选)</div>
+                <input value={username} onChange={e => { setUsername(e.target.value); setTouched(true) }}
+                  placeholder="代理认证用户名" spellCheck={false} autoComplete="off"
+                  className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                  style={{ color: 'var(--text-primary)' }} />
+              </label>
+              <label>
+                <div className="mb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>密码 (可选)</div>
+                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setTouched(true) }}
+                  placeholder="代理认证密码" autoComplete="new-password"
+                  className="h-8 w-full rounded-md border border-[var(--input-border)] bg-[var(--input-bg)] px-2 font-mono text-[12px]"
+                  style={{ color: 'var(--text-primary)' }} />
+              </label>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={testEnvs} disabled={testing || !envsFormValid}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                测试 (访问 cip.cc)
+              </button>
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>测试用当前输入值, 无需先保存</span>
+            </div>
+            {testResult && (
+              <div className={`mt-2 rounded-md border px-3 py-2 text-[11px] ${testResult.ok
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border-red-500/25 bg-red-500/10 text-red-400'}`}>
+                <div className="mb-0.5 font-medium">{testResult.ok ? '✓ 代理可用' : '✗ 代理不可用'}</div>
+                <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono">{testResult.text}</pre>
+              </div>
+            )}
+          </>
+        )}
+        <div className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {proxyOn
+            ? '保存后自动把本订阅渠道的代理模式设为「环境变量代理」, 并写入全局 proxy_envs.conf (系统设置-模型代理 同一份文件).'
+            : '关闭时保存会把本订阅渠道的代理模式设为「直连」.'}
+        </div>
+      </div>
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+        <div className="flex items-center gap-2">
+          {prepared ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <FileText className="h-4 w-4 text-[var(--text-muted)]" />}
+          <span className="font-mono text-[11px]">~/.codex/{CODEX_SUBSCRIPTION_CHANNEL}.config.toml</span>
+          {prepared
+            ? <span className="text-[11px] text-emerald-400">已创建</span>
+            : <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>点"下一步"时自动创建</span>}
+        </div>
+      </div>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={save} disabled={saving || loading}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] font-medium text-white hover:bg-blue-500 disabled:opacity-60">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {savedFlash ? '已保存' : '保存代理配置'}
+        </button>
+        {touched && <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动</span>}
+      </div>
+    </div>
+  )
+}
+function SubscriptionAuthMethodStep({
+  method, onMethodChange,
+}: { method: SubAuthMethod; onMethodChange: (m: SubAuthMethod) => void }) {
+  const options: Array<{ k: SubAuthMethod; name: string; desc: string; icon: ReactNode }> = [
+    {
+      k: 'device-code',
+      name: '设备码认证',
+      desc: '服务器在线发起 ChatGPT 设备码登录, 在终端里完成认证',
+      icon: <Terminal className="h-4 w-4 text-emerald-400" />,
+    },
+    {
+      k: 'upload-auth',
+      name: '上传本地认证文件',
+      desc: '本地已 codex login 的机器上取 ~/.codex/auth.json 上传, 免在线登录',
+      icon: <Upload className="h-4 w-4 text-blue-400" />,
+    },
+  ]
+  return (
+    <div className="space-y-3">
+      <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择认证方式</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map(opt => {
+          const active = method === opt.k
+          return (
+            <button key={opt.k} type="button" onClick={() => onMethodChange(opt.k)}
+              className="rounded-lg border p-3 text-left transition-colors"
+              style={{
+                borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+              }}>
+              <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                {opt.icon}{opt.name}
+                {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
+            </button>
+          )
+        })}
+      </div>
+      {method === 'upload-auth' && (
+        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          上传后凭据写入服务器 <span className="font-mono">~/.codex/auth.json</span>; 本地文件路径:
+          <div className="mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>Windows: %USERPROFILE%\.codex\auth.json</div>
+          <div className="font-mono" style={{ color: 'var(--text-secondary)' }}>macOS / Linux: ~/.codex/auth.json</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 订阅路径第4步: 选择订阅模型 ─────────────────────────────────────────
+// GPT-5.6 家族三选一; 注册后仍可在文件配置 Tab 改 codex_model.
+function SubscriptionModelStep({ model, onModelChange }: { model: string; onModelChange: (m: string) => void }) {
+  const descs: Record<string, string> = {
+    'gpt-5.6-sol': '均衡型 · 日常编码首选',
+    'gpt-5.6-terra': '强力型 · 复杂任务推理',
+    'gpt-5.6-luna': '轻快型 · 低延迟会话',
+  }
+  return (
+    <div className="space-y-3">
+      <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择订阅模型</div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {CODEX_SUBSCRIPTION_MODELS.map(m => {
+          const active = model === m
+          return (
+            <button key={m} type="button" onClick={() => onModelChange(m)}
+              className="rounded-lg border p-3 text-left transition-colors"
+              style={{
+                borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+              }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{m}</span>
+                {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{descs[m] || ''}</div>
+            </button>
+          )
+        })}
+      </div>
+      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        ChatGPT 付费订阅内的 GPT-5.6 家族模型; 注册后可在"文件配置"Tab 修改 codex_model.
+      </div>
+    </div>
+  )
+}
+
+// ── 订阅路径第6步 (登录·上传方式): 上传 auth.json ─────────────────────────
+// 读文件 → POST upload-auth 端点校验并落盘. 上传成功后"下一步"放行 (gate 在父级 stepValid).
+function SubscriptionUploadAuthStep({ onUploaded }: { onUploaded: () => void }) {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+  const [fileInfo, setFileInfo] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const upload = async (file: File) => {
+    setUploading(true)
+    setError('')
+    try {
+      const text = await file.text()
+      let parsed: any
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        throw new Error('文件不是合法的 JSON, 请确认上传的是 codex login 产生的 auth.json')
+      }
+      const row = await api('/api/admin/model-access/codex-subscription/upload-auth', {
+        method: 'POST',
+        body: JSON.stringify(parsed),
+      }) as any
+      setFileInfo(row?.auth_file || '~/.codex/auth.json')
+      setDone(true)
+      onUploaded()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
+        <div className="font-medium">上传本地 Codex 认证文件</div>
+        <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          在本地已 <span className="font-mono">codex login</span> 的机器上找到{' '}
+          <span className="font-mono">~/.codex/auth.json</span>, 上传到服务器完成认证。
+          文件包含访问令牌, 请勿通过聊天工具传输。
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept=".json,application/json" className="hidden"
+        onChange={e => {
+          const f = e.target.files?.[0]
+          if (f) upload(f)
+          e.target.value = ''
+        }} />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
+          className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {uploading ? '上传中…' : '选择 auth.json 上传'}
+        </button>
+        {done && (
+          <span className="inline-flex items-center gap-1 text-[12px] text-emerald-400">
+            <CircleCheck className="h-3.5 w-3.5" />已上传 {fileInfo}
+          </span>
+        )}
+      </div>
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
+  const [wizard, setWizard] = useState<ModelWizardState>(() => initialWizardState())
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [created, setCreated] = useState<{ key: string; session_model: string } | null>(null)
+  const [revealSecret, setRevealSecret] = useState(false)
+  // 订阅路径第6步 (登录·上传方式): auth.json 已成功上传才放行"下一步". 设备码方式靠"我已登录"自证.
+  const [subAuthUploaded, setSubAuthUploaded] = useState(false)
+
+  const patch = (next: Partial<ModelWizardState>) => setWizard(w => ({ ...w, ...next }))
+
+  const sub = isSubscriptionHarness(wizard.harness)
+  const totalSteps = sub ? WIZARD_TOTAL_STEPS_SUBSCRIPTION : WIZARD_TOTAL_STEPS
+  const stepMetaList = sub ? WIZARD_STEP_META_SUBSCRIPTION : WIZARD_STEP_META
+  const stepMeta = stepMetaList[wizard.step - 1] || stepMetaList[0]
+
+  // 各步通过才能"下一步". 订阅路径与普通路径的步骤含义不同.
+  const stepValid = useMemo(() => {
+    switch (wizard.step) {
+      case 1: return wizard.label.trim().length > 0 && wizard.label.trim().length <= 80
+      case 2: return wizard.harness === 'claude-code' || wizard.harness === 'codex' || sub
+      // 订阅路径第3步恒可点"下一步"(点击时才调 prepare 落盘占位文件); subPrepared 仅用于回显状态,
+      // 不能作为 gate — 否则按钮被禁用而 subPrepared 又只在点击后才置 true, 死锁.
+      case 3: return sub ? true
+        : wizard.modelName.trim().length > 0 && wizard.modelName.trim().length <= 160 && !/[\r\n"]/.test(wizard.modelName.trim())
+      // 订阅路径第4步 (选择模型) / 第5步 (认证方式) 恒可点 — 三选一与二选一总是有值.
+      case 4: return sub ? true
+        : isValidHttpUrl(wizard.baseUrl) && wizard.secret.trim().length > 0
+      case 5: return sub ? true
+        : true
+      // 订阅路径第6步 (登录认证): 设备码由用户点"我已登录"自证放行; 上传方式必须上传成功.
+      case 6: return sub ? (wizard.subAuthMethod !== 'upload-auth' || subAuthUploaded)
+        : true
+      default: return false
+    }
+  }, [wizard, sub, subAuthUploaded])
+
+  const stepError = useMemo(() => {
+    if (wizard.step === 1 && wizard.label.trim()) {
+      if (wizard.label.trim().length > 80) return '显示名称最多 80 个字符'
+    }
+    if (wizard.step === 3 && !sub && wizard.modelName.trim()) {
+      if (wizard.modelName.trim().length > 160) return '模型真名最多 160 个字符'
+      if (/[\r\n"]/.test(wizard.modelName.trim())) return '模型真名不能包含引号或换行'
+    }
+    if (wizard.step === 4 && !sub && wizard.baseUrl.trim() && !isValidHttpUrl(wizard.baseUrl)) {
+      return 'URL 必须是合法的 http/https 地址 (例如 https://api.example.com/anthropic)'
+    }
+    return ''
+  }, [wizard, sub])
+
+  // 进入第4步时执行隐藏的 3.5 步: 派生 key 并查重.
+  // 撞库时重摇(最多 8 次); 仍撞则留在当前步让用户改模型真名. 查重含内置 mobiusdefault —
+  // 后端 POST 是 upsert 语义, 撞上会静默覆盖现有配置.
+  const deriveUniqueKey = async (): Promise<string | null> => {
+    const endpoint = wizard.harness === 'codex' ? '/api/admin/model-access/codex' : '/api/admin/model-access/claude-code'
+    let existingKeys: string[] = []
+    try {
+      const rows = await api(endpoint) as any[]
+      existingKeys = (Array.isArray(rows) ? rows : []).map(r => String(r?.key || ''))
+    } catch {
+      // 查重接口失败不阻断: 保留随机后缀(4^4=45万空间), 创建时后端仍会正常落库.
+    }
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = deriveModelKeyFromName(wizard.modelName)
+      if (!existingKeys.includes(candidate)) return candidate
+    }
+    return null
+  }
+
+  const nextStep = async () => {
+    setError('')
+    if (sub) {
+      // ── 订阅路径 ──
+      if (wizard.step === 3) {
+        // 3 → 4: 调 prepare 端点确保 ~/.codex/mobiusopenaisubscription.config.toml 存在.
+        setCreating(true)
+        try {
+          await api('/api/admin/model-access/codex-subscription/prepare', { method: 'POST' })
+          setWizard(w => ({ ...w, subPrepared: true, derivedKey: CODEX_SUBSCRIPTION_CHANNEL, step: 4 }))
+        } catch (e: any) {
+          setError(e?.message || String(e))
+        } finally {
+          setCreating(false)
+        }
+        return
+      }
+      if (wizard.step >= WIZARD_TOTAL_STEPS_SUBSCRIPTION) return
+      setWizard(w => ({ ...w, step: w.step + 1 }))
+      return
+    }
+    if (wizard.step === 3) {
+      // 3 → 4 之间插入隐藏的 3.5 步.
+      setCreating(true)
+      try {
+        const key = await deriveUniqueKey()
+        if (!key) {
+          setError('无法生成唯一的模型 Key, 请修改模型真名后重试 (派生前缀与现有模型冲突)')
+          return
+        }
+        patch({ derivedKey: key })
+        setWizard(w => ({ ...w, derivedKey: key, step: 4 }))
+      } catch (e: any) {
+        setError(e?.message || String(e))
+      } finally {
+        setCreating(false)
+      }
+      return
+    }
+    if (wizard.step >= WIZARD_TOTAL_STEPS) return
+    setWizard(w => ({ ...w, step: w.step + 1 }))
+  }
+
+  const prevStep = () => {
+    setError('')
+    if (wizard.step <= 1) return
+    setWizard(w => ({ ...w, step: w.step - 1 }))
+  }
+
+  const reset = () => {
+    setWizard(initialWizardState())
+    setError('')
+    setCreated(null)
+    setRevealSecret(false)
+  }
+
+  // 第5步: 组装 payload 调旧后端 API. settings/TOML 均由向导字段模板化生成,
+  // 用户后续可在文件配置 Tab 微调 (wire_api / 超时等).
+  const createModel = async () => {
+    setCreating(true)
+    setError('')
+    try {
+      const label = wizard.label.trim()
+      const modelName = wizard.modelName.trim()
+      const baseUrl = wizard.baseUrl.trim().replace(/\/+$/, '')
+      const secret = wizard.secret.trim()
+      if (wizard.harness === 'claude-code') {
+        const settings = {
+          env: {
+            ANTHROPIC_BASE_URL: baseUrl,
+            ANTHROPIC_AUTH_TOKEN: secret,
+            API_TIMEOUT_MS: '3000000',
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+            ANTHROPIC_MODEL: modelName,
+            ANTHROPIC_DEFAULT_SONNET_MODEL: modelName,
+            ANTHROPIC_DEFAULT_OPUS_MODEL: modelName,
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: modelName,
+          },
+          model: modelName,
+        }
+        const row = await api('/api/admin/model-access/claude-code', {
+          method: 'POST',
+          body: JSON.stringify({
+            key: wizard.derivedKey,
+            label,
+            claude_model: modelName,
+            enabled: true,
+            settings_json: JSON.stringify(settings, null, 2),
+          }),
+        }) as any
+        setCreated({ key: row?.key || wizard.derivedKey, session_model: row?.session_model || `claude-code:${wizard.derivedKey}` })
+      } else if (sub) {
+        // 订阅路径注册: 固定渠道, TOML 不含 env_key/api_key — 凭据在 ~/.codex/auth.json
+        // (codex login 产物), 启动时 tmux-codex 不 export 任何秘钥.
+        // config_toml 留空 → 后端 upsert 落库时沿用 prepare 已创建的磁盘文件, 不覆盖已有内容
+        // (例如用户预设的 cli_auth_credentials_store).
+        const channel = CODEX_SUBSCRIPTION_CHANNEL
+        const row = await api('/api/admin/model-access/codex', {
+          method: 'POST',
+          body: JSON.stringify({
+            channel,
+            label,
+            codex_model: wizard.subModel,
+            enabled: true,
+          }),
+        }) as any
+        setCreated({ key: row?.key || channel, session_model: row?.session_model || `codex:${channel}` })
+      } else {
+        const channel = wizard.derivedKey
+        const envKey = deriveCodexEnvKey(channel)
+        const provider = channel
+        const configToml = [
+          `model_provider = "${escapeTomlString(provider)}"`,
+          `model = "${escapeTomlString(modelName)}"`,
+          `model_reasoning_effort = "xhigh"`,
+          `model_verbosity = "high"`,
+          ``,
+          `[model_providers.${provider}]`,
+          `name = "${escapeTomlString(provider)}"`,
+          `base_url = "${escapeTomlString(baseUrl)}"`,
+          `wire_api = "responses"`,
+          `env_key = "${envKey}"`,
+          `api_key = "${escapeTomlString(secret)}"`,
+        ].join('\n') + '\n'
+        const row = await api('/api/admin/model-access/codex', {
+          method: 'POST',
+          body: JSON.stringify({
+            channel,
+            label,
+            codex_model: modelName,
+            secret_env_key: envKey,
+            secret_value: secret,
+            enabled: true,
+            config_toml: configToml,
+          }),
+        }) as any
+        setCreated({ key: row?.key || channel, session_model: row?.session_model || `codex:${channel}` })
+      }
+      onCreated?.()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const wizardInputCls = 'h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--bg-card)] px-2.5 text-[12px] text-[var(--text-primary)] outline-none focus:border-blue-500/60'
+
+  const renderWizardBody = () => {
+    if (created) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <CircleCheck className="h-10 w-10 text-emerald-400" />
+          <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            模型创建成功
+          </div>
+          <div className="space-y-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+            <div>模型 Key: <span className="font-mono">{created.key}</span></div>
+            <div>会话模型: <span className="font-mono">{created.session_model}</span></div>
+            <div>现在可在新建 Session 时选择该模型, 也可切换到"文件配置"Tab 继续微调.</div>
+          </div>
+          <button type="button" onClick={reset}
+            className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500">
+            <Plus className="h-3.5 w-3.5" />
+            再接入一个模型
+          </button>
+        </div>
+      )
+    }
+    switch (wizard.step) {
+      case 1:
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>模型显示名称</div>
+              <input autoFocus value={wizard.label} onChange={e => patch({ label: e.target.value })}
+                placeholder="例如: MiniMax 旗舰 (展示给团队成员看)" maxLength={80} className={wizardInputCls} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                展示给你和你的同事, 不一定是模型的真名
+              </div>
+            </label>
+          </div>
+        )
+      case 2:
+        return (
+          <div className="space-y-3">
+            <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择使用的 Harness</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {([
+                { k: 'claude-code' as WizardHarness, name: 'Claude Code', desc: 'Anthropic 兼容接口, 走 --settings 直连', icon: <Terminal className="h-4 w-4 text-cyan-400" /> },
+                { k: 'codex' as WizardHarness, name: 'Codex', desc: 'Responses 接口, 走 --profile 渠道加载', icon: <Cpu className="h-4 w-4 text-orange-400" /> },
+                { k: 'codex-subscription' as WizardHarness, name: 'Codex订阅（调试中勿使用）', desc: 'ChatGPT 付费订阅认证, 设备码登录接入', icon: <Shield className="h-4 w-4 text-emerald-400" /> },
+              ]).map(opt => {
+                const active = wizard.harness === opt.k
+                return (
+                  <button key={opt.k} type="button" onClick={() => patch({ harness: opt.k })}
+                    className="rounded-lg border p-3 text-left transition-colors"
+                    style={{
+                      borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                      background: active ? 'rgba(59,130,246,0.08)' : 'var(--bg-card)',
+                    }}>
+                    <div className="flex items-center gap-2 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {opt.icon}{opt.name}
+                      {active && <Check className="h-3.5 w-3.5 text-blue-400" />}
+                    </div>
+                    <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.desc}</div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              DSH (DeepSeek Harness) 暂不支持向导, 需要时请切换到"文件配置"Tab 添加
+            </div>
+          </div>
+        )
+      case 3:
+        if (sub) {
+          // 订阅路径第3步: 配置代理网络 + 创建占位配置文件 (点"下一步"时落盘).
+          return (
+            <SubscriptionProxyStep
+              prepared={wizard.subPrepared}
+              onPrepared={() => patch({ subPrepared: true })}
+            />
+          )
+        }
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>模型真名</div>
+              <input autoFocus value={wizard.modelName} onChange={e => patch({ modelName: e.target.value })}
+                placeholder={wizard.harness === 'claude-code' ? '例如: MiniMax-M3' : '例如: gpt-5.5'}
+                maxLength={160} className={`${wizardInputCls} font-mono`} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code'
+                  ? '将写入 settings JSON 的 model 与 ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL'
+                  : '将写入 config TOML 顶层 model, 启动时经 -m 传给 Codex'}
+              </div>
+            </label>
+          </div>
+        )
+      case 4:
+        if (sub) {
+          // 订阅路径第4步: 选择订阅模型 (GPT-5.6 家族三选一).
+          return <SubscriptionModelStep model={wizard.subModel} onModelChange={m => patch({ subModel: m })} />
+        }
+        return (
+          <div className="space-y-3">
+            <label className="block">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                <Globe className="h-3.5 w-3.5" />接入地址 (Base URL)
+              </div>
+              <input autoFocus value={wizard.baseUrl} onChange={e => patch({ baseUrl: e.target.value })}
+                placeholder={wizard.harness === 'claude-code' ? 'https://api.example.com/anthropic' : 'https://api.example.com/codex/v1'}
+                className={`${wizardInputCls} font-mono`} />
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code' ? '对应 ANTHROPIC_BASE_URL' : '对应 config TOML 的 base_url'}
+              </div>
+            </label>
+            <label className="block">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                <KeyRound className="h-3.5 w-3.5" />秘钥 (API Key)
+              </div>
+              <div className="relative">
+                <input autoFocus type={revealSecret ? 'text' : 'password'} value={wizard.secret}
+                  onChange={e => patch({ secret: e.target.value })} placeholder="sk-..."
+                  className={`${wizardInputCls} pr-9 font-mono`} />
+                <button type="button" onClick={() => setRevealSecret(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                  {revealSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {wizard.harness === 'claude-code' ? '对应 ANTHROPIC_AUTH_TOKEN (Bearer)' : '对应秘钥值 / config TOML 的 api_key'}
+              </div>
+            </label>
+          </div>
+        )
+      case 5:
+        if (sub) {
+          // 订阅路径第5步: 选择认证方式 (设备码 | 上传 auth.json).
+          return (
+            <SubscriptionAuthMethodStep
+              method={wizard.subAuthMethod}
+              onMethodChange={m => patch({ subAuthMethod: m })}
+            />
+          )
+        }
+        return (
+          <div className="space-y-2.5">
+            {([
+              ['显示名称', wizard.label.trim()],
+              ['Harness', wizard.harness === 'claude-code' ? 'Claude Code' : 'Codex'],
+              ['模型真名', wizard.modelName.trim()],
+              ['模型 Key (自动生成)', wizard.derivedKey],
+              ['接入地址', wizard.baseUrl.trim()],
+              ['秘钥', wizard.secret.trim() ? `${wizard.secret.trim().slice(0, 6)}${'•'.repeat(Math.max(4, Math.min(20, wizard.secret.trim().length - 6)))}` : ''],
+            ] as Array<[string, string]>).map(([k, v]) => (
+              <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+              </div>
+            ))}
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {wizard.harness === 'codex' && (
+                <>Codex 渠道默认使用 responses 协议 (wire_api), 兼容 OpenAI chat-completions 的网关请创建后在"文件配置"Tab 修改.<br /></>
+              )}
+              创建后立即在模型选择器可用, 无需重启.
+            </div>
+          </div>
+        )
+      case 6:
+        if (sub) {
+          // 订阅路径第6步 (登录): 按第5步选择的认证方式分流.
+          if (wizard.subAuthMethod === 'upload-auth') {
+            return <SubscriptionUploadAuthStep onUploaded={() => setSubAuthUploaded(true)} />
+          }
+          // 设备码方式: 内嵌 Web 终端自动执行 codex login --device-auth, 旁边提示引导用户操作.
+          return (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                <div className="font-medium">请在下方终端中完成登录</div>
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  终端已自动运行 <span className="font-mono">codex login --device-auth</span>。
+                  请选择 <span className="font-medium">Sign in with Device Code</span>，跟随提示完成认证；
+                  认证成功后点击下方「我已登录」按钮。
+                </div>
+              </div>
+              <InlineWebTerminal mode="adhoc" adhocCommandKey="codex-subscription-login" height={320} />
+            </div>
+          )
+        }
+        return (
+          <div className="space-y-2.5">
+            {([
+              ['显示名称', wizard.label.trim()],
+              ['Harness', wizard.harness === 'claude-code' ? 'Claude Code' : 'Codex'],
+              ['模型真名', wizard.modelName.trim()],
+              ['模型 Key (自动生成)', wizard.derivedKey],
+              ['接入地址', wizard.baseUrl.trim()],
+              ['秘钥', wizard.secret.trim() ? `${wizard.secret.trim().slice(0, 6)}${'•'.repeat(Math.max(4, Math.min(20, wizard.secret.trim().length - 6)))}` : ''],
+            ] as Array<[string, string]>).map(([k, v]) => (
+              <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+              </div>
+            ))}
+            <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {wizard.harness === 'codex' && (
+                <>Codex 渠道默认使用 responses 协议 (wire_api), 兼容 OpenAI chat-completions 的网关请创建后在"文件配置"Tab 修改.<br /></>
+              )}
+              创建后立即在模型选择器可用, 无需重启.
+            </div>
+          </div>
+        )
+      case 7:
+        if (sub) {
+          return (
+            <div className="space-y-2.5">
+              {([
+                ['显示名称', wizard.label.trim()],
+                ['Harness', 'Codex订阅 (ChatGPT 认证)'],
+                ['认证方式', wizard.subAuthMethod === 'upload-auth' ? '上传本地 auth.json' : '设备码在线登录'],
+                ['渠道', wizard.derivedKey || CODEX_SUBSCRIPTION_CHANNEL],
+                ['默认模型', wizard.subModel],
+                ['凭据', '~/.codex/auth.json (订阅登录产物)'],
+              ] as Array<[string, string]>).map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-3 rounded-md border border-[var(--border-color)] bg-[var(--input-bg)] px-3 py-2 text-[12px]">
+                  <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{k}</span>
+                  <span className="min-w-0 break-all text-right font-mono" style={{ color: 'var(--text-primary)' }}>{v}</span>
+                </div>
+              ))}
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                注册后立即在模型选择器可用; 模型名等参数可在"文件配置"Tab 继续调整.
+              </div>
+            </div>
+          )
+        }
+        return null
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div>
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      {/* 步骤指示器: 3.5 是隐藏步骤, UI 上只显示 1-5 */}
+      <div className="mb-4 flex items-center gap-1">
+        {stepMetaList.map((meta, idx) => {
+          const n = idx + 1
+          const active = wizard.step === n
+          const done = created || wizard.step > n
+          return (
+            <Fragment key={n}>
+              {idx > 0 && (
+                <div className="h-px flex-1" style={{ background: done ? 'rgba(59,130,246,0.5)' : 'var(--border-color)' }} />
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
+                  style={{
+                    borderColor: active ? 'rgba(59,130,246,0.7)' : done ? 'rgba(16,185,129,0.6)' : 'var(--border-color)',
+                    background: active ? 'rgba(59,130,246,0.12)' : done ? 'rgba(16,185,129,0.10)' : 'transparent',
+                    color: active ? '#3b82f6' : done ? '#10b981' : 'var(--text-muted)',
+                  }}>
+                  {done ? <Check className="h-3 w-3" /> : n}
+                </div>
+                <span className={`hidden text-[11px] sm:inline ${active ? 'font-medium' : ''}`}
+                  style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {meta.title}
+                </span>
+              </div>
+            </Fragment>
+          )
+        })}
+      </div>
+
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--input-bg)] p-4">
+        {!created && (
+          <div className="mb-3">
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              第 {wizard.step} 步 · {stepMeta.title}
+            </div>
+            <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>{stepMeta.hint}</div>
+          </div>
+        )}
+        {renderWizardBody()}
+      </div>
+
+      {!created && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            {stepError && <span className="text-amber-400">{stepError}</span>}
+          </div>
+          <div className="flex flex-shrink-0 gap-2">
+            {wizard.step > 1 && (
+              <button type="button" onClick={prevStep} disabled={creating}
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+                <ChevronLeft className="h-3.5 w-3.5" />上一步
+              </button>
+            )}
+            {wizard.step < totalSteps && (
+              <button type="button" onClick={nextStep} disabled={!stepValid || !!stepError || creating}
+                className="inline-flex h-9 items-center gap-1 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (sub && wizard.step === 6 ? <CircleCheck className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                {sub && wizard.step === 6 ? (wizard.subAuthMethod === 'upload-auth' ? '下一步' : '我已登录') : '下一步'}
+              </button>
+            )}
+            {wizard.step === totalSteps && (
+              <button type="button" onClick={createModel} disabled={creating}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
+                {sub ? '注册到 mobius' : '创建模型'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type AdminModelsMode = 'wizard' | 'file'
+
 function AdminModelsPanel() {
+  const [mode, setMode] = useState<AdminModelsMode>('wizard')
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
+  // 向导创建成功后 ping 一下文件配置子面板刷新 (子面板自身挂载时也会 load).
+  const [wizardRefreshNonce, setWizardRefreshNonce] = useState(0)
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
@@ -3166,23 +4362,25 @@ function AdminModelsPanel() {
             模型接入
           </h3>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {backend === 'claude-code'
-              ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
-              : backend === 'codex'
-                ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
-                : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
+            {mode === 'wizard'
+              ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+              : backend === 'claude-code'
+                ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
+                : backend === 'codex'
+                  ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
+                  : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
           </div>
         </div>
+        {/* 一级 Tab: 向导模式 | 文件配置 (原有三通道整体移入文件配置作为二级 sub-tab) */}
         <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
-          style={{ background: 'var(--input-bg)' }}>
+          style={{ background: 'var(--input-bg)' }} data-tour="admin-models-mode-tabs">
           {([
-            ['claude-code', 'Claude Code'],
-            ['codex', 'Codex'],
-            ['deepseek-harness', 'DeepSeek Harness'],
-          ] as Array<[AdminModelsBackend, string]>).map(([k, label]) => {
-            const active = backend === k
+            ['wizard', '向导模式'],
+            ['file', '文件配置'],
+          ] as Array<[AdminModelsMode, string]>).map(([k, label]) => {
+            const active = mode === k
             return (
-              <button key={k} type="button" onClick={() => setBackend(k)}
+              <button key={k} type="button" onClick={() => setMode(k)}
                 className="h-7 rounded px-3 transition-colors"
                 style={{
                   background: active ? 'var(--bg-card)' : 'transparent',
@@ -3196,13 +4394,47 @@ function AdminModelsPanel() {
         </div>
       </div>
 
-      {backend === 'claude-code'
-        ? <ClaudeCodeModelsSubPanel />
-        : backend === 'codex'
-          ? <CodexModelsSubPanel />
-          : <HarnessModelsSubPanel />}
+      {mode === 'wizard' ? (
+        <ModelAccessWizard onCreated={() => setWizardRefreshNonce(n => n + 1)} />
+      ) : (
+        <div>
+          {/* 二级 sub-tab: Claude Code / Codex / DeepSeek Harness (原有文件配置模式原样保留) */}
+          <div className="mb-3 flex justify-start">
+            <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
+              style={{ background: 'var(--input-bg)' }} data-tour="admin-models-backend-tabs">
+              {([
+                ['claude-code', 'Claude Code'],
+                ['codex', 'Codex'],
+                ['deepseek-harness', 'DeepSeek Harness'],
+              ] as Array<[AdminModelsBackend, string]>).map(([k, label]) => {
+                const active = backend === k
+                return (
+                  <button key={k} type="button" onClick={() => setBackend(k)}
+                    className="h-7 rounded px-3 transition-colors"
+                    style={{
+                      background: active ? 'var(--bg-card)' : 'transparent',
+                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      fontWeight: active ? 600 : 400,
+                    }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <FileModelsModeRenderer key={wizardRefreshNonce} backend={backend} />
+        </div>
+      )}
     </section>
   )
+}
+
+// 文件配置模式的渲染器. key={wizardRefreshNonce} 使向导创建过模型后切回文件配置时强制重挂载,
+// 子面板 useEffect 会重新 load 列表 (否则显示的还是挂载前的旧列表).
+function FileModelsModeRenderer({ backend }: { backend: AdminModelsBackend }) {
+  if (backend === 'claude-code') return <ClaudeCodeModelsSubPanel />
+  if (backend === 'codex') return <CodexModelsSubPanel />
+  return <HarnessModelsSubPanel />
 }
 
 function ClaudeCodeModelsSubPanel() {
