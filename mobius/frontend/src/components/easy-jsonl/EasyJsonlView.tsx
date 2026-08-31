@@ -237,7 +237,7 @@ export default function EasyJsonlView({
                     <strong>回复</strong>
                     {!roundWorking && <CheckCircle2 />}
                   </div>
-                  <JsonlCompactMarkdown text={round.assistantResponse} />
+                  <JsonlCompactMarkdown text={round.assistantResponse} variant="conversation" />
                 </article>
               )}
             </section>

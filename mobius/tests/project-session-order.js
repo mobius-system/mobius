@@ -21,16 +21,15 @@ assert.deepEqual(sortProjectSessions(sessions).map((session) => session.session_
   'finished-old',
 ])
 
-assert.deepEqual(projectSessionPreview(sessions, true).map((session) => session.session_id), [
+assert.deepEqual(projectSessionPreview(sessions).map((session) => session.session_id), [
   'running-new',
   'running-old',
-])
-assert.deepEqual(projectSessionPreview(sessions.filter((session) => session.agent_status !== 'running'), true).map((session) => session.session_id), [
   'idle-open',
 ])
-assert.deepEqual(projectSessionPreview(sessions, true, true).map((session) => session.session_id), [
-  'running-new',
-  'running-old',
+assert.deepEqual(projectSessionPreview(sessions.filter((session) => session.agent_status !== 'running')).map((session) => session.session_id), [
+  'idle-open',
+  'finished-new',
+  'finished-old',
 ])
 
 const projectItems = [

@@ -44,7 +44,13 @@
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start:tsx": "tsx server.js",
-    "test:leader-mode-timing": "node --require tsx/cjs tests/leader-mode-timing.js"
+    "test:leader-mode-timing": "node --require tsx/cjs tests/leader-mode-timing.js",
+    "test:easy-mode-switching": "node frontend/tests/easy-mode-switching.test.mjs",
+    "test:easy-in-session-density": "node frontend/tests/easy-in-session-density.test.mjs",
+    "test:easy-workspace-keepalive": "node frontend/tests/easy-workspace-keepalive.test.mjs",
+    "test:easy-toggle-entry": "node frontend/tests/easy-toggle-entry.test.mjs",
+    "test:easy-jsonl-model": "npx tsx frontend/tests/easy-jsonl-model.test.ts",
+    "test:easy-route-state": "npx tsx frontend/tests/easy-route-state.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

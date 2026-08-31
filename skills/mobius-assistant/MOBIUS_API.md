@@ -1870,3 +1870,52 @@ curl -sS -X POST "${BASE}/api/assistant/messages" \
 - 本文件是"调用清单": 任何一项"小莫动作"在执行前都可以先在这里对到一条 curl, 确认 URL / method / body 后再发给小莫确认.
 
 换句话说: **小莫做的事 = 这里的一条 curl**. 让小莫动作时, 把对应 curl 的 method / 路径 / body 翻译成自然语言, 让用户确认即可.
+
+
+## 补充 API（2026-08-25 刷新, 此前未收录）
+
+### agent-bridge（跨会话 L5 agent 协作消息总线, 挂 /api/agent-bridge）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /api/agent-bridge/edges | 跨会话协作边列表 |
+| GET | /api/agent-bridge/channels/:channelId/messages | 频道消息 |
+| GET | /api/agent-bridge/messages/batch | 批量拉消息 |
+| GET | /api/agent-bridge/messages/:messageId | 单条消息 |
+| POST | /api/agent-bridge/messages | 发协作消息(request_id 幂等去重) |
+| POST | /api/agent-bridge/messages/:messageId/decision | 对消息做决策 |
+| POST | /api/agent-bridge/messages/batch/decision | 批量决策 |
+| POST | /api/agent-bridge/channels/:channelId/close | 关闭频道 |
+
+### sessions 耗时瀑布（挂 /api/sessions）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /api/sessions/:id/time-consume-waterfall | 会话各阶段耗时瀑布(分析性能) |
+| POST | /api/sessions/:id/time-consume-waterfall/clear | 清除耗时数据 |
+
+### integration（代码整合队列, 挂 /api/integration）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /api/integration/conflicts | 整合冲突列表 |
+| PATCH | /api/integration/conflicts/:id | 解决冲突 |
+| GET | /api/integration/issues/:id/integration | issue 的整合状态 |
+| POST | /api/integration/issues/:id/integration/check | 触发整合检查 |
+| POST | /api/integration/issues/:id/integration/enqueue | 入整合队列 |
+| POST | /api/integration/issues/:id/integration/accept | 接受整合结果 |
+| GET | /api/integration/projects/:id/integration-queue | 项目整合队列 |
+| POST | /api/integration/projects/:id/integration-queue/run | 运行队列 |
+| POST | /api/integration/projects/:id/integration-queue/reorder | 调整顺序 |
+| GET | /api/integration/sessions/:id/changes | session 代码变更 |
+| POST | /api/integration/sessions/:id/changes/scan | 扫描变更 |
+| POST | /api/integration/sessions/:id/changes/check | 检查变更 |
+
+### 其它补充
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | /api/projects/:id/session-matches | 项目下 session 匹配 |
+| GET | /api/projects/:id/sessions-overview | session 总览 |
+| GET | /api/projects/hierarchy-search | 层级搜索 |
+| POST | /api/projects/:id/git-action | git 操作 |
+| GET | /api/sessions/:id/turns | 会话轮次结构 |
+| GET | /api/sessions/:id/selection-snapshot | 技能/记忆选择快照 |
+| POST | /api/sessions/:id/refresh-selection-snapshot | 刷新快照 |
+| POST | /api/auth/users-by-id | 批量按 id 查用户 |
