@@ -40,6 +40,7 @@ const {
   clearTimeConsumeWaterfallForBackend,
 } = require('../services/time-consume-waterfall')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
+const { resolveSecretCandidate } = require('../utils/secret-placeholder')
 const {
   runningFlagPathOf,
   failedFlagPathOf,
@@ -259,6 +260,11 @@ function tomlStringValue(tomlText, key) {
   const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = String(tomlText || '').match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*=\\s*(['"])([^'"]+)\\1`))
   return match ? match[2].trim() : ''
+}
+
+function resolveCodexConfigSecretValue(configText, fallbackValue) {
+  const configured = tomlStringValue(configText, 'api_key')
+  return resolveSecretCandidate(configured, fallbackValue)
 }
 
 function normalizeUseProxy(value, fallback = false) {
@@ -1236,8 +1242,8 @@ class TmuxCodexBackend extends AgentBackend {
     const secretEnvKey = configEnvKey ? normalizeSecretEnvKey(configEnvKey) : null
     // 如果 profile 指定了 env_key，就解析最终要注入 tmux 命令的秘钥值。
     const secretValue = secretEnvKey
-      // 秘钥值优先取 TOML api_key，其次取调用方传入的 codexSecretValue，再交给 resolver 兜底。
-      ? resolveSecretValue(secretEnvKey, tomlStringValue(configText, 'api_key') || codexSecretValue)
+      // TOML 中是真实 api_key 时优先使用；若为 <API_KEY> 占位符或缺失，则使用服务端保存值。
+      ? resolveSecretValue(secretEnvKey, resolveCodexConfigSecretValue(configText, codexSecretValue))
       // 没有 env_key 时不导出秘钥。
       : ''
     // useProxy 与 profile 完全解耦: 只决定网络层挡位.
@@ -1567,4 +1573,5 @@ module.exports = {
   runningFlagPathOf,
   failedFlagPathOf,
   findCodexRecentErrorInPane,
+  resolveCodexConfigSecretValue,
 }

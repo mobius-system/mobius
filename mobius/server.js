@@ -291,6 +291,7 @@ const { startExtensionScheduler } = require('./backend/services/extension-schedu
 const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
 const { startSessionTitleSyncer } = require('./backend/services/session-title-syncer');
 const { startSessionTitleGenerator } = require('./backend/services/session-title-generator');
+const { startBestApiAutoSync } = require('./backend/services/bestapi-integration');
 
 // ===== 启动 =====
 const server = http.createServer(app);
@@ -406,6 +407,13 @@ server.listen(PORT, () => {
   // 兜底自动生成 Session 标题: codex / gpt-5.5 等 tmux-codex 后端不产 type=ai-title,
   // 由本生成器周期扫描, 用会话自身模型把首条提问浓缩成标题写回 name。受同一开关控制。
   startSessionTitleGenerator();
+  // BestAPI 已连接时自动比较远端 catalog_version；发现模型新增、下线或 Harness
+  // 契约变化后重建托管模型配置。默认每 60 秒检查，可用环境变量调整或关闭。
+  try {
+    startBestApiAutoSync();
+  } catch (e) {
+    console.warn('[bestapi-auto-sync] 初始化失败(已忽略):', e.message);
+  }
   // 桌面客户端产物同步：启动后首次同步 (延迟 30s, 让 server 完全就绪),
   // 之后每 30 分钟自动检查一次。多服务器: 每台独立运行, 互不依赖。
   // MOBIUS_DESKTOP_SYNC_ENABLED=0 可关闭。
