@@ -377,6 +377,19 @@ function assertProxyAvailable(mode = 'env_proxychains') {
 // 仓库根而非 cwd — 这样 agent 第一步清理/重建 worktree 目录不会误删 flag.
 // 每次提交 prompt 后端都会刷新 running.flag, agent 收工 (成功/失败) 时自删
 // (见 session-context 注入的提示). isJobGoalAccomplished 据"文件是否还在"判断任务是否结束.
+// dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
+// 本后端在此解包出自己需要的字段 (model/settingsPath/代理挡位), 旧扁平字段作兼容兜底.
+function unpackLaunch(opts) {
+  const launch = opts?.modelLaunchOptions || {}
+  return {
+    model: launch.model || opts.model,
+    settingsPath: launch.settingsPath || opts.settingsPath || null,
+    useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
+    proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || opts.proxyMode || 'direct'),
+    forceNoProxy: launch.forceNoProxy === true || opts.forceNoProxy === true,
+  }
+}
+
 function markRunning(root, sessionId) {
   return safeWriteRunningFlag(root, sessionId, {}, 'tmux-claude-code')
 }
@@ -853,7 +866,9 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _createImpl(opts) {
+    ({ sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, enableGulingMcp = false } = opts)
+    const { model, useProxy, proxyMode, settingsPath, forceNoProxy } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -894,7 +909,9 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _queueImpl(opts) {
+    ({ sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false } = opts)
+    let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy } = unpackLaunch(opts)
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 

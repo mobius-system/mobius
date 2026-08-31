@@ -216,7 +216,7 @@ function teamState(researchId: string): any {
 }
 
 async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: string, summary: string): Promise<void> {
-  const launch = modelRegistry.launchOptionsForSession(session);
+  const launch = modelRegistry.modelLaunchOptionsFor(session);
   const backend = agents.get(launch.backend);
   const workspace = resolveSessionWorkspace(user, session.session_id);
   if (workspace.error) throw Object.assign(new Error(workspace.error), { status: 400, code: 'workspace' });
@@ -225,20 +225,8 @@ async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: st
     prompt,
     cwd: workspace.workDir,
     flagRoot: workspace.projectRoot || workspace.workDir,
-    model: launch.model || undefined,
-    settingsPath: launch.settingsPath,
-    forceNoProxy: launch.forceNoProxy,
-    useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-    codexProfileKey: launch.codexProfileKey || undefined,
-    codexChannel: launch.codexChannel || undefined,
-    codexConfigPath: launch.codexConfigPath || undefined,
-    codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-    codexSecretValue: launch.codexSecretValue || undefined,
-    harnessProvider: launch.harnessProvider || undefined,
-    harnessBaseUrl: launch.harnessBaseUrl || undefined,
-    harnessSecretValue: launch.harnessSecretValue || undefined,
-    harnessMaxTokens: launch.harnessMaxTokens || undefined,
-    harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+    // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+    modelLaunchOptions: launch,
     displayName: session.name || undefined,
     agentSessionId: session.agent_session_id || undefined,
   });

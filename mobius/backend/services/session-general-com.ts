@@ -187,7 +187,7 @@ export function sessionMentionMetadata(user: any, currentSessionId: string, ment
 // 提及目标 session 的 jsonl 路径 (跨后端兜底查询).
 function resolveSessionJsonlPath(session: any, sessionId: string): string | null {
   try {
-    const launch = modelRegistry.launchOptionsForSession(session);
+    const launch = modelRegistry.modelLaunchOptionsFor(session);
     const backend = agents.get(launch.backend);
     return typeof backend?._resolveJsonlPath === 'function'
       ? backend._resolveJsonlPath(sessionId)

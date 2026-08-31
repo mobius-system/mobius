@@ -232,6 +232,23 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`
 }
 
+// dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
+// 本后端在此解包出自己需要的字段 (model/settingsPath/codex*/代理挡位), 旧扁平字段作兼容兜底.
+function unpackLaunch(opts) {
+  const launch = opts?.modelLaunchOptions || {}
+  return {
+    model: launch.model || opts.model,
+    settingsPath: launch.settingsPath || launch.codexConfigPath || opts.settingsPath || opts.codexConfigPath || null,
+    useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
+    proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || opts.proxyMode || 'direct'),
+    codexProfileKey: launch.codexProfileKey || launch.codexChannel || opts.codexProfileKey || opts.codexChannel || null,
+    codexChannel: launch.codexChannel || launch.codexProfileKey || opts.codexChannel || opts.codexProfileKey || null,
+    codexConfigPath: launch.codexConfigPath || opts.codexConfigPath || null,
+    codexSecretEnvKey: launch.codexSecretEnvKey || opts.codexSecretEnvKey || null,
+    codexSecretValue: launch.codexSecretValue || opts.codexSecretValue || null,
+  }
+}
+
 function normalizeCodexChannel(value) {
   const channel = String(value || '').trim()
   if (!channel) throw new Error('tmux-codex requires codex channel (--profile)')
@@ -885,7 +902,9 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
+  async _createImpl(opts) {
+    ({ sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName } = opts)
+    const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
@@ -931,7 +950,10 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName }) {
+  async _queueImpl(opts) {
+    ({ sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts)
+    let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
+    let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 

@@ -1167,7 +1167,7 @@ function handleAssistantPresetContextPreview(req: express.Request, res: express.
 
 async function startAssistantSession(req: express.Request, session: any, questionText: string, requestId: string, workDir: string, clientContext: any = null, attachments: any[] = [], userContent: string = ''): Promise<void> {
   const user = (req as any).user;
-  const launch = modelRegistry.launchOptionsForSession(session);
+  const launch = modelRegistry.modelLaunchOptionsFor(session);
   const backend = agents.get(launch.backend);
   const isCompactCommand = String(questionText || '').trim().startsWith('/compact');
   const personality = assistantSessionPersonality(session);
@@ -1213,20 +1213,8 @@ async function startAssistantSession(req: express.Request, session: any, questio
       prompt: finalPrompt,
       cwd: workDir,
       flagRoot: workDir,
-      model: launch.model || undefined,
-      settingsPath: launch.settingsPath,
-      forceNoProxy: launch.forceNoProxy,
-      useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-      codexProfileKey: launch.codexProfileKey || undefined,
-      codexChannel: launch.codexChannel || undefined,
-      codexConfigPath: launch.codexConfigPath || undefined,
-      codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-      codexSecretValue: launch.codexSecretValue || undefined,
-      harnessProvider: launch.harnessProvider || undefined,
-      harnessBaseUrl: launch.harnessBaseUrl || undefined,
-      harnessSecretValue: launch.harnessSecretValue || undefined,
-      harnessMaxTokens: launch.harnessMaxTokens || undefined,
-      harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+      // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+      modelLaunchOptions: launch,
       displayName: session.name,
       agentSessionId: session.agent_session_id || undefined,
       mobiusPromptRecord,

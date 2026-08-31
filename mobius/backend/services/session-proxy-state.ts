@@ -10,7 +10,7 @@ function normalizeUseProxy(value: any): boolean | null {
 function useProxyForSession(session: any, backend: any = null): number {
   let launch: any
   try {
-    launch = modelRegistry.launchOptionsForSession(session)
+    launch = modelRegistry.modelLaunchOptionsFor(session)
   } catch {
     // Historical sessions may reference removed models (for example old Sonnet ids).
     // They are not launchable, but admin/status views should stay quiet and direct.
@@ -33,7 +33,7 @@ function withSessionProxyState(session: any): any {
   if (!session) return session
   let launch: any
   try {
-    launch = modelRegistry.launchOptionsForSession(session)
+    launch = modelRegistry.modelLaunchOptionsFor(session)
   } catch {
     return {
       ...session,

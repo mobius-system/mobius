@@ -243,7 +243,7 @@ function backendNameForSessionModel(modelOrKey: any): any {
   // 本函数用于会话列表 / 事件流 / 历史 / flag 扫描 / bridge 解析等只读热路径,
   // 不应因单个坏模型让整条列表或 SSE 流整体失败 (会回 500 / stream failed).
   // 按模型名前缀兜底选 backend; 仍无法判断时回退默认 backend.
-  // 真正启动会话的 launchOptionsForSession 仍会抛错, 这里只解决"读已有会话".
+  // 真正启动会话的 modelLaunchOptionsFor 仍会抛错, 这里只解决"读已有会话".
   const k = String(modelOrKey || '')
   if (k.startsWith('deepseek-harness:')) return 'deepseek-harness'
   if (k.startsWith('codex:') || k === 'codex' || k === 'gpt-5.5') return 'tmux-codex'
@@ -362,7 +362,7 @@ function listSessionModelOptions(): any[] {
   }))
 }
 
-function launchOptionsForSession(session: any): any {
+function modelLaunchOptionsFor(session: any): any {
   const resolved = resolveSessionModel(session?.model)
   if (!resolved) {
     throw new Error(`模型未配置或配置文件缺失: ${session?.model || DEFAULT_MODEL_KEY}`)
@@ -443,7 +443,7 @@ const modelRegistry = {
   isImportedClaudeCodeModel,
   isImportedCodexModel,
   isImportedHarnessModel,
-  launchOptionsForSession,
+  modelLaunchOptionsFor,
 }
 
 export {
@@ -458,7 +458,7 @@ export {
   isImportedClaudeCodeModel,
   isImportedCodexModel,
   isImportedHarnessModel,
-  launchOptionsForSession,
+  modelLaunchOptionsFor,
 }
 
 export default modelRegistry

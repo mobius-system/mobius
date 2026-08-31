@@ -125,7 +125,7 @@ async function runSessionMessage({
     : sessionContentWithAttachments('', normalizedAttachments);
 
   // 模型被管理员删除/禁用: 会话进入只读状态, 拒绝发消息, 提示"更换模型并继续".
-  // launchOptionsForSession 本身也会抛错, 但这里给出结构化 category='model_removed'
+  // modelLaunchOptionsFor 本身也会抛错, 但这里给出结构化 category='model_removed'
   // 和需求指定的提示文案, 便于前端精准识别并渲染更换模型入口.
   if (!modelRegistry.resolveSessionModel(sess?.model)) {
     throw httpError(
@@ -134,7 +134,7 @@ async function runSessionMessage({
       'model_removed',
     );
   }
-  const launch = modelRegistry.launchOptionsForSession(sess);
+  const launch = modelRegistry.modelLaunchOptionsFor(sess);
   const backend = agents.get(launch.backend);
 
   const lastTurnNum = Messages.maxTurnFor(normalizedSessionId) || 0;
@@ -239,22 +239,9 @@ async function runSessionMessage({
       prompt: finalContent,
       cwd: workDir,
       flagRoot,
-      model: launch.model || undefined,
-      settingsPath: launch.settingsPath,
-      forceNoProxy: launch.forceNoProxy,
-      useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-      // 四挡代理模式: direct | env | proxychains | env_proxychains (agent driver 分流用).
-      proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || 'direct'),
-      codexProfileKey: launch.codexProfileKey || undefined,
-      codexChannel: launch.codexChannel || undefined,
-      codexConfigPath: launch.codexConfigPath || undefined,
-      codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-      codexSecretValue: launch.codexSecretValue || undefined,
-      harnessProvider: launch.harnessProvider || undefined,
-      harnessBaseUrl: launch.harnessBaseUrl || undefined,
-      harnessSecretValue: launch.harnessSecretValue || undefined,
-      harnessMaxTokens: launch.harnessMaxTokens || undefined,
-      harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+      // 模型启动选项整包下传 (backend/model/settingsPath/codex*/harness*/代理挡位...),
+      // 各 agent 后端自行解构所需字段, dispatch 层不逐项展开.
+      modelLaunchOptions: launch,
       displayName: sess.name,
       agentSessionId: sess.agent_session_id || undefined,
       mobiusPromptRecord,

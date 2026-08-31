@@ -69,6 +69,21 @@ function appendJsonl(file, entry) {
   fs.appendFileSync(file, `${JSON.stringify(entry)}\n`)
 }
 
+// dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
+// 本后端在此解包出自己需要的字段 (model/harness*/代理), 旧扁平字段作兼容兜底.
+function unpackLaunch(opts) {
+  const launch = opts?.modelLaunchOptions || {}
+  return {
+    model: launch.model || opts.model,
+    harnessProvider: launch.harnessProvider || opts.harnessProvider,
+    harnessBaseUrl: launch.harnessBaseUrl || opts.harnessBaseUrl,
+    harnessSecretValue: launch.harnessSecretValue || opts.harnessSecretValue,
+    harnessMaxTokens: launch.harnessMaxTokens ?? opts.harnessMaxTokens,
+    harnessRuntimeVersion: launch.harnessRuntimeVersion || opts.harnessRuntimeVersion,
+    useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
+  }
+}
+
 class DeepSeekHarnessBackend extends AgentBackend {
   constructor(opts = {}) {
     super({ name: 'deepseek-harness', runtimeFile: opts.runtimeFile || RUNTIME_FILE, archiveFile: opts.archiveFile || ARCHIVE_FILE })
@@ -145,7 +160,8 @@ class DeepSeekHarnessBackend extends AgentBackend {
     }
   }
 
-  async _start(sessionId, opts, prompt) {
+  async _start(sessionId, optsRaw, prompt) {
+    const opts = { ...optsRaw, ...unpackLaunch(optsRaw) }
     const previous = this.runtime.get(sessionId)
     previous?.watcher?.stop?.()
     const cwd = path.resolve(opts.cwd)
