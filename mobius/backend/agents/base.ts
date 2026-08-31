@@ -47,6 +47,16 @@ function extractAgentSessionTitleFromEntry(entry) {
 }
 
 class AgentBackend {
+  // 类字段声明: constructor 裸赋值的属性在 TS 里必须先声明 (TS2339), any 保持迁移前动态性.
+  name: any
+  runtimeFile: any
+  archiveFile: any
+  locks: any
+  emitter: any
+  persisted: any
+  archive: any
+  runtime: any
+
   /**
    * @param {object} opts
    * @param {string} opts.name              backend 名 'claude-code' / 'tmux-claude-code' / 'opencode'
@@ -68,7 +78,7 @@ class AgentBackend {
     // 机制之前已经在跑的 session, 被 terminate 后 archive 里仍有 jsonlPath 可查.
     if (this.archiveFile) {
       let dirty = false
-      for (const [sid, p] of Object.entries(this.persisted)) {
+      for (const [sid, p] of Object.entries(this.persisted) as Array<[string, any]>) {
         if (!this.archive[sid]) { this.archive[sid] = { ...p }; dirty = true }
       }
       if (dirty) this._saveArchive()
@@ -146,7 +156,7 @@ class AgentBackend {
   //                              历史查询场景兜底 (admin 关 window 后仍能找到 jsonlPath).
   //   完全不做 archive 清理: 一条 entry 几百字节, 量级可控. 回收站机制已下线,
   //   也没有别的"真正遗忘"入口, 故没有 _purgeArchive.
-  _loadJson(file) {
+  _loadJson(file: any): Record<string, any> {
     try {
       if (!fs.existsSync(file)) return {}
       return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -258,3 +268,6 @@ class AgentBackend {
 }
 
 module.exports = { AgentBackend }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

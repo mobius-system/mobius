@@ -1,8 +1,21 @@
 const readline = require('readline')
 
-class HarnessProtocolError extends Error {}
+class HarnessProtocolError extends Error {
+  code: any
+  data: any
+}
 
 class HarnessJsonRpcPeer {
+  // constructor 裸赋值属性的字段声明 (TS2339), any 保持迁移前动态性.
+  child: any
+  requestTimeoutMs: any
+  onNotification: any
+  onProtocolError: any
+  nextId: any
+  pending: any
+  closed: any
+  reader: any
+
   constructor(child, { requestTimeoutMs = 30000, onNotification = () => {}, onProtocolError = () => {} } = {}) {
     this.child = child
     this.requestTimeoutMs = requestTimeoutMs
@@ -73,4 +86,5 @@ class HarnessJsonRpcPeer {
   }
 }
 
+export { HarnessJsonRpcPeer, HarnessProtocolError }
 module.exports = { HarnessJsonRpcPeer, HarnessProtocolError }

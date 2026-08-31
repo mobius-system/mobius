@@ -40,7 +40,7 @@ function pidAlive(pid) {
   try { process.kill(Number(pid), 0); return true } catch (error) { return error?.code === 'EPERM' }
 }
 
-function resolveRuntimeCommand(opts = {}) {
+function resolveRuntimeCommand(opts: any = {}) {
   const explicit = opts.runtimeCommand || process.env.DEEPSEEK_HARNESS_RUNTIME_COMMAND
   let command
   let args
@@ -84,13 +84,18 @@ function unpackLaunch(opts) {
 }
 
 class DeepSeekHarnessBackend extends AgentBackend {
-  constructor(opts = {}) {
+  // constructor 裸赋值属性的字段声明 (TS2339), any 保持迁移前动态性.
+  spawn: any
+  runtimeOptions: any
+  sessionRoot: any
+
+  constructor(opts: any = {}) {
     super({ name: 'deepseek-harness', runtimeFile: opts.runtimeFile || RUNTIME_FILE, archiveFile: opts.archiveFile || ARCHIVE_FILE })
     this.runtime = new Map()
     this.spawn = opts.spawn || spawn
     this.runtimeOptions = opts.runtimeOptions || {}
     this.sessionRoot = opts.sessionRoot || SESSION_ROOT
-    for (const [sessionId, entry] of Object.entries(this.persisted)) {
+    for (const [sessionId, entry] of Object.entries(this.persisted) as Array<[string, any]>) {
       this.runtime.set(sessionId, { ...entry, child: null, peer: null, working: false, pending: [], stderr: '', watcher: null })
     }
   }
@@ -198,7 +203,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
       entry.working = false
       entry.pending = []
       entry.pid = null
-      if (code && !entry.terminating) this._captureError(sessionId, new Error(`DeepSeek Harness runtime exited with code ${code}`), entry.stderr)
+      if (code && !(entry as any).terminating) this._captureError(sessionId, new Error(`DeepSeek Harness runtime exited with code ${code}`), entry.stderr)
       this._persistEntry(sessionId, { pid: null, lastExitCode: code, lastExitSignal: signal || null })
     })
     try {
@@ -207,7 +212,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         provider: entry.provider, maxTokens: entry.maxTokens, runtimeVersion: entry.runtimeVersion, useProxy: entry.useProxy,
         startedAt: entry.startedAt,
       })
-      this._watch(sessionId, jsonlPath)
+      this._watch(sessionId, jsonlPath, null)
       await peer.request('initialize', {
         cwd,
         provider: entry.provider,
@@ -281,7 +286,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
       try { await entry.peer.request('shutdown', undefined, 5000) } catch {}
     }
     if (pidAlive(entry.child.pid)) entry.child.kill('SIGTERM')
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       if (entry.child.exitCode != null || entry.child.signalCode) return resolve()
       const timer = setTimeout(() => { if (pidAlive(entry.child.pid)) entry.child.kill('SIGKILL'); resolve() }, 3000)
       entry.child.once('exit', () => { clearTimeout(timer); resolve() })
@@ -337,7 +342,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
     if (!jsonlPath) return super.getAgentRawThoughtStream(sessionId, listener, opts)
     const watcher = watchMergedJsonl({
       path: jsonlPath,
-      startSentinel: opts.fromSentinel,
+      startSentinel: (opts as any).fromSentinel,
       onEntry: (entry) => listener(entry),
     })
     return () => watcher.stop?.()
@@ -355,3 +360,6 @@ class DeepSeekHarnessBackend extends AgentBackend {
 }
 
 module.exports = { DeepSeekHarnessBackend, resolveRuntimeCommand, pidAlive }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

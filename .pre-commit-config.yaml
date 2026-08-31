@@ -77,3 +77,5 @@ repos:
         language: system
         files: ^mobius/(backend|repositories|db)\.ts$|^mobius/backend/.*\.ts$|^mobius/backend/repositories/.*\.ts$
         pass_filenames: false
+      # node --check 无法发现运行时 ReferenceError (如 55437ee4 的裸赋值解构); agents 层
+      # 已并入 tsconfig.backend.json (tsc-backend 覆盖), 此处无需再单列.

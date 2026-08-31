@@ -40,7 +40,7 @@ function toolUseBlock(block) {
 
 function assistantBlocks(event) {
   const blocks = contentBlocks(event?.data)
-  const result = []
+  const result: any[] = []
   for (const block of blocks) {
     if (!block || typeof block !== 'object') continue
     if (block.type === 'text') result.push({ type: 'text', text: String(block.text || '') })
@@ -155,3 +155,6 @@ function projectHarnessEvent(event, context) {
 }
 
 module.exports = { projectHarnessEvent, textFromBlocks, errorText }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

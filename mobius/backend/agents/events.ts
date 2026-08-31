@@ -23,3 +23,6 @@ module.exports = {
   emitAgentRawEntry,
   onAgentRawEntry,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

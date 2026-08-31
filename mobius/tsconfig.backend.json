@@ -5,6 +5,7 @@
     "moduleResolution": "Node",
     "lib": ["ES2021"],
     "strict": true,
+    "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -19,6 +20,7 @@
   },
   "include": [
     "db.ts",
+    "backend/agents/**/*.ts",
     "backend/repositories/**/*.ts",
     "backend/types/**/*.ts",
     "backend/routes/**/*.ts",

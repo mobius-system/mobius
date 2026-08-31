@@ -44,7 +44,7 @@ function shellQuote(value) {
   return singleQuote(s)
 }
 
-function tmuxCommandString(args, opts = {}) {
+function tmuxCommandString(args, opts: any = {}) {
   const command = ['tmux', ...args].map(shellQuote).join(' ')
   if (!Object.prototype.hasOwnProperty.call(opts, 'input')) return command
   return `printf %s ${bashAnsiQuote(opts.input ?? '')} | ${command}`
@@ -129,7 +129,7 @@ function shouldRecordTmuxCommand(args) {
   return true
 }
 
-function recordTmuxCommand(args, opts = {}) {
+function recordTmuxCommand(args, opts: any = {}) {
   if (!shouldRecordTmuxCommand(args)) return
 
   try {
@@ -144,7 +144,7 @@ function recordTmuxCommand(args, opts = {}) {
   }
 }
 
-function tmux(args, opts = {}) {
+function tmux(args, opts: any = {}) {
   ensureAgentTmuxServer()
   const effectiveArgs = ['-L', AGENT_TMUX_SOCKET, ...args]
   recordTmuxCommand(effectiveArgs, opts)
@@ -188,3 +188,6 @@ module.exports = {
   tmux,
   tmuxCommandString,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

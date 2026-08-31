@@ -170,7 +170,7 @@ function windowExists(name) {
 // 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间到达的请求全部排队"的雪崩.
 // 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
 const LIST_WINDOWS_TTL_MS = 3 * 1000
-let _listWindowsCache = null // { ts: number, rows: string[][] }
+let _listWindowsCache: { ts: number; rows: string[][] } | null = null // { ts: number, rows: string[][] }
 
 // isWorking 反向扫描 transcript 的尾部窗口. 必须远大于单条记录: claude-code 的
 // 上下文注入 user 条目 (🚁🍕 项目+memory 注入) 与长篇 assistant 输出单行可达 30KB+,
@@ -355,7 +355,7 @@ function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy
 
 // 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
 function proxyPrereqMissing(mode = 'env_proxychains') {
-  const missing = []
+  const missing: string[] = []
   const needEnv = mode === 'env' || mode === 'env_proxychains'
   const needChains = mode === 'proxychains' || mode === 'env_proxychains'
   if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
@@ -430,7 +430,7 @@ function pickInitialContextGreeting() {
 
 // ── 启动时 preflight (模块加载时一次性, 缺失硬失败) ────
 ;(function preflight() {
-  const missing = []
+  const missing: string[] = []
   for (const bin of ['tmux', 'claude']) {
     if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
   }
@@ -531,7 +531,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 进程 (claude TUI 在 tmux 里) 当然可能还活 — 我们不重启它. 起 jsonl watcher 接 tail.
   _restoreFromPersisted() {
     let total = 0
-    for (const [sid, p] of Object.entries(this.persisted)) {
+    for (const [sid, p] of Object.entries(this.persisted) as Array<[string, any]>) {
       total++
       if (!p?.jsonlPath || !fs.existsSync(p.jsonlPath)) {
         log(`[tmux-claude-code] runtime 条目 ${sid} 被丢弃 (jsonl 缺失: ${p?.jsonlPath})`)
@@ -663,8 +663,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     } catch { return [] }
 
     const recent = tailLines.slice(-MAX_PENDING_SCAN_ENTRIES)
-    const consumedSigs = []
-    const pending = []
+    const consumedSigs: any[] = []
+    const pending: any[] = []
     for (let i = recent.length - 1; i >= 0; i--) {
       let e
       try { e = JSON.parse(recent[i]) } catch { continue }
@@ -796,7 +796,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 历史 + sentinel: 上层用 sentinel 串到 live 流, 不重复.
-  getHistory(sessionId, opts = {}) {
+  getHistory(sessionId, opts: any = {}) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -805,17 +805,17 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
   }
 
-  get_time_consume_waterfall(sessionId, opts = {}) {
+  get_time_consume_waterfall(sessionId, opts: any = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId, opts = {}) {
+  clear_time_consume_waterfall(sessionId, opts: any = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
   // 订阅 raw 流: opts.fromSentinel 指定字节 offset → 起独立 watcher 从那点 tail.
   // 不传 sentinel = 走基类的 EventEmitter (用后端共享 watcher emit 的 live 流).
-  getAgentRawThoughtStream(sessionId, listener, opts = {}) {
+  getAgentRawThoughtStream(sessionId, listener, opts: any = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) {
@@ -1073,7 +1073,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 收集要注入的 stdio/http MCP server (会话级 --mcp-config <json-file>, 顶层
     // mcpServers, additive 不叠 --strict-mcp-config, 且 --mcp-config 传入的 server
     // 被视为显式可信, 不触发 .mcp.json 那种信任弹窗). per-session 文件各会话不同.
-    const mcpServers = {}
+    const mcpServers: Record<string, any> = {}
     // TUI 会话 (add_remote_aimux_mcp): aimux stdio MCP, 让 claude 经 remote_* 工具
     // (remote_exec_command/write_stdin/apply_patch/view_image/ping) 操作远程工作站.
     if (aimuxRemoteName) {
@@ -1342,3 +1342,6 @@ module.exports = {
   isCompactCompletionUserEvent,
   resolveClaudeProxyMode,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

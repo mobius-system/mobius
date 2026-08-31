@@ -50,7 +50,7 @@ const { MOBIUS_DATA_PATH } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 
-let Database = null
+let Database: any = null
 try { Database = require('better-sqlite3') } catch {}
 
 const HUB = 'imac_codex_agent_hub'
@@ -102,7 +102,7 @@ const CODEX_WORKING_FRESH_MS = 60000
 const CODEX_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*•\s*esc to interrupt\s*\)|^[•◦]\s+\S[^\n()]*?\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*\)/u
 // TTL 5s 缓存: /status 每 2s 轮询, 缓存把 capture-pane 频次压到 ≤1/5s. 空 "" 也缓存.
 const REALTIME_INFO_TTL_MS = 5 * 1000
-const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
+const _realTimeInfoCache = new Map<string, any>() // sessionId → { ts: number, value: string }
 
 // getPendingRequests: codex 把"忙时提交的输入"缓存在 TUI 的 InputQueueState
 // (queued_user_messages / pending_steers, 见 tui/src/chatwidget/input_flow.rs
@@ -212,7 +212,7 @@ function windowExists(name) {
 // 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间请求全部排队"的雪崩.
 // 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
 const LIST_WINDOWS_TTL_MS = 3 * 1000
-let _listWindowsCache = null // { ts: number, rows: string[][] }
+let _listWindowsCache: { ts: number; rows: string[][] } | null = null // { ts: number, rows: string[][] }
 
 function listWindowsRowsCached() {
   const now = Date.now()
@@ -295,7 +295,7 @@ function normalizeProxyMode4(value, fallback = 'direct') {
 
 // 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
 function proxyPrereqMissing(mode = 'env_proxychains') {
-  const missing = []
+  const missing: string[] = []
   const needEnv = mode === 'env' || mode === 'env_proxychains'
   const needChains = mode === 'proxychains' || mode === 'env_proxychains'
   if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
@@ -389,7 +389,7 @@ function findAsciiTailMarker(text) {
 
 // ── 启动时 preflight (模块加载时一次性, 缺失降级为警告) ────
 ;(function preflight() {
-  const missing = []
+  const missing: string[] = []
   for (const bin of ['tmux', 'codex']) {
     if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
   }
@@ -458,7 +458,7 @@ function findRolloutPathByThreadId(threadId) {
   const stack = [root]
   while (stack.length) {
     const dir = stack.pop()
-    let items = []
+    let items: any[] = []
     try { items = fs.readdirSync(dir, { withFileTypes: true }) } catch { continue }
     for (const it of items) {
       const p = path.join(dir, it.name)
@@ -545,7 +545,7 @@ class TmuxCodexBackend extends AgentBackend {
 
   _restoreFromPersisted() {
     let total = 0
-    for (const [sid, p] of Object.entries(this.persisted)) {
+    for (const [sid, p] of Object.entries(this.persisted) as Array<[string, any]>) {
       total++
       if (!p?.agentSessionId) {
         if (!p?.cwd || !windowExists(sid)) continue
@@ -638,7 +638,7 @@ class TmuxCodexBackend extends AgentBackend {
     log(`[tmux-codex] runtime loaded ${this.runtime.size}/${total}`)
   }
 
-  _ensureWatcher(sessionId, startOffset = null) {
+  _ensureWatcher(sessionId, startOffset: any = null) {
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath || entry.watch) return
     const startSentinel = startOffset == null
@@ -775,7 +775,7 @@ class TmuxCodexBackend extends AgentBackend {
       if (cap.status === 0 && cap.stdout) text = cap.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
     } catch { return [] }
     if (!text) return []
-    const pending = []
+    const pending: any[] = []
     let inBlock = false
     for (const raw of text.split('\n')) {
       const line = raw.replace(/\r$/, '')
@@ -843,7 +843,7 @@ class TmuxCodexBackend extends AgentBackend {
         || null
   }
 
-  getHistory(sessionId, opts = {}) {
+  getHistory(sessionId, opts: any = {}) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -852,15 +852,15 @@ class TmuxCodexBackend extends AgentBackend {
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
   }
 
-  get_time_consume_waterfall(sessionId, opts = {}) {
+  get_time_consume_waterfall(sessionId, opts: any = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId, opts = {}) {
+  clear_time_consume_waterfall(sessionId, opts: any = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
-  getAgentRawThoughtStream(sessionId, listener, opts = {}) {
+  getAgentRawThoughtStream(sessionId, listener, opts: any = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) return super.getAgentRawThoughtStream(sessionId, listener, opts)
@@ -905,7 +905,7 @@ class TmuxCodexBackend extends AgentBackend {
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
 
-    let spawnInfo = null
+    let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
       spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
@@ -954,7 +954,7 @@ class TmuxCodexBackend extends AgentBackend {
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
-    let spawnInfo = null
+    let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
       const persisted = this.runtime.get(sessionId)
@@ -1148,7 +1148,7 @@ class TmuxCodexBackend extends AgentBackend {
 
   async _bindRuntimeAfterPrompt({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, sinceMs, knownThreadIds, allowUpdatedThreadFallback = false }) {
     const deadline = Date.now() + THREAD_BIND_TIMEOUT_MS
-    let found = null
+    let found: any = null
     let foundBy = 'created'
     while (Date.now() < deadline) {
       found = findNewestThread({
@@ -1227,7 +1227,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel = null, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1587,3 +1587,6 @@ module.exports = {
   failedFlagPathOf,
   findCodexRecentErrorInPane,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

@@ -15,3 +15,6 @@ function take_tmux_window_text(target, capture_head_and_tail_line = 100) {
 }
 
 module.exports = { take_tmux_window_text }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}
