@@ -947,7 +947,8 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   async _queueImpl(opts) {
-    const { sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts
+    const { sessionId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts
+    let { cwd, flagRoot, displayName } = opts
     let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')
