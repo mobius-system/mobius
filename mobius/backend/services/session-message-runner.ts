@@ -357,7 +357,11 @@ async function runSessionMessage({
     timestamp: new Date().toISOString(),
   };
 
-  const externalCredential = isExternalEvent
+  // 本条消息是"外部 Session 通知"(别的 agent @ 了本 session)时, 为本侧 stage 桥接凭证:
+  // token 落服务端受限目录 + workspace 写入 bridge CLI, 之后 wake/digest prompt 里只引用
+  // 文件名级短 ID, 让本侧 agent 用 `.imac/bridge/agent-bridge.sh read <id>` 读取来件.
+  // suffix 区分单条唤醒 (wake) 与批量摘要 (digest) 两种凭证文件.
+  const incomingBridgeCredential = isExternalEvent
     ? stageBridgeCredential(
         externalEvent!.token,
         String(externalEvent!.channelId || ''),
@@ -370,7 +374,7 @@ async function runSessionMessage({
       ? externalSessionDigestWakePrompt({
           messages: externalEvent!.messages,
           targetSession: sess,
-          credential: externalCredential,
+          credential: incomingBridgeCredential,
           batchId: externalEvent!.batchId,
           threadId: externalEvent!.threadId,
         })
@@ -378,10 +382,16 @@ async function runSessionMessage({
         messageId: externalEvent!.messageId,
         sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
         targetSession: sess,
-        credential: externalCredential,
+        credential: incomingBridgeCredential,
       })
     : sessionContentWithAttachments(normalizedContent, normalizedAttachments);
-  const bridgeKickoffs: Array<{
+  // 双向 @ 桥接的"待唤醒目标"清单: 每个 bidirectional mention 一项 (通道 + 铸好的 token + 首条投递内容).
+  // 职责链: ① 下方循环里逐 mention 建通道/mint token 后 push 进来;
+  //         ② dispatch 源 agent 之前, 先把首条消息原子落入对端收件箱 (recordAgentBridgeMessage),
+  //            消除"用户已发送但对端根本收不到"的窗口;
+  //         ③ dispatch 成功 → 响应里 external_messages_queued 报给前端; 失败 → 逐项回滚
+  //            (updateAgentBridgeMessage('failed') + closeAgentBridgeChannel).
+  const pendingBridgeWakeups: Array<{
     targetSession: any;
     token: string;
     mode: AgentMentionMode;
@@ -466,13 +476,15 @@ async function runSessionMessage({
         source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
         target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
       });
-      const sourceCredential = stageBridgeCredential(token, channel.channelId, workDir, 'src');
+      // 源侧桥接凭证 (suffix 'src'): 本方 agent 回复对端时用的 CLI 凭证, 与对端收到的
+      // 'wake'/'digest' 凭证区分. token 仍只落服务端, prompt 里是文件名级短 ID.
+      const sourceBridgeCredential = stageBridgeCredential(token, channel.channelId, workDir, 'src');
       finalContent = [
         finalContent,
         buildBidirectionalMentionPrompt({
           perspective: 'source',
           mode: mention.mode,
-          credential: sourceCredential,
+          credential: sourceBridgeCredential,
           sourceSession: sess,
           targetSession,
           transferMarkdown: sourceTransfer.markdown,
@@ -481,7 +493,7 @@ async function runSessionMessage({
           channelId: channel.channelId,
         }),
       ].filter(Boolean).join('\n\n');
-      bridgeKickoffs.push({
+      pendingBridgeWakeups.push({
         targetSession,
         token,
         mode: mention.mode,
@@ -495,17 +507,17 @@ async function runSessionMessage({
   try {
     // 先把双向 @ 的首条消息原子落入收件箱，再启动源 Agent。
     // 旧顺序在 dispatch 成功后才写库；spawn/网络异常会留下“用户已发送但对端根本收不到”的窗口。
-    for (const kickoff of bridgeKickoffs) {
+    for (const wakeup of pendingBridgeWakeups) {
       const queued = recordAgentBridgeMessage({
-        channelId: kickoff.channelId,
+        channelId: wakeup.channelId,
         requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
         fromSessionId: normalizedSessionId,
-        toSessionId: kickoff.targetSession.session_id,
-        content: kickoff.content,
-        batchId: kickoff.batchId,
-        threadId: kickoff.batchId,
+        toSessionId: wakeup.targetSession.session_id,
+        content: wakeup.content,
+        batchId: wakeup.batchId,
+        threadId: wakeup.batchId,
       });
-      kickoff.messageId = queued.id;
+      wakeup.messageId = queued.id;
     }
     const dispatchOpts = {
       sessionId: normalizedSessionId,
@@ -557,20 +569,20 @@ async function runSessionMessage({
       turn_number: turnNum,
       request_id: normalizedRequestId,
       backend: backend.name,
-      external_messages_queued: bridgeKickoffs.map((kickoff) => ({
-        message_id: kickoff.messageId || null,
-        channel_id: kickoff.channelId,
-        target_session_id: kickoff.targetSession.session_id,
+      external_messages_queued: pendingBridgeWakeups.map((wakeup) => ({
+        message_id: wakeup.messageId || null,
+        channel_id: wakeup.channelId,
+        target_session_id: wakeup.targetSession.session_id,
         delivery: 'queued',
-        batch_id: kickoff.batchId,
+        batch_id: wakeup.batchId,
       })),
     };
   } catch (e) {
-    for (const kickoff of bridgeKickoffs) {
-      if (kickoff.messageId) {
-        try { updateAgentBridgeMessage(kickoff.messageId, 'failed', (e as Error).message || '源 Session 启动失败'); } catch {}
+    for (const wakeup of pendingBridgeWakeups) {
+      if (wakeup.messageId) {
+        try { updateAgentBridgeMessage(wakeup.messageId, 'failed', (e as Error).message || '源 Session 启动失败'); } catch {}
       }
-      try { closeAgentBridgeChannel(kickoff.channelId); } catch {}
+      try { closeAgentBridgeChannel(wakeup.channelId); } catch {}
     }
     const { userMessage: detail, rawMessage } = formatBackendSendFailure(e);
     logger?.warn?.(`[sessions/messages] ${rawMessage}${rawMessage !== detail ? `; user_message=${detail}` : ''} (session=${normalizedSessionId})`);
