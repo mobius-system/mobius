@@ -188,6 +188,7 @@ const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
+const COMMUNICATION_LINK_COLOR = '#38bdf8'
 
 function activeTimeMs(item: any) {
   const value = item?.last_session_activity_at || item?.last_active || item?.updated_at || item?.created_at
@@ -1494,6 +1495,36 @@ function drawSessionPath(ctx: CanvasRenderingContext2D, node: ClusterSession, r 
   drawCirclePath(ctx, node.x, node.y, r)
 }
 
+function drawCommunicationLinks(ctx: CanvasRenderingContext2D, nodes: ClusterSession[], links: Array<{ source: string; target: string }>, now: number, zoom: number) {
+  if (links.length === 0 || nodes.length < 2) return
+  const nodeById = new Map<string, ClusterSession>()
+  nodes.forEach((node) => nodeById.set(node.id, node))
+  ctx.lineCap = 'round'
+  links.forEach((link) => {
+    const a = nodeById.get(link.source)
+    const b = nodeById.get(link.target)
+    // 仅当两端 Agent 都在当前可见节点集内才画线
+    if (!a || !b) return
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < a.r + b.r + 6) return
+    const nx = dx / dist
+    const ny = dy / dist
+    ctx.beginPath()
+    ctx.moveTo(a.x + nx * (a.r + 2), a.y + ny * (a.r + 2))
+    ctx.lineTo(b.x - nx * (b.r + 2), b.y - ny * (b.r + 2))
+    ctx.strokeStyle = rgba(COMMUNICATION_LINK_COLOR, 0.75)
+    ctx.lineWidth = Math.max(1, 1.3 / zoom)
+    ctx.setLineDash([6, 5])
+    // lineDashOffset 随时间流动 → 动态虚线
+    ctx.lineDashOffset = -((now / 45) % 11)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.lineDashOffset = 0
+  })
+}
+
 function drawSessionNode(ctx: CanvasRenderingContext2D, node: ClusterSession, now: number, zoom: number) {
   const fill = sessionColor(node)
   const isRunning = node.source?.agent_status === 'running' || node.status === 'running'
@@ -1774,6 +1805,14 @@ export default function MobiusOverviewClusterPage() {
   const [hoverLabel, setHoverLabel] = useState<{ x: number; y: number; title: string; meta: string } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [paused, setPaused] = useState(false)
+  const [showCommunication, setShowCommunication] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:overview-cluster-comm') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [communicationLinks, setCommunicationLinks] = useState<Array<{ source: string; target: string }>>([])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
@@ -1784,6 +1823,8 @@ export default function MobiusOverviewClusterPage() {
   const userViewportInteractedRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
+  const showCommunicationRef = useRef(showCommunication)
+  const communicationLinksRef = useRef(communicationLinks)
   const zoomRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
@@ -2039,6 +2080,9 @@ export default function MobiusOverviewClusterPage() {
     }
 
     const now = performance.now()
+    if (showCommunicationRef.current) {
+      drawCommunicationLinks(ctx, nodes, communicationLinksRef.current, now, zoomRef.current)
+    }
     nodes.forEach((node) => drawSessionNode(ctx, node, now, zoomRef.current))
 
     if (zoomRef.current > 0.48) {
@@ -2198,6 +2242,38 @@ export default function MobiusOverviewClusterPage() {
   }, [paused])
 
   useEffect(() => {
+    showCommunicationRef.current = showCommunication
+  }, [showCommunication])
+
+  useEffect(() => {
+    communicationLinksRef.current = communicationLinks
+  }, [communicationLinks])
+
+  // 通讯虚线数据源: 开启开关后自递归轮询当前用户有效的双向通讯链接 (48h 窗口内).
+  // 无现成轮询基建时的旧 edges 模式即 pollRecursive; 关闭开关即 stop 停止.
+  useEffect(() => {
+    if (!showCommunication) return undefined
+    const stop = pollRecursive((signal) => {
+      return api('/api/multiagent_communication_links', { signal })
+        .then((data: any) => {
+          const seen = new Set<string>()
+          const unique: Array<{ source: string; target: string }> = []
+          ;(data?.links || []).forEach((link: any) => {
+            const source = String(link?.source_session_id || '')
+            const target = String(link?.target_session_id || '')
+            if (!source || !target) return
+            const key = [source, target].sort().join('|')
+            if (seen.has(key)) return
+            seen.add(key)
+            unique.push({ source, target })
+          })
+          setCommunicationLinks(unique)
+        })
+    }, 10_000)
+    return stop
+  }, [showCommunication])
+
+  useEffect(() => {
     const step = () => {
       const currentModel = modelRef.current
       const gatherExcess = currentModel.mode === 'creator'
@@ -2280,6 +2356,14 @@ export default function MobiusOverviewClusterPage() {
     setHoverLabel(null)
     setClusterMode(value)
     try { localStorage.setItem('mobius:overview-cluster-mode', value) } catch {}
+  }
+
+  const handleShowCommunicationChange = () => {
+    setShowCommunication((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-cluster-comm', next ? '1' : '0') } catch {}
+      return next
+    })
   }
 
   useEffect(() => {
@@ -2547,6 +2631,18 @@ export default function MobiusOverviewClusterPage() {
               </button>
               <button type="button" title="重新布局" onClick={reheat} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button
+                type="button"
+                title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
+                onClick={handleShowCommunicationChange}
+                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors"
+                style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                通讯
               </button>
             </div>
             {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
