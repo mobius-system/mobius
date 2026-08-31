@@ -268,10 +268,12 @@ async function runSessionMessage({
       await backend.noPauseCurrentAndQueueQueryAtSession(dispatchOpts);
     }
     const runtimeInfo = backend.listSessions().find((s: any) => s.sessionId === normalizedSessionId);
-    const newAgentSid = runtimeInfo?.agentSessionId || null;
-    if (newAgentSid && newAgentSid !== sess.claude_session_id) {
+    // agent 后端原生会话 ID (claude TUI 的 UUID / codex thread ID), 与 mobius 平台会话 ID 是两层体系.
+    // 仅首条消息或 respawn 换了原生会话时才回写, 供下次 dispatch resume 同一原生会话 + 定位 jsonl.
+    const newAgentSessionId = runtimeInfo?.agentSessionId || null;
+    if (newAgentSessionId && newAgentSessionId !== sess.claude_session_id) {
       try {
-        db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, normalizedSessionId);
+        db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSessionId, normalizedSessionId);
       } catch (e) {
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
