@@ -1,7 +1,7 @@
 /**
  * mention-context.ts — @ 提及处理 (从已删除的 session-general-com.ts 收敛).
  *
- * read_only: 对端上下文快照 (transfer bundle 文件) 拼进本方 prompt, 对端无感知;
+ * read_only: 目标智能体的上下文快照 (transfer bundle 文件) 拼进本方 prompt, 目标智能体无感知;
  * bidirectional: registerMultiagentLinks 注册 48h 双向链接 + 写 .imac/multiagent.env
  *   (multiagent_send CLI 向上找到它取 user_id) + 消息尾追加用法提示.
  */
@@ -27,7 +27,7 @@ export type NormalizedAgentMention = {
 
 // 归一化 @ 提及: 前端 mention 选择器对象 + 正文里粘贴的 `session=<id>` 都收进来.
 // 同 session 去重, bidirectional 优先; 直填 ID 默认只读, 双向必须通过选择器明确选择
-// (避免粘贴即唤醒对端).
+// (避免粘贴即唤醒目标智能体).
 export function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
   const indexBySession = new Map<string, number>();
   const output: NormalizedAgentMention[] = [];
@@ -100,8 +100,8 @@ function resolveSessionJsonlPath(session: any, sessionId: string): string | null
   }
 }
 
-// 源 session 的上下文快照, 给被 @ 的对端做参考资料: 优先落 transfer bundle 文件
-// (对端工作区 agent_mentions/ 下, prompt 里只引用路径), 失败退回内联 markdown.
+// 源 session 的上下文快照, 给被 @ 的目标智能体做参考资料: 优先落 transfer bundle 文件
+// (目标智能体工作区 agent_mentions/ 下, prompt 里只引用路径), 失败退回内联 markdown.
 function buildMentionTransfer(user: any, sourceSession: any, targetSession: any, logger: any): {
   markdown: string;
   paths: { full?: string | null; user_messages?: string | null; metadata?: string | null } | null;
@@ -150,7 +150,7 @@ export function writeMultiagentEnv(workDir: string | null, userId: string): void
 
 /**
  * 处理本条消息里的全部 @ 提及, 返回拼接后的 prompt.
- * - read_only: 对端快照引用内联进本方 prompt (transfer bundle 落对端工作区, 对端不知情);
+ * - read_only: 目标智能体快照引用内联进本方 prompt (transfer bundle 落目标智能体工作区, 目标智能体不知情);
  * - bidirectional: 注册 48h 双向链接 + 写 multiagent.env + 消息尾追加 multiagent_send 用法.
  */
 export function applyAgentMentions(args: {
@@ -190,7 +190,7 @@ export function applyAgentMentions(args: {
       nextPrompt,
       [
         '<agent_reference>',
-        '对端上下文快照（只读，对端不知情）：',
+        '目标智能体的上下文快照（只读，目标智能体不知情）：',
         sourceTransfer.paths?.full
           ? `- 完整快照: ${sourceTransfer.paths.full}`
           : '',
@@ -198,7 +198,7 @@ export function applyAgentMentions(args: {
           ? `- 用户消息: ${sourceTransfer.paths.user_messages}`
           : '',
         sourceTransfer.markdown,
-        '按需 Read 了解对端，不构成对端许可或通知。',
+        '按需 Read 了解目标智能体，不构成目标智能体的许可或通知。',
         '</agent_reference>',
       ].filter(Boolean).join('\n'),
     ].filter(Boolean).join('\n\n');
