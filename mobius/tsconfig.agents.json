@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.backend.json",
+  "compilerOptions": {
+    "noImplicitAny": false
+  },
+  "include": [
+    "backend/agents/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "frontend",
+    "public",
+    "extension"
+  ]
+}

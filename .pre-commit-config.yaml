@@ -77,5 +77,11 @@ repos:
         language: system
         files: ^mobius/(backend|repositories|db)\.ts$|^mobius/backend/.*\.ts$|^mobius/backend/repositories/.*\.ts$
         pass_filenames: false
-      # node --check 无法发现运行时 ReferenceError (如 55437ee4 的裸赋值解构); agents 层
-      # 已并入 tsconfig.backend.json (tsc-backend 覆盖), 此处无需再单列.
+      # agents 层独立配置 (noImplicitAny 宽松): 不能并入主 tsconfig — 那个开关会改变
+      # services 侧的类型推断 (65 个 never/null 涟漪错误), 故 agents 单独一份 tsconfig.
+      - id: tsc-agents
+        name: tsc --noEmit (agents .ts 类型检查, noImplicitAny 宽松)
+        entry: bash -c 'cd mobius && npx --no-install tsc --noEmit -p tsconfig.agents.json'
+        language: system
+        files: ^mobius/backend/agents/.*\.ts$
+        pass_filenames: false
