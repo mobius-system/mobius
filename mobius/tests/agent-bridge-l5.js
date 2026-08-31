@@ -20,7 +20,7 @@ const {
   verifyAgentBridgeToken,
 } = require('../backend/services/agent-mention-bridge')
 const { buildMobiusExternalEntry } = require('../backend/services/mobius-jsonl')
-const { normalizeAgentMentions } = require('../backend/services/session-message-runner')
+const { normalizeAgentMentions } = require('../backend/services/session-general-com')
 const {
   SessionPendingMentions,
   normalizePendingSessionMentions,

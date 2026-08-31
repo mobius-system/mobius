@@ -1,3 +1,15 @@
+/**
+ * session-message-runner.ts — "把一条消息投给某个 agent 后端"的主干.
+ *
+ * 职责 (与智能体间通信解耦后): 鉴权 / workspace 解析 / turn 分配 / messages_v2 落库 /
+ * 首条消息的上下文包装 (project/issue/memory) / dispatch (urgent 或普通) / 失败善后.
+ *
+ * 智能体间通信 (@ 提及桥接 / 外部 Session 通知唤醒 / 收件箱投递回滚) 全部在
+ * ./session-general-com — 本文件只在三个接缝调用它:
+ *   1. buildIncomingExternalPrompt  — externalEvent 分支的唤醒 prompt;
+ *   2. applyAgentMentions           — 源侧 @ 处理 (read_only 拼 prompt / bidirectional 收集 wakeup);
+ *   3. queueBridgeInitialMessages / settleBridgeWakeupsOnFailure — 收件箱投递与失败回滚.
+ */
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 import { buildSessionContext, wrapUserMessage } from './session-context';
@@ -6,23 +18,22 @@ import agents from '../agents';
 import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
-import { storeBridgeToken, writeBridgeCliToWorkspace, type BridgeCredential } from './agent-bridge-cli';
 import { formatBackendSendFailure } from './session-errors';
-import { buildSessionTransferMarkdown, transferReferencePrompt, writeSessionTransferBundle } from './session-transfer';
-import { canOperateSession, canReadSession } from './access-control';
-import { aimuxRemoteNameFromMeta } from './pc-client-context';
+import { transferReferencePrompt } from './session-transfer';
+import { canOperateSession } from './access-control';
 import {
-  buildBidirectionalMentionPrompt,
-  externalSessionWakePrompt,
-  externalSessionDigestWakePrompt,
-  closeAgentBridgeChannel,
-  createAgentBridgeChannel,
-  buildReadOnlyMentionPrompt,
-  mintAgentBridgeToken,
-  recordAgentBridgeMessage,
-  updateAgentBridgeMessage,
-  type AgentMentionMode,
-} from './agent-mention-bridge';
+  normalizeAgentMentions,
+  sessionMentionMetadata,
+  readPendingTransferPaths,
+  buildIncomingExternalPrompt,
+  applyAgentMentions,
+  queueBridgeInitialMessages,
+  settleBridgeWakeupsOnFailure,
+  describeBridgeWakeupsQueued,
+  externalEventArchiveFields,
+  type ExternalSessionEvent,
+  type NormalizedAgentMention,
+} from './session-general-com';
 import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
@@ -32,8 +43,7 @@ import {
   safeWriteFailedFlag,
 } from '../utils/session-flags';
 import { db } from '../../db';
-import { randomUUID } from 'crypto';
-import { HIDDEN_FOLDER_NAME } from '../config';
+import { aimuxRemoteNameFromMeta } from './pc-client-context';
 
 function httpError(message: string, status: number = 500, category: string = ''): Error {
   const err = new Error(message) as Error & { status?: number; category?: string };
@@ -49,186 +59,6 @@ function findSessionOperable(id: any, user: any): any {
 
 function mobiusPromptKind(content: any): string {
   return String(content || '').trim().startsWith('/compact') ? 'compact' : 'user_input';
-}
-
-interface PendingTransferPaths {
-  full: string | null;
-  user_messages: string | null;
-  metadata: string | null;
-}
-
-type NormalizedAgentMention = {
-  sessionId: string;
-  mode: AgentMentionMode;
-};
-
-export type ExternalSessionEvent = {
-  messageId: number;
-  channelId: string;
-  sourceSessionId: string;
-  sourceSessionName?: string;
-  targetSessionId: string;
-  token: string;
-  batchId?: string | null;
-  threadId?: string | null;
-  messages?: Array<{
-    messageId: number;
-    channelId: string;
-    sourceSessionId: string;
-    sourceSessionName?: string;
-  }>;
-};
-
-
-function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
-  try {
-    const row = db.prepare(`
-      SELECT content
-      FROM messages_v2
-      WHERE task_id = ? AND role = 'system' AND turn_summary = 'session_transfer'
-      ORDER BY id DESC
-      LIMIT 1
-    `).get(sessionId) as { content?: string } | undefined;
-    if (!row?.content) return null;
-    const parsed = JSON.parse(row.content);
-    const full = typeof parsed?.paths?.full === 'string' && parsed.paths.full.trim()
-      ? parsed.paths.full.trim()
-      : typeof parsed?.path === 'string' && parsed.path.trim()
-        ? parsed.path.trim()
-        : null;
-    const userMessages = typeof parsed?.paths?.user_messages === 'string' && parsed.paths.user_messages.trim()
-      ? parsed.paths.user_messages.trim()
-      : typeof parsed?.paths?.userMessages === 'string' && parsed.paths.userMessages.trim()
-        ? parsed.paths.userMessages.trim()
-        : null;
-    const metadata = typeof parsed?.paths?.metadata === 'string' && parsed.paths.metadata.trim()
-      ? parsed.paths.metadata.trim()
-      : null;
-    return full || userMessages || metadata ? { full, user_messages: userMessages, metadata } : null;
-  } catch {
-    return null;
-  }
-}
-
-function resolveSessionJsonlPath(session: any, sessionId: string): string | null {
-  try {
-    const launch = modelRegistry.launchOptionsForSession(session);
-    const backend = agents.get(launch.backend);
-    return typeof backend?._resolveJsonlPath === 'function'
-      ? backend._resolveJsonlPath(sessionId)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export function normalizeAgentMentions(mentions: any, content: string = ''): NormalizedAgentMention[] {
-  const indexBySession = new Map<string, number>();
-  const output: NormalizedAgentMention[] = [];
-  for (const raw of Array.isArray(mentions) ? mentions : []) {
-    if (!raw || typeof raw !== 'object') continue;
-    const kind = String(raw.kind || raw.type || '').trim();
-    if (kind !== 'agent') continue;
-    const sessionId = String(raw.session_id || raw.sessionId || raw.id || '').trim();
-    if (!sessionId) continue;
-    const mode = String(raw.mode || raw.mention_mode || raw.agent_mode || '').trim() === 'bidirectional'
-      ? 'bidirectional'
-      : 'read_only';
-    const existingIndex = indexBySession.get(sessionId);
-    if (existingIndex != null) {
-      if (mode === 'bidirectional') output[existingIndex] = { sessionId, mode };
-      continue;
-    }
-    indexBySession.set(sessionId, output.length);
-    output.push({ sessionId, mode });
-  }
-  // 支持从别的页面直接复制 `session=<id>`，也支持 `@session=<id>`。
-  // 直填 ID 默认只读，双向模式必须通过选择器明确选择，避免粘贴即唤醒对端。
-  const copiedIds = String(content || '').match(/(?:^|[\s(@])@?session=([A-Za-z0-9_-]{4,128})(?=$|[\s),.;!?，。！？])/gi) || [];
-  for (const raw of copiedIds) {
-    const match = raw.match(/session=([A-Za-z0-9_-]{4,128})/i);
-    const sessionId = match?.[1]?.trim();
-    if (!sessionId || indexBySession.has(sessionId)) continue;
-    indexBySession.set(sessionId, output.length);
-    output.push({ sessionId, mode: 'read_only' });
-  }
-  return output;
-}
-
-function sessionMentionMetadata(user: any, currentSessionId: string, mentions: NormalizedAgentMention[]): any[] {
-  return mentions.map((mention) => {
-    if (!mention.sessionId || mention.sessionId === currentSessionId) return null;
-    const target = Sessions.findByIdWithJoins(mention.sessionId) as any;
-    if (!target) return null;
-    const allowed = mention.mode === 'read_only'
-      ? canReadSession(user, target)
-      : canOperateSession(user, target);
-    if (!allowed) return null;
-    const scopeTitle = target.scope_type === 'research'
-      ? (target.research_title || target.research_id || '')
-      : (target.issue_title || target.issue_id || '');
-    return {
-      session_id: target.session_id,
-      name: target.name || target.session_id,
-      mode: mention.mode,
-      project_id: target.project_id || null,
-      project_name: target.project_name || target.project_id || '',
-      scope_type: target.scope_type || null,
-      scope_id: target.scope_type === 'research' ? target.research_id : target.issue_id,
-      scope_title: scopeTitle,
-      context_at: new Date().toISOString(),
-    };
-  }).filter(Boolean);
-}
-
-function buildMentionTransfer(user: any, sourceSession: any, targetSession: any, logger: any): {
-  markdown: string;
-  paths: { full?: string | null; user_messages?: string | null; metadata?: string | null } | null;
-} {
-  const jsonlPath = resolveSessionJsonlPath(sourceSession, sourceSession.session_id);
-  if (jsonlPath) {
-    try {
-      const targetWorkspace = resolveSessionWorkspace(user, targetSession.session_id);
-      const bindPath = targetWorkspace.projectRoot || targetWorkspace.workDir;
-      if (bindPath) {
-        const bundle = writeSessionTransferBundle({
-          bindPath,
-          sourceSession,
-          targetSessionId: targetSession.session_id,
-          jsonlPath,
-          directoryName: 'agent_mentions',
-        });
-        return { markdown: '', paths: bundle?.paths || null };
-      }
-      const transfer = buildSessionTransferMarkdown({ sourceSession, targetSessionId: targetSession.session_id, jsonlPath, maxTextChars: 4000, maxTotalChars: 12000 });
-      if (transfer?.markdown) return { markdown: String(transfer.markdown || '').trimEnd(), paths: null };
-    } catch (e) {
-      logger?.warn?.(`[sessions/messages] build mention transfer failed (${sourceSession.session_id}): ${e.message}`);
-    }
-  }
-
-  try {
-    const ctx = buildSessionContext(user, sourceSession.session_id);
-    return { markdown: String(ctx?.body || '').trimEnd(), paths: null };
-  } catch {
-    return { markdown: '', paths: null };
-  }
-}
-
-// 外部通知的桥接凭证: token 落服务端受限目录 (0600), workspace 写入无秘密 CLI.
-// prompt 里只出现 "bridge read 42" 级别的短指令, token 永不进 LLM 上下文.
-function stageBridgeCredential(token: string, channelId: string, workDir: string | null, suffix = ''): BridgeCredential | null {
-  const trimmed = String(token || '').trim();
-  if (!trimmed || !channelId) return null;
-  try {
-    const credential = storeBridgeToken(trimmed, channelId, suffix);
-    if (workDir) {
-      try { writeBridgeCliToWorkspace(workDir, HIDDEN_FOLDER_NAME); } catch {}
-    }
-    return credential;
-  } catch {
-    return null;
-  }
 }
 
 async function runSessionMessage({
@@ -282,7 +112,7 @@ async function runSessionMessage({
     user,
     [workspace.projectRoot, workspace.workDir],
   );
-  const normalizedMentions = isExternalEvent ? [] : normalizeAgentMentions(mentions, normalizedContent);
+  const normalizedMentions: NormalizedAgentMention[] = isExternalEvent ? [] : normalizeAgentMentions(mentions, normalizedContent);
   const mentionMetadata = isExternalEvent ? [] : sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
   if (!isExternalEvent && !normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
@@ -345,64 +175,14 @@ async function runSessionMessage({
     userId: user?.id || null,
     attachments: normalizedAttachments,
     mentions: normalizedMentions,
-    ...(isExternalEvent ? {
-      sourceSessionId: externalEvent?.sourceSessionId,
-      targetSessionId: externalEvent?.targetSessionId,
-      messageId: externalEvent?.messageId,
-      channelId: externalEvent?.channelId,
-      batchId: externalEvent?.batchId || null,
-      threadId: externalEvent?.threadId || null,
-      externalMessages: externalEvent?.messages || null,
-    } : {}),
+    ...externalEventArchiveFields(externalEvent),
     timestamp: new Date().toISOString(),
   };
 
-  // 本条消息是"外部 Session 通知"(别的 agent @ 了本 session)时, 为本侧 stage 桥接凭证:
-  // token 落服务端受限目录 + workspace 写入 bridge CLI, 之后 wake/digest prompt 里只引用
-  // 文件名级短 ID, 让本侧 agent 用 `.imac/bridge/agent-bridge.sh read <id>` 读取来件.
-  // suffix 区分单条唤醒 (wake) 与批量摘要 (digest) 两种凭证文件.
-  const incomingBridgeCredential = isExternalEvent
-    ? stageBridgeCredential(
-        externalEvent!.token,
-        String(externalEvent!.channelId || ''),
-        workDir,
-        externalEvent!.messages && externalEvent!.messages.length > 1 ? 'digest' : 'wake',
-      )
-    : null;
-  let finalContent = isExternalEvent
-    ? externalEvent!.messages && externalEvent!.messages.length > 1
-      ? externalSessionDigestWakePrompt({
-          messages: externalEvent!.messages,
-          targetSession: sess,
-          credential: incomingBridgeCredential,
-          batchId: externalEvent!.batchId,
-          threadId: externalEvent!.threadId,
-        })
-      : externalSessionWakePrompt({
-        messageId: externalEvent!.messageId,
-        sourceSession: { session_id: externalEvent!.sourceSessionId, name: externalEvent!.sourceSessionName },
-        targetSession: sess,
-        credential: incomingBridgeCredential,
-      })
-    : sessionContentWithAttachments(normalizedContent, normalizedAttachments);
-  // 双向 @ 桥接的"待唤醒目标"清单: 每个 bidirectional mention 一项 (通道 + 铸好的 token + 首条投递内容).
-  // 职责链: ① 下方循环里逐 mention 建通道/mint token 后 push 进来;
-  //         ② dispatch 源 agent 之前, 先把首条消息原子落入对端收件箱 (recordAgentBridgeMessage),
-  //            消除"用户已发送但对端根本收不到"的窗口;
-  //         ③ dispatch 成功 → 响应里 external_messages_queued 报给前端; 失败 → 逐项回滚
-  //            (updateAgentBridgeMessage('failed') + closeAgentBridgeChannel).
-  const pendingBridgeWakeups: Array<{
-    targetSession: any;
-    token: string;
-    mode: AgentMentionMode;
-    channelId: string;
-    content: string;
-    messageId?: number;
-    batchId: string;
-  }> = [];
-  const mentionBatchId = normalizedMentions.some((mention) => mention.mode === 'bidirectional')
-    ? `abatch_${randomUUID().replace(/-/g, '').slice(0, 24)}`
-    : null;
+  // 接缝 1 (目标侧): 外部 Session 通知 → 唤醒 prompt; 普通消息 → 附件拼装.
+  let finalContent = buildIncomingExternalPrompt(externalEvent, sess, workDir)
+    ?? sessionContentWithAttachments(normalizedContent, normalizedAttachments);
+
   if (
     !isExternalEvent
     && Messages.countUserMessagesFor(normalizedSessionId) <= 1
@@ -434,91 +214,26 @@ async function runSessionMessage({
     }
   }
 
-  if (!isExternalEvent && normalizedMentions.length > 0) {
-    for (const mention of normalizedMentions) {
-      const targetSession = Sessions.findById(mention.sessionId) as any;
-      if (!targetSession) continue;
-      if (targetSession.session_id === normalizedSessionId) continue;
-      const canUseTarget = mention.mode === 'read_only'
-        ? canReadSession(user, targetSession)
-        : canOperateSession(user, targetSession);
-      if (!canUseTarget) continue;
-      const sourceTransfer = buildMentionTransfer(user, targetSession, sess, logger);
-      if (!sourceTransfer.markdown && !sourceTransfer.paths) continue;
-      if (mention.mode === 'read_only') {
-        finalContent = [
-          finalContent,
-          buildReadOnlyMentionPrompt({
-            sourceSession: sess,
-            targetSession,
-            transferMarkdown: sourceTransfer.markdown,
-            transferPaths: sourceTransfer.paths,
-            currentUserName: user?.display_name || user?.id,
-          }),
-        ].filter(Boolean).join('\n\n');
-        continue;
-      }
-
-      const channel = createAgentBridgeChannel({
-        ownerUserId: user.id,
-        sourceSessionId: normalizedSessionId,
-        targetSessionId: targetSession.session_id,
-        batchId: mentionBatchId,
-        threadId: mentionBatchId,
+  // 接缝 2 (源侧): 处理 @ 提及 — read_only 把对端快照拼进本方 prompt;
+  // bidirectional 建桥接通道并收集待唤醒清单 pendingBridgeWakeups.
+  const mentionResult = isExternalEvent
+    ? { prompt: finalContent, pendingBridgeWakeups: [] as ReturnType<typeof applyAgentMentions>['pendingBridgeWakeups'] }
+    : applyAgentMentions({
+        user,
+        sourceSession: sess,
+        sessionId: normalizedSessionId,
+        prompt: finalContent,
+        mentions: normalizedMentions,
+        displayContent: normalizedContent.trim() || displayContent,
+        workDir,
+        logger,
       });
-      const token = mintAgentBridgeToken({
-        owner_user_id: user.id,
-        source_session_id: normalizedSessionId,
-        target_session_id: targetSession.session_id,
-        channel_id: channel.channelId,
-        mode: mention.mode,
-        actor_session_id: normalizedSessionId,
-        source_session_name: String(sess?.name || '').trim() || normalizedSessionId,
-        target_session_name: String(targetSession?.name || '').trim() || targetSession.session_id,
-      });
-      // 源侧桥接凭证 (suffix 'src'): 本方 agent 回复对端时用的 CLI 凭证, 与对端收到的
-      // 'wake'/'digest' 凭证区分. token 仍只落服务端, prompt 里是文件名级短 ID.
-      const sourceBridgeCredential = stageBridgeCredential(token, channel.channelId, workDir, 'src');
-      finalContent = [
-        finalContent,
-        buildBidirectionalMentionPrompt({
-          perspective: 'source',
-          mode: mention.mode,
-          credential: sourceBridgeCredential,
-          sourceSession: sess,
-          targetSession,
-          transferMarkdown: sourceTransfer.markdown,
-          transferPaths: sourceTransfer.paths,
-          currentUserName: user?.display_name || user?.id,
-          channelId: channel.channelId,
-        }),
-      ].filter(Boolean).join('\n\n');
-      pendingBridgeWakeups.push({
-        targetSession,
-        token,
-        mode: mention.mode,
-        channelId: channel.channelId,
-        content: normalizedContent.trim() || displayContent,
-        batchId: mentionBatchId!,
-      });
-    }
-  }
+  finalContent = mentionResult.prompt;
+  const pendingBridgeWakeups = mentionResult.pendingBridgeWakeups;
 
   try {
-    // 先把双向 @ 的首条消息原子落入收件箱，再启动源 Agent。
-    // 旧顺序在 dispatch 成功后才写库；spawn/网络异常会留下“用户已发送但对端根本收不到”的窗口。
-    for (const wakeup of pendingBridgeWakeups) {
-      const queued = recordAgentBridgeMessage({
-        channelId: wakeup.channelId,
-        requestId: `initial-${normalizedRequestId || `${normalizedSessionId}-${Date.now()}`}`,
-        fromSessionId: normalizedSessionId,
-        toSessionId: wakeup.targetSession.session_id,
-        content: wakeup.content,
-        batchId: wakeup.batchId,
-        threadId: wakeup.batchId,
-      });
-      wakeup.messageId = queued.id;
-    }
+    // 接缝 3a: dispatch 之前先把双向 @ 的首条消息原子落入对端收件箱 (幂等).
+    queueBridgeInitialMessages(pendingBridgeWakeups, { sessionId: normalizedSessionId, requestId: normalizedRequestId });
     const dispatchOpts = {
       sessionId: normalizedSessionId,
       prompt: finalContent,
@@ -547,9 +262,7 @@ async function runSessionMessage({
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };
     if (urgent) {
-      // 加急: 中断当前推理/输出再投递. pauseCurrentAndResumeFromSession 带 prompt =
-      // _pauseImpl 的 urgent 分支 (单次 C-c + Alt+Enter 换行 + paste 提交).
-      // 空闲/未存活时 _pauseImpl 自带兜底 (不中断直接投递 / respawn-if-dead).
+      // 加急: 中断当前推理/输出再投递
       await backend.pauseCurrentAndResumeFromSession({ ...dispatchOpts, urgent: true });
     } else {
       await backend.noPauseCurrentAndQueueQueryAtSession(dispatchOpts);
@@ -569,21 +282,11 @@ async function runSessionMessage({
       turn_number: turnNum,
       request_id: normalizedRequestId,
       backend: backend.name,
-      external_messages_queued: pendingBridgeWakeups.map((wakeup) => ({
-        message_id: wakeup.messageId || null,
-        channel_id: wakeup.channelId,
-        target_session_id: wakeup.targetSession.session_id,
-        delivery: 'queued',
-        batch_id: wakeup.batchId,
-      })),
+      external_messages_queued: describeBridgeWakeupsQueued(pendingBridgeWakeups),
     };
   } catch (e) {
-    for (const wakeup of pendingBridgeWakeups) {
-      if (wakeup.messageId) {
-        try { updateAgentBridgeMessage(wakeup.messageId, 'failed', (e as Error).message || '源 Session 启动失败'); } catch {}
-      }
-      try { closeAgentBridgeChannel(wakeup.channelId); } catch {}
-    }
+    // 接缝 3b: dispatch 失败 → 收件箱条目标 failed + 关闭桥接通道.
+    settleBridgeWakeupsOnFailure(pendingBridgeWakeups, (e as Error).message);
     const { userMessage: detail, rawMessage } = formatBackendSendFailure(e);
     logger?.warn?.(`[sessions/messages] ${rawMessage}${rawMessage !== detail ? `; user_message=${detail}` : ''} (session=${normalizedSessionId})`);
     const failedFields: any = { backend: backend.name, reason: detail };
