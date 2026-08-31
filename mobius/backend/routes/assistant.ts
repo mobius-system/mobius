@@ -744,7 +744,7 @@ function assistantSessionModelUnavailableReason(session: any): string | null {
   try {
     if (modelRegistry.resolveSessionModel(session?.model)) return null;
   } catch {
-    // Treat registry failures as unavailable for read paths; launch still fails
+    // Treat registry failures as unavailable for read paths; modelLaunchOptions still fails
     // with the original error when the user tries to run that exact session.
   }
   return `模型配置已失效: ${session?.model || modelRegistry.DEFAULT_MODEL_KEY || 'codex'}`;
@@ -1167,8 +1167,8 @@ function handleAssistantPresetContextPreview(req: express.Request, res: express.
 
 async function startAssistantSession(req: express.Request, session: any, questionText: string, requestId: string, workDir: string, clientContext: any = null, attachments: any[] = [], userContent: string = ''): Promise<void> {
   const user = (req as any).user;
-  const launch = modelRegistry.modelLaunchOptionsFor(session);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
+  const backend = agents.get(modelLaunchOptions.backend);
   const isCompactCommand = String(questionText || '').trim().startsWith('/compact');
   const personality = assistantSessionPersonality(session);
   const promptQuestion = isCompactCommand ? questionText : assistantQuestionWithAttachments(questionText, attachments);
@@ -1214,7 +1214,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
       cwd: workDir,
       flagRoot: workDir,
       // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
-      modelLaunchOptions: launch,
+      modelLaunchOptions: modelLaunchOptions,
       displayName: session.name,
       agentSessionId: session.agent_session_id || undefined,
       mobiusPromptRecord,

@@ -362,8 +362,8 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   const assistantSession = target.session;
   const prompt = lifecyclePromptForTarget(sourceSession, event, target);
   const storedPrompt = markAssistantInternalNotificationPrompt(prompt);
-  const launch = modelRegistry.modelLaunchOptionsFor(assistantSession);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(assistantSession);
+  const backend = agents.get(modelLaunchOptions.backend);
   const workDir = path.resolve(assistantSession.bind_path || APP_DIR);
   const turnNum = (Messages.maxTurnFor(assistantSession.session_id) || 0) + 1;
   const mobiusPromptRecord = {
@@ -383,7 +383,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
     cwd: workDir,
     flagRoot: workDir,
     // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
-    modelLaunchOptions: launch,
+    modelLaunchOptions: modelLaunchOptions,
     displayName: assistantSession.name || undefined,
     agentSessionId: assistantSession.agent_session_id || undefined,
     mobiusPromptRecord,
@@ -613,14 +613,14 @@ async function maybeNotify(f: any): Promise<string> {
   // 5) 发送: 此时已确认 window 存活, 直接 paste 进现有 TUI. (window 不存活的情况
   //    已在步骤 0 拦截并 skip, 不会走到这里, 故 backend 不会再 spawn 新窗口.)
   try {
-    const launch = modelRegistry.modelLaunchOptionsFor(s);
+    const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(s);
     await backend.noPauseCurrentAndQueueQueryAtSession({
       sessionId: sid,
       prompt: message,
       cwd,
       flagRoot: flagRoot || cwd,
       // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
-      modelLaunchOptions: launch,
+      modelLaunchOptions: modelLaunchOptions,
       displayName: s.session_name || undefined,
       agentSessionId: s.agent_session_id || undefined,
     });

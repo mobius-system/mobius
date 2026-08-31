@@ -57,8 +57,8 @@ async function deliverBridgeMessages(messageIds: number[]): Promise<{ status: 'd
 
   let backend: any;
   try {
-    const launch = modelRegistry.modelLaunchOptionsFor(targetSession);
-    backend = agents.get(launch.backend);
+    const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(targetSession);
+    backend = agents.get(modelLaunchOptions.backend);
   } catch (e) {
     return { ...fail((e as Error).message || '目标 Agent 后端不可用'), messageIds: ids };
   }

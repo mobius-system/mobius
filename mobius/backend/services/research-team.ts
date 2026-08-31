@@ -216,8 +216,8 @@ function teamState(researchId: string): any {
 }
 
 async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: string, summary: string): Promise<void> {
-  const launch = modelRegistry.modelLaunchOptionsFor(session);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
+  const backend = agents.get(modelLaunchOptions.backend);
   const workspace = resolveSessionWorkspace(user, session.session_id);
   if (workspace.error) throw Object.assign(new Error(workspace.error), { status: 400, code: 'workspace' });
   await backend.noPauseCurrentAndQueueQueryAtSession({
@@ -226,7 +226,7 @@ async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: st
     cwd: workspace.workDir,
     flagRoot: workspace.projectRoot || workspace.workDir,
     // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
-    modelLaunchOptions: launch,
+    modelLaunchOptions: modelLaunchOptions,
     displayName: session.name || undefined,
     agentSessionId: session.agent_session_id || undefined,
   });

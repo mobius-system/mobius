@@ -252,8 +252,8 @@ function resolveDeliveryWorkspace(session: any, researchId: string): any {
 }
 
 async function deliverBlackboardBatchToSession({ researchId, session, records }: any): Promise<void> {
-  const launch = modelRegistry.modelLaunchOptionsFor(session);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
+  const backend = agents.get(modelLaunchOptions.backend);
   const prompt = buildNotifyPrompt(records);
   const { cwd, flagRoot } = resolveDeliveryWorkspace(session, researchId);
 
@@ -263,7 +263,7 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
     cwd,
     flagRoot,
     // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
-    modelLaunchOptions: launch,
+    modelLaunchOptions: modelLaunchOptions,
     displayName: session.name || undefined,
     agentSessionId: session.agent_session_id || undefined,
   });

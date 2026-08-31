@@ -134,8 +134,8 @@ async function runSessionMessage({
       'model_removed',
     );
   }
-  const launch = modelRegistry.modelLaunchOptionsFor(sess);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(sess);
+  const backend = agents.get(modelLaunchOptions.backend);
 
   const lastTurnNum = Messages.maxTurnFor(normalizedSessionId) || 0;
   const turnNum = isExternalEvent ? lastTurnNum : lastTurnNum + 1;
@@ -241,7 +241,7 @@ async function runSessionMessage({
       flagRoot,
       // 模型启动选项整包下传 (backend/model/settingsPath/codex*/harness*/代理挡位...),
       // 各 agent 后端自行解构所需字段, dispatch 层不逐项展开.
-      modelLaunchOptions: launch,
+      modelLaunchOptions: modelLaunchOptions,
       displayName: sess.name,
       agentSessionId: sess.agent_session_id || undefined,
       mobiusPromptRecord,
