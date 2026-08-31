@@ -2723,7 +2723,7 @@ export function NewSessionModal({
   // 复制为项目级 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目级条目。
   // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
   const canScopeChange = !!projectId && !isGuidedDemo
-  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我创建的项目级副本。
+  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我复制的项目级条目。
   useEffect(() => {
     if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
     let alive = true
