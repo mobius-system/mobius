@@ -397,7 +397,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
     harnessMaxTokens: launch.harnessMaxTokens || undefined,
     harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
     displayName: assistantSession.name || undefined,
-    agentSessionId: assistantSession.claude_session_id || undefined,
+    agentSessionId: assistantSession.agent_session_id || undefined,
     mobiusPromptRecord,
   });
 
@@ -410,9 +410,9 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
 
   try {
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === assistantSession.session_id);
-    const newAgentSid = runtimeInfo?.agentSessionId || null;
-    if (newAgentSid && newAgentSid !== assistantSession.claude_session_id) {
-      db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, assistantSession.session_id);
+    const newAgentSessionId = runtimeInfo?.agentSessionId || null;
+    if (newAgentSessionId && newAgentSessionId !== assistantSession.agent_session_id) {
+      db.prepare('UPDATE sessions_v2 SET agent_session_id=? WHERE session_id=?').run(newAgentSessionId, assistantSession.session_id);
     }
   } catch (e) {
     console.warn(`[forgotten-flag-scanner] 同步小莫 agent session id 失败 (${assistantSession.session_id}): ${e.message}`);
@@ -646,7 +646,7 @@ async function maybeNotify(f: any): Promise<string> {
       harnessMaxTokens: launch.harnessMaxTokens || undefined,
       harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
       displayName: s.session_name || undefined,
-      agentSessionId: s.claude_session_id || undefined,
+      agentSessionId: s.agent_session_id || undefined,
     });
   } catch (e) {
     return `notify=FAIL (backend 发送失败: ${e.message})`;
@@ -707,7 +707,7 @@ async function scanOnce(): Promise<void> {
              s.status,
              s.scope_type AS scope_type, s.research_id AS research_id,
              s.last_agent_event, s.last_active,
-             s.model AS model, s.claude_session_id AS claude_session_id,
+             s.model AS model, s.agent_session_id AS agent_session_id,
              p.bind_path AS bind_path, p.name AS project_name,
              p.forgotten_flag_message AS forgotten_flag_message,
              p.forgotten_flag_issue_interval_minutes AS forgotten_flag_issue_interval_minutes,

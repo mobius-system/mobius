@@ -277,7 +277,7 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
     harnessMaxTokens: launch.harnessMaxTokens || undefined,
     harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
     displayName: session.name || undefined,
-    agentSessionId: session.claude_session_id || undefined,
+    agentSessionId: session.agent_session_id || undefined,
   });
 
   try {

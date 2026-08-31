@@ -240,7 +240,7 @@ async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: st
     harnessMaxTokens: launch.harnessMaxTokens || undefined,
     harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
     displayName: session.name || undefined,
-    agentSessionId: session.claude_session_id || undefined,
+    agentSessionId: session.agent_session_id || undefined,
   });
   const turn = (Messages.maxTurnFor(session.session_id) || 0) + 1;
   Messages.insertSystem(session.session_id, prompt, turn, summary);

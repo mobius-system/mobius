@@ -85,7 +85,7 @@ type AdminTmuxContext = {
   issue_id?: string | null
   research_id?: string | null
   research_role?: string | null
-  claude_session_id?: string | null
+  agent_session_id?: string | null
   created_at: string
   last_active: string
 }

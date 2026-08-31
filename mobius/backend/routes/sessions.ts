@@ -394,7 +394,7 @@ function shapeSessionForStream(s: AnySession): Record<string, any> {
     total_cost_usd: s.total_cost_usd,
     use_proxy: useProxyForSession(s, backend as any),
     model_label: modelRegistry.labelForSessionModel(s.model),
-    claude_session_id: s.claude_session_id,
+    agent_session_id: s.agent_session_id,
     agent_backend: modelRegistry.backendNameForSessionModel(s.model),
   };
 }
@@ -1405,7 +1405,7 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     pid,
     agent_backend: backend.name,
     use_proxy: useProxyForSession(session, backend as any),
-    claude_session_id: session.claude_session_id || null,
+    agent_session_id: session.agent_session_id || null,
     worktree_ignored: worktreeIgnored,
     real_time_info: realTimeInfo,
     // 会话当前 model 是否仍可用 (管理员可能已删除该模型配置).

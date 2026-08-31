@@ -1228,7 +1228,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
       harnessMaxTokens: launch.harnessMaxTokens || undefined,
       harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
       displayName: session.name,
-      agentSessionId: session.claude_session_id || undefined,
+      agentSessionId: session.agent_session_id || undefined,
       mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(session?.pc_client_metadata),
       // 小莫 assistant 注入 guling 实盘 MCP (HTTP), 让 claude 直接读资金/持仓.
@@ -1237,9 +1237,9 @@ async function startAssistantSession(req: express.Request, session: any, questio
     });
 
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === session.session_id);
-    const newAgentSid = runtimeInfo?.agentSessionId || null;
-    if (newAgentSid && newAgentSid !== session.claude_session_id) {
-      db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, session.session_id);
+    const newAgentSessionId = runtimeInfo?.agentSessionId || null;
+    if (newAgentSessionId && newAgentSessionId !== session.agent_session_id) {
+      db.prepare('UPDATE sessions_v2 SET agent_session_id=? WHERE session_id=?').run(newAgentSessionId, session.session_id);
     }
   } catch (e) {
     safeRemoveRunningFlag(workDir, session.session_id, 'assistant/messages');

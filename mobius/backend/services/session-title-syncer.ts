@@ -42,7 +42,7 @@ function normalizeSessionTitle(value: unknown): string | null {
 function extractSessionTitleFromEntry(entry: unknown): string | null {
   const obj = parseEntry(entry)
   if (!obj || obj.type !== 'ai-title') return null
-  // For Claude Code, obj.sessionId is the agent's UUID (claude_session_id), not
+  // For Claude Code, obj.sessionId is the agent's UUID (agent_session_id), not
   // Mobius sessions_v2.session_id. The agent watcher event is already scoped to
   // the Mobius session, so do not reject on this raw protocol field.
   return normalizeSessionTitle(obj.aiTitle ?? obj.ai_title ?? obj.title)

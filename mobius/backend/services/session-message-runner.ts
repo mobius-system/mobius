@@ -256,7 +256,7 @@ async function runSessionMessage({
       harnessMaxTokens: launch.harnessMaxTokens || undefined,
       harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
       displayName: sess.name,
-      agentSessionId: sess.claude_session_id || undefined,
+      agentSessionId: sess.agent_session_id || undefined,
       mobiusPromptRecord,
       suppressRunningFlag: isExternalEvent,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
@@ -271,9 +271,9 @@ async function runSessionMessage({
     // agent 后端原生会话 ID (claude TUI 的 UUID / codex thread ID), 与 mobius 平台会话 ID 是两层体系.
     // 仅首条消息或 respawn 换了原生会话时才回写, 供下次 dispatch resume 同一原生会话 + 定位 jsonl.
     const newAgentSessionId = runtimeInfo?.agentSessionId || null;
-    if (newAgentSessionId && newAgentSessionId !== sess.claude_session_id) {
+    if (newAgentSessionId && newAgentSessionId !== sess.agent_session_id) {
       try {
-        db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSessionId, normalizedSessionId);
+        db.prepare('UPDATE sessions_v2 SET agent_session_id=? WHERE session_id=?').run(newAgentSessionId, normalizedSessionId);
       } catch (e) {
         logger?.warn?.(`[sessions/messages] save agent session id: ${e.message}`);
       }
