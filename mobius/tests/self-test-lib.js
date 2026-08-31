@@ -114,9 +114,6 @@ async function runSelfTest(opts = {}) {
     const r = await G('/api/tasks/recent?limit=5');
     if (!Array.isArray(r)) throw new Error('非数组');
   });
-  await check('协作 GET /api/agent-bridge/edges', async () => {
-    await G('/api/agent-bridge/edges'); // 200 即可(空列表合法)
-  });
   await check('耗时 GET /api/sessions/:id/turns', async () => {
     const projects = await G('/api/projects');
     const pid = (Array.isArray(projects) && projects.length > 0 && projects[0].id) ? projects[0].id : null;

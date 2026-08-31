@@ -903,7 +903,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   async _createImpl(opts) {
-    ({ sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName } = opts)
+    const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName } = opts
     const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
@@ -951,7 +951,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   async _queueImpl(opts) {
-    ({ sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts)
+    const { sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts
     let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')

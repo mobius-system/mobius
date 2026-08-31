@@ -1,14 +1,12 @@
 /**
  * session-message-runner.ts — "把一条消息投给某个 agent 后端"的主干.
  *
- * 职责 (与智能体间通信解耦后): 鉴权 / workspace 解析 / turn 分配 / messages_v2 落库 /
- * 首条消息的上下文包装 (project/issue/memory) / dispatch (urgent 或普通) / 失败善后.
+ * 职责: 鉴权 / workspace 解析 / turn 分配 / messages_v2 落库 /
+ * 首条消息的上下文包装 (project/issue/memory) / @ 提及处理 / dispatch (urgent 或普通) / 失败善后.
  *
- * 智能体间通信 (@ 提及桥接 / 外部 Session 通知唤醒 / 收件箱投递回滚) 全部在
- * ./session-general-com — 本文件只在三个接缝调用它:
- *   1. buildIncomingExternalPrompt  — externalEvent 分支的唤醒 prompt;
- *   2. applyAgentMentions           — 源侧 @ 处理 (read_only 拼 prompt / bidirectional 收集 wakeup);
- *   3. queueBridgeInitialMessages / settleBridgeWakeupsOnFailure — 收件箱投递与失败回滚.
+ * @ 提及: read_only → transfer bundle 文件引用拼进 prompt (对端无感知);
+ *        bidirectional → registerMultiagentLinks 注册 48h 链接 + 消息尾追加
+ *        multiagent_send 用法提示 (后续通讯走 /api/multiagent_communication 直达).
  */
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
@@ -24,16 +22,10 @@ import { canOperateSession } from './access-control';
 import {
   normalizeAgentMentions,
   sessionMentionMetadata,
-  readPendingTransferPaths,
-  buildIncomingExternalPrompt,
   applyAgentMentions,
-  queueBridgeInitialMessages,
-  settleBridgeWakeupsOnFailure,
-  describeBridgeWakeupsQueued,
-  externalEventArchiveFields,
-  type ExternalSessionEvent,
+  writeMultiagentEnv,
   type NormalizedAgentMention,
-} from './session-general-com';
+} from './mention-context';
 import {
   normalizeSessionAttachments,
   sessionContentWithAttachments,
@@ -50,6 +42,28 @@ function httpError(message: string, status: number = 500, category: string = '')
   err.status = status;
   if (category) err.category = category;
   return err;
+}
+
+// messages_v2 里最近一条 session_transfer 系统消息记录的 bundle 路径 (用户从别的 session
+// "转移/继承"带入的参考资料), 首条消息时拼进 prompt.
+function readPendingTransferPaths(sessionId: any): { full: string | null; user_messages: string | null; metadata: string | null } | null {
+  try {
+    const row = db.prepare(`
+      SELECT content
+      FROM messages_v2
+      WHERE task_id = ? AND role = 'system' AND turn_summary = 'session_transfer'
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(sessionId) as { content?: string } | undefined;
+    if (!row?.content) return null;
+    const parsed = JSON.parse(row.content);
+    const full = typeof parsed?.paths?.full === 'string' && parsed.paths.full.trim() ? parsed.paths.full.trim() : null;
+    const userMessages = typeof parsed?.paths?.user_messages === 'string' && parsed.paths.user_messages.trim() ? parsed.paths.user_messages.trim() : null;
+    const metadata = typeof parsed?.paths?.metadata === 'string' && parsed.paths.metadata.trim() ? parsed.paths.metadata.trim() : null;
+    return full || userMessages || metadata ? { full, user_messages: userMessages, metadata } : null;
+  } catch {
+    return null;
+  }
 }
 
 function findSessionOperable(id: any, user: any): any {
@@ -73,7 +87,6 @@ async function runSessionMessage({
   source = 'service.session.messages',
   logger = console,
   urgent = false,
-  externalEvent = null,
 }: {
   user?: any;
   sessionId?: any;
@@ -86,13 +99,11 @@ async function runSessionMessage({
   source?: string;
   logger?: any;
   urgent?: boolean;
-  externalEvent?: ExternalSessionEvent | null;
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
-  const isExternalEvent = !!externalEvent;
 
   if (!user?.id) throw httpError('用户不可用', 401);
 
@@ -107,20 +118,17 @@ async function runSessionMessage({
   }
   const workDir = workspace.workDir;
   const flagRoot = workspace.projectRoot || workspace.workDir;
-  const normalizedAttachments = isExternalEvent ? [] : normalizeSessionAttachments(
+  const normalizedAttachments = normalizeSessionAttachments(
     attachments,
     user,
     [workspace.projectRoot, workspace.workDir],
   );
-  const normalizedMentions: NormalizedAgentMention[] = isExternalEvent ? [] : normalizeAgentMentions(mentions, normalizedContent);
-  const mentionMetadata = isExternalEvent ? [] : sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
-  if (!isExternalEvent && !normalizedContent.trim() && normalizedAttachments.length === 0) {
+  const normalizedMentions: NormalizedAgentMention[] = normalizeAgentMentions(mentions, normalizedContent);
+  const mentionMetadata = sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
+  if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
     throw httpError('content 不能为空', 400);
   }
-  const externalMessageIds = externalEvent?.messages?.map((message) => message.messageId) || (externalEvent ? [externalEvent.messageId] : []);
-  const displayContent = isExternalEvent
-    ? `[外部 Session 通知 ${externalMessageIds.filter(Boolean).join(', ')}]`
-    : normalizedContent.trim()
+  const displayContent = normalizedContent.trim()
     ? normalizedContent
     : sessionContentWithAttachments('', normalizedAttachments);
 
@@ -138,17 +146,15 @@ async function runSessionMessage({
   const backend = agents.get(modelLaunchOptions.backend);
 
   const lastTurnNum = Messages.maxTurnFor(normalizedSessionId) || 0;
-  const turnNum = isExternalEvent ? lastTurnNum : lastTurnNum + 1;
-  if (!isExternalEvent) {
-    Messages.insertUser(
-      normalizedSessionId,
-      displayContent,
-      turnNum,
-      mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
-    );
-    Sessions.touchActive(normalizedSessionId);
-  }
-  if (hasInputText && !isExternalEvent) {
+  const turnNum = lastTurnNum + 1;
+  Messages.insertUser(
+    normalizedSessionId,
+    displayContent,
+    turnNum,
+    mentionMetadata.length > 0 ? JSON.stringify({ session_mentions: mentionMetadata }) : null,
+  );
+  Sessions.touchActive(normalizedSessionId);
+  if (hasInputText) {
     try {
       appendSessionInput({
         projectRoot: flagRoot,
@@ -167,26 +173,20 @@ async function runSessionMessage({
   // 把它同步写进 <uuid>.mobius.jsonl 边车文件 (与主 jsonl 双轨, 见 services/mobius-jsonl.ts).
   const mobiusPromptRecord = {
     source,
-    kind: isExternalEvent ? 'external_session_message' : mobiusPromptKind(displayContent),
-    content: isExternalEvent ? '' : displayContent,
-    inputText: isExternalEvent ? null : (hasInputText ? normalizedInputText : null),
+    kind: mobiusPromptKind(displayContent),
+    content: displayContent,
+    inputText: hasInputText ? normalizedInputText : null,
     requestId: normalizedRequestId,
     turnNumber: turnNum,
     userId: user?.id || null,
     attachments: normalizedAttachments,
     mentions: normalizedMentions,
-    ...externalEventArchiveFields(externalEvent),
     timestamp: new Date().toISOString(),
   };
 
-  // 接缝 1 (目标侧): 外部 Session 通知 → 唤醒 prompt; 普通消息 → 附件拼装.
-  let finalContent = buildIncomingExternalPrompt(externalEvent, sess, workDir)
-    ?? sessionContentWithAttachments(normalizedContent, normalizedAttachments);
+  let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
 
-  if (
-    !isExternalEvent
-    && Messages.countUserMessagesFor(normalizedSessionId) <= 1
-  ) {
+  if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
     const ctx = buildSessionContext(user, normalizedSessionId);
     if (workDir && ctx.sources?.skills?.length > 0) {
       try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
@@ -214,26 +214,19 @@ async function runSessionMessage({
     }
   }
 
-  // 处理 @ 其他 Agent （只读模式） 把对端快照拼进本方 prompt;
-  // bidirectional 建桥接通道并收集待唤醒清单 pendingBridgeWakeups.
-  const mentionResult = isExternalEvent
-    ? { prompt: finalContent, pendingBridgeWakeups: [] as ReturnType<typeof applyAgentMentions>['pendingBridgeWakeups'] }
-    : applyAgentMentions({
-        user,
-        sourceSession: sess,
-        sessionId: normalizedSessionId,
-        prompt: finalContent,
-        mentions: normalizedMentions,
-        displayContent: normalizedContent.trim() || displayContent,
-        workDir,
-        logger,
-      });
-  finalContent = mentionResult.prompt;
-  const pendingBridgeWakeups = mentionResult.pendingBridgeWakeups;
+  // @ 提及: read_only 拼 transfer 引用进 prompt; bidirectional 注册 48h 双向链接
+  // + 写 .imac/multiagent.env (CLI 取 user_id) + 消息尾追加 multiagent_send 用法提示.
+  finalContent = applyAgentMentions({
+    user,
+    sourceSession: sess,
+    sessionId: normalizedSessionId,
+    prompt: finalContent,
+    mentions: normalizedMentions,
+    workDir,
+    logger,
+  });
 
   try {
-    // 接缝 3a: dispatch 之前先把双向 @ 的首条消息原子落入对端收件箱 (幂等).
-    queueBridgeInitialMessages(pendingBridgeWakeups, { sessionId: normalizedSessionId, requestId: normalizedRequestId });
     const dispatchOpts = {
       sessionId: normalizedSessionId,
       prompt: finalContent,
@@ -245,7 +238,6 @@ async function runSessionMessage({
       displayName: sess.name,
       agentSessionId: sess.agent_session_id || undefined,
       mobiusPromptRecord,
-      suppressRunningFlag: isExternalEvent,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };
     if (urgent) {
@@ -271,11 +263,8 @@ async function runSessionMessage({
       turn_number: turnNum,
       request_id: normalizedRequestId,
       backend: backend.name,
-      external_messages_queued: describeBridgeWakeupsQueued(pendingBridgeWakeups),
     };
   } catch (e) {
-    // 接缝 3b: dispatch 失败 → 收件箱条目标 failed + 关闭桥接通道.
-    settleBridgeWakeupsOnFailure(pendingBridgeWakeups, (e as Error).message);
     const { userMessage: detail, rawMessage } = formatBackendSendFailure(e);
     logger?.warn?.(`[sessions/messages] ${rawMessage}${rawMessage !== detail ? `; user_message=${detail}` : ''} (session=${normalizedSessionId})`);
     const failedFields: any = { backend: backend.name, reason: detail };
