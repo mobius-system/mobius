@@ -260,6 +260,12 @@ app.use('/desktop-builds', createDesktopBuildsRouter(DESKTOP_BUILDS_DIR));
 // build.py --build-mobile 从 momo-mobile 项目 (d78c6e39) 拷 arm64 / armeabi-v7a APK 到
 // mobius/mobile-builds/。同样用自建中间件 (未命中 404, 正确 Content-Type)。
 const MOBILE_BUILDS_DIR = path.join(__dirname, 'mobile-builds');
+
+// ===== 设计稿预览(不受 vite 构建清空影响) =====
+// mobius/design-mockups/ 下的设计效果图, 走 /design/ 同源静态(正确 image Content-Type)。
+const DESIGN_MOCKUPS_DIR = path.join(__dirname, 'design-mockups');
+const { createBuildsRouter: createDesignMockupsRouter } = require('./backend/middleware/builds-static');
+app.use('/design', createDesignMockupsRouter(DESIGN_MOCKUPS_DIR));
 const { createBuildsRouter: createMobileBuildsRouter } = require('./backend/middleware/builds-static');
 app.use('/mobile-builds', createMobileBuildsRouter(MOBILE_BUILDS_DIR));
 

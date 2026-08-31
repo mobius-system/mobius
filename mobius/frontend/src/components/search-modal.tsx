@@ -13,6 +13,8 @@ import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
   MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy,
 } from 'lucide-react'
+import { useLayoutMode } from '../services/layout-mode'
+import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
 
 type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
 type SearchResult = {
@@ -102,6 +104,7 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
 
 export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (path: string) => void }) {
   const { theme, user } = useStore()
+  const layoutMode = useLayoutMode()
   const dark = theme !== 'light'
   const [q, setQ] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -223,18 +226,32 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
 
   // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
+  // 极简模式下改跳极简工作台 (research → research 区带 agent), 由 easy-route-state 统一构造。
   const openSession = (r: SearchResult, frag?: Fragment) => {
     const first = frag || r.fragments[0]
-    const base = `/u/${user?.id}/p/${r.project_id}`
-    const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
-    let url = `${base}${mid}?session=${r.session_id}`
-    if (first) {
+    const extra = (() => {
+      if (!first) return ''
       const parts: string[] = []
       if (first.uuid) parts.push(`match=${encodeURIComponent(first.uuid)}`)
       if (first.timestamp) parts.push(`ts=${encodeURIComponent(first.timestamp)}`)
-      if (parts.length) url += '&' + parts.join('&')
+      return parts.length ? '&' + parts.join('&') : ''
+    })()
+    if (layoutMode === 'easy_mode') {
+      onNavigate(
+        `${buildEasyModeUrlFromContext({
+          user: user?.id || '',
+          projectId: r.project_id,
+          sessionId: r.session_id,
+          researchId: r.research_id,
+          scopeType: r.scope_type,
+        })}${extra}`,
+      )
+      onClose()
+      return
     }
-    onNavigate(url)
+    const base = `/u/${user?.id}/p/${r.project_id}`
+    const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
+    onNavigate(`${base}${mid}?session=${r.session_id}${extra}`)
     onClose()
   }
 

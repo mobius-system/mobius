@@ -55,7 +55,25 @@ function MarkdownImage({ src, alt, node: _node, ...rest }: ComponentPropsWithout
   )
 }
 
-export default function JsonlCompactMarkdown({ text }: { text: string }) {
+export default function JsonlCompactMarkdown({ text, variant = 'compact' }: { text: string; variant?: 'compact' | 'conversation' }) {
+  // conversation 变体: 用于极简聊天的最终回复正文 — 复用专业聊天 .prose-chat 的完整
+  // 排版 (标题层级/列表缩进/表格滚动/引用块), 而非 11px 的紧凑卡片样式。
+  if (variant === 'conversation') {
+    return (
+      <div className="jsonl-compact-md jsonl-compact-md--conversation prose-chat select-text">
+        <ReactMarkdown
+          remarkPlugins={MARKDOWN_REMARK_PLUGINS as any}
+          rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+          components={{
+            a: MarkdownAnchor as any,
+            table: MarkdownTable as any,
+            img: MarkdownImage as any,
+          }}>
+          {text}
+        </ReactMarkdown>
+      </div>
+    )
+  }
   return (
     <div className="jsonl-compact-md px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-primary)] select-text">
       <ReactMarkdown
