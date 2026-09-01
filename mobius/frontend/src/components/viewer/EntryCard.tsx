@@ -11,7 +11,7 @@
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
 import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, ListChecks, AlignLeft, Braces, Image as ImageIcon, Check, Loader2, X } from 'lucide-react'
+import { Code2, ListChecks, AlignLeft, Braces, BookOpen, Image as ImageIcon, Check, Loader2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
 import {
@@ -33,6 +33,7 @@ import {
   BLACKBOARD_THEME,
   PLAN_THEME,
   MCP_RESULT_THEME,
+  INITIAL_THEME,
 } from './themes'
 import { formatTs } from './utils'
 import {
@@ -72,6 +73,8 @@ import { JsonEntryBashCommands } from './BashCards'
 import { JsonEntryReadCalls } from './ReadCards'
 import { JsonEntryLocalCommandBlock } from './LocalCommandBlock'
 import { JsonEntryPlanCard } from './PlanCard'
+import { JsonEntryInitialCard } from './InitialCard'
+import { extractInitialContext } from './initial-context'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
@@ -92,6 +95,7 @@ const MAX_CARD_RENDER_CHARS = 100_000
 const MODE_ICON: Record<CardMode, LucideIcon> = {
   code: Code2,           // 代码模式: diff / Write 文件预览 / Bash 命令 / Read 读取
   plan: ListChecks,      // 计划模式: 分步计划
+  initial: BookOpen,     // 初始模式: 首轮注入上下文分块视图
   image: ImageIcon,      // 图片模式: 内嵌图片渲染
   compact: AlignLeft,    // 精简模式: 渲染后的摘要文本
   field: Braces,         // 字段模式: 按 key 递归展开原始 JSON
@@ -139,6 +143,7 @@ function resolveDesiredOpen(opts: {
   parentOrderedCollapse: boolean
   isPatchApply: boolean
   canPlan: boolean
+  canInitial: boolean
   canCode: boolean
   canCompact: boolean
   canImage: boolean
@@ -148,8 +153,8 @@ function resolveDesiredOpen(opts: {
   if (opts.mode === 'field') return false       // 字段模式永远不自动展开, 压过其它规则
   if (opts.forceOpen) return true       // ① 搜索命中
   if (opts.parentOrderedCollapse) return false   // ② forgotten-flag
-  // ③ 本地展开条件: patch_apply / 计划 / 纯文本卡(可精简·可图片·error 类型, 且非代码卡)
-  if (opts.isPatchApply || opts.canPlan || (!opts.canCode && (opts.canCompact || opts.canImage || opts.isErrorType))) return true
+  // ③ 本地展开条件: patch_apply / 计划 / 初始 / 纯文本卡(可精简·可图片·error 类型, 且非代码卡)
+  if (opts.isPatchApply || opts.canPlan || opts.canInitial || (!opts.canCode && (opts.canCompact || opts.canImage || opts.isErrorType))) return true
   if (opts.toolError) return true       // ④ 工具失败
   return false                          // ⑤ 兜底折叠
 }
@@ -226,19 +231,27 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // 仅用于主题识别 (emerald "返回"). 渲染走精简模式 - header-summary 把 output 包成 markdown 代码块,
   // 卡片展开时由 compact 分支 (CompactMarkdown) 渲染, 不铺原始 JSON 字段.
   const mcpResult = useMemo(() => extractMcpToolResult(renderEntry), [renderEntry])
+  // 初始消息辨识 (首轮注入上下文包装): 与 taskPlan 同款, 用未截断的原始 entry 解析
+  // (超大卡片保护不影响); 非初始消息快速短路返回 null。
+  const initialContext = useMemo(() => extractInitialContext(entry), [entry])
   // canCode 覆盖代码视图: Edit diff / Write 文件预览 / Bash 命令卡片 / Read 文件读取卡片.
   // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // canPlan 覆盖计划视图: update_plan function_call 走可视化步骤卡片.
   const canPlan = !!planUpdate
+  // canInitial 覆盖初始视图: 首轮注入上下文消息走分块手风琴卡片.
+  const canInitial = !!initialContext
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > AIMUX 协作执行 (teal) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: 初始消息 (结构辨识, 最具体) > blackboard 相关 (最醒目) > user compact 完成信号 (gold) > user /goal 设置信号 (gold) > user 其他本地命令产物 (gold) > assistant 只含 thinking 思考卡 (purple) > assistant end_turn (gold) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > AIMUX 协作执行 (teal) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // initial 必须排在 blackboard 之前: research 会话的初始消息正文含 blackboard 字样, 但它是初始消息不是黑板写入.
   // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   // compact / goal-set 必须排在 local-cmd 之前: 它们都是 local-command-stdout 的特例, 文案/标签更具体.
   // thinking-only 必须排在 end_turn 之前: 只含思考块的卡片, "这是思考卡"比"这是结束态"更能说明卡片性质.
-  const theme = isBlackboard
+  const theme = canInitial
+    ? INITIAL_THEME
+    : isBlackboard
     ? BLACKBOARD_THEME
     : isCompactDoneEntry(entry)
     ? COMPACT_DONE_THEME
@@ -274,8 +287,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
-  // 展开后默认: 可计划 → 计划模式; 可代码 → 代码模式; 可图片 → 图片模式; 可精简 → 精简模式; 其它 → 字段模式
-  const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
+  // 展开后默认: 可计划 → 计划模式; 可初始 → 初始模式; 可代码 → 代码模式; 可图片 → 图片模式; 可精简 → 精简模式; 其它 → 字段模式
+  const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canInitial ? 'initial' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
   // 展开优先级集中在上方的 resolveDesiredOpen: field(字段模式) > forceOpen(搜索) >
@@ -293,6 +306,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
     parentOrderedCollapse,
     isPatchApply: isPatchApplyEvent,
     canPlan,
+    canInitial,
     canCode,
     canCompact,
     canImage,
@@ -325,11 +339,11 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
-  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || canCompact || canCode || canImage || canPlan)
+  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || (mode === 'initial') || canCompact || canCode || canImage || canPlan || canInitial)
 
   // 模式切换图标按钮: 计算点击后将切换到的目标模式 + 悬停说明.
   // (原为文字按钮显示目标模式名, 现改为图标按钮, 文字说明收进 title.)
-  const modeToggle = (canCompact || canCode || canImage || canPlan)
+  const modeToggle = (canCompact || canCode || canImage || canPlan || canInitial)
     ? (() => {
         let target: CardMode
         let title: string
@@ -342,6 +356,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
                 : readCalls.length > 0 && bashCalls.length > 0 ? '切换到代码模式 (显示工具调用)'
                   : readCalls.length > 0 ? '切换到代码模式 (显示 Read 文件读取)'
                     : '切换到代码模式 (显示 Bash 命令)'
+        } else if (canInitial) {
+          target = mode === 'initial' ? 'field' : 'initial'
+          title = mode === 'initial' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到初始模式 (分块查看注入上下文与用户问题)'
         } else if (canImage) {
           target = mode === 'image' ? 'field' : 'image'
           title = mode === 'image' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到图片模式 (渲染内嵌图片)'
@@ -422,6 +439,21 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
               }}
             />
           )}
+          {open && mode === 'initial' && initialContext && (
+            <JsonlCopyButton
+              copied={copied}
+              title="复制初始消息原始 markdown 源"
+              copiedTitle="Markdown 已复制"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                navigator.clipboard.writeText(initialContext.raw).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1000)
+                })
+              }}
+            />
+          )}
           {open && mode === 'field' && (
             <JsonlCopyButton
               copied={copied}
@@ -485,6 +517,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
             <ImageOutputPanel imageUrls={imageOutputUrls} textBody={imageOutputText} />
           ) : mode === 'plan' && planUpdate ? (
             <JsonEntryPlanCard plan={planUpdate} />
+          ) : mode === 'initial' && initialContext ? (
+            <JsonEntryInitialCard match={initialContext} />
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>

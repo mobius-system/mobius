@@ -7,6 +7,7 @@
  */
 import type { AnyEntry, JsonlViewItem, Round, RoundItem } from './types'
 import { isNewRound } from '../jsonl-round-helpers'
+import { QuestionTitle } from '../../../../backend/services/session-context-sections'
 
 // 提取一个"开新轮"候选条目里实际呈现给用户的归一化文本, 仅用于 buildRounds 内部去重比较.
 // 三种格式对应同一次输入: mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
@@ -51,11 +52,11 @@ function isMobiusSidecarUserEntry(e: AnyEntry): boolean {
 }
 
 // 判断 text 是否为 prevText 的"首轮 context 包装版" — wrapUserMessage (session-context.ts) 固定形态:
-// <上下文正文>\n\n---\n\n## 用户的问题\n<原文> (英文则为 ## User's Question). 原文之后可能还
-// 接 @提及的 <agent_reference> 等尾巴, 故用包含关系而非 endWith 判断.
+// <上下文正文>\n\n---\n\n## 用户的问题\n<原文> (英文为 User's Question, 文案唯一事实源在 session-context-sections).
+// 原文之后可能还接 @提及的 <agent_reference> 等尾巴, 故用包含关系而非 endWith 判断.
 function isWrappedVariant(text: string, prevText: string): boolean {
   if (!text || !prevText) return false
-  return text.includes(`## 用户的问题\n${prevText}`) || text.includes(`## User's Question\n${prevText}`)
+  return text.includes(`${QuestionTitle.zh}\n${prevText}`) || text.includes(`${QuestionTitle.en}\n${prevText}`)
 }
 
 export function buildRounds(

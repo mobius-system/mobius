@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test:session-context-parity": "node --require tsx/cjs tests/session-context-parity.js",
     "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",
     "test:user-isolation-v3": "node --require tsx/cjs tests/user-isolation-v3.js",
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
