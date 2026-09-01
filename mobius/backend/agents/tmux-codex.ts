@@ -1036,7 +1036,7 @@ class TmuxCodexBackend extends AgentBackend {
       codexProfileKey = finalProfileKey ?? null
       codexConfigPath = finalConfigPath ?? null
       codexSecretEnvKey = finalSecretEnvKey ?? null
-      displayName = displayName || persisted?.displayName ?? null
+      displayName = displayName || (persisted?.displayName ?? null)
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -1495,6 +1495,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
         useProxy: finalUseProxy,
+        // 代理模式四挡.
+        proxyMode: finalProxyMode,
         // UI 展示名。
         displayName: displayName || null,
         // 新会话尚未绑定 rollout，因此 jsonlPath 为空。
@@ -1528,8 +1530,8 @@ class TmuxCodexBackend extends AgentBackend {
     } else {
       // resume 会话已经知道 thread id 和 rollout 路径，可以立即登记完整状态。
       const entry = {
-        // 恢复的 Codex thread id。
-        agentSessionId,
+        // 恢复的 Codex thread id (useResume 为真时必非空).
+        agentSessionId: agentSessionId || null,
         // 工作目录。
         cwd,
         // running flag 写入根目录。
@@ -1544,6 +1546,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
         useProxy: finalUseProxy,
+        // 代理模式四挡.
+        proxyMode: finalProxyMode,
         // UI 展示名。
         displayName: displayName || null,
         // 已找到的 Codex rollout jsonl 路径。
