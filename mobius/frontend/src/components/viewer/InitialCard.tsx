@@ -100,7 +100,7 @@ export function JsonEntryInitialCard({ match }: { match: InitialContextMatch }) 
         <div className="rounded-lg border border-[var(--initial-accent-border)] bg-[var(--initial-question-bg)] px-3 py-2">
           <div className="mb-1.5 flex items-center gap-1.5">
             <UserRound className="h-3.5 w-3.5 flex-shrink-0 text-[var(--initial-accent)]" strokeWidth={2.4} aria-hidden="true" />
-            <span className="text-[10px] font-semibold tracking-wide text-[var(--initial-accent-text)]">用户的问题</span>
+            <span className="text-[10px] font-semibold tracking-wide text-[var(--initial-accent-text)]">用户的初始请求</span>
             <span className="ml-auto font-mono text-[9px] text-[var(--text-dimmed)]">{questionLines} 行</span>
           </div>
           <div className="max-h-[46vh] overflow-y-auto text-[12.5px] leading-relaxed">

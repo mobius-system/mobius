@@ -76,10 +76,11 @@ const DEFAULTS: any = Object.freeze({
   globalDefaultModel: null,
   // 新建 Session 模型选择器显示顺序. 存 option.key 数组; 未出现的新模型按系统默认顺序追加.
   modelDisplayOrder: [],
-  // 自动生成 Session 标题: 默认关闭. 开启后后端订阅 agent raw JSONL 事件,
-  // 仅在收到 type='ai-title' 这类明确标题事件时更新 sessions_v2.name.
+  // 自动生成 Session 标题: 默认开启. 后端订阅 agent raw JSONL 事件,
+  // 仅在收到 type='ai-title' 这类明确标题事件时更新 sessions_v2.name;
+  // codex 等无 ai-title 后端由 session-title-generator 兜底.
   autoGenerateSessionTitle: {
-    enabled: false,
+    enabled: true,
   },
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
@@ -400,7 +401,7 @@ function parseBooleanSetting(value: any, fallback: boolean = false): boolean {
 function normalizeAutoGenerateSessionTitleForRead(value: any): any {
   const obj = value && typeof value === 'object' ? value : { enabled: value }
   return {
-    enabled: parseBooleanSetting(obj.enabled ?? obj.autoGenerateSessionTitle ?? obj.auto_generate_session_title, false),
+    enabled: parseBooleanSetting(obj.enabled ?? obj.autoGenerateSessionTitle ?? obj.auto_generate_session_title, true),
   }
 }
 
