@@ -43,7 +43,7 @@ repos:
         entry: bash -c '
           added=$(git diff --cached --name-only --diff-filter=A);
           if [ -n "$added" ]; then
-            root_new=$(echo "$added" | grep -v "/" || true);
+            root_new=$(echo "$added" | grep -v "/" | grep -vE "^\.gitattributes$" || true);
             if [ -n "$root_new" ]; then
               echo "❌ 禁止在仓库根目录新增文件, 请放入子目录 (mobius/、docs/、scripts/ 等) 以保持根目录整洁:" >&2;
               echo "$root_new" | sed "s/^/    /" >&2;
