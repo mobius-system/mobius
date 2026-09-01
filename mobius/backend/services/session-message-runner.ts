@@ -75,6 +75,43 @@ function mobiusPromptKind(content: any): string {
   return String(content || '').trim().startsWith('/compact') ? 'compact' : 'user_input';
 }
 
+// 首轮专属的 prompt 拼装: memory/skill/项目上下文 + 转移文件引用, 把原文变成发给 agent 的完整初始 prompt.
+function assembleInitialPrompt({ user, sessionId, workDir, content, logger }: {
+  user: any;
+  sessionId: string;
+  workDir: string | null;
+  content: string;
+  logger: any;
+}): string {
+  const ctx = buildSessionContext(user, sessionId);
+  if (workDir && ctx.sources?.skills?.length > 0) {
+    try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
+    catch (e) { logger?.warn?.(`[sessions/messages] sync skills failed (${sessionId}): ${e.message}`); }
+  }
+  if (ctx.body) {
+    try {
+      Sessions.writeContextSnapshot(
+        sessionId,
+        ctx.body,
+        (ctx.sources ? JSON.stringify(ctx.sources) : null) as any,
+      );
+    } catch (e) {
+      logger?.warn?.(`[sessions/messages] writeContextSnapshot: ${e.message}`);
+    }
+    // ⭐ prompt 在这里从"原文"变成"包装全文" — 原生轨首轮那张大卡就是 paste 出去的它.
+    content = wrapUserMessage(ctx.body, content, ctx.language);
+  }
+  const transferPaths = readPendingTransferPaths(sessionId);
+  if (transferPaths) {
+    try {
+      content = transferReferencePrompt(transferPaths, content);
+    } catch (e) {
+      logger?.warn?.(`[sessions/messages] append session transfer references failed (${sessionId}): ${e.message}`);
+    }
+  }
+  return content;
+}
+
 async function runSessionMessage({
   user,
   sessionId,
@@ -184,34 +221,13 @@ async function runSessionMessage({
     timestamp: new Date().toISOString(),
   };
 
+  // finalContent 从这里开始组装: 先并附件 → 首轮再加上下文包装, 和 displayContent(干净原文)自此分家.
   let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
 
-  if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
-    const ctx = buildSessionContext(user, normalizedSessionId);
-    if (workDir && ctx.sources?.skills?.length > 0) {
-      try { syncSkillsToWorkspace(workDir, ctx.sources.skills); }
-      catch (e) { logger?.warn?.(`[sessions/messages] sync skills failed: ${e.message}`); }
-    }
-    if (ctx.body) {
-      try {
-        Sessions.writeContextSnapshot(
-          normalizedSessionId,
-          ctx.body,
-          (ctx.sources ? JSON.stringify(ctx.sources) : null) as any,
-        );
-      } catch (e) {
-        logger?.warn?.(`[sessions/messages] writeContextSnapshot: ${e.message}`);
-      }
-      finalContent = wrapUserMessage(ctx.body, finalContent, ctx.language);
-    }
-    const transferPaths = readPendingTransferPaths(normalizedSessionId);
-    if (transferPaths) {
-      try {
-        finalContent = transferReferencePrompt(transferPaths, finalContent);
-      } catch (e) {
-        logger?.warn?.(`[sessions/messages] append session transfer references failed (${normalizedSessionId}): ${e.message}`);
-      }
-    }
+  // 分叉①(首轮 vs 普通): 只有会话的第一条用户消息才拼装上下文, 后续消息整块跳过.
+  const isInitialMessage = Messages.countUserMessagesFor(normalizedSessionId) <= 1;
+  if (isInitialMessage) {
+    finalContent = assembleInitialPrompt({ user, sessionId: normalizedSessionId, workDir, content: finalContent, logger });
   }
 
   // @ 提及: read_only 拼 transfer 引用进 prompt; bidirectional 注册 48h 双向链接
@@ -232,14 +248,13 @@ async function runSessionMessage({
       prompt: finalContent,
       cwd: workDir,
       flagRoot,
-      // 模型启动选项整包下传 (backend/model/settingsPath/codex*/harness*/代理挡位...),
-      // 各 agent 后端自行解构所需字段, dispatch 层不逐项展开.
-      modelLaunchOptions: modelLaunchOptions,
+      modelLaunchOptions: modelLaunchOptions, // 模型启动选项整包下传 (backend/model/settingsPath/codex*/harness*/代理挡位...), 各 agent 后端自行解构所需字段, dispatch 层不逐项展开.
       displayName: sess.name,
       agentSessionId: sess.agent_session_id || undefined,
       mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
     };
+    // 汇合点: 首轮和普通输入最终都从这里把 finalContent 发给 agent 后端, 之后不再有区别.
     if (urgent) {
       // 加急: 中断当前推理/输出再投递
       await backend.pauseCurrentAndResumeFromSession({ ...dispatchOpts, urgent: true });
