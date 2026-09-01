@@ -14,6 +14,11 @@ import {
 
 const DEFAULT_MAX_LINES = 10000;
 const DEFAULT_HISTORY_TAIL = 200;
+// 特殊规则: .mobius.jsonl 轨不受 DEFAULT_HISTORY_TAIL(200) 限制, 尾部窗口阈值提高到 600。
+// mobius 轨条目稀疏 (每轮 1 条 user_input + 少量 task_state), 而主轨条目高密度 (每轮可达
+// 上百条工具调用) — 时间上更早但仍有价值的用户输入卡会被主轨流量挤出 200 条窗口,
+// 前端轮次分组随之丢失更早的轮。600 保证合并后更早的用户输入卡仍存活。
+const MOBIUS_HISTORY_TAIL = 600;
 const MAX_HISTORY_FETCH = 5000;
 const MOBIUS_JSONL_VERSION = 1;
 
@@ -76,11 +81,15 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
   const maxLines = Math.max(0, Math.floor(Number.isFinite(Number(opts.maxLines)) ? Number(opts.maxLines) : DEFAULT_MAX_LINES));
   const tailCount = Math.max(0, Math.floor(Number.isFinite(Number(opts.tailCount)) ? Number(opts.tailCount) : 0));
   const mobiusPath = mobiusJsonlPathOf(jsonlPath);
-  // tailCount > 0 时, 单侧读取也按 tailCount 截尾 — 合并后再二次截尾即可,
+  // tailCount > 0 时, 单侧读取也按 tailCount 截尾 — 合并后不再二次截尾 (见下),
   // 不必双侧都读满 maxLines 浪费 parse.
   const sideOpts = { ...opts, maxLines, tailCount };
   const primary = watcher.readAll(jsonlPath as any, sideOpts);
-  const mobius = mobiusPath ? watcher.readAll(mobiusPath, sideOpts) : { entries: [], total: 0, totalApproximate: false, truncated: false, size: 0 };
+  // mobius 轨特殊规则: 不受调用方 tailCount(默认 200) 限制, 阈值提高到 MOBIUS_HISTORY_TAIL.
+  const mobiusTailCount = tailCount > 0 ? Math.max(tailCount, MOBIUS_HISTORY_TAIL) : 0;
+  const mobius = mobiusPath
+    ? watcher.readAll(mobiusPath, { ...sideOpts, tailCount: mobiusTailCount })
+    : { entries: [], total: 0, totalApproximate: false, truncated: false, size: 0 };
   const records: MergeRecord[] = [];
 
   primary.entries.forEach((entry: any, index: number) => records.push({ entry, index, source: 'primary' }));
@@ -88,10 +97,14 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
   records.sort(compareRecords);
 
   const total = (primary.total || 0) + (mobius.total || 0);
-  const effectiveLimit = tailCount > 0
-    ? (maxLines > 0 ? Math.min(maxLines, tailCount) : tailCount)
-    : maxLines;
-  const entries = (effectiveLimit > 0 ? records.slice(-effectiveLimit) : []).map((r) => r.entry);
+  // tailCount 模式 (SSE 首包) 下不做全局再截尾: 两侧已按各自窗口截好
+  // (primary ≤ tailCount, mobius ≤ MOBIUS_HISTORY_TAIL, 合计 ≤ 800), 全局再砍会把
+  // 时间上更早的 mobius 用户输入卡重新挤出去, 违背特殊规则。
+  // full 模式 (tailCount=0) 保留旧行为: 全局截到 maxLines。
+  const entries = (tailCount > 0
+    ? records
+    : (maxLines > 0 ? records.slice(-maxLines) : records)
+  ).map((r) => r.entry);
   return {
     entries,
     total,
@@ -545,5 +558,6 @@ export {
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
+  MOBIUS_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 };

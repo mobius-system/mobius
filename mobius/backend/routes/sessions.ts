@@ -42,6 +42,7 @@ import {
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
+  MOBIUS_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 } from '../services/mobius-jsonl';
 // @ts-ignore — service 仍是 .js
@@ -904,6 +905,8 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
             total: metaTotal,
             total_approximate: metaApproximate,
             tail_count: DEFAULT_HISTORY_TAIL,
+            // 特殊规则: .mobius.jsonl 轨尾部阈值 (不受 tail_count 限制)
+            mobius_tail_count: MOBIUS_HISTORY_TAIL,
             jsonl_path: counted?.paths?.primary || histPath || null,
           });
           if (!metaSent || closed) { endStream(); return; }

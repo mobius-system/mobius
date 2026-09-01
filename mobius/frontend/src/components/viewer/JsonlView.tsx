@@ -26,7 +26,10 @@ import {
   saveRoundHeaderPaletteIndex,
 } from './round-header-palette'
 
-const JSONL_INITIAL_WINDOW_SIZE = 200
+// 首屏窗口 = 后端 SSE 首包的合并尾部窗口上限: 主轨尾 200 + .mobius.jsonl 轨尾 600
+// (特殊规则: mobius 轨不受 200 限制, 见 backend/services/mobius-jsonl.ts MOBIUS_HISTORY_TAIL)。
+// 窗口必须 ≥ 首包大小, 否则后端多回灌的更早用户输入卡会被前端重新裁掉。
+const JSONL_INITIAL_WINDOW_SIZE = 800
 
 function JsonlInitialSkeleton() {
   return (
