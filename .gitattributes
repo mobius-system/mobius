@@ -1,0 +1,22 @@
+# GitHub Linguist language stats overrides
+# https://docs.github.com/en/repositories/working-with-files/using-gitignore/working-with-gitattributes
+
+# Hide build / script languages that don't represent the project's primary stack
+*.py         linguist-detectable=false
+*.ps1        linguist-detectable=false
+*.psm1       linguist-detectable=false
+*.psd1       linguist-detectable=false
+*.html       linguist-detectable=false
+*.htm        linguist-detectable=false
+
+# Suppress the catch-all "Other" slice on the GitHub repo page
+.gitattributes                                  linguist-detectable=false
+.gitignore                                      linguist-detectable=false
+.dockerignore                                   linguist-detectable=false
+.env.default                                    linguist-detectable=false
+LICENSE                                         linguist-detectable=false
+Dockerfile                                      linguist-detectable=false
+deploy/**/Dockerfile*                           linguist-detectable=false
+*.txt                                           linguist-detectable=false
+*.svg                                           linguist-detectable=false
+*.plist                                         linguist-detectable=false
