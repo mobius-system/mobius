@@ -1035,7 +1035,7 @@ router.put('/settings/model-display-order', adminAuth, (req: express.Request, re
   }
 });
 
-// ── 自动生成 Session 标题: 默认关闭; 开启后由后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
+// ── 自动生成 Session 标题: 默认开启; 后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
 router.get('/settings/auto-generate-session-title', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getAutoGenerateSessionTitle());

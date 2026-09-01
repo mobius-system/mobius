@@ -27,6 +27,7 @@ const os = require('os')
 const crypto = require('crypto')
 
 const { AgentBackend } = require('./base')
+import type { HistorySnapshot, QueryOpts } from './base'
 const {
   appendMobiusPromptEntry,
   readMergedJsonlHistory,
@@ -113,7 +114,7 @@ const BYPASS_WARN_INTERVAL_MS = 1500
 // 截屏自动确认作兜底 (双保险).
 const CLAUDE_CONFIG = path.join(HOME, '.claude.json')
 
-function ensureProjectTrusted(cwd) {
+function ensureProjectTrusted(cwd: string) {
   try {
     const abs = path.resolve(cwd)
     if (!fs.existsSync(CLAUDE_CONFIG)) return false
@@ -157,7 +158,7 @@ function ensureHub() {
   log(`[tmux-claude-code] created tmux session ${HUB}`)
 }
 
-function windowExists(name) {
+function windowExists(name: string) {
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}'])
   if (r.status !== 0) return false
   return r.stdout.split('\n').includes(name)
@@ -170,7 +171,7 @@ function windowExists(name) {
 // 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间到达的请求全部排队"的雪崩.
 // 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
 const LIST_WINDOWS_TTL_MS = 3 * 1000
-let _listWindowsCache = null // { ts: number, rows: string[][] }
+let _listWindowsCache: { ts: number; rows: string[][] } | null = null // { ts: number, rows: string[][] }
 
 // isWorking 反向扫描 transcript 的尾部窗口. 必须远大于单条记录: claude-code 的
 // 上下文注入 user 条目 (🚁🍕 项目+memory 注入) 与长篇 assistant 输出单行可达 30KB+,
@@ -186,7 +187,13 @@ const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 // latter is a completion marker, not a new user turn.  Keep this narrow so a
 // compact that is still in progress remains working until its completion
 // acknowledgement is written.
-function isCompactCompletionUserEvent(entry) {
+//
+// Claude Code 2.1.x embeds ANSI dim codes inside the receipt:
+//   <local-command-stdout>\x1b[2mCompacted (...)\x1b[22m</local-command-stdout>
+// Strip ANSI escapes before matching, otherwise the dim code sitting between
+// the tag and the word keeps the idle TUI stuck in `working` forever.
+const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
+function isCompactCompletionUserEvent(entry: any) {
   if (!entry || entry.type !== 'user') return false
   const content = entry.message?.content
   const text = Array.isArray(content)
@@ -195,7 +202,8 @@ function isCompactCompletionUserEvent(entry) {
       .map((block) => block.text || '')
       .join('\n')
     : content
-  return typeof text === 'string' && /<local-command-stdout>\s*Compacted\b/i.test(text)
+  return typeof text === 'string'
+    && /<local-command-stdout>\s*Compacted\b/i.test(String(text).replace(ANSI_ESCAPE_RE, ''))
 }
 
 // getPendingRequests 反向扫描的最多条目数: pending 请求必在 jsonl 尾部, 只看最近 N 条即可,
@@ -214,7 +222,7 @@ const CLAUDE_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d+s|h\s+\d+m\s+\d+s)[^()]*\)/u
 // 独立成与 CLAUDE_STATUS_LINE_RE 并列的特例, 以后若有误判可单独移除, 不影响原规则.
 const CLAUDE_RETRYING_LINE_RE = /·\s*Retrying\s+in\s+\d+s\s*·/i
 
-function findClaudeRealTimeInfo(paneText) {
+function findClaudeRealTimeInfo(paneText: string) {
   const lines = String(paneText || '').split('\n')
   // 从末尾往上找最近一条状态行 (TUI 同时只显示一条).
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -253,7 +261,7 @@ const _dangerHealState = new Map() // sessionId → { healing: boolean, lastWarn
 // 把 capture-pane 频次压到 ≤1/5s/session. 去掉 ANSI 转义; 失败/非命中返回 "".
 const PANE_TAIL_TTL_MS = 5 * 1000
 const _paneTailCache = new Map() // sessionId → { ts: number, text: string }
-function capturePaneTail(sessionId) {
+function capturePaneTail(sessionId: string) {
   const now = Date.now()
   const cached = _paneTailCache.get(sessionId)
   if (cached && now - cached.ts < PANE_TAIL_TTL_MS) return cached.text
@@ -272,7 +280,7 @@ function capturePaneTail(sessionId) {
 // 是否仍在跑 turn. 两个 busy 锚点: 状态行 "(... ↓ tokens ...)" + "Waiting for N background
 // agents to finish". 任一命中 → C-c×3 未生效, 仍在工作; 都不命中 → 已回 idle 输入态, C-c 生效.
 // 失败/空 → false (不 escalate, 避免误杀正常软停的 window).
-function claudePaneStillBusy(sessionId) {
+function claudePaneStillBusy(sessionId: string) {
   let text = ''
   try {
     const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-25'])
@@ -288,7 +296,7 @@ function claudePaneStillBusy(sessionId) {
 // warning = "Dangerous <kind> operation on <reason>: <target>" 整行.
 // 必须同时命中 danger 行 + "Do you want to proceed?" + "Esc to cancel" 三个特征才算"正卡在框上"
 // (三者同屏出现是权限框的强信号, 避免历史日志/输出里残留的 danger 文本误判).
-function detectDangerPermission(text) {
+function detectDangerPermission(text: string) {
   if (!text) return { pending: false, warning: null }
   const m = text.match(CLAUDE_DANGER_OPERATION_RE)
   if (!m) return { pending: false, warning: null }
@@ -305,7 +313,7 @@ function listWindowsRowsCached() {
   }
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}'])
   const rows = r.status === 0
-    ? r.stdout.trim().split('\n').filter(Boolean).map((l) => l.split('|'))
+    ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
   _listWindowsCache = { ts: now, rows }
   return rows
@@ -313,19 +321,19 @@ function listWindowsRowsCached() {
 
 // cwd → ~/.claude/projects/ 下子目录名. 所有非字母数字字符替换为 '-'.
 // 例: /home/u/cc-workspace/foo_bar → -home-u-cc-workspace-foo-bar
-function encodeCwd(cwd) {
+function encodeCwd(cwd: string) {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-function jsonlPathOf(cwd, claudeSessionId) {
+function jsonlPathOf(cwd: string, claudeSessionId: string) {
   return path.join(HOME, '.claude', 'projects', encodeCwd(cwd), `${claudeSessionId}.jsonl`)
 }
 
-function shellQuote(s) {
+function shellQuote(s: string) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`
 }
 
-function normalizeUseProxy(value, fallback = true) {
+function normalizeUseProxy(value: unknown, fallback = true) {
   if (value === false || value === 0 || value === '0' || value === 'false') return false
   if (value === true || value === 1 || value === '1' || value === 'true') return true
   return !!fallback
@@ -333,7 +341,7 @@ function normalizeUseProxy(value, fallback = true) {
 
 // 四挡代理模式归一: direct | env | proxychains | env_proxychains.
 // 兼容旧 boolean: true→env_proxychains (旧行为 env+proxychains 双轨), false/null→direct.
-function normalizeProxyMode4(value, fallback = 'direct') {
+function normalizeProxyMode4(value: unknown, fallback = 'direct') {
   if (value === 'env' || value === 'proxychains' || value === 'env_proxychains') return value
   if (value === 'direct') return 'direct'
   if (value === true || value === 1 || value === '1' || value === 'true') return 'env_proxychains'
@@ -341,7 +349,7 @@ function normalizeProxyMode4(value, fallback = 'direct') {
   return fallback
 }
 
-function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy = false, proxyMode = null) {
+function resolveClaudeProxyMode(useProxy: boolean, forceNoProxy: boolean = false, fallbackUseProxy: boolean = false, proxyMode: string | null = null) {
   const forced = !!forceNoProxy
   const mode = forced
     ? 'direct'
@@ -355,7 +363,7 @@ function resolveClaudeProxyMode(useProxy, forceNoProxy = false, fallbackUseProxy
 
 // 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
 function proxyPrereqMissing(mode = 'env_proxychains') {
-  const missing = []
+  const missing: string[] = []
   const needEnv = mode === 'env' || mode === 'env_proxychains'
   const needChains = mode === 'proxychains' || mode === 'env_proxychains'
   if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
@@ -378,10 +386,10 @@ function assertProxyAvailable(mode = 'env_proxychains') {
 // (见 session-context 注入的提示). isJobGoalAccomplished 据"文件是否还在"判断任务是否结束.
 // dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
 // 本后端在此解包出自己需要的字段 (model/settingsPath/代理挡位), 旧扁平字段作兼容兜底.
-function unpackLaunch(opts) {
-  const launch = opts?.modelLaunchOptions || {}
+function unpackLaunch(opts: ClaudeDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; forceNoProxy: boolean } {
+  const launch = (opts?.modelLaunchOptions || {}) as Record<string, any>
   return {
-    model: launch.model || opts.model,
+    model: launch.model || opts.model || null,
     settingsPath: launch.settingsPath || opts.settingsPath || null,
     useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
     proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || opts.proxyMode || 'direct'),
@@ -389,17 +397,17 @@ function unpackLaunch(opts) {
   }
 }
 
-function markRunning(root, sessionId) {
+function markRunning(root: string | null | undefined, sessionId: string) {
   return safeWriteRunningFlag(root, sessionId, {}, 'tmux-claude-code')
 }
 
-function clearRunning(root, sessionId) {
+function clearRunning(root: string | null | undefined, sessionId: string) {
   return safeRemoveRunningFlag(root, sessionId, 'tmux-claude-code')
 }
 
 // 找 text 末尾的 ASCII 连续片段 (5~15 字符), 用作 paste 落地的 capture-pane marker.
 // 中文/特殊字符在 tmux pane 里渲染未必逐字, 用 ASCII tail 更可靠.
-function findAsciiTailMarker(text) {
+function findAsciiTailMarker(text: string) {
   const ASCII = /[\x20-\x7E]/
   let i = text.length - 1
   while (i >= 0 && /\s/.test(text[i])) i--
@@ -412,7 +420,7 @@ function findAsciiTailMarker(text) {
   return tail.length >= 5 ? tail : null
 }
 
-function sleep(ms) {
+function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
@@ -430,7 +438,7 @@ function pickInitialContextGreeting() {
 
 // ── 启动时 preflight (模块加载时一次性, 缺失硬失败) ────
 ;(function preflight() {
-  const missing = []
+  const missing: string[] = []
   for (const bin of ['tmux', 'claude']) {
     if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
   }
@@ -453,7 +461,7 @@ function pickInitialContextGreeting() {
 // dequeue/remove 不带 content, 不能作"已送达"ACK, 故不据此判定.
 
 // 归一化请求文本: 折叠连续空白 + 去首尾空白, 消除 TUI 写盘时的换行/缩进差异.
-function normalizeRequestText(value) {
+function normalizeRequestText(value: unknown) {
   if (typeof value !== 'string') return ''
   return value.replace(/\s+/g, ' ').trim()
 }
@@ -461,7 +469,7 @@ function normalizeRequestText(value) {
 // 从"消费型"条目抽出请求文本签名; 非消费条目返回 ''.
 //   type:user                  → message.content (string 或 text 块数组)
 //   attachment:queued_command  → attachment.content / text / command
-function consumedRequestSignature(entry) {
+function consumedRequestSignature(entry: any) {
   if (!entry || typeof entry !== 'object') return ''
   if (entry.type === 'user') {
     const c = entry.message?.content
@@ -485,7 +493,7 @@ function consumedRequestSignature(entry) {
 // 同一请求判定: 全文签名相等, 或一方完整包含另一方 (容忍 agent 包裹层).
 // 故意用"全文包含"而非"前缀指纹" —— 多个 mobius prompt 共享相同开场白前缀,
 // 用前缀会把不同任务误配成同一个.
-function isSameQueuedRequest(sigA, sigB) {
+function isSameQueuedRequest(sigA: string, sigB: string) {
   if (!sigA || !sigB) return false
   if (sigA === sigB) return true
   if (sigA.length >= 40 && sigB.includes(sigA)) return true
@@ -519,7 +527,49 @@ function resolveGulingMcp() {
   return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } }
 }
 
+
+// runtime 条目: 每个 mobius session 对应一个 tmux window + claude TUI 的运行态.
+interface ClaudeRuntimeEntry {
+  agentSessionId: string
+  cwd: string
+  flagRoot: string
+  model: string | null
+  useProxy: boolean
+  proxyMode?: string
+  settingsPath: string | null
+  forceNoProxy: boolean
+  displayName: string | null
+  jsonlPath: string
+  startedAt: number
+  watch: { stop?: () => void } | null
+}
+
+// dispatch 契约: createNewSession / queue / pause 共用参数形状 (modelLaunchOptions 整包 + 兼容扁平).
+interface ClaudeDispatchOpts {
+  sessionId?: string
+  prompt?: string
+  initialPrompt?: string
+  cwd?: string
+  flagRoot?: string
+  displayName?: string
+  agentSessionId?: string | null
+  isInitialContextPrompt?: boolean
+  mobiusPromptRecord?: Record<string, unknown> | null
+  suppressRunningFlag?: boolean
+  urgent?: boolean
+  aimuxRemoteName?: string
+  enableGulingMcp?: boolean
+  modelLaunchOptions?: Record<string, unknown>
+  model?: string | null
+  useProxy?: boolean
+  proxyMode?: string
+  settingsPath?: string | null
+  forceNoProxy?: boolean
+  [key: string]: unknown
+}
+
 class TmuxClaudeCodeBackend extends AgentBackend {
+  declare runtime: Map<string, ClaudeRuntimeEntry>
   constructor() {
     super({ name: 'tmux-claude-code', runtimeFile: RUNTIME_FILE, archiveFile: ARCHIVE_FILE })
     // runtime: sessionId → { agentSessionId, cwd, flagRoot, model, settingsPath, displayName, jsonlPath, startedAt, watch }
@@ -531,7 +581,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 进程 (claude TUI 在 tmux 里) 当然可能还活 — 我们不重启它. 起 jsonl watcher 接 tail.
   _restoreFromPersisted() {
     let total = 0
-    for (const [sid, p] of Object.entries(this.persisted)) {
+    for (const [sid, p] of Object.entries(this.persisted) as Array<[string, any]>) {
       total++
       if (!p?.jsonlPath || !fs.existsSync(p.jsonlPath)) {
         log(`[tmux-claude-code] runtime 条目 ${sid} 被丢弃 (jsonl 缺失: ${p?.jsonlPath})`)
@@ -557,38 +607,38 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // 每个 session 起一个 jsonl-watcher (后端唯一), 新行 → _emitRaw 给所有订阅者.
   // 已活则不重起. startOffset=current size 因为初始内容由 getHistory 提供 (sentinel).
-  _ensureWatcher(sessionId) {
+  _ensureWatcher(sessionId: string) {
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath || entry.watch) return
     entry.watch = watchMergedJsonl({
       path: entry.jsonlPath,
       startSentinel: null,
-      onEntry: (raw) => this._emitRaw(sessionId, raw),
-      onError: (e) => console.warn(`[tmux-claude-code/watch ${sessionId}] ${e.message}`),
+      onEntry: (raw: any) => this._emitRaw(sessionId, raw),
+      onError: (e: unknown) => console.warn(`[tmux-claude-code/watch ${sessionId}] ${(e as Error)?.message || e}`),
     })
   }
 
   // ── 公开方法 (基类锁包装) ─────────────────────────────
-  createNewSession(opts) {
+  createNewSession(opts: ClaudeDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._createImpl(opts))
   }
-  pauseCurrentAndResumeFromSession(opts) {
+  pauseCurrentAndResumeFromSession(opts: ClaudeDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._pauseImpl(opts))
   }
-  noPauseCurrentAndQueueQueryAtSession(opts) {
+  noPauseCurrentAndQueueQueryAtSession(opts: ClaudeDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._queueImpl(opts))
   }
-  terminateSession(sessionId) {
+  terminateSession(sessionId: string) {
     return this._withLock(sessionId, () => this._terminateImpl(sessionId))
   }
 
   // ── 状态查询 (不上锁, 跟写操作并发安全) ─────────────
-  isAlive(sessionId) {
+  isAlive(sessionId: string) {
     // 状态查询走缓存 (12s TTL); 控制流 (create/terminate 等) 请用 windowExists (实时).
-    return listWindowsRowsCached().some((cols) => cols[0] === sessionId)
+    return listWindowsRowsCached().some((cols: string[]) => cols[0] === sessionId)
   }
 
-  isWorking(sessionId) {
+  isWorking(sessionId: string) {
     if (!this.isAlive(sessionId)) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) return false
@@ -647,7 +697,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   //   之后(反向更早), 故窗口内 enqueue 的消费必已在窗口内见过, 绝不会把已消费的误判成 pending.
   // mobius 装饰条目在 sidecar .mobius.jsonl, 不在此原生文件 → content 匹配无发送镜像污染.
   // 返回 [{ content, enqueuedAt }], 顺序 = 入队先后; 空 = 无排队中的请求.
-  getPendingRequests(sessionId) {
+  getPendingRequests(sessionId: string) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) return []
     let tailLines
@@ -663,8 +713,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     } catch { return [] }
 
     const recent = tailLines.slice(-MAX_PENDING_SCAN_ENTRIES)
-    const consumedSigs = []
-    const pending = []
+    const consumedSigs: any[] = []
+    const pending: any[] = []
     for (let i = recent.length - 1; i >= 0; i--) {
       let e
       try { e = JSON.parse(recent[i]) } catch { continue }
@@ -689,7 +739,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 任务是否结束: session 启动时落 running.flag, agent 收工 (成功/失败) 自删.
   // flag 不在 → 任务已结束 (accomplished=true). 未知 session → false (说不准).
   // 锚点用 flagRoot (仓库根); 老条目无 flagRoot 时回退 cwd.
-  isJobGoalAccomplished(sessionId) {
+  isJobGoalAccomplished(sessionId: string) {
     const entry = this.runtime.get(sessionId)
     const root = entry?.flagRoot || entry?.cwd
     if (!root) return false
@@ -698,7 +748,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // 任务是否失败: failed.flag 在 → true. 未知 session (无 root) → false (说不准).
   // 与 isJobGoalAccomplished 同锚点 (flagRoot 仓库根; 老条目回退 cwd).
-  isFailed(sessionId) {
+  isFailed(sessionId: string) {
     const entry = this.runtime.get(sessionId)
     const root = entry?.flagRoot || entry?.cwd
     if (!root) return false
@@ -706,7 +756,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   listSessions() {
-    return listWindowsRowsCached().map(cols => {
+    return listWindowsRowsCached().map((cols: string[]) => {
       const [name, pid, idx, activity, paneDead, paneCurrentCommand] = cols
       const entry = this.runtime.get(name)
       const lastActivitySec = Number(activity)
@@ -730,7 +780,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 实时状态行 (给 session 页 LIVE 卡片): 抓 tmux pane 倒数 15 行, 找 claude TUI 状态行.
   // 非 alive / 非 working → "". TTL 5s 缓存 (含空结果), 把 capture-pane 频次压到 ≤1/5s.
   // 锦上添花功能: 失败静默返回 "", 绝不抛错压垮 /status 轮询.
-  realTimeInfo(sessionId) {
+  realTimeInfo(sessionId: string): string {
     // 复用 capturePaneTail 的 5s 缓存: 与 isWorking 兜底共用同一份 capture-pane spawn,
     // 不重复 spawn. isWorking 在"等待 background agents"等灰色地带已 capture 过, 这里直接命中缓存.
     try {
@@ -740,7 +790,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         // 卡在框上等输入 → TUI 不推进 → session 卡死. tool_use pending 时 isWorking 判 true,
         // 正好覆盖此态. fire-and-forget 自愈 (Esc + 等 5s + resume), 不阻塞 /status 轮询.
         const danger = detectDangerPermission(paneText)
-        if (danger.pending) this._maybeHealDangerPermission(sessionId, danger.warning)
+        if (danger.pending && danger.warning) this._maybeHealDangerPermission(sessionId, danger.warning)
         const info = findClaudeRealTimeInfo(paneText)
         if (info) return info
       }
@@ -750,7 +800,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // 危险权限框自愈节流: 单 session 同时只跑一个自愈 + 同一 warning 冷却期内不重复触发.
   // realTimeInfo 命中 detectDangerPermission 时调; fire-and-forget, 立即返回不阻塞 /status.
-  _maybeHealDangerPermission(sessionId, warning) {
+  _maybeHealDangerPermission(sessionId: string, warning: string) {
     const st = _dangerHealState.get(sessionId) || { healing: false, lastWarning: '', lastTs: 0 }
     const now = Date.now()
     if (st.healing) return  // 已在自愈中, 不重复
@@ -769,7 +819,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   //   2) 等 5s 让 TUI 消化, 对话框彻底消失
   //   3) pauseCurrentAndResumeFromSession 发 "$warning, please skip or try commands that are less aggressive."
   //      (内部 C-c×3 中断当前 turn 再 queue 新 prompt; 即便 Esc 后 agent 还在原 turn 也会被重置).
-  async _healDangerPermission(sessionId, warning) {
+  async _healDangerPermission(sessionId: string, warning: string) {
     if (!windowExists(sessionId)) return
     tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Escape'])
     _paneTailCache.delete(sessionId)  // 失效缓存, 让后续判定看到取消后的真实屏幕
@@ -788,7 +838,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   //   runtime (Map, 进程内)        — 当前正活的 session
   //   persisted (hub-runtime.json) — live, terminate 时被清
   //   archive (hub-archive.json)   — 历史全集, terminate 不清; admin 关 window 后靠它找历史
-  _resolveJsonlPath(sessionId) {
+  _resolveJsonlPath(sessionId: string): string | null {
     return this.runtime.get(sessionId)?.jsonlPath
         || this._lookupPersistedJsonlPath(sessionId)
         || this._lookupArchivedJsonlPath(sessionId)
@@ -796,7 +846,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 历史 + sentinel: 上层用 sentinel 串到 live 流, 不重复.
-  getHistory(sessionId, opts = {}) {
+  getHistory(sessionId: string, opts: QueryOpts = {}): HistorySnapshot {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -805,17 +855,17 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
   }
 
-  get_time_consume_waterfall(sessionId, opts = {}) {
+  get_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId, opts = {}) {
+  clear_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
   // 订阅 raw 流: opts.fromSentinel 指定字节 offset → 起独立 watcher 从那点 tail.
   // 不传 sentinel = 走基类的 EventEmitter (用后端共享 watcher emit 的 live 流).
-  getAgentRawThoughtStream(sessionId, listener, opts = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: QueryOpts = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) {
@@ -829,16 +879,16 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 接喂用户的 listener.
       const w = watchMergedJsonl({
         path: jsonlPath,
-        startSentinel: opts.fromSentinel,
-        onEntry: (raw) => listener(raw),
-        onError: (e) => console.warn(`[tmux-claude-code/sub ${sessionId}] ${e.message}`),
+        startSentinel: opts.fromSentinel as number | null,
+        onEntry: (raw: any) => listener(raw),
+        onError: (e: unknown) => console.warn(`[tmux-claude-code/sub ${sessionId}] ${(e as Error)?.message || e}`),
       })
       return () => { try { w.stop() } catch {} }
     }
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId, mobiusPromptRecord) {
+  _appendMobiusPromptEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
     if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
@@ -856,13 +906,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       })
       return true
     } catch (e) {
-      console.warn(`[tmux-claude-code] mobius jsonl append failed (${sessionId}): ${e.message}`)
+      console.warn(`[tmux-claude-code] mobius jsonl append failed (${sessionId}): ${(e as Error)?.message || e}`)
       return false
     }
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl(opts) {
+  async _createImpl(opts: ClaudeDispatchOpts) {
     const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, enableGulingMcp = false } = opts
     const { model, useProxy, proxyMode, settingsPath, forceNoProxy } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
@@ -905,7 +955,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl(opts) {
+  async _queueImpl(opts: ClaudeDispatchOpts) {
     const { sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false } = opts
     let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy } = unpackLaunch(opts)
     if (!sessionId) throw new Error('需要 sessionId')
@@ -933,8 +983,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         proxyMode: proxyMode.proxyMode,
         settingsPath: finalSettingsPath,
         forceNoProxy: proxyMode.forceNoProxy,
-        displayName: displayName || persisted?.displayName,
-        agentSessionId: finalAgentSid,
+        displayName: displayName ?? (persisted?.displayName ?? undefined),
+        agentSessionId: finalAgentSid ?? undefined,
         aimuxRemoteName,
         enableGulingMcp,
       })
@@ -945,7 +995,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }: ClaudeDispatchOpts) {
     if (!sessionId) throw new Error('需要 sessionId')
     const persisted = this.runtime.get(sessionId)
 
@@ -994,12 +1044,12 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     await this._queueImpl({
       sessionId,
       prompt,
-      cwd: persisted?.cwd,
-      flagRoot: persisted?.flagRoot,
-      model: persisted?.model,
+      cwd: persisted?.cwd ?? undefined,
+      flagRoot: persisted?.flagRoot ?? undefined,
+      model: persisted?.model ?? undefined,
       useProxy: persisted?.useProxy,
-      displayName: persisted?.displayName,
-      agentSessionId: persisted?.agentSessionId,
+      displayName: persisted?.displayName ?? undefined,
+      agentSessionId: persisted?.agentSessionId ?? undefined,
       isInitialContextPrompt: false,
       mobiusPromptRecord,
     })
@@ -1008,12 +1058,12 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 返回 { sessionId, killed, wasWorking } — 调用方 (删除路由) 据此"抛出提醒":
   // killed=true 表示确实有活的后台 claude code 被杀掉; wasWorking=true 表示它当时
   // 还在 turn 中 (强行中断了正在跑的任务).
-  async _terminateImpl(sessionId) {
+  async _terminateImpl(sessionId: string) {
     const wasAlive = windowExists(sessionId)
     // isWorking 内部会再判 isAlive; 趁 window 还在先采样.
     const wasWorking = wasAlive && this.isWorking(sessionId)
     const entry = this.runtime.get(sessionId)
-    if (entry?.watch) { try { entry.watch.stop() } catch {} }
+    if (entry?.watch?.stop) { try { entry.watch.stop() } catch {} }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1030,11 +1080,16 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }: ClaudeDispatchOpts) {
+    // dispatch 层字段可空: 这里归一成非空工作值 (persisted 兜底在调用方完成).
+    if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
+    const finalDisplayName = displayName || null
+    const finalAgentSid = agentSessionId || null
+    const finalFlagRoot = flagRoot || cwd
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 运行标记默认写在 cwd 下；调用方传 flagRoot 时优先使用仓库根等稳定路径。
-    const effFlagRoot = flagRoot || cwd
+    const effFlagRoot = finalFlagRoot
     // 新启动用调用方传入的 session 实际值；没有历史 runtime 时默认不走代理。
     // settingsPath 传入时转成绝对路径，避免后续 bash 命令受当前目录影响。
     const finalSettingsPath = settingsPath ? path.resolve(settingsPath) : null
@@ -1044,7 +1099,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       throw new Error(`Claude Code settings 文件不存在: ${finalSettingsPath}`)
     }
     // Settings and proxy are independent: the proxy branch passes --settings too.
-    const proxyMode = resolveClaudeProxyMode(useProxy, forceNoProxy, false, proxyModeArg)
+    const proxyMode = resolveClaudeProxyMode(!!useProxy, !!forceNoProxy, false, proxyModeArg ?? null)
     const finalForceNoProxy = proxyMode.forceNoProxy
     const finalUseProxy = proxyMode.useProxy
     const finalProxyMode = proxyMode.proxyMode
@@ -1053,16 +1108,16 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
     // resume 保护: 老 session 的 jsonl 可能不在我们的路径下 (旧 SDK 链路来源).
     // agentSessionId 存在表示希望恢复旧 Claude 会话。
-    let useResume = !!agentSessionId
+    let useResume = !!finalAgentSid
     // 恢复前确认目标 jsonl 在当前 cwd 下可见。
-    if (useResume && !fs.existsSync(jsonlPathOf(cwd, agentSessionId))) {
+    if (useResume && finalAgentSid && !fs.existsSync(jsonlPathOf(cwd, finalAgentSid))) {
       // 找不到 jsonl 时打印警告，并退化为新建会话。
       console.warn(`[tmux-claude-code] resume target jsonl 不存在 (${agentSessionId}), fallback 为新 session`)
       // 关闭 resume 路径，后面会生成新的 Claude session id。
       useResume = false
     }
     // resume 使用旧 agentSessionId，新会话生成一个新的 UUID。
-    const claudeSessionId = useResume ? agentSessionId : crypto.randomUUID()
+    const claudeSessionId = useResume ? finalAgentSid! : crypto.randomUUID()
 
     // 收集要禁用的工具: 永久禁用 AskUserQuestion/ExitPlanMode (避免 agent 停下来等
     // 人 / 卡在 plan 模式). 若注入了 guling 实盘 MCP, 额外禁用其真实下单类工具
@@ -1073,7 +1128,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 收集要注入的 stdio/http MCP server (会话级 --mcp-config <json-file>, 顶层
     // mcpServers, additive 不叠 --strict-mcp-config, 且 --mcp-config 传入的 server
     // 被视为显式可信, 不触发 .mcp.json 那种信任弹窗). per-session 文件各会话不同.
-    const mcpServers = {}
+    const mcpServers: Record<string, any> = {}
     // TUI 会话 (add_remote_aimux_mcp): aimux stdio MCP, 让 claude 经 remote_* 工具
     // (remote_exec_command/write_stdin/apply_patch/view_image/ping) 操作远程工作站.
     if (aimuxRemoteName) {
@@ -1256,7 +1311,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 必须用 -p (bracketed paste): 否则文本内 \n 被 TUI 当回车, 多行消息会在首个换行处
   // 提前提交, 余下内容连同末尾那个显式 Enter 变成第二条 (多行被拆成两条消息的根因).
   // -p 历史上被移除是因为它之后那个显式 Enter 偶发被 TUI 吞掉 -> 改用确认式重发解决.
-  async _sendMaybeInitialContextPrompt(sessionId, text, isInitialContextPrompt) {
+  async _sendMaybeInitialContextPrompt(sessionId: string, text: string, isInitialContextPrompt?: boolean) {
     if (!isInitialContextPrompt) {
       await this._sendPromptToWindow(sessionId, text)
       return
@@ -1283,7 +1338,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     await this._sendPromptToWindow(sessionId, text)
   }
 
-  async _sendPromptToWindow(sessionId, text) {
+  async _sendPromptToWindow(sessionId: string, text: string) {
     if (!windowExists(sessionId)) {
       throw new Error(`window ${sessionId} 不存在`)
     }
@@ -1342,3 +1397,6 @@ module.exports = {
   isCompactCompletionUserEvent,
   resolveClaudeProxyMode,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

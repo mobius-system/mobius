@@ -11,6 +11,7 @@ import {
   isFunctionCallPayload,
 } from '../viewer/entry-extract'
 import { assistantEntryText } from '../viewer/entry-classify'
+import { extractInitialContext } from '../viewer/initial-context'
 
 export type EasyActivityKind = 'explore' | 'command' | 'file-change' | 'plan' | 'tool' | 'progress' | 'error' | 'image'
 
@@ -61,6 +62,13 @@ function contentText(content: unknown, acceptedTypes: string[]): string {
 }
 
 export function easyUserText(entry: AnyEntry): string {
+  // 首轮注入上下文包装: 只返回用户问题部分, 「你的任务」气泡不再铺整段样板上下文
+  const initial = extractInitialContext(entry)
+  if (initial) return initial.question || easyUserTextRaw(entry)
+  return easyUserTextRaw(entry)
+}
+
+function easyUserTextRaw(entry: AnyEntry): string {
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'user_message') {
     return String(entry.payload.message || entry.payload.content || '').trim()
   }

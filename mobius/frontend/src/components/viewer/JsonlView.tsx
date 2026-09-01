@@ -17,6 +17,7 @@ import { buildHeaderSummary } from './header-summary'
 import { ContinuationGroup, RoundGroup, EntryCardWithImages } from './RoundGroups'
 import { isHiddenJsonlNoiseEntry } from './entry-classify'
 import { computeCollapsedByForgottenFlag } from './fold-rules'
+import { buildTaskPlans } from './task-progress'
 import {
   ROUND_HEADER_PALETTES,
   ROUND_HEADER_PALETTE_STORAGE_KEY,
@@ -180,11 +181,23 @@ export function JsonlView({
   // cursorStyleTools 关闭时不构建 (传 null → 卡片无状态图标, 回退原始展示).
   const resolvedMap = useMemo(() => cursorStyleTools ? collectResolvedCallIds(recent) : null, [recent, cursorStyleTools])
   const headerTitle = title === undefined ? 'JSONL' : title
-  const visibleItems = useMemo(
-    () => mergeBashToolResultItems(recent, windowOffset).filter(
-      (item) => !isHiddenJsonlNoiseEntry(item.entry),
-    ),
+  const mergedItems = useMemo(
+    () => mergeBashToolResultItems(recent, windowOffset),
     [recent, windowOffset],
+  )
+  // 任务工具 (TaskCreate/TaskUpdate) 跨条目累积: sidecar task_state 快照 (权威) + 原生事件
+  // 兜底回放, 产出 anchor uuid → PlanUpdate, 透传给卡片走计划视图 (与 update_plan 同款).
+  // 必须在 noise 过滤之前的 merged 序列上扫: task_state 载体条目渲染层要隐藏, 但其快照
+  // 数据要先在这里吸收 (过滤后再扫就见不到载体了).
+  // 连续去重: 同一计划状态的重复注入段只保留段尾一张 (suppressed 段内的 task_reminder
+  // 载体也一并隐藏, 避免一串雷同计划卡刷屏).
+  const { plans: taskPlans, suppressed: suppressedTaskUuids } = useMemo(() => buildTaskPlans(mergedItems), [mergedItems])
+  const visibleItems = useMemo(
+    () => mergedItems.filter(
+      (item) => !isHiddenJsonlNoiseEntry(item.entry)
+        && !(suppressedTaskUuids.size > 0 && typeof item.entry?.uuid === 'string' && suppressedTaskUuids.has(item.entry.uuid)),
+    ),
+    [mergedItems, suppressedTaskUuids],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
   // forgotten-flag 收尾折叠规则: 含 "running.flag" 且往前 8 个条目有 forgotten-flag 用户卡的卡片,
@@ -306,7 +319,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'continuation') {
-      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={extFocusLineNo} />
+      return <ContinuationGroup items={block.items} onlyGroup={onlyGroup} forceExpandAll={forceExpandAll} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={extFocusLineNo} taskPlans={taskPlans} />
     }
     if (block.kind === 'preItem') {
       const { entry, lineNo, bashResults, readResults } = block.item
@@ -320,6 +333,7 @@ export function JsonlView({
           resolvedMap={resolvedMap}
           forceOpen={lineNo === extFocusLineNo}
           parentOrderedCollapse={collapseLineNos.has(lineNo)}
+          taskPlans={taskPlans}
         />
       )
     }
@@ -337,6 +351,7 @@ export function JsonlView({
         collapseLineNos={collapseLineNos}
         focusLineNo={extFocusLineNo}
         headerPalette={roundHeaderPalette}
+        taskPlans={taskPlans}
       />
     )
   }

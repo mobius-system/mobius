@@ -1720,9 +1720,10 @@ function ModelPromptLimitsCard() {
     }
   }
 
-  const autoTitleEnabled = Boolean(payload?.auto_generate_session_title === true
+  // 默认开启: 后端 DEFAULTS.enabled=true; 显式 false / {enabled:false} 才视为关闭.
+  const autoTitleEnabled = !(payload?.auto_generate_session_title === false
     || (payload?.auto_generate_session_title && typeof payload.auto_generate_session_title === 'object'
-      && payload.auto_generate_session_title.enabled === true))
+      && payload.auto_generate_session_title.enabled === false))
 
   const toggleAutoGenerateSessionTitle = async (enabled: boolean) => {
     setSavingAutoTitle(true)
@@ -1822,7 +1823,7 @@ function ModelPromptLimitsCard() {
             <span>自动生成会话标题</span>
           </div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            后端收到 agent 明确产出的标题事件时自动改名；不扫描历史、不依赖前端打开页面、不走状态轮询。默认关闭。
+            后端收到 agent 明确产出的标题事件时自动改名；codex 等后端由系统周期兜底生成。默认开启。
           </div>
         </div>
         <ToggleSwitch

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, CopyPlus, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
 import { timeAgo } from './shell'
 import { SkillsManager } from './skills'
@@ -2375,13 +2375,13 @@ export function NewSessionModal({
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
-  // 用户级与项目级之间的副本管理 (Skill 与 Memory)
+  // 用户级与项目级之间的复制管理 (Skill 与 Memory)
   const [currentUserId, setCurrentUserId] = useState('')
   const [scopeBusyId, setScopeBusyId] = useState('')
   const [scopeNotice, setScopeNotice] = useState('')
   const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
-  // 项目级目录: resolver 会把与用户级同名的项目副本去重隐藏 (user 优先),
-  // 副本状态必须单独拉项目列表判断, 不能依赖 availableSkills。
+  // 项目级目录: resolver 会把与用户级同名的项目级条目去重隐藏 (user 优先),
+  // 是否已复制必须单独拉项目列表判断, 不能依赖 availableSkills。
   const [scopeRefreshKey, setScopeRefreshKey] = useState(0)
   const [projectSkillCatalog, setProjectSkillCatalog] = useState<any[]>([])
   const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
@@ -2719,11 +2719,11 @@ export function NewSessionModal({
     try { setPreview(await fetchPreview(excludedSkills, next)) } catch { /* 静默 */ }
   }
 
-  // ---- 用户级 ↔ 项目级: 创建 / 移除项目副本 ---------------------------------
-  // 创建项目副本 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目副本。
+  // ---- 用户级 ↔ 项目级: 复制为项目级 / 移除项目级条目 -------------------------
+  // 复制为项目级 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目级条目。
   // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
   const canScopeChange = !!projectId && !isGuidedDemo
-  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我创建的项目级副本。
+  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我复制的项目级条目。
   useEffect(() => {
     if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
     let alive = true
@@ -2755,10 +2755,10 @@ export function NewSessionModal({
         method: 'POST',
         body: JSON.stringify({ project_id: projectId }),
       })
-      setScopeNotice(`已为「${item.name}」创建项目级副本, 对项目成员可见`)
+      setScopeNotice(`已将「${item.name}」复制为项目级${kind === 'skill' ? ' Skill' : ' Memory'}, 对项目成员可见`)
       await refreshWizardSources()
     } catch (e: any) {
-      setErr(e?.message || '创建项目级副本失败')
+      setErr(e?.message || '复制为项目级失败')
     } finally { setScopeBusyId('') }
   }
   const removeProjectCopy = async () => {
@@ -2771,10 +2771,10 @@ export function NewSessionModal({
         method: 'POST',
       })
       setCancelTarget(null)
-      setScopeNotice(`已移除「${item.name}」的项目级副本, 你的用户级原件保留`)
+      setScopeNotice(`已移除「${item.name}」的项目级条目, 你的用户级原件保留`)
       await refreshWizardSources()
     } catch (e: any) {
-      setErr(e?.message || '移除项目级副本失败')
+      setErr(e?.message || '移除项目级条目失败')
     } finally { setScopeBusyId('') }
   }
 
@@ -2870,7 +2870,7 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
-  // 项目副本分组与匹配: skill 按 id 里的 dirName, memory 按名称 (副本保留原名)。
+  // 项目级条目分组与匹配: skill 按 id 里的 dirName, memory 按名称 (复制后保留原名)。
   const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
   const userSkillItems = availableSkills.filter(s => s.scope === 'user')
   const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
@@ -2880,7 +2880,7 @@ export function NewSessionModal({
     if (parts[0] === 'user') return parts.slice(2).join(':')
     return null
   }
-  // dirName → 我创建的项目副本 (catalog 行, 含项目 id)
+  // dirName → 我复制的项目级条目 (catalog 行, 含项目 id)
   const myProjectCopySkillByDir = new Map<string, any>()
   const allProjectCopySkillDirs = new Set<string>()
   for (const s of projectSkillCatalog) {
@@ -2901,58 +2901,42 @@ export function NewSessionModal({
       type="button"
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
       disabled={!!scopeBusyId}
-      title="移除我创建的项目级副本 (你的用户级原件保留)"
+      title="移除我复制的项目级条目 (你的用户级原件保留)"
       className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
       style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
-      移除项目副本
+      移除项目级
     </button>
   )
-  const projectCopyChip = (label = '已有项目级副本') => (
-    <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>{label}</span>
-  )
+  // 复制为项目级条目的小图标按钮 (kind 决定悬浮提示 Skill/Memory)。
+  const copyToProjectButton = (kind: 'skill' | 'memory', item: WizardItem) => {
+    const busy = scopeBusyId === `${kind}:${item.id}`
+    const noun = kind === 'skill' ? 'Skill' : 'Memory'
+    return (
+      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); createProjectCopy(kind, item) }} disabled={!!scopeBusyId}
+        title={`复制为项目级${noun}`}
+        aria-label={`复制为项目级${noun}`}
+        className="inline-flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:opacity-40"
+        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+        {busy
+          ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.8} />
+          : <CopyPlus className="h-3 w-3" strokeWidth={1.8} />}
+      </button>
+    )
+  }
   const skillProjectCopyAction = (sk: WizardItem) => {
     if (!canScopeChange || sk.scope !== 'user') return null
     const dir = sk.dirName || scopeIdDir(sk.id) || sk.name
     const mine = myProjectCopySkillByDir.get(dir)
-    if (mine) {
-      return (<>
-        {projectCopyChip()}
-        {removeProjectCopyButton('skill', mine.id, sk.name)}
-      </>)
-    }
-    if (allProjectCopySkillDirs.has(dir)) return projectCopyChip('项目已有同名副本')
-    const busy = scopeBusyId === `skill:${sk.id}`
-    return (
-      <button type="button" onClick={() => createProjectCopy('skill', sk)} disabled={!!scopeBusyId}
-        title="为这条用户级 Skill 创建项目级副本, 对项目成员可见 (个人原件保留)"
-        className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
-        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
-        {busy ? '创建中…' : '创建项目副本'}
-      </button>
-    )
+    if (mine) return removeProjectCopyButton('skill', mine.id, sk.name)
+    if (allProjectCopySkillDirs.has(dir)) return null
+    return copyToProjectButton('skill', sk)
   }
   const memoryProjectCopyAction = (m: WizardItem) => {
     if (!canScopeChange) return null
     if (m.scope === 'user') {
-      const mine = myProjectCopyMemoryByName.get(m.name)
-      if (mine) {
-        return projectCopyChip()
-      }
-      if (allProjectCopyMemoryNames.has(m.name)) return projectCopyChip('项目已有同名副本')
-      const busy = scopeBusyId === `memory:${m.id}`
-      return (
-        <button type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); createProjectCopy('memory', m) }}
-          disabled={!!scopeBusyId}
-          title="为这条用户级 Memory 创建项目级副本, 对项目成员可见 (个人原件保留)"
-          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
-          style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
-          {busy ? '创建中…' : '创建项目副本'}
-        </button>
-      )
-    }
-    if (m.scope === 'project' && isProjectCopyByMe(m)) {
-      return projectCopyChip()
+      if (myProjectCopyMemoryByName.has(m.name)) return null
+      if (allProjectCopyMemoryNames.has(m.name)) return null
+      return copyToProjectButton('memory', m)
     }
     return null
   }
@@ -3402,10 +3386,10 @@ export function NewSessionModal({
                                     type="button"
                                     onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
                                     disabled={!!scopeBusyId}
-                                    title="移除我创建的项目级副本 (你的用户级原件保留)"
+                                    title="移除我复制的项目级条目 (你的用户级原件保留)"
                                     className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
                                     style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
-                                    移除项目副本
+                                    移除项目级
                                   </button>
                                 )}
                                 {showProjectCopy && skillProjectCopyAction(sk)}
@@ -3444,7 +3428,7 @@ export function NewSessionModal({
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
-                          {canScopeChange && ' 在「用户 Skill」分组点「创建项目副本」可把个人 Skill 复制为项目级供项目成员使用; 由你创建的副本可随时移除。'}
+                          {canScopeChange && ' 在「用户 Skill」分组点复制图标可把个人 Skill 复制为项目级供项目成员使用; 由你复制的项目级条目可随时移除。'}
                         </p>
                       )}
                     </div>
@@ -3553,10 +3537,10 @@ export function NewSessionModal({
             background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
           }}>
             <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-              移除项目副本「{cancelTarget.item.name}」?
+              移除项目级「{cancelTarget.item.name}」?
             </h3>
             <p className="text-[12px] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-              项目级副本将被移除, 你的用户级原件保留。若副本创建后被编辑过, 这些修改会一并丢弃;
+              这条项目级{cancelTarget.kind === 'skill' ? ' Skill' : ' Memory'}将被移除, 你的用户级原件保留。若复制到项目级后被编辑过, 这些修改会一并丢弃;
               已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
             </p>
             <div className="flex gap-2">
@@ -3566,7 +3550,7 @@ export function NewSessionModal({
               <button type="button" onClick={removeProjectCopy} disabled={!!scopeBusyId}
                 className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
                 style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)' }}>
-                {scopeBusyId ? '处理中…' : '确认移除项目副本'}
+                {scopeBusyId ? '处理中…' : '确认移除'}
               </button>
             </div>
           </div>

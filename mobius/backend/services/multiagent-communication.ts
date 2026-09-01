@@ -88,7 +88,7 @@ export function buildChannelOfferPrompt(selfSession: any, targetSession: any): s
 
 /**
  * 接收侧模板: /api/multiagent_communication 投递时包裹正文.
- * 回复方与发起方走同一 API — 到达对端时套用的也是本模板 (对称).
+ * 回复方与发起方走同一 API — 消息到达目标智能体时套用的也是本模板 (对称).
  */
 export function buildIncomingMessagePrompt(sourceSession: any, targetSession: any, content: string): string {
   return [

@@ -4,7 +4,7 @@
  * 职责: 鉴权 / workspace 解析 / turn 分配 / messages_v2 落库 /
  * 首条消息的上下文包装 (project/issue/memory) / @ 提及处理 / dispatch (urgent 或普通) / 失败善后.
  *
- * @ 提及: read_only → transfer bundle 文件引用拼进 prompt (对端无感知);
+ * @ 提及: read_only → transfer bundle 文件引用拼进 prompt (目标智能体无感知);
  *        bidirectional → registerMultiagentLinks 注册 48h 链接 + 消息尾追加
  *        multiagent_send 用法提示 (后续通讯走 /api/multiagent_communication 直达).
  */

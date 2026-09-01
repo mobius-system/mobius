@@ -8,7 +8,7 @@
  *   - claude-code 后端: agent 自身产出 type=ai-title, syncer 实时更新名(本生成器跳过)。
  *   - codex / 其它后端: agent 不产 ai-title, 由本生成器周期性扫描兜底。
  *
- * 受同一开关控制: admin-settings autoGenerateSessionTitle.enabled(默认 off)。
+ * 受同一开关控制: admin-settings autoGenerateSessionTitle.enabled(默认 on)。
  *
  * 做法: 扫描「默认名(含时间戳) + 消息数≥2 + 非 claude-code 后端」的会话, 用该会话自身
  * 的 codex 通道(base_url + key + model, OpenAI 兼容 chat/completions)把首条用户消息
@@ -193,7 +193,7 @@ function startSessionTitleGenerator(): NodeJS.Timeout | null {
   // 启动后先跑一次, 让已存在的无标题 codex 会话尽快被处理。
   setTimeout(safe, 5 * 1000);
   timer = setInterval(safe, SCAN_INTERVAL_MS);
-  console.log('[session-title-generator] started (兜底 codex 等非 ai-title 后端, autoGenerateSessionTitle default off)');
+  console.log('[session-title-generator] started (兜底 codex 等非 ai-title 后端, autoGenerateSessionTitle default on)');
   return timer;
 }
 

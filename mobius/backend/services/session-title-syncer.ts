@@ -74,7 +74,7 @@ function startSessionTitleSyncer(): (() => void) | null {
       console.warn(`[session-title-syncer] failed: ${(e as Error).message}`)
     }
   })
-  console.log('[session-title-syncer] started (source=agent raw_entry, autoGenerateSessionTitle default off)')
+  console.log('[session-title-syncer] started (source=agent raw_entry, autoGenerateSessionTitle default on)')
   return unsubscribe
 }
 

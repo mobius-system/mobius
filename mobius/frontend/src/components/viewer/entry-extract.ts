@@ -753,6 +753,104 @@ export function extractPlanCard(entry: AnyEntry): PlanUpdate | null {
   return extractPlanUpdate(entry) ?? extractTaskReminder(entry)
 }
 
+// ── Claude 任务工具 (TaskCreate/TaskUpdate) 的计划卡片渲染 ────────────────
+// 任务工具调用是增量语义: TaskCreate 只带 subject, TaskUpdate 只带 {taskId,status},
+// 单条 entry 无法自渲染完整任务列表 (标题在更早的 TaskCreate 里)。跨条目累积在
+// ./task-progress (JsonlView 顶层, 前端兜底) 与 backend task-state-reducer
+// (sidecar task_state 快照, 权威) 完成; 这里只负责单条目的识别与形态抽取。
+export function isTaskToolUseName(name: unknown): boolean {
+  return typeof name === 'string' && (name === 'TaskCreate' || name === 'TaskUpdate')
+}
+
+// assistant entry 里的任务工具调用 (保序)。无则空数组。
+export function extractTaskToolCalls(entry: AnyEntry): Array<{ name: string; toolUseId?: string; input: Record<string, any> }> {
+  if (entry?.type !== 'assistant') return []
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return []
+  const out: Array<{ name: string; toolUseId?: string; input: Record<string, any> }> = []
+  for (const block of content) {
+    if (!block || typeof block !== 'object' || block?.type !== 'tool_use') continue
+    if (!isTaskToolUseName(block?.name)) continue
+    out.push({
+      name: String(block.name),
+      toolUseId: typeof block?.id === 'string' && block.id ? block.id : undefined,
+      input: block?.input && typeof block.input === 'object' ? block.input : {},
+    })
+  }
+  return out
+}
+
+// 该 entry 是否携带任务工具调用 (决定卡片可走计划视图)。
+export function isTaskToolUseEntry(entry: AnyEntry): boolean {
+  return extractTaskToolCalls(entry).length > 0
+}
+
+// task_reminder 附件 (attachment.type === 'task_reminder' 且 content 非空) 是 TUI 自产的
+// 全量任务快照。extractTaskReminder (上方) 把它归一成 PlanUpdate 渲染计划卡; 这里按
+// 原始任务记录返回 (含 description/blocks 等全部字段), 供跨条目累积器作权威覆盖。
+export type TaskReminderRecord = { id: string; subject: string; description?: string; activeForm?: string; status: string; blocks?: string[]; blockedBy?: string[] }
+
+export function extractTaskReminderSnapshot(entry: AnyEntry): TaskReminderRecord[] | null {
+  if (entry?.type !== 'attachment') return null
+  const attachment = entry?.attachment
+  if (!attachment || attachment?.type !== 'task_reminder') return null
+  const content = attachment?.content
+  if (!Array.isArray(content) || content.length === 0) return null
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+  const strList = (v: unknown) => {
+    if (!Array.isArray(v)) return undefined
+    const out = v.map((x) => String(x)).filter(Boolean)
+    return out.length > 0 ? out : undefined
+  }
+  const tasks: TaskReminderRecord[] = []
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue
+    const id = str(item.id)
+    if (!id) continue
+    tasks.push({
+      id,
+      subject: str(item.subject) || `任务 #${id}`,
+      description: str(item.description),
+      activeForm: str(item.activeForm),
+      status: item.status === 'completed' || item.status === 'in_progress' || item.status === 'pending' ? item.status : 'pending',
+      blocks: strList(item.blocks),
+      blockedBy: strList(item.blockedBy),
+    })
+  }
+  return tasks.length > 0 ? tasks : null
+}
+
+// ── Claude 任务工具 (TaskCreate/TaskUpdate) 的计划卡片渲染 ────────────────
+// 任务快照 (sidecar task_state 的 tasks 数组 / 前端累积表) → PlanUpdate,
+// 让任务卡与 update_plan / task_reminder 共用同一张计划卡片。
+export function taskSnapshotToPlanUpdate(tasks: any): PlanUpdate | null {
+  if (!Array.isArray(tasks) || tasks.length === 0) return null
+  const steps: PlanStep[] = []
+  for (const task of tasks) {
+    if (!task || typeof task !== 'object') continue
+    const id = task.id == null ? undefined : String(task.id)
+    const subject = typeof task.subject === 'string' && task.subject.trim() ? task.subject.trim() : ''
+    if (!id && !subject) continue
+    steps.push({
+      step: subject || (id ? `任务 #${id}` : '(空任务)'),
+      status: task.status === 'completed' || task.status === 'in_progress' || task.status === 'pending' ? task.status : 'pending',
+      id,
+      description: typeof task.description === 'string' && task.description.trim() ? task.description.trim() : undefined,
+      activeForm: typeof task.activeForm === 'string' && task.activeForm.trim() ? task.activeForm.trim() : undefined,
+      blocks: Array.isArray(task.blocks) ? task.blocks.map((b: any) => String(b)).filter(Boolean) : undefined,
+      blockedBy: Array.isArray(task.blockedBy) ? task.blockedBy.map((b: any) => String(b)).filter(Boolean) : undefined,
+    })
+  }
+  if (steps.length === 0) return null
+  return buildPlanUpdate(steps)
+}
+
+// sidecar task_state 载体条目 (type: 'task_state', mobius.tasks 为全量快照)。
+export function extractTaskStateSnapshot(entry: AnyEntry): PlanUpdate | null {
+  if (entry?.type !== 'task_state') return null
+  return taskSnapshotToPlanUpdate(entry?.mobius?.tasks)
+}
+
 // 计划一行摘要: "计划 · X/N", 有进行中步骤则追加 "· 进行中: <步骤>".
 export function summarizePlanUpdate(plan: PlanUpdate): string {
   const parts = [`计划 · ${plan.completed}/${plan.steps.length}`]
