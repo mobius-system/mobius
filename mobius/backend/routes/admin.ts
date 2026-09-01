@@ -17,6 +17,7 @@ import { homeWorkDirFor, ENABLE_PASSWORD_LOGIN } from '../config';
 import adminSettings from '../services/admin-settings';
 // @ts-ignore — service 仍是 .js
 import * as modelAccess from '../services/model-access';
+import * as bestApiIntegration from '../services/bestapi-integration';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from '../services/model-registry';
 // @ts-ignore — service 仍是 .js
@@ -1467,6 +1468,40 @@ router.post('/settings/proxy-envs-test', adminAuth, (req: express.Request, res: 
 });
 
 // ── Claude Code 模型接入 (raw settings JSON, 不做 secret 管理) ──
+router.get('/model-access/bestapi', adminAuth, (_req: express.Request, res: express.Response) => {
+  res.json(bestApiIntegration.getBestApiConnection());
+});
+
+router.post('/model-access/bestapi/connect', adminAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const result = await bestApiIntegration.connectBestApi(req.body || {});
+    AdminAuditLog.record({
+      adminId: adminReqUser(req).id,
+      action: 'connect-and-sync',
+      resourceType: 'bestapi-model-access',
+      resourceId: result.base_url || 'bestapi',
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
+router.post('/model-access/bestapi/sync', adminAuth, async (req: express.Request, res: express.Response) => {
+  try {
+    const result = await bestApiIntegration.syncBestApi();
+    AdminAuditLog.record({
+      adminId: adminReqUser(req).id,
+      action: 'sync',
+      resourceType: 'bestapi-model-access',
+      resourceId: result.base_url || 'bestapi',
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
 router.get('/model-access/claude-code', adminAuth, (_req: express.Request, res: express.Response) => {
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));
 });
