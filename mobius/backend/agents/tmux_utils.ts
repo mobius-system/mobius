@@ -1,6 +1,6 @@
 const { tmux } = require('./tmux-operation-log')
 
-function take_tmux_window_text(target, capture_head_and_tail_line = 100) {
+function take_tmux_window_text(target: string, capture_head_and_tail_line: number = 100) {
   const tailCap = tmux(['capture-pane', '-pt', target, '-p', '-S', `-${capture_head_and_tail_line}`])
   const hs = tmux(['display-message', '-p', '-t', target, '#{history_size}'])
   const hsN = Number((hs.stdout || '').trim())
@@ -16,5 +16,4 @@ function take_tmux_window_text(target, capture_head_and_tail_line = 100) {
 
 module.exports = { take_tmux_window_text }
 
-// marker: make this file a module (top-level declarations file-private) for tsc
-export {}
+export { take_tmux_window_text }

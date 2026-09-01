@@ -1,6 +1,6 @@
 const crypto = require('crypto')
 
-function timestampOf(event) {
+function timestampOf(event: any): string {
   const raw = event?.time ?? event?.timestamp
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     return new Date(raw < 1e12 ? raw * 1000 : raw).toISOString()
@@ -9,21 +9,21 @@ function timestampOf(event) {
   return new Date().toISOString()
 }
 
-function contentBlocks(value) {
+function contentBlocks(value: any): any[] {
   if (Array.isArray(value)) return value
   if (Array.isArray(value?.content)) return value.content
   if (Array.isArray(value?.message?.content)) return value.message.content
   return []
 }
 
-function textFromBlocks(blocks) {
+function textFromBlocks(blocks: any[]): string {
   return blocks
-    .filter((block) => block?.type === 'text' || block?.type === 'reasoning' || block?.type === 'thinking')
-    .map((block) => String(block.text ?? block.reasoning ?? block.thinking ?? ''))
+    .filter((block: any) => block?.type === 'text' || block?.type === 'reasoning' || block?.type === 'thinking')
+    .map((block: any) => String(block.text ?? block.reasoning ?? block.thinking ?? ''))
     .join('')
 }
 
-function toolUseBlock(block) {
+function toolUseBlock(block: any) {
   const id = String(block?.id || block?.callId || block?.toolCallId || crypto.randomUUID())
   const name = String(block?.name || block?.toolName || block?.function?.name || 'tool')
   const rawInput = block?.input ?? block?.arguments ?? block?.function?.arguments ?? {}
@@ -38,7 +38,7 @@ function toolUseBlock(block) {
   return { type: 'tool_use', id, name, input }
 }
 
-function assistantBlocks(event) {
+function assistantBlocks(event: any): any[] {
   const blocks = contentBlocks(event?.data)
   const result: any[] = []
   for (const block of blocks) {
@@ -51,10 +51,10 @@ function assistantBlocks(event) {
   return result
 }
 
-function resultContentText(value) {
+function resultContentText(value: any): string {
   if (typeof value === 'string') return value
   if (!Array.isArray(value)) return value == null ? '' : JSON.stringify(value)
-  return value.map((block) => {
+  return value.map((block: any) => {
     if (typeof block === 'string') return block
     if (block?.type === 'text' || block?.type === 'reasoning' || block?.type === 'thinking') {
       return String(block.text ?? block.reasoning ?? block.thinking ?? '')
@@ -63,7 +63,7 @@ function resultContentText(value) {
   }).join('')
 }
 
-function errorText(reason) {
+function errorText(reason: any): string {
   if (!reason) return ''
   if (typeof reason === 'string') return reason
   const kind = String(reason.kind || '')
@@ -76,7 +76,7 @@ function errorText(reason) {
   return kind ? `DeepSeek Harness turn ended: ${kind}` : ''
 }
 
-function baseEntry(event, context) {
+function baseEntry(event: any, context: any) {
   return {
     uuid: `deepseek-harness:${context.sessionId}:${event?.seq ?? crypto.randomUUID()}`,
     timestamp: timestampOf(event),
@@ -95,7 +95,7 @@ function baseEntry(event, context) {
   }
 }
 
-function projectHarnessEvent(event, context) {
+function projectHarnessEvent(event: any, context: any): any[] {
   if (!event || typeof event !== 'object' || !event.type) return []
   const base = baseEntry(event, context)
   // Mobius writes accepted user prompts before dispatching them to the runtime.
@@ -118,7 +118,7 @@ function projectHarnessEvent(event, context) {
     }]
   }
   if (event.type === 'tool/result') {
-    const resultBlock = event.data?.message?.content?.find?.((block) => block?.type === 'tool-result')
+    const resultBlock = event.data?.message?.content?.find?.((block: any) => block?.type === 'tool-result')
     const callId = String(resultBlock?.toolCallId || event.data?.id || event.data?.callId || event.data?.toolCallId || '')
     const value = resultBlock?.content ?? event.data?.result ?? event.data?.output ?? event.data?.content ?? ''
     return [{
@@ -156,5 +156,4 @@ function projectHarnessEvent(event, context) {
 
 module.exports = { projectHarnessEvent, textFromBlocks, errorText }
 
-// marker: make this file a module (top-level declarations file-private) for tsc
-export {}
+export { projectHarnessEvent, textFromBlocks, errorText }

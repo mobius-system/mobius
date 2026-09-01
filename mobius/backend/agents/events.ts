@@ -10,11 +10,11 @@ const EventEmitter = require('events')
 const agentEvents = new EventEmitter()
 agentEvents.setMaxListeners(0)
 
-function emitAgentRawEntry(payload) {
+function emitAgentRawEntry(payload: any) {
   agentEvents.emit('raw_entry', payload)
 }
 
-function onAgentRawEntry(listener) {
+function onAgentRawEntry(listener: (payload: any) => void) {
   agentEvents.on('raw_entry', listener)
   return () => agentEvents.off('raw_entry', listener)
 }
