@@ -10,6 +10,12 @@
  * 输出 anchor entry uuid → PlanUpdate 的 Map, 沿 props 链透传给 EntryCard,
  * 与 update_plan / task_reminder 共用同一张计划卡片。
  *
+ * 连续去重 ("只显示最后一个"): TUI 每轮都注入 task_reminder 快照, 任务状态不变时
+ * 这些快照内容完全相同 (实测一晚 26 条 reminder 只有 2 种状态) — 连续渲染成一串
+ * 雷同计划卡是噪声。plan 产出后按 "计划签名" (步骤×状态) 分段, 同签名的连续段只
+ * 保留段尾 (最后一张, 时间上最接近下一步动作); 段内的其余条目从 plans 里剔除
+ * (task_reminder 载体本就整卡隐藏, 任务工具卡退回普通工具卡)。
+ *
  * 注意: 前端默认只拿尾部 200 条窗口, TaskCreate 在窗口外时任务标题缺失 —
  * 这正是 sidecar 快照存在的理由 (快照紧贴 anchor, 永远同窗口)。
  */
@@ -18,9 +24,21 @@ import { extractTaskReminderSnapshot, extractTaskToolCalls } from './entry-extra
 
 export type TaskPlanByUuid = Map<string, PlanUpdate>
 
-export function buildTaskPlans(visibleItems: JsonlViewItem[]): TaskPlanByUuid {
+// buildTaskPlans 的完整产出: 保留的计划卡 (段尾) + 被去重压掉的计划载体条目
+// (连续重复段的非尾部)。载体 = task_reminder 附件 / 任务工具调用卡 — 前者本就
+// 整卡隐藏, 去重后无计划可渲染; 后者退回普通工具卡。suppressedTaskUuids 让
+// JsonlView 把前者也从渲染序列里隐藏 (后者不受影响, 仍显示为普通卡)。
+export type TaskPlansResult = { plans: TaskPlanByUuid; suppressed: Set<string> }
+
+export function buildTaskPlans(visibleItems: JsonlViewItem[]): TaskPlansResult {
   const state = new Map<string, { id: string; subject: string; status: string; description?: string; activeForm?: string; blocks?: string[]; blockedBy?: string[] }>()
-  const plans: TaskPlanByUuid = new Map()
+  // 候选按顺序记录 (uuid, plan, kind): 先全量产出, 再按签名分段取段尾。
+  const candidates: Array<{ uuid: string; plan: PlanUpdate; kind: 'reminder' | 'tool' | 'anchor' }> = []
+
+  // 载体类型标记: suppressed 集合只收 task_reminder 载体 (整卡隐藏的对象)。
+  const pushCandidate = (uuid: string | null, plan: PlanUpdate | null, kind: 'reminder' | 'tool' | 'anchor') => {
+    if (uuid && plan) candidates.push({ uuid, plan, kind })
+  }
 
   for (const item of visibleItems) {
     const entry: AnyEntry = item.entry
@@ -31,8 +49,7 @@ export function buildTaskPlans(visibleItems: JsonlViewItem[]): TaskPlanByUuid {
       const tasks = entry?.mobius?.tasks
       const anchorUuid = typeof entry?.mobius?.anchor_uuid === 'string' ? entry.mobius.anchor_uuid : null
       if (anchorUuid && Array.isArray(tasks) && tasks.length > 0) {
-        const plan = snapshotToPlan(tasks)
-        if (plan) plans.set(anchorUuid, plan)
+        pushCandidate(anchorUuid, snapshotToPlan(tasks), 'anchor')
       }
       continue
     }
@@ -42,6 +59,7 @@ export function buildTaskPlans(visibleItems: JsonlViewItem[]): TaskPlanByUuid {
     if (reminder) {
       state.clear()
       for (const task of reminder) state.set(task.id, task)
+      pushCandidate(typeof entry?.uuid === 'string' ? entry.uuid : null, snapshotToPlan(reminder), 'reminder')
       continue
     }
 
@@ -50,13 +68,50 @@ export function buildTaskPlans(visibleItems: JsonlViewItem[]): TaskPlanByUuid {
     const calls = extractTaskToolCalls(entry)
     if (calls.length === 0) continue
     applyCalls(state, calls)
-    const uuid = typeof entry?.uuid === 'string' ? entry.uuid : null
-    if (uuid) {
-      const plan = snapshotToPlan([...state.values()])
-      if (plan) plans.set(uuid, plan)
+    pushCandidate(typeof entry?.uuid === 'string' ? entry.uuid : null, snapshotToPlan([...state.values()]), 'tool')
+  }
+
+  return dedupeKeepLastPerRun(candidates)
+}
+
+// 计划签名: 步骤 (id+subject+status) 序列。相同签名 = 内容与状态都没变的重复注入。
+function planSignature(plan: PlanUpdate): string {
+  return plan.steps.map((s) => `${s.id ?? ''}|${s.step}|${s.status}`).join('\n')
+}
+
+// 同签名连续段只留段尾。相邻两个候选之间可能隔着任意多的普通条目 (Bash/Read 等),
+// 但"计划签名未变"本身即意味着中间没有任务状态推进 — 仍是同一张计划的重复展示。
+// 段尾同位次偏好: 段内最后一张若是 task_reminder 载体而倒数区里还有更晚的任务工具卡
+// (TaskUpdate 落在 reminder 之后), 优先把计划挂到工具卡 — 工具卡陈述"谁改了状态",
+// reminder 只是周期注入的镜像; 两者签名相同, 挂哪张信息量等价, 但挂工具卡让因果可见。
+function dedupeKeepLastPerRun(candidates: Array<{ uuid: string; plan: PlanUpdate; kind: 'reminder' | 'tool' | 'anchor' }>): TaskPlansResult {
+  const plans: TaskPlanByUuid = new Map()
+  const suppressed = new Set<string>()
+  let runSig: string | null = null
+  let runStart = 0
+  const flushRun = (endExclusive: number) => {
+    if (runSig == null) return
+    // 段 [runStart, endExclusive): 从尾向头找第一张非 reminder 载体 (tool/anchor);
+    // 全是 reminder 则取段尾。其余 reminder 收进 suppressed (整卡隐藏)。
+    let keep = endExclusive - 1
+    for (let j = endExclusive - 1; j >= runStart; j--) {
+      if (candidates[j].kind !== 'reminder') { keep = j; break }
+    }
+    plans.set(candidates[keep].uuid, candidates[keep].plan)
+    for (let j = runStart; j < endExclusive; j++) {
+      if (j !== keep && candidates[j].kind === 'reminder') suppressed.add(candidates[j].uuid)
     }
   }
-  return plans
+  for (let i = 0; i <= candidates.length; i++) {
+    // 尾部哨兵: 末段在循环结束时 flush
+    const sig = i < candidates.length ? planSignature(candidates[i].plan) : null
+    if (sig !== runSig) {
+      flushRun(i)
+      runSig = sig
+      runStart = i
+    }
+  }
+  return { plans, suppressed }
 }
 
 // 与 viewer/types PlanStep 的字段同构的轻量转换 (不直接 import buildPlanUpdate,

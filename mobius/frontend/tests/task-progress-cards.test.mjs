@@ -66,7 +66,7 @@ function taskUpdateEntry() {
 
 // 2) 前端兜底累积: TaskCreate → TaskUpdate 跨条目
 {
-  const plans = taskProgress.buildTaskPlans([
+  const { plans } = taskProgress.buildTaskPlans([
     { entry: taskCreateEntry(), lineNo: 1 },
     { entry: taskUpdateEntry(), lineNo: 2 },
   ])
@@ -92,7 +92,7 @@ function taskUpdateEntry() {
       tasks: [{ id: '1', subject: '迁移 agents 为 TS', status: 'completed' }, { id: '2', subject: '补全类型', status: 'in_progress' }],
     },
   }
-  const plans = taskProgress.buildTaskPlans([
+  const { plans } = taskProgress.buildTaskPlans([
     { entry: taskCreateEntry(), lineNo: 1 },
     { entry: taskUpdateEntry(), lineNo: 2 },
     { entry: snapshotEntry, lineNo: 3 },
@@ -109,7 +109,7 @@ function taskUpdateEntry() {
     type: 'attachment',
     attachment: { type: 'task_reminder', content: [{ id: '5', subject: '来自提醒', status: 'pending' }] },
   }
-  const plans = taskProgress.buildTaskPlans([
+  const { plans } = taskProgress.buildTaskPlans([
     { entry: reminderEntry, lineNo: 1 },
     { entry: taskUpdateEntry(), lineNo: 2 },
   ])
@@ -117,6 +117,66 @@ function taskUpdateEntry() {
   const planB = plans.get(uuidB)
   assert.ok(planB)
   assert.equal(planB.steps.length, 2)
+}
+
+// 4b) 连续去重: 同状态 reminder 连续注入只显示最后一个
+{
+  const reminder = (uuid, id, subject, status) => ({
+    type: 'attachment',
+    uuid,
+    attachment: { type: 'task_reminder', content: [{ id, subject, status }] },
+  })
+  const { plans, suppressed } = taskProgress.buildTaskPlans([
+    { entry: reminder('r1', '1', '任务X', 'in_progress'), lineNo: 1 },
+    { entry: reminder('r2', '1', '任务X', 'in_progress'), lineNo: 2 },
+    { entry: reminder('r3', '1', '任务X', 'in_progress'), lineNo: 3 },
+    { entry: reminder('r4', '1', '任务X', 'in_progress'), lineNo: 4 },
+  ])
+  assert.equal(plans.size, 1, '同签名连续段只留一张')
+  assert.ok(plans.has('r4'), '保留段尾 (最后一个)')
+  assert.equal(suppressed.size, 3, '其余 reminder 载体进 suppressed')
+  assert.ok(suppressed.has('r1') && suppressed.has('r2') && suppressed.has('r3'))
+}
+
+// 4c) 状态变化分段: in_progress → completed 各段保留
+{
+  const reminder = (uuid, status) => ({
+    type: 'attachment',
+    uuid,
+    attachment: { type: 'task_reminder', content: [{ id: '1', subject: '任务X', status }] },
+  })
+  const { plans, suppressed } = taskProgress.buildTaskPlans([
+    { entry: reminder('r1', 'in_progress'), lineNo: 1 },
+    { entry: reminder('r2', 'in_progress'), lineNo: 2 },
+    { entry: reminder('r3', 'completed'), lineNo: 3 },
+    { entry: reminder('r4', 'completed'), lineNo: 4 },
+  ])
+  assert.equal(plans.size, 2, '两个状态段各留一张')
+  assert.ok(plans.has('r2'), 'in_progress 段留段尾')
+  assert.ok(plans.has('r4'), 'completed 段留段尾')
+  assert.equal(suppressed.size, 2)
+}
+
+// 4d) 段内混合 tool 卡与 reminder: 计划挂到 (段内最后的) 工具卡, reminder 全隐藏
+{
+  const reminder = (uuid) => ({
+    type: 'attachment',
+    uuid,
+    attachment: { type: 'task_reminder', content: [{ id: '1', subject: '任务X', status: 'in_progress' }] },
+  })
+  const update = (uuid) => ({
+    type: 'assistant',
+    uuid,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'TaskUpdate', input: { taskId: '1', status: 'in_progress' } }] },
+  })
+  const { plans, suppressed } = taskProgress.buildTaskPlans([
+    { entry: reminder('r1'), lineNo: 1 },
+    { entry: update('t1'), lineNo: 2 },
+    { entry: reminder('r2'), lineNo: 3 },
+  ])
+  assert.equal(plans.size, 1)
+  assert.ok(plans.has('t1'), '同签名段优先挂任务工具卡')
+  assert.ok(suppressed.has('r1') && suppressed.has('r2'), 'reminder 载体全隐藏')
 }
 
 // 5) 噪声过滤: task_state 载体与空 task_reminder 整卡隐藏

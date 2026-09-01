@@ -189,12 +189,15 @@ export function JsonlView({
   // 兜底回放, 产出 anchor uuid → PlanUpdate, 透传给卡片走计划视图 (与 update_plan 同款).
   // 必须在 noise 过滤之前的 merged 序列上扫: task_state 载体条目渲染层要隐藏, 但其快照
   // 数据要先在这里吸收 (过滤后再扫就见不到载体了).
-  const taskPlans = useMemo(() => buildTaskPlans(mergedItems), [mergedItems])
+  // 连续去重: 同一计划状态的重复注入段只保留段尾一张 (suppressed 段内的 task_reminder
+  // 载体也一并隐藏, 避免一串雷同计划卡刷屏).
+  const { plans: taskPlans, suppressed: suppressedTaskUuids } = useMemo(() => buildTaskPlans(mergedItems), [mergedItems])
   const visibleItems = useMemo(
     () => mergedItems.filter(
-      (item) => !isHiddenJsonlNoiseEntry(item.entry),
+      (item) => !isHiddenJsonlNoiseEntry(item.entry)
+        && !(suppressedTaskUuids.size > 0 && typeof item.entry?.uuid === 'string' && suppressedTaskUuids.has(item.entry.uuid)),
     ),
-    [mergedItems],
+    [mergedItems, suppressedTaskUuids],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
   // forgotten-flag 收尾折叠规则: 含 "running.flag" 且往前 8 个条目有 forgotten-flag 用户卡的卡片,
