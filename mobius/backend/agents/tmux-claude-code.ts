@@ -888,7 +888,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
+  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
     if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
@@ -989,7 +989,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         enableGulingMcp,
       })
     }
-    this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
+    this.harnessWriteMobiusCoreEntry(sessionId, mobiusPromptRecord)
     await this._sendMaybeInitialContextPrompt(sessionId, prompt, isInitialContextPrompt)
     const entry = this.runtime.get(sessionId)
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)

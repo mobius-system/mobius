@@ -169,7 +169,7 @@ async function runSessionMessage({
     }
   }
 
-  // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 _appendMobiusPromptEntry
+  // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 harnessWriteMobiusCoreEntry
   // 把它同步写进 <uuid>.mobius.jsonl 边车文件 (与主 jsonl 双轨, 见 services/mobius-jsonl.ts).
   const mobiusPromptRecord = {
     source,

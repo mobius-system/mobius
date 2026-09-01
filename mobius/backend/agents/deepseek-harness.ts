@@ -175,7 +175,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
     entry.recentError = { message: String(err?.message || error), rawLine: String(rawLine || ''), capturedAt: new Date().toISOString() }
   }
 
-  _appendMobiusPromptEntry(entry: HarnessSessionEntry, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
+  harnessWriteMobiusCoreEntry(entry: HarnessSessionEntry, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
     if (!entry?.jsonlPath || !mobiusPromptRecord) return false
     try {
       appendMobiusCoreEntry({
@@ -269,7 +269,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         model: entry.model,
         ...(entry.maxTokens ? { maxTokens: entry.maxTokens } : {}),
       })
-      this._appendMobiusPromptEntry(entry, opts.mobiusPromptRecord)
+      this.harnessWriteMobiusCoreEntry(entry, opts.mobiusPromptRecord)
       await this._sendPrompt(entry, prompt)
       if (!opts.suppressRunningFlag) {
         safeWriteRunningFlag(flagRoot, sessionId, { backend: this.name }, this.name)
@@ -309,7 +309,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
         await this._start(opts.sessionId, { ...entry, ...opts, agentSessionId: entry?.agentSessionId || opts.agentSessionId }, opts.prompt)
         return
       }
-      this._appendMobiusPromptEntry(entry, opts.mobiusPromptRecord)
+      this.harnessWriteMobiusCoreEntry(entry, opts.mobiusPromptRecord)
       await this._sendPrompt(entry, opts.prompt)
       if (!opts.suppressRunningFlag) {
         safeWriteRunningFlag(opts.flagRoot || entry.flagRoot || entry.cwd, opts.sessionId, { backend: this.name }, this.name)

@@ -1,10 +1,6 @@
 /**
- * agent-status-syncer.ts — sessions_v2.agent_status 的唯一真相源写入者.
- *
- * 背景: agent_status 曾有 7 个写入点 (发消息/收工/停止/admin/SSE/巡检), 状态判定
- * 分散且易不一致. 现统一收口到本 service: 周期性地用与 GET /api/sessions/:id/status
- * 完全相同的判定逻辑 (computeSessionRuntimeStatus) 重算每个 session 的状态并写回,
- * 前端小圆点只读 agent_status. 删除了其它所有 agent_status 写入点.
+ * agent-status-syncer.ts:
+ * 处理 sessions_v2.agent_status 的赋值
  *
  * 分级扫描 (降低计算量):
  *   - 活跃集 (idle/running/waiting/completed): 每 60s 扫一遍 — 可能随时变化
@@ -15,6 +11,7 @@
  * 复用: 判定逻辑来自 backend/utils/session-runtime-status.ts, 与 /status 接口共用,
  *       改判定逻辑只需改那一处.
  */
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../../db';
@@ -25,11 +22,13 @@ import {
 } from '../utils/session-runtime-status';
 
 const SCAN_INTERVAL_MS = 60 * 1000;          // 活跃集扫描间隔
+
 const TERMINAL_SCAN_TICKS = 60;              // 终态集: 每 60 个 tick (= 3600s) 扫一次
 const FIRST_RUN_DELAY_MS = 20 * 1000;        // 启动先等 backend runtime 恢复
 
 // 活跃集: 可能随时变化的状态. completed 也在此 (重新发消息会激活).
 const ACTIVE_STATUSES = ['idle', 'running', 'waiting', 'completed'];
+
 // 终态集: 稳定态, 低频扫. failed/stale 通常需人工介入.
 const TERMINAL_STATUSES = ['failed', 'stale'];
 

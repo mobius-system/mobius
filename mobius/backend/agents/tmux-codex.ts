@@ -929,7 +929,7 @@ class TmuxCodexBackend extends AgentBackend {
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
+  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
     if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
@@ -1055,7 +1055,7 @@ class TmuxCodexBackend extends AgentBackend {
     if (entry) entry.working = true
     let mobiusPromptWritten = false
     if (entry?.jsonlPath) {
-      mobiusPromptWritten = this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
+      mobiusPromptWritten = this.harnessWriteMobiusCoreEntry(sessionId, mobiusPromptRecord)
     }
     await this._sendPromptToWindow(sessionId, prompt)
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
@@ -1076,7 +1076,7 @@ class TmuxCodexBackend extends AgentBackend {
         allowUpdatedThreadFallback,
       })
       if (!mobiusPromptWritten) {
-        mobiusPromptWritten = this._appendMobiusPromptEntry(sessionId, mobiusPromptRecord)
+        mobiusPromptWritten = this.harnessWriteMobiusCoreEntry(sessionId, mobiusPromptRecord)
       }
     }
   }
