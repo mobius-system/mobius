@@ -31,19 +31,53 @@ const path = require('path')
 const EventEmitter = require('events')
 const { emitAgentRawEntry } = require('./events')
 
-function normalizeAgentSessionTitle(value: any): string | null {
+// 历史快照: entries = 落盘原始事件 (协议透传, 后端各异), sentinel = 续接 live 流的字节
+// offset; total*/truncated 为大文件截断统计 (见 services/mobius-jsonl readMergedJsonlHistory).
+interface HistorySnapshot {
+  entries: unknown[]
+  total?: number
+  totalApproximate?: boolean
+  truncated?: boolean
+  sentinel: number | string | null
+}
+
+// 后端读类查询 (getHistory / waterfall / raw 流订阅) 的统一选项:
+//   tailCount     — 只读尾部 N 条 (SSE 历史懒加载)
+//   maxLines      — 单侧文件读取上限 (防大文件打爆内存)
+//   fromSentinel  — 从该字节 offset 续接, 不重复发 (history + live 拼接)
+//   nowMs         — waterfall 计算的时间锚点 (测试注入)
+// 其余字段透传给底层 reader/watcher.
+interface QueryOpts {
+  tailCount?: number
+  maxLines?: number
+  fromSentinel?: number | string | null
+  nowMs?: number
+  [key: string]: unknown
+}
+
+// Claude Code 落盘的 ai-title 原始事件 (jsonl 一行). 字段名跨版本有过 aiTitle/ai_title,
+// 均为可选; sessionId 是 agent 自身 UUID, 与 Mobius session_id 无关 (不做 reject guard).
+interface AgentTitleEntry {
+  type?: unknown
+  aiTitle?: unknown
+  ai_title?: unknown
+  title?: unknown
+}
+
+function normalizeAgentSessionTitle(value: unknown): string | null {
   if (value == null) return null
   const title = String(value).replace(/\0/g, '').replace(/\s+/g, ' ').trim()
   return title || null
 }
 
-function extractAgentSessionTitleFromEntry(entry: any): string | null {
+function extractAgentSessionTitleFromEntry(entry: unknown): string | null {
   if (!entry || typeof entry !== 'object') return null
-  if (entry.type !== 'ai-title') return null
+  const obj = entry as AgentTitleEntry
+  if (obj.type !== 'ai-title') return null
   // Claude Code writes its own agent UUID in entry.sessionId, not Mobius'
   // short sessions_v2.session_id. The JSONL path / watcher already scopes the
   // event to one Mobius session, so this field must not be used as a reject guard.
-  return normalizeAgentSessionTitle(entry.aiTitle || entry.ai_title || entry.title)
+  return normalizeAgentSessionTitle(obj.aiTitle || obj.ai_title || obj.title)
 }
 
 class AgentBackend {
@@ -100,13 +134,13 @@ class AgentBackend {
   // Agent 子进程 stdout / 落盘 jsonl 的每条 JSON.parse 后对象, 协议透传不归一.
   // opts.fromSentinel — 子类可用作"从这个点开始 tail, 不重复发"的标记 (tmux: 字节
   // offset; stream-json: stream-json 也写 jsonl, 同样字节 offset). 不传 = 从此刻起.
-  getAgentRawThoughtStream(sessionId: string, listener: (raw: any) => void, _opts: any = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, _opts: QueryOpts = {}) {
     const ch = `raw:${sessionId}`
     this.emitter.on(ch, listener)
     return () => this.emitter.off(ch, listener)
   }
 
-  _emitRaw(sessionId: string, raw: any) {
+  _emitRaw(sessionId: string, raw: unknown) {
     this.emitter.emit(`raw:${sessionId}`, raw)
     emitAgentRawEntry({
       backend: this.name,
@@ -122,24 +156,23 @@ class AgentBackend {
    * 这样 history + live 无缝拼接, 不重复不漏行.
    *
    * 默认: 空快照. 子类按需 override (基于自家 jsonl / log 文件).
-   * @returns {{ entries: object[], sentinel: any }}
    */
-  getHistory(_sessionId: string, _opts: any = {}) {
+  getHistory(_sessionId: string, _opts: QueryOpts = {}): HistorySnapshot {
     return { entries: [], sentinel: null }
   }
 
-  get_time_consume_waterfall(_sessionId: string, _opts: any = {}) {
+  get_time_consume_waterfall(_sessionId: string, _opts: QueryOpts = {}) {
     return null
   }
 
-  clear_time_consume_waterfall(_sessionId: string, _opts: any = {}) {
+  clear_time_consume_waterfall(_sessionId: string, _opts: QueryOpts = {}) {
     return null
   }
 
   // Best-effort utility: scan known history entries for an explicit agent title event.
   // Automatic Mobius title updates do not call this on hot paths; they subscribe to
   // raw_entry events from the shared watcher instead.
-  getSessionTitle(sessionId: string, opts: any = {}) {
+  getSessionTitle(sessionId: string, opts: QueryOpts = {}) {
     const hist = this.getHistory(sessionId, opts) || {}
     const entries = Array.isArray(hist.entries) ? hist.entries : []
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -269,5 +302,5 @@ class AgentBackend {
 
 module.exports = { AgentBackend }
 
-// marker: make this file a module (top-level declarations file-private) for tsc
-export {}
+export { AgentBackend }
+export type { HistorySnapshot, QueryOpts }

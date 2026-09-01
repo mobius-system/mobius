@@ -61,7 +61,7 @@ import {
   isLocalCommandEntry,
   jsonEntryTourTarget,
 } from './entry-classify'
-import { buildHeaderSummary } from './header-summary'
+import { buildHeaderSummary, resolveTaskHeaderSummary } from './header-summary'
 import { deriveToolCallStatus, TOOL_STATUS_META } from './tool-status'
 import type { ResolvedCallMap, ToolStatus } from './tool-status'
 import { estimateRenderChars, estimateToolResultsChars, clampNodeForRender, clampToolResults } from './oversized'
@@ -75,7 +75,7 @@ import { JsonEntryPlanCard } from './PlanCard'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
-import type { AnyEntry, CardMode, BashToolResult } from './types'
+import type { AnyEntry, CardMode, BashToolResult, PlanUpdate } from './types'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
 
@@ -157,7 +157,7 @@ function resolveDesiredOpen(opts: {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, bashResults = [], readResults = [], resolvedMap }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, bashResults = [], readResults = [], resolvedMap, taskPlan }: {
   entry: AnyEntry
   lineNo?: number
   // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
@@ -169,6 +169,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   resolvedMap?: ResolvedCallMap | null
+  // 任务工具 (TaskCreate/TaskUpdate) 的跨条目累积快照 (JsonlView 顶层扫描产出,
+  // anchor uuid → PlanUpdate). 与 update_plan / task_reminder 共用计划卡片视图.
+  taskPlan?: PlanUpdate | null
 }) {
   const type = entry?.type || 'unknown'
   // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
@@ -203,14 +206,22 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   }, [entry, bashResults, readResults])
   const canImage = imageOutputUrls.length > 0
   const headerSummary = useMemo(() => buildHeaderSummary(renderEntry), [renderEntry])
+  // 任务工具卡摘要增强: 跨条目累积快照在手时, 标题栏显示 "计划 · X/N · 任务标题"
+  // 而非原始 tool_use JSON. 仅影响一行预览, 字段模式仍可看原始数据.
+  const effectiveHeaderSummary = useMemo(
+    () => (taskPlan ? (resolveTaskHeaderSummary(entry, taskPlan) ?? headerSummary) : headerSummary),
+    [entry, taskPlan, headerSummary],
+  )
   const codeEdit = useMemo(() => extractCodeEdit(renderEntry), [renderEntry])
   const writeCall = useMemo(() => extractWriteToolCall(renderEntry), [renderEntry])
   const bashCalls = useMemo(() => extractBashCalls(renderEntry), [renderEntry])
   const readCalls = useMemo(() => extractReadCalls(renderEntry), [renderEntry])
   // 本地命令产物标签 (非空 = 命中 /compact 等 slash command 产物): 展开时走专属金色提示块, 不铺原始 JSON 字段.
   const localCommandParts = useMemo(() => extractLocalCommandParts(renderEntry), [renderEntry])
-  // 计划模式 (codex update_plan / Claude task_reminder): 展开时走专属计划卡片, 不铺原始 JSON 字段.
-  const planUpdate = useMemo(() => extractPlanCard(renderEntry), [renderEntry])
+  // 计划模式 (codex update_plan / Claude task_reminder / 任务工具跨条目累积): 展开时走专属计划卡片, 不铺原始 JSON 字段.
+  // taskPlan 来自未截断的原始 entry 的 uuid (JsonlView 顶层扫描), 与 renderEntry 无关, 不受超大卡片保护影响.
+  const selfPlanUpdate = useMemo(() => extractPlanCard(renderEntry), [renderEntry])
+  const planUpdate = selfPlanUpdate ?? taskPlan ?? null
   // MCP 工具返回信封 ({"output":..., "wall_time_seconds":..., "original_token_count":...}):
   // 仅用于主题识别 (emerald "返回"). 渲染走精简模式 - header-summary 把 output 包成 markdown 代码块,
   // 卡片展开时由 compact 分支 (CompactMarkdown) 渲染, 不铺原始 JSON 字段.
@@ -390,8 +401,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
           </span>
         )}
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
-            折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览. */}
-        {headerSummary.short && !(open && mode === 'compact') && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{headerSummary.short}</span>}
+            折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
+            任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
+        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{effectiveHeaderSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
@@ -490,5 +502,5 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.taskPlan === next.taskPlan,
 )

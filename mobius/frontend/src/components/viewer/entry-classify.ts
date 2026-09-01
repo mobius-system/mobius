@@ -95,6 +95,22 @@ export function isAgentListingDeltaAttachment(entry: AnyEntry): boolean {
   return entry?.type === 'attachment' && entry?.attachment?.type === 'agent_listing_delta'
 }
 
+// mobius sidecar 的 task_state 快照载体条目: 数据已按 anchor_uuid 并入对应任务卡的
+// 计划视图, 单独再显示一张空壳卡是冗余, 整卡过滤隐藏.
+export function isTaskStateCarrierEntry(entry: AnyEntry): boolean {
+  return entry?.type === 'task_state'
+}
+
+// 空 content 的 task_reminder 附件 (TUI 周期注入的任务清单, 无任务时 content 为空数组):
+// extractTaskReminder / extractTaskReminderSnapshot 都不命中 (渲染无内容), 单独显示
+// 只剩一张空附件卡, 整卡过滤隐藏.
+export function isEmptyTaskReminderAttachment(entry: AnyEntry): boolean {
+  if (entry?.type !== 'attachment') return false
+  const attachment = entry?.attachment
+  if (!attachment || attachment?.type !== 'task_reminder') return false
+  return !Array.isArray(attachment?.content) || attachment.content.length === 0
+}
+
 // jsonl 卡片视图里"整卡过滤隐藏"的噪声 entry 集合: 对浏览对话内容无价值的系统注入/元数据噪声.
 // 集中在此一处, viewer/JsonlView 的 visibleItems 过滤只调本谓词, 以后新增噪声类型往这里加即可.
 //   - token_count         : codex 每轮 token 用量统计 (event_msg)
@@ -104,6 +120,8 @@ export function isAgentListingDeltaAttachment(entry: AnyEntry): boolean {
 //   - skill_listing       : Claude Code 注入的可用 Skill 清单 (巨量 skill 描述文本)
 //   - agent_listing_delta : Claude Code 注入的可用 subagent 清单
 //   - turn_context        : codex 每轮注入的本轮上下文元数据 (含 developer_instructions 系统提示词)
+//   - task_state          : mobius sidecar 任务快照载体 (数据并入 anchor 任务卡的计划视图)
+//   - empty task_reminder : 空 content 的 task_reminder 附件 (无任务时的空壳)
 export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
   return (
     isTokenCountEvent(entry) ||
@@ -112,7 +130,9 @@ export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
     isTurnContextEntry(entry) ||
     isTurnDurationSystemEntry(entry) ||
     isSkillListingAttachment(entry) ||
-    isAgentListingDeltaAttachment(entry)
+    isAgentListingDeltaAttachment(entry) ||
+    isTaskStateCarrierEntry(entry) ||
+    isEmptyTaskReminderAttachment(entry)
   )
 }
 

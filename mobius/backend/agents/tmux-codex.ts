@@ -29,6 +29,7 @@ function resolveAimuxBin() {
 }
 
 const { AgentBackend } = require('./base')
+import type { HistorySnapshot, QueryOpts } from './base'
 const {
   appendMobiusPromptEntry,
   readMergedJsonlHistory,
@@ -890,7 +891,7 @@ class TmuxCodexBackend extends AgentBackend {
         || null
   }
 
-  getHistory(sessionId: string, opts: any = {}) {
+  getHistory(sessionId: string, opts: QueryOpts = {}): HistorySnapshot {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -907,7 +908,7 @@ class TmuxCodexBackend extends AgentBackend {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
-  getAgentRawThoughtStream(sessionId: string, listener: (raw: any) => void, opts: any = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: QueryOpts = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) return super.getAgentRawThoughtStream(sessionId, listener, opts)

@@ -3,6 +3,7 @@ const os = require('os')
 const path = require('path')
 const { spawn } = require('child_process')
 const { AgentBackend } = require('./base')
+import type { HistorySnapshot, QueryOpts } from './base'
 const { HarnessJsonRpcPeer } = require('./deepseek-harness-protocol')
 const { projectHarnessEvent } = require('./deepseek-harness-events')
 const {
@@ -374,24 +375,24 @@ class DeepSeekHarnessBackend extends AgentBackend {
   }
   getPendingRequests(sessionId: string) { return [...(this.runtime.get(sessionId)?.pending || [])] }
   getRecentError(sessionId: string) { return this.runtime.get(sessionId)?.recentError || null }
-  getHistory(sessionId: string, opts: Record<string, unknown> = {}) {
+  getHistory(sessionId: string, opts: QueryOpts = {}): HistorySnapshot {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     return jsonlPath ? readMergedJsonlHistory(jsonlPath, opts) : { entries: [], sentinel: null }
   }
 
-  get_time_consume_waterfall(sessionId: string, opts: Record<string, unknown> = {}) {
+  get_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId: string, opts: Record<string, unknown> = {}) {
+  clear_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
-  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: Record<string, unknown> = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: QueryOpts = {}) {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) return super.getAgentRawThoughtStream(sessionId, listener, opts)
     const watcher = watchMergedJsonl({
       path: jsonlPath,
-      startSentinel: (opts as any).fromSentinel,
+      startSentinel: (opts.fromSentinel as number | null) ?? null,
       onEntry: (entry: unknown) => listener(entry),
     })
     return () => watcher.stop?.()

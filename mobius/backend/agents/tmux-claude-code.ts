@@ -27,6 +27,7 @@ const os = require('os')
 const crypto = require('crypto')
 
 const { AgentBackend } = require('./base')
+import type { HistorySnapshot, QueryOpts } from './base'
 const {
   appendMobiusPromptEntry,
   readMergedJsonlHistory,
@@ -838,7 +839,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 历史 + sentinel: 上层用 sentinel 串到 live 流, 不重复.
-  getHistory(sessionId: string, opts: Record<string, unknown> = {}) {
+  getHistory(sessionId: string, opts: QueryOpts = {}): HistorySnapshot {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -847,17 +848,17 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
   }
 
-  get_time_consume_waterfall(sessionId: string, opts: Record<string, unknown> = {}) {
+  get_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId: string, opts: Record<string, unknown> = {}) {
+  clear_time_consume_waterfall(sessionId: string, opts: QueryOpts = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
   // 订阅 raw 流: opts.fromSentinel 指定字节 offset → 起独立 watcher 从那点 tail.
   // 不传 sentinel = 走基类的 EventEmitter (用后端共享 watcher emit 的 live 流).
-  getAgentRawThoughtStream(sessionId: string, listener: (raw: any) => void, opts: any = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: QueryOpts = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) {

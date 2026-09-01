@@ -31,6 +31,7 @@ import {
   isBashToolUseName,
   extractPlanUpdate,
   extractTaskReminder,
+  extractTaskToolCalls,
   summarizePlanUpdate,
   parseMcpResultEnvelope,
 } from './entry-extract'
@@ -177,6 +178,26 @@ function summarizePatchApplyFiles(changes: any): string | null {
     return basename(filePath)
   })
   return names.join(', ')
+}
+
+// buildHeaderSummary 的调用方 (JsonlView 末轮摘要 / RoundGroup header) 只传 entry;
+// 任务工具卡的摘要增强由 EntryCard 内部用 resolveTaskHeaderSummary 完成 —
+// 该函数把跨条目累积的任务快照归一成一行摘要 (计划 · X/N · 任务标题), 无快照时
+// 回退到原始 tool_use JSON 文案.
+export function resolveTaskHeaderSummary(entry: AnyEntry, taskPlan: { steps: Array<{ step: string; status: string; id?: string }>; completed: number; inProgress?: number; pending?: number; currentStep?: string | null } | null | undefined): HeaderSummary | null {
+  if (!taskPlan) return null
+  const calls = extractTaskToolCalls(entry)
+  if (calls.length === 0) return null
+  const first = calls[0]
+  const taskId = typeof first.input?.taskId === 'string' ? first.input.taskId.trim()
+    : typeof first.input?.task_id === 'string' ? first.input.task_id.trim() : ''
+  const subject = taskPlan.steps.find((s) => (taskId ? s.id === taskId : s.status === 'in_progress'))?.step
+    || taskPlan.steps.find((s) => s.status === 'in_progress')?.step
+    || taskPlan.steps[taskPlan.steps.length - 1]?.step
+    || ''
+  const base = summarizePlanUpdate(taskPlan as any)
+  const text = subject && subject !== '(空任务)' ? `${base} · ${subject}` : base
+  return clip(text, HEADER_SHORT_LIMIT)
 }
 
 export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {

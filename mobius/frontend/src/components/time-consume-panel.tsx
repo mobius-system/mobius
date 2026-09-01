@@ -316,8 +316,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
               })}
             </div>
             <div className="text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              <div>总计 {formatDuration(totalMs)}</div>
-              <div>{segments.length} 段 · {data?.line_count || 0} 行</div>
+              <div>总计 {segments.length} 段</div>
             </div>
           </div>
 
@@ -335,11 +334,11 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
               <div className="mt-1.5 flex items-center gap-3 text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.model }} />
-                  模型推理 · 上轨
+                  模型推理
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.tool }} />
-                  工具调用 · 下轨
+                  工具调用
                 </span>
               </div>
               <div className="relative h-28 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
