@@ -57,6 +57,21 @@ assert.strictEqual(isCompactCompletionUserEvent({
     content: '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
   },
 }), true)
+// Claude Code 2.1.x writes the receipt with embedded ANSI dim codes (real-world
+// transcript form); the matcher must strip them before matching.
+assert.strictEqual(isCompactCompletionUserEvent({
+  type: 'user',
+  message: {
+    content: '<local-command-stdout>\x1b[2mCompacted (ctrl+o to see full summary)\x1b[22m</local-command-stdout>',
+  },
+}), true)
+// array content blocks carrying ANSI inside a text block also count
+assert.strictEqual(isCompactCompletionUserEvent({
+  type: 'user',
+  message: {
+    content: [{ type: 'text', text: '<local-command-stdout>\x1b[2mCompacted (ctrl+o to see full summary)\x1b[22m</local-command-stdout>' }],
+  },
+}), true)
 assert.strictEqual(isCompactCompletionUserEvent({
   type: 'user',
   message: { content: '<command-name>/compact</command-name>' },

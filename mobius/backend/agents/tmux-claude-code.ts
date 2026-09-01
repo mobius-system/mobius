@@ -187,6 +187,12 @@ const CLAUDE_WORKING_TAIL_BYTES = 256 * 1024
 // latter is a completion marker, not a new user turn.  Keep this narrow so a
 // compact that is still in progress remains working until its completion
 // acknowledgement is written.
+//
+// Claude Code 2.1.x embeds ANSI dim codes inside the receipt:
+//   <local-command-stdout>\x1b[2mCompacted (...)\x1b[22m</local-command-stdout>
+// Strip ANSI escapes before matching, otherwise the dim code sitting between
+// the tag and the word keeps the idle TUI stuck in `working` forever.
+const ANSI_ESCAPE_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
 function isCompactCompletionUserEvent(entry: any) {
   if (!entry || entry.type !== 'user') return false
   const content = entry.message?.content
@@ -196,7 +202,8 @@ function isCompactCompletionUserEvent(entry: any) {
       .map((block) => block.text || '')
       .join('\n')
     : content
-  return typeof text === 'string' && /<local-command-stdout>\s*Compacted\b/i.test(text)
+  return typeof text === 'string'
+    && /<local-command-stdout>\s*Compacted\b/i.test(String(text).replace(ANSI_ESCAPE_RE, ''))
 }
 
 // getPendingRequests 反向扫描的最多条目数: pending 请求必在 jsonl 尾部, 只看最近 N 条即可,
