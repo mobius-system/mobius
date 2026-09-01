@@ -40,6 +40,7 @@
     "test:deepseek-harness-events": "node --require tsx/cjs tests/deepseek-harness-events.js",
     "test:deepseek-harness-backend": "node --require tsx/cjs tests/deepseek-harness-backend.js",
     "test:deepseek-harness-model-access": "node --require tsx/cjs tests/deepseek-harness-model-access.js",
+    "test:bestapi-integration": "node --require tsx/cjs tests/bestapi-integration.js",
     "test:deepseek-harness-runtime": "\"${DEEPSEEK_HARNESS_NODE:?set DEEPSEEK_HARNESS_NODE to a Node 22.19+ or 24+ executable}\" tests/deepseek-harness-runtime-smoke.mjs",
     "test:self-test": "node tests/self-test.js",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",

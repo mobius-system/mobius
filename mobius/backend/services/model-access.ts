@@ -12,6 +12,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { MODEL_ACCESS_PATH, MODEL_OPTIONS, TOKEN_PROXY_BASE_URL } from '../config'
 import { encodeProxyToken } from '../token-proxy/encoding'
+import { isSecretPlaceholder } from '../utils/secret-placeholder'
 import adminSettings from './admin-settings'
 
 const DATA_FILE = MODEL_ACCESS_PATH
@@ -419,8 +420,9 @@ function saveData(data: any): void {
   const dir = path.dirname(DATA_FILE)
   fs.mkdirSync(dir, { recursive: true })
   const tmp = `${DATA_FILE}.imac-tmp-${process.pid}-${Date.now()}`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2))
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
   fs.renameSync(tmp, DATA_FILE)
+  try { fs.chmodSync(DATA_FILE, 0o600) } catch {}
 }
 
 function readSettingsJson(key: string): string {
@@ -433,7 +435,7 @@ function writeSettingsJson(key: string, parsedSettings: any): string {
   fs.mkdirSync(CLAUDE_DIR, { recursive: true })
   const file = settingsPathForKey(key)
   const tmp = `${file}.imac-tmp-${process.pid}-${Date.now()}`
-  fs.writeFileSync(tmp, JSON.stringify(parsedSettings, null, 2))
+  fs.writeFileSync(tmp, JSON.stringify(parsedSettings, null, 2), { mode: 0o600 })
   fs.renameSync(tmp, file)
   try { fs.chmodSync(file, 0o600) } catch {}
   return file
@@ -452,7 +454,7 @@ function writeJsonPrivate(filePath: string, obj: any): void {
   const dir = path.dirname(filePath)
   fs.mkdirSync(dir, { recursive: true })
   const tmp = `${filePath}.imac-tmp-${process.pid}-${Date.now()}`
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2))
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), { mode: 0o600 })
   fs.renameSync(tmp, filePath)
   try { fs.chmodSync(filePath, 0o600) } catch {}
 }
@@ -580,7 +582,7 @@ function writeCodexConfigToml(key: string, tomlText: string): string {
   fs.mkdirSync(CODEX_DIR, { recursive: true })
   const file = codexConfigPathForKey(key)
   const tmp = `${file}.imac-tmp-${process.pid}-${Date.now()}`
-  fs.writeFileSync(tmp, tomlText)
+  fs.writeFileSync(tmp, tomlText, { mode: 0o600 })
   fs.renameSync(tmp, file)
   try { fs.chmodSync(file, 0o600) } catch {}
   return file
@@ -760,9 +762,10 @@ function upsertCodexModel(input: any, { existingKey = null }: any = {}): any {
     : ''
   assertConfigEnvKeyMatches(toml, secretEnvKey, key)
   const configApiKey = apiKeyFromConfigToml(toml)
+  const usableConfigApiKey = isSecretPlaceholder(configApiKey) ? '' : configApiKey
   const secretValue = hasSecretValue && String(rawSecretValue || '').trim()
     ? normalizeSecretValue(rawSecretValue)
-    : (configApiKey || existing?.secret_value || '')
+    : (usableConfigApiKey || existing?.secret_value || '')
   if (configEnvKey && !secretValue) throw new Error(`请填写秘钥值或在 config_toml 中填写 api_key (${secretEnvKey})`)
   const next = {
     key,

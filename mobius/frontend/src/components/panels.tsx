@@ -3263,6 +3263,48 @@ type HarnessModelForm = {
   enabled: boolean
 }
 
+type BestApiManagedModel = {
+  id: string
+  display_name: string
+  backend: 'codex' | 'claude_code' | 'deepseek_harness'
+  harness_id?: 'codex' | 'claude-code' | 'deepseek-harness'
+  protocol?: 'openai_responses' | 'anthropic_messages' | 'openai_chat_completions'
+  config_profile?: string
+  supported_harnesses?: Array<'codex' | 'claude-code' | 'deepseek-harness'>
+  key: string
+  session_model: string
+  endpoints: string[]
+  capabilities: string[]
+}
+
+type BestApiConnection = {
+  connected: boolean
+  default_base_url?: string
+  base_url?: string
+  api_base_url?: string
+  account_username?: string
+  account_display_name?: string | null
+  key_prefix?: string
+  credential_set?: boolean
+  catalog_version?: string | null
+  integration_schema_version?: number | null
+  connected_at?: string
+  synced_at?: string
+  model_count?: number
+  counts?: { codex: number; claude_code: number; deepseek_harness: number }
+  models?: BestApiManagedModel[]
+  catalog_changed?: boolean
+  auto_sync?: {
+    enabled: boolean
+    running: boolean
+    interval_seconds: number
+    last_checked_at?: string | null
+    last_updated_at?: string | null
+    last_error?: string | null
+    next_check_at?: string | null
+  }
+}
+
 type AdminModelsBackend = 'claude-code' | 'codex' | 'deepseek-harness'
 
 function defaultClaudeSettings(model = 'MiniMax-M3') {
@@ -3445,6 +3487,220 @@ function emptyHarnessForm(): HarnessModelForm {
     use_proxy: false,
     enabled: true,
   }
+}
+
+function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
+  const [connection, setConnection] = useState<BestApiConnection>({ connected: false })
+  const [baseUrl, setBaseUrl] = useState('https://8.130.13.45:3333')
+  const [apiKey, setApiKey] = useState('')
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [reconfigure, setReconfigure] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState<'connect' | 'sync' | null>(null)
+  const [error, setError] = useState('')
+  const catalogVersionRef = useRef<string | null>(null)
+
+  const load = async (quiet = false) => {
+    if (!quiet) setLoading(true)
+    try {
+      const result = await api('/api/admin/model-access/bestapi') as BestApiConnection
+      const previousVersion = catalogVersionRef.current
+      setConnection(result?.connected ? result : { connected: false })
+      if (result?.base_url || result?.default_base_url) {
+        setBaseUrl((result.base_url || result.default_base_url) as string)
+      }
+      catalogVersionRef.current = result?.catalog_version || null
+      if (quiet && previousVersion && result?.catalog_version && previousVersion !== result.catalog_version) onSynced()
+      if (!quiet) setError('')
+    } catch (e: any) {
+      if (!quiet) setError(e?.message || String(e))
+    } finally {
+      if (!quiet) setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    const timer = window.setInterval(() => { void load(true) }, 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const connect = async () => {
+    setWorking('connect')
+    try {
+      const result = await api('/api/admin/model-access/bestapi/connect', {
+        method: 'POST',
+        body: JSON.stringify({ base_url: baseUrl, api_key: apiKey }),
+      }) as BestApiConnection
+      setConnection(result)
+      catalogVersionRef.current = result.catalog_version || null
+      setApiKey('')
+      setShowApiKey(false)
+      setReconfigure(false)
+      setError('')
+      onSynced()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setWorking(null)
+    }
+  }
+
+  const sync = async () => {
+    setWorking('sync')
+    try {
+      const result = await api('/api/admin/model-access/bestapi/sync', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }) as BestApiConnection
+      setConnection(result)
+      catalogVersionRef.current = result.catalog_version || null
+      setError('')
+      onSynced()
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setWorking(null)
+    }
+  }
+
+  const counts = connection.counts || { codex: 0, claude_code: 0, deepseek_harness: 0 }
+  const supportedHarnesses = new Set(
+    (connection.models || []).flatMap((model) => model.supported_harnesses || []),
+  )
+  const autoSync = connection.auto_sync
+  const deployedHttpAlias = /^http:\/\/8\.130\.13\.45:3333(?:\/|$)/i.test(baseUrl.trim())
+  const insecureRemoteHttp = /^http:\/\//i.test(baseUrl.trim())
+    && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseUrl.trim())
+  const inputClass = 'h-9 w-full rounded-md border border-[var(--input-border)] bg-[var(--bg-card)] px-2 text-[12px] text-[var(--text-primary)] outline-none'
+  const connectedView = connection.connected && !reconfigure
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-lg border border-blue-500/25 bg-blue-500/[0.04]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-500/15 px-3.5 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>BestAPI 订阅</h4>
+              {connectedView && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">已连接</span>}
+            </div>
+            <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              使用 API Key 读取全部可用模型与 Harness 契约，并自动配置到 Mobius
+            </div>
+          </div>
+        </div>
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
+      </div>
+
+      {error && (
+        <div className="mx-3.5 mt-3 flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      {connectedView ? (
+        <div className="grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+              {connection.account_username && <span style={{ color: 'var(--text-primary)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Key 身份：</span>
+                {connection.account_display_name || connection.account_username}
+              </span>}
+              <span className="truncate" style={{ color: 'var(--text-secondary)' }}>{connection.base_url}</span>
+              <span style={{ color: 'var(--text-muted)' }}>Key {connection.key_prefix || '已配置'}…</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <span className="rounded border border-blue-500/20 bg-blue-500/5 px-2 py-1 text-blue-300">全部 {connection.model_count || 0}</span>
+              {connection.integration_schema_version === 1 && (
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-emerald-300">
+                  Harness 契约 v1
+                </span>
+              )}
+              {autoSync?.enabled && (
+                <span className="rounded border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-cyan-300">
+                  自动同步 · 每 {Math.max(1, Math.round(autoSync.interval_seconds / 60))} 分钟
+                </span>
+              )}
+              <span className="rounded border px-2 py-1" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>Codex {counts.codex}</span>
+              <span className="rounded border px-2 py-1" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>Claude Code {counts.claude_code}</span>
+              <span className="rounded border px-2 py-1" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>DeepSeek Harness {counts.deepseek_harness}</span>
+              {supportedHarnesses.size > 0 && (
+                <span className="px-1 py-1" style={{ color: 'var(--text-muted)' }}>
+                  服务支持 {Array.from(supportedHarnesses).join(' / ')}
+                </span>
+              )}
+              {connection.synced_at && <span className="px-1 py-1" style={{ color: 'var(--text-muted)' }}>上次同步 {new Date(connection.synced_at).toLocaleString()}</span>}
+              {autoSync?.last_checked_at && (
+                <span className="px-1 py-1" style={{ color: 'var(--text-muted)' }}>
+                  上次目录检查 {new Date(autoSync.last_checked_at).toLocaleString()}
+                </span>
+              )}
+            </div>
+            {autoSync?.last_error && (
+              <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-300">
+                自动同步失败，将在下个周期重试：{autoSync.last_error}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => { setApiKey(''); setShowApiKey(false); setReconfigure(true) }} disabled={!!working}
+              className="inline-flex h-9 items-center rounded-md border border-[var(--border-color)] px-3 text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60"
+              style={{ color: 'var(--text-secondary)' }}>
+              重新配置 Key
+            </button>
+            <button type="button" onClick={sync} disabled={!!working}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+              {working === 'sync' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              立即同步全部模型
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="p-3.5">
+          <div className="grid gap-2 md:grid-cols-[1.1fr_1.4fr_auto] md:items-end">
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>BestAPI 服务地址</div>
+              <input className={inputClass} value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://8.130.13.45:3333" />
+            </label>
+            <label className="min-w-0">
+              <div className="mb-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>BestAPI API Key</div>
+              <div className="relative">
+                <input className={`${inputClass} pr-9`} type={showApiKey ? 'text' : 'password'} value={apiKey}
+                  onChange={e => setApiKey(e.target.value)} autoComplete="new-password" placeholder="sk-..." />
+                <button type="button" onClick={() => setShowApiKey(v => !v)} title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                  className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                  {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </label>
+            <button type="button" onClick={connect} disabled={!!working || !baseUrl.trim() || !apiKey.trim()}
+              className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-blue-600 px-3 text-[12px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-60">
+              {working === 'connect' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+              验证并同步
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <span>验证成功后立即导入全部模型，后台默认每分钟检查目录版本并自动同步；API Key 仅保存到 Mobius 服务端本地模型配置。</span>
+            {connection.connected && <button type="button" onClick={() => { setApiKey(''); setShowApiKey(false); setReconfigure(false) }} className="text-blue-400 hover:text-blue-300">取消重新配置</button>}
+          </div>
+          {deployedHttpAlias && (
+            <div className="mt-2 rounded border border-blue-500/25 bg-blue-500/10 px-2.5 py-1.5 text-[10px] text-blue-300">
+              该部署端口实际使用 HTTPS；提交时会自动转换为 https://8.130.13.45:3333。
+            </div>
+          )}
+          {insecureRemoteHttp && !deployedHttpAlias && (
+            <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[10px] text-amber-300">
+              公网 HTTP 会明文传输 API Key，建议改用 HTTPS。
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── 模型接入向导 · 组件 ─────────────────────────────────────────────────
@@ -4353,6 +4609,7 @@ function AdminModelsPanel() {
   const [backend, setBackend] = useState<AdminModelsBackend>('claude-code')
   // 向导创建成功后 ping 一下文件配置子面板刷新 (子面板自身挂载时也会 load).
   const [wizardRefreshNonce, setWizardRefreshNonce] = useState(0)
+  const [bestApiRefreshNonce, setBestApiRefreshNonce] = useState(0)
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
@@ -4394,6 +4651,8 @@ function AdminModelsPanel() {
         </div>
       </div>
 
+      <BestApiSubscriptionPanel onSynced={() => setBestApiRefreshNonce(n => n + 1)} />
+
       {mode === 'wizard' ? (
         <ModelAccessWizard onCreated={() => setWizardRefreshNonce(n => n + 1)} />
       ) : (
@@ -4422,7 +4681,7 @@ function AdminModelsPanel() {
               })}
             </div>
           </div>
-          <FileModelsModeRenderer key={wizardRefreshNonce} backend={backend} />
+          <FileModelsModeRenderer key={`${wizardRefreshNonce}-${bestApiRefreshNonce}`} backend={backend} />
         </div>
       )}
     </section>
