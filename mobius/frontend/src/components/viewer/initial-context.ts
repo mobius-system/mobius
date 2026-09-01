@@ -149,10 +149,11 @@ export function extractInitialContext(entry: AnyEntry): InitialContextMatch | nu
   return { language: lang, intro, blocks, question, raw: text }
 }
 
-// 摘要辅助: 初始消息的一行摘要 = 「初始 · 问题首行」 (无问题时回落引导语)。
+// 摘要辅助: 初始消息的一行摘要 = 问题首行 (卡片徽章已标「初始」, 不再重复前缀;
+// 轮次头 / 末轮摘要 / 搜索列表与普通用户轮保持同款观感)。
 export function initialContextSummaryLine(match: InitialContextMatch): string {
   const firstLine = match.question.trim().split('\n').map((l) => l.trim()).find((l) => l) || ''
-  if (firstLine) return `初始 · ${firstLine}`
+  if (firstLine) return firstLine
   const introLine = match.intro.trim().split('\n')[0] || ''
-  return introLine ? `初始 · ${introLine}` : '初始上下文'
+  return introLine || '初始上下文'
 }

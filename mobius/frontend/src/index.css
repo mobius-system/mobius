@@ -6433,3 +6433,22 @@ body.mobius-resizing .mobius-resizable-handle {
 .cc-wysiwyg ul[data-type="taskList"] li > div > p { margin: 0; }
 .cc-wysiwyg ul[data-type="taskList"] input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent-primary, #2563eb); cursor: pointer; }
 .cc-wysiwyg ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--text-muted); opacity: .7; }
+
+/* ===== 初始卡片 (jsonl initial card, 明暗两套配色) =====
+   初始卡片整体走 orange 强调色; 亮色模式用更深的 orange 保证白底对比度。
+   徽章修正: INITIAL_THEME 的 text-orange-300 在白底上对比度不足, 亮色下换成深橙。 */
+:root {
+  --initial-accent: #fb923c;
+  --initial-accent-text: #fdba74;
+  --initial-accent-border: rgba(251, 146, 60, 0.32);
+  --initial-accent-soft: rgba(251, 146, 60, 0.10);
+  --initial-question-bg: rgba(251, 146, 60, 0.05);
+}
+.light {
+  --initial-accent: #ea580c;
+  --initial-accent-text: #c2410c;
+  --initial-accent-border: rgba(234, 88, 12, 0.28);
+  --initial-accent-soft: rgba(234, 88, 12, 0.07);
+  --initial-question-bg: rgba(234, 88, 12, 0.035);
+}
+.light .jsonl-entry-card > summary .text-orange-300 { color: var(--initial-accent-text); }
