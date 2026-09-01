@@ -29,7 +29,7 @@ const crypto = require('crypto')
 const { AgentBackend } = require('./base')
 import type { HistorySnapshot, QueryOpts } from './base'
 const {
-  appendMobiusPromptEntry,
+  appendMobiusCoreEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -896,7 +896,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       return false
     }
     try {
-      appendMobiusPromptEntry({
+      appendMobiusCoreEntry({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,

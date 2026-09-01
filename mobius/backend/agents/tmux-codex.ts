@@ -31,7 +31,7 @@ function resolveAimuxBin() {
 const { AgentBackend } = require('./base')
 import type { HistorySnapshot, QueryOpts } from './base'
 const {
-  appendMobiusPromptEntry,
+  appendMobiusCoreEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -937,7 +937,7 @@ class TmuxCodexBackend extends AgentBackend {
       return false
     }
     try {
-      appendMobiusPromptEntry({
+      appendMobiusCoreEntry({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,

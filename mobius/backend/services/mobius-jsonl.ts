@@ -359,7 +359,7 @@ function buildMobiusUserEntry({
 }
 
 
-function appendMobiusPromptEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & { jsonlPath: any }): { filePath: string; entry: any } {
+function appendMobiusCoreEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & { jsonlPath: any }): { filePath: string; entry: any } {
   const filePath = mobiusJsonlPathOf(jsonlPath);
   if (!filePath) throw new Error('缺少原始 JSONL 路径, 无法写入 mobius JSONL');
   const entry = buildMobiusUserEntry(entryOpts);
@@ -553,7 +553,7 @@ export {
   currentMergedJsonlSentinel,
   watchMergedJsonl,
   buildMobiusUserEntry,
-  appendMobiusPromptEntry,
+  appendMobiusCoreEntry,
   buildMobiusErrorEntry,
   appendMobiusErrorEntry,
   readLastMobiusEntryType,

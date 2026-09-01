@@ -7,7 +7,7 @@ import type { HistorySnapshot, QueryOpts } from './base'
 const { HarnessJsonRpcPeer } = require('./deepseek-harness-protocol')
 const { projectHarnessEvent } = require('./deepseek-harness-events')
 const {
-  appendMobiusPromptEntry,
+  appendMobiusCoreEntry,
   watchMergedJsonl,
   readMergedJsonlHistory,
 } = require('../services/mobius-jsonl')
@@ -178,7 +178,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
   _appendMobiusPromptEntry(entry: HarnessSessionEntry, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
     if (!entry?.jsonlPath || !mobiusPromptRecord) return false
     try {
-      appendMobiusPromptEntry({
+      appendMobiusCoreEntry({
         jsonlPath: entry.jsonlPath,
         sessionId: entry.sessionId,
         agentSessionId: entry.agentSessionId,
