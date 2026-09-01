@@ -3276,6 +3276,8 @@ type BestApiManagedModel = {
   session_model: string
   endpoints: string[]
   capabilities: string[]
+  // 后端实时核对 model-access 后的标注: true=仍在系统配置, false=已被手动删除, null/undefined=未知
+  configured?: boolean | null
 }
 
 type BestApiConnection = {
@@ -3490,6 +3492,66 @@ function emptyHarnessForm(): HarnessModelForm {
   }
 }
 
+// BestAPI 已注入模型清单: 同步成功后明确展示「哪些模型进了系统配置、在会话模型
+// 选择器里叫什么、当前是否仍存在」, 避免"同步完成了但不知道能用什么、去哪找".
+const BESTAPI_BACKEND_BADGES: Record<BestApiManagedModel['backend'], { label: string; className: string }> = {
+  codex: { label: 'Codex', className: 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300' },
+  claude_code: { label: 'Claude Code', className: 'border-blue-500/25 bg-blue-500/5 text-blue-300' },
+  deepseek_harness: { label: 'DeepSeek Harness', className: 'border-violet-500/25 bg-violet-500/5 text-violet-300' },
+}
+const BESTAPI_BACKEND_ORDER: BestApiManagedModel['backend'][] = ['claude_code', 'codex', 'deepseek_harness']
+
+function BestApiInjectedModels({ models }: { models: BestApiManagedModel[] }) {
+  if (!models.length) return null
+  const sorted = [...models].sort((a, b) =>
+    BESTAPI_BACKEND_ORDER.indexOf(a.backend) - BESTAPI_BACKEND_ORDER.indexOf(b.backend)
+    || a.display_name.localeCompare(b.display_name))
+  const missingCount = models.filter((model) => model.configured === false).length
+  return (
+    <div className="border-t border-blue-500/15 px-3.5 pb-3.5 pt-2.5">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+          已注入系统配置的模型 · {models.length} 个
+        </span>
+        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          已持久写入模型配置，会话模型选择器中以「名称 · BestAPI」长期可用，选择即用
+        </span>
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded-md border border-[var(--border-color)]" style={{ background: 'var(--bg-card)' }}>
+        {sorted.map((model) => {
+          const badge = BESTAPI_BACKEND_BADGES[model.backend]
+          const harnessNote = (model.supported_harnesses || []).length > 1
+            ? `兼容 Harness: ${(model.supported_harnesses || []).join(' / ')}` : ''
+          return (
+            <div key={`${model.backend}:${model.key}`}
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[11px] last:border-b-0">
+              <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${badge.className}`}>{badge.label}</span>
+              <span className="min-w-0 max-w-[240px] truncate font-medium" title={model.display_name}
+                style={{ color: 'var(--text-primary)' }}>{model.display_name}</span>
+              <span className="min-w-0 max-w-[220px] truncate font-mono text-[10px]" title={model.id}
+                style={{ color: 'var(--text-muted)' }}>{model.id}</span>
+              <span className="ml-auto flex-shrink-0 font-mono text-[10px]" title={`会话模型选择器标识: ${model.session_model}`}
+                style={{ color: 'var(--text-secondary)' }}>{model.session_model}</span>
+              {model.configured === false
+                ? <span className="flex-shrink-0 rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
+                    title="该模型不在当前系统配置中（可能被手动删除），点击「立即同步全部模型」可恢复">配置缺失</span>
+                : model.configured
+                  ? <span className="flex-shrink-0 rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300"
+                      title={harnessNote || '已在系统配置中，会话模型选择器可用'}>已注入</span>
+                  : null}
+            </div>
+          )
+        })}
+      </div>
+      {missingCount > 0 && (
+        <div className="mt-1.5 text-[10px] text-amber-300">
+          {missingCount} 个模型不在当前系统配置中（可能被手动删除），点击「立即同步全部模型」可恢复。
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
   const [connection, setConnection] = useState<BestApiConnection>({ connected: false })
   const [baseUrl, setBaseUrl] = useState('https://8.130.13.45:3333')
@@ -3604,7 +3666,8 @@ function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
       )}
 
       {connectedView ? (
-        <div className="grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <>
+        <div className={`grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${(connection.models || []).length ? 'pb-2' : ''}`}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
               {connection.account_username && <span style={{ color: 'var(--text-primary)' }}>
@@ -3660,6 +3723,8 @@ function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
             </button>
           </div>
         </div>
+        <BestApiInjectedModels models={connection.models || []} />
+        </>
       ) : (
         <div className="p-3.5">
           <div className="grid gap-2 md:grid-cols-[1.1fr_1.4fr_auto] md:items-end">

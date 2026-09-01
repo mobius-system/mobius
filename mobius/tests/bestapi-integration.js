@@ -275,6 +275,16 @@ async function main() {
     assert.equal(manual.model, 'manual-model')
     assert.equal(manual.secret_value, 'sk-manual-secret')
     assert.equal(integration.getBestApiConnection().catalog_version, 'sha256:4')
+
+    // 状态接口的 models 需实时标注每个模型当前是否仍在系统配置中 (前端据此显示「已注入 / 配置缺失」)
+    const connectionView = integration.getBestApiConnection()
+    assert.equal(connectionView.models.length, 3)
+    assert.ok(connectionView.models.every((m) => m.configured === true))
+    // 手动删除一个注入模型后, 状态接口应如实标注缺失, 而不是照抄同步时的旧清单
+    modelAccess.deleteClaudeCodeModel(claude.key)
+    const afterDelete = integration.getBestApiConnection()
+    assert.equal(afterDelete.models.find((m) => m.key === claude.key).configured, false)
+    assert.ok(afterDelete.models.filter((m) => m.key !== claude.key).every((m) => m.configured === true))
   } finally {
     await close(server)
   }
