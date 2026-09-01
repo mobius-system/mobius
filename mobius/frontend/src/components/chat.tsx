@@ -229,6 +229,10 @@ function attachmentKindOf(file: File): 'image' | 'file' {
   return file.type.startsWith('image/') ? 'image' : 'file'
 }
 
+// 粘贴的纯文本超过该字节数 (100KB) 时不再灌进 textarea (巨量字符卡顿且易超消息上限),
+// 参考截图粘贴的同一路径: 转成 .txt 附件走 /api/upload 上传.
+const PASTE_TEXT_AS_FILE_THRESHOLD = 100 * 1024
+
 function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
   if (bytes < 1024) return `${bytes} B`
@@ -3171,6 +3175,18 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     if (files.length > 0) {
       e.preventDefault()
       enqueueFiles(files)
+      return
+    }
+    // 无文件时看纯文本: 超过阈值 (100KB) 的巨型粘贴同样转成 .txt 附件上传,
+    // 与截图粘贴共用 enqueueFiles → /api/upload 链路, 不再把几十万字塞进输入框.
+    let text = ''
+    try { text = cd.getData('text/plain') || '' } catch { text = '' }
+    if (text && new Blob([text]).size > PASTE_TEXT_AS_FILE_THRESHOLD) {
+      e.preventDefault()
+      const stamp = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const fname = `pasted-text-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.txt`
+      enqueueFiles([new File([text], fname, { type: 'text/plain' })])
     }
   }, [enqueueFiles])
 
