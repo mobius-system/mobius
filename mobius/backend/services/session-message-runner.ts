@@ -137,6 +137,16 @@ async function runSessionMessage({
   logger?: any;
   urgent?: boolean;
 } = {}): Promise<any> {
+
+  // 例 1：普通打字（最常见，两者相同）
+  //    输入框敲：帮我调研jsonl
+  //        input_text = "帮我调研jsonl"          ← 你敲的
+  //        content    = "帮我调研jsonl"          ← 没东西可加工, 成品=原文
+  // 例 2：带附件
+  //    拖入 report.pdf，输入框敲：分析这个文件
+  //        input_text = "分析这个文件"                                  ← 你敲的
+  //        content    = "[附件]\n- [文件] /data/report.pdf\n\n分析这个文件"   ← 拼上了附件块
+
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
@@ -206,21 +216,6 @@ async function runSessionMessage({
     }
   }
 
-  // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 harnessWriteMobiusCoreEntry
-  // 把它同步写进 <uuid>.mobius.jsonl 边车文件 (与主 jsonl 双轨, 见 services/mobius-jsonl.ts).
-  const mobiusPromptRecord = {
-    source,
-    kind: mobiusPromptKind(displayContent),
-    content: displayContent,
-    inputText: hasInputText ? normalizedInputText : null,
-    requestId: normalizedRequestId,
-    turnNumber: turnNum,
-    userId: user?.id || null,
-    attachments: normalizedAttachments,
-    mentions: normalizedMentions,
-    timestamp: new Date().toISOString(),
-  };
-
   // finalContent 从这里开始组装: 先并附件 → 首轮再加上下文包装, 和 displayContent(干净原文)自此分家.
   let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
 
@@ -243,6 +238,21 @@ async function runSessionMessage({
   });
 
   try {
+    // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 harnessWriteMobiusCoreEntry 把它同步写进 <uuid>.mobius.jsonl 文件
+    const mobiusPromptRecord = {
+      source,                                              // 谁发的 (默认 service.session.messages=会话页; 小莫提问=assistant.question; 生命周期催促=assistant.lifecycle-callback)
+      kind: mobiusPromptKind(displayContent),
+      content: displayContent,                             // 成品: 正式提交、展示/落库、写成 .mobius.jsonl 输入卡的文本 (可含前端加的标题头等加工)
+      inputText: hasInputText ? normalizedInputText : null, // 原料: 用户在输入框亲手敲的原文, 供前端 ↑"回放输入"召回; 多数路径与 content 相同或为 null
+      finalPrompt: finalContent !== displayContent ? finalContent : null, // 拼装后的完整下发 prompt (首轮上下文包装等已并入); 与 content 相同时不重复存
+      requestId: normalizedRequestId,
+      turnNumber: turnNum,
+      userId: user?.id || null,
+      attachments: normalizedAttachments,
+      mentions: normalizedMentions,
+      timestamp: new Date().toISOString(),
+    };
+
     const dispatchOpts = {
       sessionId: normalizedSessionId,
       prompt: finalContent,
