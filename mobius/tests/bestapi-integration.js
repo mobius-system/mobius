@@ -205,9 +205,9 @@ async function main() {
     assert.equal(available.has(model.session_model), true)
     assert.equal(available.has(codex.session_model), true)
     assert.equal(available.has(claude.session_model), true)
-    assert.equal(modelRegistry.launchOptionsForSession({ model: model.session_model }).harnessSecretValue, 'sk-integration-secret')
-    assert.equal(modelRegistry.launchOptionsForSession({ model: codex.session_model }).codexSecretValue, 'sk-integration-secret')
-    assert.equal(modelRegistry.launchOptionsForSession({ model: claude.session_model }).settingsPath, claude.settings_path)
+    assert.equal(modelRegistry.modelLaunchOptionsFor({ model: model.session_model }).harnessSecretValue, 'sk-integration-secret')
+    assert.equal(modelRegistry.modelLaunchOptionsFor({ model: codex.session_model }).codexSecretValue, 'sk-integration-secret')
+    assert.equal(modelRegistry.modelLaunchOptionsFor({ model: claude.session_model }).settingsPath, claude.settings_path)
 
     assert.throws(
       () => integration.planBestApiModel({ id: 'unsafe\nmodel', endpoints: ['responses'] }),
