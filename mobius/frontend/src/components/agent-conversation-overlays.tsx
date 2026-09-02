@@ -20,6 +20,7 @@ export type AgentConversationOverlaysProps = {
 }
 
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
+type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
 
 function readPins() {
@@ -30,12 +31,12 @@ function writePins(value: Set<string>) {
 }
 function isExecuting(session: OverlaySession) { return session.active }
 
-function SessionOverlay({ session, state, setState, onClose, position, mentionOptions }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; position: { left: number; top: number; targetX?: number; targetY?: number }; mentionOptions: OverlaySession[] }) {
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null)
-  const [pos, setPos] = useState(position)
+function SessionOverlay({ session, state, setState, onClose, mentionOptions, positionRef, register }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; mentionOptions: OverlaySession[]; positionRef: MutableRefObject<Record<string, OverlayPosition>>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionOpen, setMentionOpen] = useState(false)
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
-  useEffect(() => { if (!drag) setPos(position) }, [position, drag])
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const lineRef = useRef<SVGLineElement | null>(null)
+  useEffect(() => { register(session.id, panelRef.current, lineRef.current); return () => register(session.id, null, null) }, [register, session.id])
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?from=0&limit=80`, signal ? { signal } : undefined)
@@ -43,9 +44,14 @@ function SessionOverlay({ session, state, setState, onClose, position, mentionOp
       const merged = mergeBashToolResultItems(raw.slice(-80), Math.max(0, raw.length - 80))
       const visible = merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
       setState((prev) => ({ ...prev, entries: visible }))
-    } catch (e: any) { setState((prev) => ({ ...prev, error: e?.message || '读取失败' })) }
+    } catch (e: any) {
+      // A timed-out polling request is expected and should not surface as an error or
+      // trigger another React render. pollRecursive aborts these requests after 10s.
+      if (e?.name === 'AbortError') return
+      setState((prev) => ({ ...prev, error: e?.message || '读取失败' }))
+    }
   }, [session.id, setState])
-  useEffect(() => { load(); const stop = pollRecursive((signal) => load(signal), 10_000); return stop }, [load])
+  useEffect(() => { const stop = pollRecursive((signal) => load(signal), 10_000); return stop }, [load])
   const send = async () => {
     const text = state.draft.trim(); if (!text || state.sending) return
     setState((prev) => ({ ...prev, sending: true, error: undefined }))
@@ -67,13 +73,13 @@ function SessionOverlay({ session, state, setState, onClose, position, mentionOp
   }
   return <>
     <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-visible" aria-hidden="true">
-      <line x1={position.left + 154} y1={position.top + 4} x2={position.targetX ?? position.left - 18} y2={position.targetY ?? position.top + 30} stroke={session.color} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 5" />
+      <line ref={lineRef} stroke={session.color} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 5" />
     </svg>
-    <div className="absolute z-10 w-[312px] overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl" style={{ left: pos.left, top: pos.top, borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
+    <div ref={panelRef} className="absolute z-10 w-[312px] overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl" style={{ left: 0, top: 0, transform: 'translate3d(24px,84px,0)', borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
       <div className="flex h-8 cursor-grab items-center gap-2 border-b px-2.5 active:cursor-grabbing" style={{ borderColor: `${session.color}44`, background: `${session.color}16` }}
-        onPointerDown={(event) => { start.current = { x: event.clientX, y: event.clientY, left: pos.left, top: pos.top }; event.currentTarget.setPointerCapture(event.pointerId) }}
-        onPointerMove={(event) => { const s = start.current; if (!s) return; setDrag({ x: event.clientX, y: event.clientY }); setPos({ left: s.left + event.clientX - s.x, top: s.top + event.clientY - s.y }) }}
-        onPointerUp={() => { start.current = null; setDrag(null) }}>
+        onPointerDown={(event) => { const current = positionRef.current[session.id] || { left: 24, top: 84, targetX: 0, targetY: 0 }; start.current = { x: event.clientX, y: event.clientY, left: current.left, top: current.top }; event.currentTarget.setPointerCapture(event.pointerId) }}
+        onPointerMove={(event) => { const s = start.current; if (!s) return; const next = { ...(positionRef.current[session.id] || { targetX: 0, targetY: 0 }), left: s.left + event.clientX - s.x, top: s.top + event.clientY - s.y, manual: true }; positionRef.current[session.id] = next; panelRef.current?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`) }}
+        onPointerUp={() => { start.current = null }}>
         <span className="h-2 w-2 rounded-full" style={{ background: session.color, boxShadow: `0 0 10px ${session.color}` }} />
         <span className="min-w-0 flex-1 truncate text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
         <button type="button" aria-label={state.pinned ? '取消固定浮窗' : '固定浮窗'} title={state.pinned ? '取消固定' : '固定'} className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: state.pinned ? session.color : 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => setState((prev) => ({ ...prev, pinned: !prev.pinned }))}>{state.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}</button>
@@ -93,7 +99,8 @@ function SessionOverlay({ session, state, setState, onClose, position, mentionOp
 export function AgentConversationOverlays({ sessions, enabled, modelRef, transformRef, onClose }: AgentConversationOverlaysProps) {
   const [pins, setPins] = useState<Set<string>>(readPins)
   const [states, setStates] = useState<Record<string, OverlayState>>({})
-  const [positions, setPositions] = useState<Record<string, { left: number; top: number; targetX: number; targetY: number }>>({})
+  const positionRef = useRef<Record<string, OverlayPosition>>({})
+  const elementRefs = useRef<Record<string, { panel: HTMLDivElement | null; line: SVGLineElement | null }>>({})
   const knownSessionsRef = useRef<Record<string, OverlaySession>>({})
   sessions.forEach((session) => { knownSessionsRef.current[session.id] = session })
   const setSessionState = (id: string, updater: (prev: OverlayState) => OverlayState) => setStates((prev) => ({ ...prev, [id]: updater(prev[id] || { pinned: pins.has(id), entries: [], draft: '', sending: false }) }))
@@ -116,7 +123,55 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
     window.addEventListener('mobius:pin-overlay', onPin)
     return () => window.removeEventListener('mobius:pin-overlay', onPin)
   }, [])
-  useEffect(() => { let frame = 0; const tick = () => { const t = transformRef.current; const next: Record<string, { left: number; top: number; targetX: number; targetY: number }> = {}; openSessions.forEach((session, index) => { const node = modelRef.current.nodes.find((n: any) => n.id === session.id); const x = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330; const y = node ? node.y * t.zoom + t.offset.y : 120 + Math.floor(index / 3) * 230; next[session.id] = { left: Math.max(8, Math.min(t.width - 320, x + 18)), top: Math.max(68, Math.min(t.height - 180, y - 30)), targetX: x, targetY: y } }); setPositions(next); frame = requestAnimationFrame(tick) }; frame = requestAnimationFrame(tick); return () => cancelAnimationFrame(frame) }, [openSessions, modelRef, transformRef])
+  const register = useCallback((id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => {
+    if (!panel && !line) {
+      delete elementRefs.current[id]
+      delete positionRef.current[id]
+      return
+    }
+    elementRefs.current[id] = { panel, line }
+  }, [])
+  useEffect(() => {
+    if (!enabled || openSessions.length === 0) return
+    let frame = 0
+    let lastPaint = 0
+    const tick = (now: number) => {
+      // Position updates are intentionally kept outside React state. The overlay cards are
+      // relatively expensive; reconciling them on every animation frame was the source of
+      // severe jank and browser crashes when several sessions were visible.
+      if (now - lastPaint >= 16) {
+        lastPaint = now
+        const t = transformRef.current
+        const nodeById = new Map<string, any>()
+        modelRef.current.nodes.forEach((node: any) => { if (node?.id) nodeById.set(node.id, node) })
+        openSessions.forEach((session, index) => {
+          const node = nodeById.get(session.id)
+          const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
+          const targetY = node ? node.y * t.zoom + t.offset.y : 120 + Math.floor(index / 3) * 230
+          const computedLeft = Math.max(8, Math.min(Math.max(8, t.width - 320), targetX + 18))
+          const computedTop = Math.max(68, Math.min(Math.max(68, t.height - 180), targetY - 30))
+          const previous = positionRef.current[session.id]
+          const next: OverlayPosition = {
+            left: previous?.manual ? previous.left : computedLeft,
+            top: previous?.manual ? previous.top : computedTop,
+            targetX,
+            targetY,
+            manual: previous?.manual,
+          }
+          positionRef.current[session.id] = next
+          const elements = elementRefs.current[session.id]
+          elements?.panel?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`)
+          elements?.line?.setAttribute('x1', String(next.left + 154))
+          elements?.line?.setAttribute('y1', String(next.top + 4))
+          elements?.line?.setAttribute('x2', String(next.targetX))
+          elements?.line?.setAttribute('y2', String(next.targetY))
+        })
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [enabled, openSessions, modelRef, transformRef])
   if (!enabled) return null
-  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} mentionOptions={openSessions} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} position={positions[session.id] || { left: 24, top: 84 }} /></div>)}</div>
+  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} mentionOptions={openSessions} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} positionRef={positionRef} register={register} /></div>)}</div>
 }
