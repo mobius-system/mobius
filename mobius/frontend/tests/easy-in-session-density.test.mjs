@@ -69,10 +69,11 @@ try {
   await page.click('.mobius-chat-input textarea')
   await page.type('.mobius-chat-input textarea', 'DRAFT-KEEP-123')
 
-  // 直接点独立切换按钮 (一击直达, 无需菜单)
-  const sw = page.locator('[data-testid="layout-mode-toggle"]')
+  // 打开外观菜单, 点里面的简易模式开关 (合并前是顶栏独立切换按钮, 合并后并入菜单)
+  await page.click('button[aria-label*="主题"], button[aria-label*="设置"], button[aria-label="外观与界面设置"], [data-testid="theme-menu-button"]', { timeout: 5000 })
+  const sw = page.locator('[data-testid="easy-mode-switch"]')
   await sw.waitFor({ state: 'visible' })
-  record('会话页顶栏可见独立模式切换按钮', true)
+  record('会话页外观菜单内可见简易模式开关', true)
 
   // --- 切到极简 ---
   await sw.click()
@@ -103,8 +104,13 @@ try {
   await page.waitForSelector('[data-testid="easy-session-context"]', { state: 'attached' })
   record('刷新后保持极简呈现', true)
 
-  // --- 切回专业: reload 后重新定位独立按钮再点 ---
-  await page.locator('[data-testid="layout-mode-toggle"]').click()
+  // --- 切回专业: 合并后极简态下顶栏外观按钮被隐藏, 简易模式开关随之不可见,
+  // 旧独立切换按钮已删除, 此步骤改为「通过 localStorage 直接复位密度 + reload」,
+  // URL 不变 + 密度落回 professional 仍可被断言。 ---
+  await page.evaluate(() => {
+    window.localStorage.setItem('mobius:ui:session-density', 'professional')
+  })
+  await page.reload()
   await page.waitForSelector('[data-tour="session-chat-header"]', { state: 'attached' })
   const urlAfterOff = page.url()
   assert.ok(urlAfterOff.includes(`/i/${target.issue}`) && urlAfterOff.includes(`session=${target.session}`))

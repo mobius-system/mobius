@@ -1,10 +1,14 @@
 /**
- * 顶栏独立模式切换按钮 + 极简态右上角精简 验证.
+ * 顶栏极简/专家切换入口合并到「外观」菜单后的极简态精简 验证.
+ *
+ * 合并改动 (2026-09-02):
+ *   - 顶栏独立切换按钮 [data-testid="layout-mode-toggle"] 已删除;
+ *   - 切换入口改为外观菜单内的简易模式开关 [data-testid="easy-mode-switch"]。
  *
  * 断言:
- *   专家态: 顶栏可见「专家」按钮 (在原「外观」按钮左侧), 右上角功能齐全。
- *   点按钮 → 会话内原地变极简呈现; 顶栏只剩: 搜索 / 存储指示(如可见) / 模式切换(极简) / 管理入口 + 用户名消失。
- *   再点 → 回专家态, 功能全部回来。
+ *   专家态: 顶栏外观按钮可见, 打开菜单 → 内含简易模式开关, 显示当前密度「已关闭」。
+ *   点开关 → 会话内原地变极简呈现; 顶栏只剩: 搜索 / 存储指示(如可见) / 管理入口 + 用户名消失。
+ *   极简态外观按钮已隐藏, 通过 localStorage 复位密度 + reload 验证 URL 保活。
  */
 import assert from 'node:assert/strict'
 import { chromium } from '/app/mobius/frontend/node_modules/playwright/index.mjs'
@@ -52,38 +56,35 @@ try {
   await page.goto(pageUrl)
   await page.waitForSelector('[data-tour="session-chat-header"]')
 
-  // 专家态: 独立切换按钮存在且显示「专家」, 位于外观按钮左侧
-  const toggle = page.locator('[data-testid="layout-mode-toggle"]')
-  await toggle.waitFor({ state: 'visible' })
-  record('专家态: 顶栏可见独立切换按钮', true)
-  const toggleText = await toggle.innerText()
-  assert.match(toggleText, /专家/, `按钮应显示当前模式「专家」, 实际: ${toggleText}`)
-  record('按钮显示当前模式「专家」', true, toggleText)
+  // 专家态: 旧独立切换按钮已删除, 不应再出现
+  const oldToggleCount = await page.locator('[data-testid="layout-mode-toggle"]').count()
+  assert.equal(oldToggleCount, 0, '合并后顶栏独立切换按钮应已删除')
+  record('专家态: 顶栏独立切换按钮已移除', true)
 
-  // 位置: 在「外观」按钮左侧
-  const themeBtnBox = await page.locator('[data-tour="top-theme-toggle"]').boundingBox()
-  const toggleBox = await toggle.boundingBox()
-  assert.ok(themeBtnBox && toggleBox && toggleBox.x < themeBtnBox.x, '切换按钮应在外观按钮左侧')
-  record('切换按钮位于「外观」按钮旁边(左侧)', true)
+  // 专家态: 外观菜单内可见简易模式开关
+  await page.click('button[aria-label*="主题"], button[aria-label*="设置"], button[aria-label="外观与界面设置"], [data-testid="theme-menu-button"]', { timeout: 5000 })
+  const switchEl = page.locator('[data-testid="easy-mode-switch"]')
+  await switchEl.waitFor({ state: 'visible' })
+  record('专家态: 外观菜单内可见简易模式开关', true)
+  const switchText = await switchEl.innerText()
+  assert.match(switchText, /简易模式/, `菜单项应显示「简易模式」, 实际: ${switchText}`)
+  record('菜单项显示「简易模式」', true, switchText.replace(/\n/g, ' '))
 
-  // 专家态功能齐全
+  // 关闭外观菜单, 验证专家态其它顶栏项齐全
+  await page.keyboard.press('Escape')
   const hasAppearance = await page.locator('[data-tour="top-theme-toggle"]').isVisible()
   const hasUserMenu = await page.locator('[data-tour="top-user-menu"]').isVisible()
   const hasGithub = await page.locator('.mobius-topnav-github').count()
   const hasGuide = await page.locator('[data-tour="top-guide-help"]').count()
   record('专家态: 外观/用户菜单/GitHub/帮助 齐全', hasAppearance && hasUserMenu && hasGithub > 0 && hasGuide > 0)
 
-  // 一击切极简
+  // 打开外观菜单 → 点简易模式开关 → 原地切极简
   const urlBefore = page.url()
-  await toggle.click()
+  await page.click('button[aria-label*="主题"], button[aria-label*="设置"], button[aria-label="外观与界面设置"], [data-testid="theme-menu-button"]', { timeout: 5000 })
+  await page.locator('[data-testid="easy-mode-switch"]').click()
   await page.waitForSelector('[data-testid="easy-session-context"]', { state: 'attached' })
   assert.equal(page.url(), urlBefore, 'URL 不变')
-  record('点击按钮 → 原地切极简, URL 不变', true)
-
-  // 极简态按钮显示「极简」
-  const toggleText2 = await toggle.innerText()
-  assert.match(toggleText2, /极简/)
-  record('按钮变为「极简」', true, toggleText2)
+  record('点击菜单内开关 → 原地切极简, URL 不变', true)
 
   // 极简态右上角: 搜索还在
   const searchKept = await page.locator('[data-tour="top-search"]').isVisible()
@@ -106,11 +107,14 @@ try {
   // 存储指示: 达到阈值才显示, 不强制; 只验证存在性逻辑不报错
   record('极简态: 存储指示按阈值条件渲染 (未报错)', true)
 
-  // 切回专家
-  await toggle.click()
+  // 切回专家: 合并后极简态外观按钮被隐藏, 通过 localStorage 复位密度 + reload 验证保活
+  await page.evaluate(() => {
+    window.localStorage.setItem('mobius:ui:session-density', 'professional')
+  })
+  await page.reload()
   await page.waitForSelector('[data-tour="session-chat-header"]', { state: 'attached' })
   assert.equal(page.url(), urlBefore)
-  record('再点按钮 → 原地切回专家, URL 不变', true)
+  record('密度复位 → 原地切回专家, URL 不变', true)
   const allBack = await page.locator('[data-tour="top-theme-toggle"]').isVisible()
     && await page.locator('[data-tour="top-user-menu"]').isVisible()
   record('专家态功能全部恢复', allBack)

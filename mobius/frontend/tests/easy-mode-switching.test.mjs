@@ -59,15 +59,12 @@ try {
   assert.equal(stored, 'easy_mode')
   record('layout_mode 已持久化到 localStorage', true)
 
-  // --- 4. 通过主题菜单关掉简易模式 → 回专业模式 ---
-  // 打开顶栏右侧主题/设置菜单
-  await page.click('button[aria-label*="主题"], button[aria-label*="设置"], [data-testid="theme-menu-button"]', { timeout: 5000 }).catch(async () => {
-    // 兜底: 找顶栏带调色盘图标的按钮
-    await page.locator('[data-testid="layout-mode-toggle"]').click({ timeout: 5000 })
-  })
-  const switchBtn = page.locator('[data-testid="layout-mode-toggle"]')
+  // --- 4. 通过外观菜单内的简易模式开关关掉简易模式 → 回专业模式 ---
+  // 打开顶栏右侧外观/设置菜单, 再点里面的简易模式开关 (合并前是独立切换按钮, 合并后并入菜单)
+  await page.click('button[aria-label*="主题"], button[aria-label*="设置"], button[aria-label="外观与界面设置"], [data-testid="theme-menu-button"]', { timeout: 5000 })
+  const switchBtn = page.locator('[data-testid="easy-mode-switch"]')
   await switchBtn.waitFor({ state: 'visible' })
-  record('顶栏可见独立模式切换按钮', true)
+  record('外观菜单内可见简易模式开关', true)
   await switchBtn.click()
   await page.waitForURL(/\/u\/admin(\/p\/|$)/, { waitUntil: 'domcontentloaded' }).catch(() => {})
   await page.waitForTimeout(800)

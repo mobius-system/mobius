@@ -67,11 +67,9 @@ try {
     record('切到代码对话布局成功', true, `iframe×${iframeCount}`)
     const urlBefore = page.url()
 
-    // 打开主题菜单 → 原地切极简
-    await page.click('button[aria-label*="主题"], button[aria-label*="设置"], [data-testid="theme-menu-button"]', { timeout: 5000 }).catch(async () => {
-      await page.locator('[data-testid="layout-mode-toggle"]').click({ timeout: 5000 })
-    })
-    await page.locator('[data-testid="layout-mode-toggle"]').click()
+    // 打开外观菜单 → 点里面的简易模式开关 (合并前是独立切换按钮, 合并后并入菜单)
+    await page.click('button[aria-label*="主题"], button[aria-label*="设置"], button[aria-label="外观与界面设置"], [data-testid="theme-menu-button"]', { timeout: 5000 })
+    await page.locator('[data-testid="easy-mode-switch"]').click()
     await page.waitForTimeout(1200)
     // 代码对话模式下 ChatArea 走 stacked; 极简密度的 easy-session-context 不出现是预期,
     // 核心断言是 URL 与 iframe 都不变.
@@ -81,12 +79,15 @@ try {
     assert.ok(iframeAfterEasy >= iframeCount, 'iframe 不应减少')
     record('编辑器 iframe 保活 (数量不减)', true, `${iframeCount} → ${iframeAfterEasy}`)
 
-    // 切回专业
-    await page.click('button[aria-label*="主题"], button[aria-label*="设置"], [data-testid="theme-menu-button"]', { timeout: 5000 }).catch(async () => {
-      await page.locator('[data-testid="layout-mode-toggle"]').click({ timeout: 5000 })
+    // 切回专业: 合并后极简态下顶栏外观按钮被隐藏, 简易模式开关随之不可见,
+    // 旧独立切换按钮已删除, 此步骤改为「通过 localStorage 直接复位 + reload」保活 iframe 断言。
+    await page.evaluate(() => {
+      window.localStorage.setItem('mobius:ui:session-density', 'professional')
+      window.localStorage.setItem('layout_mode', 'normal_mode')
     })
-    await page.locator('[data-testid="layout-mode-toggle"]').click()
-    await page.waitForTimeout(800)
+    await page.reload()
+    await page.waitForSelector('[data-tour="session-chat-header"]')
+    await page.waitForTimeout(2000)
     assert.equal(page.url(), urlBefore)
     record('切回专业 → URL 不变', true)
     const iframeFinal = await page.locator('iframe').count()

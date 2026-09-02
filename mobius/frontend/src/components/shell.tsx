@@ -21,7 +21,6 @@ import { TopNavActionElement } from './top-nav-action'
 import { RecentSessionGroupList } from './recent-session-group-list'
 import { setLayoutMode, useLayoutMode, setSessionDensity, useSessionDensity } from '../services/layout-mode'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
-import { LayoutModeToggle } from './layout-mode-toggle'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
@@ -1260,8 +1259,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               {!easyUI && <VersionIndicator />}
             </div>
           )}
-          {/* 极简 ⇄ 专家 独立切换按钮 — 紧邻外观按钮左侧, 一击直达 */}
-          <LayoutModeToggle />
+          {/* 极简 ⇄ 专家 切换入口已合并到「外观」菜单内的简易模式开关 (shell.tsx 中 easy-mode-switch),
+              顶栏不再保留独立按钮。 */}
           {/* 极简态的管理中心直达入口 (仅管理员可见; 专家态藏在用户菜单里) */}
           {easyUI && user?.role === 'admin' && (
             <TopNavActionElement
