@@ -4668,7 +4668,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   )
 }
 
-type AdminModelsMode = 'wizard' | 'file'
+type AdminModelsMode = 'wizard' | 'file' | 'bestapi'
 
 function AdminModelsPanel() {
   const [mode, setMode] = useState<AdminModelsMode>('wizard')
@@ -4679,49 +4679,59 @@ function AdminModelsPanel() {
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            模型接入
-          </h3>
-          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {mode === 'wizard'
-              ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+      <div className="mb-3">
+        <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          模型接入
+        </h3>
+        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {mode === 'wizard'
+            ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+            : mode === 'bestapi'
+              ? 'BestAPI 订阅: 使用 API Key 读取全部可用模型与 Harness 契约, 并自动配置到 Mobius'
               : backend === 'claude-code'
                 ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
                 : backend === 'codex'
                   ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
                   : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
-          </div>
-        </div>
-        {/* 一级 Tab: 向导模式 | 文件配置 (原有三通道整体移入文件配置作为二级 sub-tab) */}
-        <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
-          style={{ background: 'var(--input-bg)' }} data-tour="admin-models-mode-tabs">
-          {([
-            ['wizard', '向导模式'],
-            ['file', '文件配置'],
-          ] as Array<[AdminModelsMode, string]>).map(([k, label]) => {
-            const active = mode === k
-            return (
-              <button key={k} type="button" onClick={() => setMode(k)}
-                className="h-7 rounded px-3 transition-colors"
-                style={{
-                  background: active ? 'var(--bg-card)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                  fontWeight: active ? 600 : 400,
-                }}>
-                {label}
-              </button>
-            )
-          })}
         </div>
       </div>
 
-      <BestApiSubscriptionPanel onSynced={() => setBestApiRefreshNonce(n => n + 1)} />
+      {/* 一级 Tab: 向导模式(默认) | 文件配置 | BestAPI 订阅 —— 全宽卡片式, 三种接入方式一目了然
+          (原有三通道整体移入文件配置作为二级 sub-tab; BestAPI 订阅从常驻卡片移入第三 Tab) */}
+      <div className="mb-4 grid gap-2 sm:grid-cols-3" data-tour="admin-models-mode-tabs">
+        {([
+          { k: 'wizard', label: '向导模式', desc: '逐步填写，自动生成配置', Icon: WandSparkles },
+          { k: 'file', label: '文件配置', desc: '手动编辑三通道配置文件', Icon: FileText },
+          { k: 'bestapi', label: 'BestAPI 订阅', desc: 'API Key 一键导入全部模型', Icon: Sparkles },
+        ] as Array<{ k: AdminModelsMode; label: string; desc: string; Icon: typeof WandSparkles }>).map(({ k, label, desc, Icon }) => {
+          const active = mode === k
+          return (
+            <button key={k} type="button" onClick={() => setMode(k)}
+              className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                active
+                  ? 'border-blue-500/60 bg-blue-500/10'
+                  : 'border-[var(--border-color)] bg-[var(--input-bg)] hover:border-blue-500/30 hover:bg-blue-500/5'
+              }`}>
+              <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${active ? 'text-blue-400' : 'text-[var(--text-muted)]'}`} />
+              <span className="min-w-0">
+                <span className={`block text-[13px] font-semibold ${active ? 'text-blue-300' : ''}`}
+                  style={active ? undefined : { color: 'var(--text-primary)' }}>{label}</span>
+                <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{desc}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
 
-      {mode === 'wizard' ? (
+      {/* BestAPI 面板常挂载仅隐藏: 保留 30s 静默轮询/目录版本变化自动刷新文件配置列表的原有行为 */}
+      <div className={mode === 'bestapi' ? '' : 'hidden'}>
+        <BestApiSubscriptionPanel onSynced={() => setBestApiRefreshNonce(n => n + 1)} />
+      </div>
+
+      {mode === 'wizard' && (
         <ModelAccessWizard onCreated={() => setWizardRefreshNonce(n => n + 1)} />
-      ) : (
+      )}
+      {mode === 'file' && (
         <div>
           {/* 二级 sub-tab: Claude Code / Codex / DeepSeek Harness (原有文件配置模式原样保留) */}
           <div className="mb-3 flex justify-start">
