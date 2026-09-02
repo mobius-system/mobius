@@ -986,6 +986,7 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
         from: Math.max(0, Number(history?.total || entries.length) - entries.length),
         returned: entries.length,
         has_more: Boolean(history?.truncated),
+        path: history?.paths?.primary || histPath,
       });
       return;
     }

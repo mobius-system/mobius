@@ -6,6 +6,7 @@ import { EntryCardWithImages } from './viewer/RoundGroups'
 import { mergeBashToolResultItems } from './viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from './viewer/entry-classify'
 import { pollRecursive } from '../services/polling'
+import { readJsonlCacheFromIdb, readJsonlCacheSync, writeJsonlCache } from '../services/session-jsonl-cache'
 import type { AnyEntry } from './viewer/types'
 
 type OverlaySession = { id: string; title: string; projectId: string; projectName: string; color: string; x: number; y: number; active: boolean }
@@ -22,6 +23,10 @@ export type AgentConversationOverlaysProps = {
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
 type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
+// The canvas begins below the 58px overview header, while the overlay layer is
+// positioned against the full page main element. Keep line endpoints in the
+// same coordinate space as the floating windows.
+const CANVAS_TOP_OFFSET = 58
 
 function readPins() {
   try { return new Set<string>(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')) } catch { return new Set<string>() }
@@ -31,27 +36,49 @@ function writePins(value: Set<string>) {
 }
 function isExecuting(session: OverlaySession) { return session.active }
 
+function visibleOverlayEntries(raw: AnyEntry[]): AnyEntry[] {
+  const source = Array.isArray(raw) ? raw : []
+  const merged = mergeBashToolResultItems(source.slice(-80), Math.max(0, source.length - 80))
+  return merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
+}
+
 function SessionOverlay({ session, state, setState, onClose, mentionOptions, positionRef, register }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; mentionOptions: OverlaySession[]; positionRef: MutableRefObject<Record<string, OverlayPosition>>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionOpen, setMentionOpen] = useState(false)
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const lineRef = useRef<SVGLineElement | null>(null)
+  const liveDataRef = useRef(false)
+  const setStateRef = useRef(setState)
+  useEffect(() => { setStateRef.current = setState }, [setState])
   useEffect(() => { register(session.id, panelRef.current, lineRef.current); return () => register(session.id, null, null) }, [register, session.id])
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?tail_count=80`, signal ? { signal } : undefined)
       const raw = Array.isArray(data) ? data : (data?.entries || data?.jsonl || [])
-      const merged = mergeBashToolResultItems(raw.slice(-80), Math.max(0, raw.length - 80))
-      const visible = merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
-      setState((prev) => ({ ...prev, entries: visible }))
+      if (signal?.aborted) return
+      liveDataRef.current = true
+      const visible = visibleOverlayEntries(raw)
+      writeJsonlCache(session.id, raw, Number(data?.total || raw.length), typeof data?.path === 'string' ? data.path : null)
+      setStateRef.current((prev) => ({ ...prev, entries: visible, error: undefined }))
     } catch (e: any) {
       // A timed-out polling request is expected and should not surface as an error or
       // trigger another React render. pollRecursive aborts these requests after 10s.
       if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
-      setState((prev) => ({ ...prev, error: e?.message || '读取失败' }))
+      setStateRef.current((prev) => ({ ...prev, error: e?.message || '读取失败' }))
     }
-  }, [session.id, setState])
-  useEffect(() => { const stop = pollRecursive((signal) => load(signal), 10_000); return stop }, [load])
+  }, [session.id])
+  useEffect(() => {
+    liveDataRef.current = false
+    const cached = readJsonlCacheSync(session.id)
+    if (cached?.entries?.length) setStateRef.current((prev) => ({ ...prev, entries: visibleOverlayEntries(cached.entries) }))
+    let cancelled = false
+    void readJsonlCacheFromIdb(session.id).then((cachedIdb) => {
+      if (cancelled || liveDataRef.current || !cachedIdb?.entries?.length) return
+      setStateRef.current((prev) => ({ ...prev, entries: visibleOverlayEntries(cachedIdb.entries) }))
+    })
+    const stop = pollRecursive((signal) => load(signal), 10_000)
+    return () => { cancelled = true; stop() }
+  }, [load, session.id])
   const send = async () => {
     const text = state.draft.trim(); if (!text || state.sending) return
     setState((prev) => ({ ...prev, sending: true, error: undefined }))
@@ -148,7 +175,7 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
         openSessions.forEach((session, index) => {
           const node = nodeById.get(session.id)
           const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
-          const targetY = node ? node.y * t.zoom + t.offset.y : 120 + Math.floor(index / 3) * 230
+          const targetY = node ? node.y * t.zoom + t.offset.y + CANVAS_TOP_OFFSET : 120 + Math.floor(index / 3) * 230 + CANVAS_TOP_OFFSET
           const computedLeft = Math.max(8, Math.min(Math.max(8, t.width - 320), targetX + 18))
           const computedTop = Math.max(68, Math.min(Math.max(68, t.height - 180), targetY - 30))
           const previous = positionRef.current[session.id]
