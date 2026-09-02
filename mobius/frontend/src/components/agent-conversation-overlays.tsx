@@ -36,16 +36,16 @@ function SessionOverlay({ session, state, setState, onClose, position }: { sessi
   const [mentionOpen, setMentionOpen] = useState(false)
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   useEffect(() => { if (!drag) setPos(position) }, [position, drag])
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?from=0&limit=80`)
+      const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?from=0&limit=80`, signal ? { signal } : undefined)
       const raw = Array.isArray(data) ? data : (data?.entries || data?.jsonl || [])
       const merged = mergeBashToolResultItems(raw.slice(-80), Math.max(0, raw.length - 80))
       const visible = merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
       setState((prev) => ({ ...prev, entries: visible }))
     } catch (e: any) { setState((prev) => ({ ...prev, error: e?.message || '读取失败' })) }
   }, [session.id, setState])
-  useEffect(() => { load(); const stop = pollRecursive(() => load(), 10_000); return stop }, [load])
+  useEffect(() => { load(); const stop = pollRecursive((signal) => load(signal), 10_000); return stop }, [load])
   const send = async () => {
     const text = state.draft.trim(); if (!text || state.sending) return
     setState((prev) => ({ ...prev, sending: true, error: undefined }))
