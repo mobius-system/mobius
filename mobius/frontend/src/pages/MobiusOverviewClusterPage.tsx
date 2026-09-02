@@ -24,6 +24,7 @@ import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
+import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
@@ -1660,7 +1661,7 @@ function InfoRow({ label, value }: { label: string; value: any }) {
   )
 }
 
-function DetailDrawer({ selection, userParam, onClose }: { selection: Selection | null; userParam: string; onClose: () => void }) {
+function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { selection: Selection | null; userParam: string; onClose: () => void; onShowConversation?: (session: ClusterSession) => void }) {
   const navigate = useNavigate()
   const path = getSelectionPath(userParam, selection)
   const color = selection && isClusterSelection(selection)
@@ -1738,18 +1739,13 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                   <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>最近 Session / Agent</div>
                   <div className="space-y-1">
                     {recentSessions.map((session) => (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
-                      >
-                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
-                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span>
-                        </span>
-                      </button>
+                      <div key={session.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]">
+                        <button type="button" onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                          <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
+                          <span className="min-w-0 flex-1"><span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span><span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span></span>
+                        </button>
+                        {onShowConversation && <button type="button" title="显示对话浮窗" aria-label={`显示 ${session.title} 对话浮窗`} onClick={() => onShowConversation(session)} className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-active)] hover:text-[var(--accent-primary)]"><MessageSquare className="h-3.5 w-3.5" /></button>}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1757,6 +1753,11 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
             )}
           </div>
           <div className="border-t p-4" style={{ borderColor: 'var(--border-color)' }}>
+            {selection && isSessionSelection(selection) && onShowConversation && (
+              <button type="button" onClick={() => onShowConversation(selection.session)} className="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-md border text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: `${color}66`, color }}>
+                <MessageSquare className="h-3.5 w-3.5" />显示对话浮窗
+              </button>
+            )}
             <button
               type="button"
               disabled={!path}
@@ -1825,6 +1826,10 @@ export default function MobiusOverviewClusterPage() {
     }
   })
   const [communicationLinks, setCommunicationLinks] = useState<Array<{ source: string; target: string }>>([])
+  const [showConversationWindows, setShowConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-windows') === '1' } catch { return false }
+  })
+  const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
@@ -1840,6 +1845,7 @@ export default function MobiusOverviewClusterPage() {
   const zoomRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
+  const overlayTransformRef = useRef({ offset: { x: 0, y: 0 }, zoom: 1, width: 1, height: 1 })
   const frameRef = useRef<number | null>(null)
   const viewportAnimationRef = useRef<null | { frame: number; startedAt: number; duration: number; fromZoom: number; toZoom: number; fromOffset: Point; toOffset: Point }>(null)
   const dragRef = useRef<null | {
@@ -1949,6 +1955,30 @@ export default function MobiusOverviewClusterPage() {
       }))
   }, [graphDataByProject, loadingIds])
 
+  const refreshProjectGraph = useCallback(async (projectId: string, signal?: AbortSignal) => {
+    const data = graphDataByProject[projectId]
+    if (!data) return
+    try {
+      const issueIds = data.issues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean)
+      const researchIds = data.researches.map((research: any) => String(research?.id || '').trim()).filter(Boolean)
+      const qs = new URLSearchParams()
+      if (issueIds.length) qs.set('issue_ids', issueIds.join(','))
+      if (researchIds.length) qs.set('research_ids', researchIds.join(','))
+      qs.set('preview_limit', '500')
+      const sessionsOverview = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`, signal ? { signal } : undefined)
+      setGraphDataByProject((prev) => ({ ...prev, [projectId]: { ...data, sessionsByIssue: sessionsOverview?.issues || {}, sessionsByResearch: sessionsOverview?.researches || {} } }))
+    } catch (e: any) { setError(e?.message || '会话状态刷新失败') }
+  }, [graphDataByProject])
+
+  useEffect(() => {
+    const stop = pollRecursive(async (signal) => {
+      const arr: any[] = await api('/api/projects?all=true', { signal })
+      setProjects(sortByRecent(arr || []))
+      await Promise.all(Object.keys(graphDataByProject).map((id) => refreshProjectGraph(id, signal)))
+    }, 10_000)
+    return stop
+  }, [refreshProjectGraph, setProjects])
+
   useEffect(() => {
     let cancelled = false
     const ids = candidateProjects.map((project: any) => project.id).filter((id: string) => !graphDataByProject[id])
@@ -1964,6 +1994,7 @@ export default function MobiusOverviewClusterPage() {
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
   const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
+  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -2274,6 +2305,10 @@ export default function MobiusOverviewClusterPage() {
   }, [showCommunication])
 
   useEffect(() => {
+    overlayTransformRef.current = { offset: offsetRef.current, zoom: zoomRef.current, width: sizeRef.current.width, height: sizeRef.current.height }
+  })
+
+  useEffect(() => {
     communicationLinksRef.current = communicationLinks
   }, [communicationLinks])
 
@@ -2390,6 +2425,14 @@ export default function MobiusOverviewClusterPage() {
     setShowCommunication((value) => {
       const next = !value
       try { localStorage.setItem('mobius:overview-cluster-comm', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
+  const handleConversationWindowsChange = () => {
+    setShowConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-windows', next ? '1' : '0') } catch {}
       return next
     })
   }
@@ -2677,6 +2720,9 @@ export default function MobiusOverviewClusterPage() {
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-3.5 w-3.5" />对话窗</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <ZoomOut className="h-3.5 w-3.5" />
               </button>
@@ -2743,7 +2789,8 @@ export default function MobiusOverviewClusterPage() {
             )}
           </div>
 
-          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} />
+          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} />
         </main>
       </div>
     </div>
