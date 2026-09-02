@@ -1227,17 +1227,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             </TopNavActionElement>
           )}
-          {!easyUI && (
-            <TopNavActionElement
-              type="button"
-              onClick={() => setShowGuideHelp(true)}
-              title="帮助与引导"
-              data-tour="top-guide-help"
-              iconOnly
-            >
-              <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
-            </TopNavActionElement>
-          )}
+          {/* 帮助与引导入口已并入用户菜单 (top-user-menu) 内的「帮助与引导」菜单项 */}
           {!easyUI && (
             <TopNavActionElement
               as="a"
@@ -1540,6 +1530,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   </button>
                 )}
                 <div className="border-t my-0.5" style={{ borderColor: 'var(--border-color)' }} />
+                <button onClick={() => { setShowUserMenu(false); setShowGuideHelp(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
+                  帮助与引导
+                </button>
                 <button onClick={() => { setShowUserMenu(false); setShowAimuxGuide(true) }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>

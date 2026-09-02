@@ -4,6 +4,7 @@
  * 合并改动 (2026-09-02):
  *   - 顶栏独立切换按钮 [data-testid="layout-mode-toggle"] 已删除;
  *   - 切换入口改为外观菜单内的简易模式开关 [data-testid="easy-mode-switch"]。
+ *   - 顶栏独立帮助按钮 [data-tour="top-guide-help"] 已删除, 入口并入用户菜单「帮助与引导」。
  *
  * 断言:
  *   专家态: 顶栏外观按钮可见, 打开菜单 → 内含简易模式开关, 显示当前密度「已关闭」。
@@ -75,8 +76,18 @@ try {
   const hasAppearance = await page.locator('[data-tour="top-theme-toggle"]').isVisible()
   const hasUserMenu = await page.locator('[data-tour="top-user-menu"]').isVisible()
   const hasGithub = await page.locator('.mobius-topnav-github').count()
-  const hasGuide = await page.locator('[data-tour="top-guide-help"]').count()
-  record('专家态: 外观/用户菜单/GitHub/帮助 齐全', hasAppearance && hasUserMenu && hasGithub > 0 && hasGuide > 0)
+  record('专家态: 外观/用户菜单/GitHub 齐全', hasAppearance && hasUserMenu && hasGithub > 0)
+
+  // 帮助入口已并入用户菜单: 顶栏无独立按钮, 菜单内有「帮助与引导」项
+  const topGuideGone = (await page.locator('.mobius-topnav-actions > [data-tour="top-guide-help"]').count()) === 0
+  record('专家态: 顶栏独立帮助按钮已移除', topGuideGone)
+  await page.click('[data-tour="top-user-menu"] button[aria-haspopup="menu"]')
+  const guideItem = page.locator('[data-tour="top-user-menu"] > div button', { hasText: '帮助与引导' })
+  await guideItem.waitFor({ state: 'visible' })
+  record('专家态: 用户菜单内含「帮助与引导」菜单项', true)
+  await page.keyboard.press('Escape')
+  await page.click('body', { position: { x: 5, y: 400 } })
+  await page.waitForTimeout(300)
 
   // 打开外观菜单 → 点简易模式开关 → 原地切极简
   const urlBefore = page.url()
@@ -94,11 +105,9 @@ try {
   const appearanceGone = (await page.locator('[data-tour="top-theme-toggle"]').count()) === 0
   const userMenuGone = (await page.locator('[data-tour="top-user-menu"]').count()) === 0
   const githubGone = (await page.locator('.mobius-topnav-github').count()) === 0
-  const guideGone = (await page.locator('[data-tour="top-guide-help"]').count()) === 0
   record('极简态: 外观按钮已隐藏', appearanceGone)
   record('极简态: 用户菜单已隐藏', userMenuGone)
   record('极简态: GitHub 已隐藏', githubGone)
-  record('极简态: 帮助按钮已隐藏', guideGone)
 
   // 管理入口 (admin 用户应可见)
   const adminEntry = await page.locator('[data-testid="easy-admin-entry"]').isVisible()
