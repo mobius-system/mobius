@@ -1119,11 +1119,11 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // resume 使用旧 agentSessionId，新会话生成一个新的 UUID。
     const claudeSessionId = useResume ? finalAgentSid! : crypto.randomUUID()
 
-    // 收集要禁用的工具: 永久禁用 AskUserQuestion/ExitPlanMode (避免 agent 停下来等
+    // 收集要禁用的工具: 永久禁用 AskUserQuestion/ExitPlanMode/EnterPlanMode (避免 agent 停下来等
     // 人 / 卡在 plan 模式). 若注入了 guling 实盘 MCP, 额外禁用其真实下单类工具
     // (buy/sell/cancel/switch_account), 只保留只读查询 (position/balance/orders/
     // settlement/watchlist), 防止 AI 误触发真实证券交易.
-    const disallowedTools = ['AskUserQuestion', 'ExitPlanMode']
+    const disallowedTools = ['AskUserQuestion', 'ExitPlanMode', 'EnterPlanMode']
 
     // 收集要注入的 stdio/http MCP server (会话级 --mcp-config <json-file>, 顶层
     // mcpServers, additive 不叠 --strict-mcp-config, 且 --mcp-config 传入的 server
