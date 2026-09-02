@@ -970,8 +970,25 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
   const fromIndex = Math.max(0, Math.floor(Number(req.query.from) || 0));
   const requestedLimit = Math.floor(Number(req.query.limit) || DEFAULT_HISTORY_TAIL);
   const limit = Math.max(0, Math.min(MAX_HISTORY_FETCH, requestedLimit));
+  // Overlay/preview callers only need the newest records.  Using getHistory(tailCount)
+  // avoids readMergedJsonlSlice's intentionally-expensive full-file parse.
+  const requestedTail = Math.floor(Number(req.query.tail_count) || 0);
+  const tailCount = Math.max(0, Math.min(MAX_HISTORY_FETCH, requestedTail));
 
   try {
+    if (tailCount > 0) {
+      const history = backend.getHistory(id, { tailCount });
+      const entries = Array.isArray(history?.entries) ? history.entries : [];
+      res.json({
+        session_id: id,
+        entries,
+        total: Number(history?.total || entries.length),
+        from: Math.max(0, Number(history?.total || entries.length) - entries.length),
+        returned: entries.length,
+        has_more: Boolean(history?.truncated),
+      });
+      return;
+    }
     const slice = readMergedJsonlSlice(histPath, { fromIndex, limit });
     if (slice.exceeded) {
       res.status(413).json({

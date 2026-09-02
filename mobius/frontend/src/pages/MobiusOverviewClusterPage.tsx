@@ -1967,7 +1967,12 @@ export default function MobiusOverviewClusterPage() {
       qs.set('preview_limit', '500')
       const sessionsOverview = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`, signal ? { signal } : undefined)
       setGraphDataByProject((prev) => ({ ...prev, [projectId]: { ...data, sessionsByIssue: sessionsOverview?.issues || {}, sessionsByResearch: sessionsOverview?.researches || {} } }))
-    } catch (e: any) { setError(e?.message || '会话状态刷新失败') }
+    } catch (e: any) {
+      // Polling teardown/timeout aborts the request intentionally. Do not expose the
+      // browser's "signal is aborted without reason" text as a page error.
+      if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
+      setError(e?.message || '会话状态刷新失败')
+    }
   }, [graphDataByProject])
 
   useEffect(() => {

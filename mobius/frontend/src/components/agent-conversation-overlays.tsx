@@ -39,7 +39,7 @@ function SessionOverlay({ session, state, setState, onClose, mentionOptions, pos
   useEffect(() => { register(session.id, panelRef.current, lineRef.current); return () => register(session.id, null, null) }, [register, session.id])
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?from=0&limit=80`, signal ? { signal } : undefined)
+      const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/jsonl-history?tail_count=80`, signal ? { signal } : undefined)
       const raw = Array.isArray(data) ? data : (data?.entries || data?.jsonl || [])
       const merged = mergeBashToolResultItems(raw.slice(-80), Math.max(0, raw.length - 80))
       const visible = merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
@@ -47,7 +47,7 @@ function SessionOverlay({ session, state, setState, onClose, mentionOptions, pos
     } catch (e: any) {
       // A timed-out polling request is expected and should not surface as an error or
       // trigger another React render. pollRecursive aborts these requests after 10s.
-      if (e?.name === 'AbortError') return
+      if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
       setState((prev) => ({ ...prev, error: e?.message || '读取失败' }))
     }
   }, [session.id, setState])
@@ -88,10 +88,11 @@ function SessionOverlay({ session, state, setState, onClose, mentionOptions, pos
       <div className="max-h-[280px] space-y-1 overflow-y-auto px-2 py-2" style={{ scrollbarWidth: 'thin' }}>
         {state.entries.length === 0 ? <div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>等待最新消息…</div> : state.entries.map((entry, index) => <div key={`${entry.uuid || entry.id || entry.timestamp || index}`} className="[&_.jsonl-entry-card]:!mb-1 [&_.jsonl-entry-card]:!rounded-md [&_.jsonl-entry-card_summary]:!px-2 [&_.jsonl-entry-card_summary]:!py-1"><EntryCardWithImages entry={entry} lineNo={index + 1} showMeta={false} parentOrderedCollapse /></div>)}
       </div>
-      <div className="border-t p-2" style={{ borderColor: `${session.color}33` }}>
+      <div className="mobius-chat-input border-t" style={{ borderColor: `${session.color}33`, background: 'transparent' }}>
+        <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-2">
         <div className="relative"><textarea value={state.draft} onChange={(e) => { const value = e.target.value; setState((prev) => ({ ...prev, draft: value })); setMentionOpen(value.endsWith('@')) }} onPaste={onPaste} onKeyDown={async (e) => { if (e.key === 'ArrowUp' && !e.shiftKey && !e.currentTarget.value) { e.preventDefault(); try { const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/inputs`); const items = Array.isArray(data) ? data : (data?.inputs || []); const text = items.map((item: any) => item?.input_text || item?.content || '').filter(Boolean)[0]; if (text) setState((prev) => ({ ...prev, draft: text })) } catch {} } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder="发送指令… @引用 · ↑回溯" className="min-h-[42px] w-full resize-none bg-transparent px-1 py-1 text-[12px] leading-5 outline-none placeholder:text-[var(--text-muted)]" style={{ color: 'var(--text-primary)' }} />{mentionOpen && <div className="absolute bottom-full left-0 right-0 mb-1 max-h-28 overflow-y-auto rounded-md border p-1 shadow-lg" style={{ borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>{mentionOptions.slice(0, 8).map((option) => <button key={option.id} type="button" className="block w-full rounded px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-hover)]" onClick={() => { setState((prev) => ({ ...prev, draft: `${prev.draft.slice(0, -1)}@${option.title} ` })); setMentionOpen(false) }}>@{option.title}</button>)}</div>}</div>
         <div className="flex items-center justify-between pt-1"><span className="truncate text-[10px]" style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span><div className="flex items-center gap-1"><label className="cursor-pointer rounded p-1.5 transition-colors hover:bg-white/10" title="粘贴或选择文件" style={{ color: 'var(--text-muted)' }}><Paperclip className="h-3.5 w-3.5" /><input type="file" multiple className="hidden" onChange={async (e) => { const files = Array.from(e.target.files || []); if (!files.length) return; try { const uploaded = await Promise.all(files.map((file) => uploadAttachmentFile(file, session.projectId))); setState((prev) => ({ ...prev, draft: `${prev.draft}${prev.draft ? '\n' : ''}${uploaded.map((item) => item.path).join('\n')}` })) } catch (err: any) { setState((prev) => ({ ...prev, error: err?.message || '文件上传失败' })) } e.currentTarget.value = '' }} /></label><button type="button" aria-label="发送指令" disabled={state.sending || !state.draft.trim()} onClick={send} className="rounded-md p-1.5 transition-colors disabled:opacity-40" style={{ color: session.color, background: `${session.color}18` }}><Send className="h-3.5 w-3.5" /></button></div></div>
-      </div>
+      </div></div>
     </div>
   </>
 }
