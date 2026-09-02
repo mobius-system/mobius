@@ -8,6 +8,8 @@ import {
   GitBranch,
   LocateFixed,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   Pause,
   Play,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
@@ -1782,8 +1785,10 @@ export default function MobiusOverviewClusterPage() {
     setCurrentResearch,
     setCurrentSession,
     setCurrentTask,
+    setMobileNavOpen,
   } = useStore()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   // 全屏工具页的出口: 优先回到真正的"上一界面", 直接进入/刷新时兜底回用户主页。
   const goBack = useCallback(() => {
     if (window.history.length > 1) navigate(-1)
@@ -1808,6 +1813,13 @@ export default function MobiusOverviewClusterPage() {
   const [showCommunication, setShowCommunication] = useState<boolean>(() => {
     try {
       return localStorage.getItem('mobius:overview-cluster-comm') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:ui:sidebar:overview-cluster:hidden') === '1'
     } catch {
       return false
     }
@@ -1840,6 +1852,22 @@ export default function MobiusOverviewClusterPage() {
     moved: boolean
     hit?: HitTarget | null
   }>(null)
+
+  const hideSidebar = useCallback(() => {
+    // 移动端由 TopNav 汉堡按钮控制抽屉显隐；桌面端才持久化「隐藏」状态。
+    if (isMobile) {
+      setMobileNavOpen(false)
+      return
+    }
+    setSidebarCollapsed(true)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '1') } catch {}
+  }, [isMobile, setMobileNavOpen])
+
+  const showSidebar = useCallback(() => {
+    setSidebarCollapsed(false)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '0') } catch {}
+    if (isMobile) setMobileNavOpen(true)
+  }, [isMobile, setMobileNavOpen])
 
   const selectedRange = useMemo(
     () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[0],
@@ -2474,13 +2502,35 @@ export default function MobiusOverviewClusterPage() {
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       <TopNav />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}>
+        {(!sidebarCollapsed || isMobile) && (
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:overview-cluster"
+          defaultWidth={292}
+          minWidth={220}
+          maxWidth={460}
+          side="left"
+          data-tour="overview-cluster-sidebar"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}
+        >
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
               <div className="text-[13px] font-semibold">Cluster Overview</div>
-              <div className="ml-auto rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
-                {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+              <div className="ml-auto flex items-center gap-1">
+                <div className="rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+                  {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+                </div>
+                <button
+                  type="button"
+                  onClick={hideSidebar}
+                  title={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  aria-label={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div className="relative mt-3">
@@ -2569,10 +2619,23 @@ export default function MobiusOverviewClusterPage() {
               })
             )}
           </div>
-        </aside>
+        </ResizablePanel>
+        )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
           <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+            {sidebarCollapsed && !isMobile && (
+              <button
+                type="button"
+                onClick={showSidebar}
+                title="显示侧栏"
+                aria-label="显示侧栏"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={goBack}
