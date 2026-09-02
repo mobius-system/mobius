@@ -30,7 +30,7 @@ import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 const DESKTOP_BRIDGE = typeof window !== 'undefined' ? (window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop : undefined
 const IS_DESKTOP = !!DESKTOP_BRIDGE?.isDesktop
 
-const GithubIcon = createLucideIcon('github', [
+export const GithubIcon = createLucideIcon('github', [
   ['path', { d: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22', key: 'github' }],
 ])
 
@@ -1557,7 +1557,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 17l6-6-6-6m8 12h8" /></svg>
-                  安装 Mobius 命令行终端
+                  下载命令行终端
                 </button>
                 <button onClick={() => { setShowUserMenu(false); setShowMobileDownload(true) }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"

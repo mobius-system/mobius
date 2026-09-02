@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, CopyPlus, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Dices, ExternalLink, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, CopyPlus, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
-import { timeAgo } from './shell'
+import { GithubIcon, timeAgo } from './shell'
 import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
 import { ProjectUserContextWhitelist } from './context-whitelist'
@@ -3869,10 +3869,12 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 }
 
 // =====================================================================
-// 下载桌面客户端 — 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取。
+// 下载桌面客户端 — 双 Tab: 「GitHub 最新版」(默认, 跳转 GitHub Release) | 「本地服务器」(manifest 下载)。
+//   - GitHub Tab: releases/latest 自动重定向到最新 desktop-v* Release (CI 三平台构建)
+//   - 本地 Tab: 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取 (首次切入才请求)
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
 //   - manifest 由 build.py / scripts/desktop_manifest.py 从构建产物生成, 含 version/size/sha256
-//   - 不再在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
+//   - 不在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
 // =====================================================================
 interface DesktopManifestBuild { platform: string; arch: string; format: string; file: string; size: number; sha256: string }
 interface DesktopManifest { version: string; generatedAt?: string; builds: DesktopManifestBuild[] }
@@ -3987,13 +3989,26 @@ function DesktopDownloadRowItem({ row, theme }: { row: DesktopDownloadRow; theme
   )
 }
 
+// GitHub Release 跳转地址 — releases/latest 由 GitHub 自动重定向到最新 desktop-v* 版本。
+const DESKTOP_GITHUB_RELEASES_URL = 'https://github.com/mobius-system/mobius/releases/latest'
+
+type DesktopDownloadTab = 'github' | 'local'
+
 export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
+  const [tab, setTab] = useState<DesktopDownloadTab>('github')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [error, setError] = useState<string | null>(null)
-
+  // 本地清单只在首次切到「本地服务器」Tab 时才拉取 (默认 GitHub Tab 无需请求 manifest)。
+  // 用 ref 记录已发起: 若放进 state 会触发 effect 重跑, cleanup 的 abort 会立刻杀掉在途请求。
+  const localRequestedRef = useRef(false)
+  const localAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { localAbortRef.current?.abort() }, [])
   useEffect(() => {
+    if (tab !== 'local' || localRequestedRef.current) return
+    localRequestedRef.current = true
     const ctrl = new AbortController()
+    localAbortRef.current = ctrl
     const timer = setTimeout(() => ctrl.abort(), 8000)
     fetch('/desktop-builds/manifest.json', { signal: ctrl.signal, cache: 'no-cache' })
       .then(async r => {
@@ -4009,11 +4024,14 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
       })
       .catch(e => setError(e?.name === 'AbortError' ? '获取版本信息超时，请稍后再试' : (e?.message || '无法获取版本信息')))
       .finally(() => clearTimeout(timer))
-    return () => { clearTimeout(timer); ctrl.abort() }
-  }, [])
+  }, [tab])
 
   const rows = manifest ? manifestToRows(manifest) : []
   const muted = theme !== 'light' ? '#6b7280' : '#94a3b8'
+  const subMuted = theme !== 'light' ? '#94a3b8' : '#64748b'
+  const subtitle = tab === 'github'
+    ? 'GitHub 上的 Release 由 CI 自动构建, 始终为最新版本'
+    : (manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取本服务器版本信息…')
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -4023,26 +4041,69 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: muted }}>
-              {manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取最新版本信息…'}
-            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: muted }}>{subtitle}</div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
-        <div className="space-y-2 mt-4">
-          {error ? (
-            <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
-            </div>
-          ) : rows.length ? (
-            rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
-          ) : (
-            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
-          )}
+        {/* Tab: GitHub 最新 Release (默认, 跳转) | 本地服务器 (原 manifest 下载) */}
+        <div className="flex justify-start mt-3">
+          <div className="inline-flex rounded-md border p-0.5 text-[12px]"
+            style={{ background: 'var(--input-bg)', borderColor: 'var(--border-color)' }}>
+            {([
+              ['github', 'GitHub 最新版（推荐）'],
+              ['local', '本地服务器'],
+            ] as Array<[DesktopDownloadTab, string]>).map(([k, label]) => {
+              const active = tab === k
+              return (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className="h-7 rounded px-3 transition-colors"
+                  style={{
+                    background: active ? 'var(--bg-card)' : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontWeight: active ? 600 : 400,
+                  }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
+
+        {tab === 'github' ? (
+          <div className="space-y-2 mt-4">
+            <div className="px-4 py-4 rounded-xl" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <GithubIcon className="w-6 h-6 shrink-0" strokeWidth={2} style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>GitHub 最新 Release</div>
+                  <div className="text-[11px]" style={{ color: subMuted }}>CI 自动构建 macOS (Apple Silicon / Intel) 与 Windows 安装包</div>
+                </div>
+                <a href={DESKTOP_GITHUB_RELEASES_URL} target="_blank" rel="noopener noreferrer"
+                  className="text-[12px] px-3 py-1.5 rounded-lg font-medium shrink-0 inline-flex items-center gap-1.5" style={{ background: '#0a84ff', color: '#fff' }}>
+                  前往下载
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <div className="mt-2 pl-9 text-[11px] break-all" style={{ color: subMuted }}>{DESKTOP_GITHUB_RELEASES_URL}</div>
+            </div>
+            <div className="text-[11px] px-1" style={{ color: subMuted }}>如无法访问 GitHub, 可切换到「本地服务器」从当前服务器下载。</div>
+          </div>
+        ) : (
+          <div className="space-y-2 mt-4">
+            {error ? (
+              <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
+                <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
+                <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
+              </div>
+            ) : rows.length ? (
+              rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
+            ) : (
+              <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+            )}
+          </div>
+        )}
 
         <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
