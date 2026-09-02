@@ -2,9 +2,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as watcher from './jsonl-watcher';
+import {
+  applyTaskCalls,
+  buildTaskStateFromJsonl,
+  extractTaskReminderSnapshot,
+  extractTaskToolCalls,
+  taskRecordsSorted,
+  taskSnapshotSignature,
+  type TaskRecord,
+} from './task-state-reducer';
 
 const DEFAULT_MAX_LINES = 10000;
 const DEFAULT_HISTORY_TAIL = 200;
+// 特殊规则: .mobius.jsonl 轨不受 DEFAULT_HISTORY_TAIL(200) 限制, 尾部窗口阈值提高到 600。
+// mobius 轨条目稀疏 (每轮 1 条 user_input + 少量 task_state), 而主轨条目高密度 (每轮可达
+// 上百条工具调用) — 时间上更早但仍有价值的用户输入卡会被主轨流量挤出 200 条窗口,
+// 前端轮次分组随之丢失更早的轮。600 保证合并后更早的用户输入卡仍存活。
+const MOBIUS_HISTORY_TAIL = 600;
 const MAX_HISTORY_FETCH = 5000;
 const MOBIUS_JSONL_VERSION = 1;
 
@@ -67,11 +81,15 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
   const maxLines = Math.max(0, Math.floor(Number.isFinite(Number(opts.maxLines)) ? Number(opts.maxLines) : DEFAULT_MAX_LINES));
   const tailCount = Math.max(0, Math.floor(Number.isFinite(Number(opts.tailCount)) ? Number(opts.tailCount) : 0));
   const mobiusPath = mobiusJsonlPathOf(jsonlPath);
-  // tailCount > 0 时, 单侧读取也按 tailCount 截尾 — 合并后再二次截尾即可,
+  // tailCount > 0 时, 单侧读取也按 tailCount 截尾 — 合并后不再二次截尾 (见下),
   // 不必双侧都读满 maxLines 浪费 parse.
   const sideOpts = { ...opts, maxLines, tailCount };
   const primary = watcher.readAll(jsonlPath as any, sideOpts);
-  const mobius = mobiusPath ? watcher.readAll(mobiusPath, sideOpts) : { entries: [], total: 0, totalApproximate: false, truncated: false, size: 0 };
+  // mobius 轨特殊规则: 不受调用方 tailCount(默认 200) 限制, 阈值提高到 MOBIUS_HISTORY_TAIL.
+  const mobiusTailCount = tailCount > 0 ? Math.max(tailCount, MOBIUS_HISTORY_TAIL) : 0;
+  const mobius = mobiusPath
+    ? watcher.readAll(mobiusPath, { ...sideOpts, tailCount: mobiusTailCount })
+    : { entries: [], total: 0, totalApproximate: false, truncated: false, size: 0 };
   const records: MergeRecord[] = [];
 
   primary.entries.forEach((entry: any, index: number) => records.push({ entry, index, source: 'primary' }));
@@ -79,10 +97,14 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
   records.sort(compareRecords);
 
   const total = (primary.total || 0) + (mobius.total || 0);
-  const effectiveLimit = tailCount > 0
-    ? (maxLines > 0 ? Math.min(maxLines, tailCount) : tailCount)
-    : maxLines;
-  const entries = (effectiveLimit > 0 ? records.slice(-effectiveLimit) : []).map((r) => r.entry);
+  // tailCount 模式 (SSE 首包) 下不做全局再截尾: 两侧已按各自窗口截好
+  // (primary ≤ tailCount, mobius ≤ MOBIUS_HISTORY_TAIL, 合计 ≤ 800), 全局再砍会把
+  // 时间上更早的 mobius 用户输入卡重新挤出去, 违背特殊规则。
+  // full 模式 (tailCount=0) 保留旧行为: 全局截到 maxLines。
+  const entries = (tailCount > 0
+    ? records
+    : (maxLines > 0 ? records.slice(-maxLines) : records)
+  ).map((r) => r.entry);
   return {
     entries,
     total,
@@ -206,9 +228,12 @@ interface WatchMergedJsonlArgs {
   onEntry: (raw: string, lineNo: number, source: string) => void;
   onPrimaryEntry?: (raw: string, lineNo: number) => void;
   onError?: (err: any) => void;
+  // task_state 快照注入开关 (默认开): 见到 TaskCreate/TaskUpdate 工具调用时把累积任务表
+  // 以 task_state 条目追加到 .mobius.jsonl, 前端据此渲染原生卡的计划卡片视图。
+  taskState?: boolean;
 }
 
-function watchMergedJsonl({ path: jsonlPath, startSentinel, onEntry, onPrimaryEntry, onError = () => {} }: WatchMergedJsonlArgs): any {
+function watchMergedJsonl({ path: jsonlPath, startSentinel, onEntry, onPrimaryEntry, onError = () => {}, taskState = true }: WatchMergedJsonlArgs): any {
   if (!jsonlPath || typeof onEntry !== 'function') {
     throw new Error('watchMergedJsonl 需要 { path, onEntry }');
   }
@@ -221,6 +246,14 @@ function watchMergedJsonl({ path: jsonlPath, startSentinel, onEntry, onPrimaryEn
     startOffset: offsets.primary,
     onEntry: (raw: string, lineNo: number) => {
       try { if (typeof onPrimaryEntry === 'function') onPrimaryEntry(raw, lineNo); } catch (e) { onError(e); }
+      if (taskState) {
+        try {
+          const snapshot = taskAccumulator.absorbPrimaryEntry(jsonlPath, raw);
+          if (snapshot) appendMobiusTaskStateEntry(jsonlPath, snapshot);
+        } catch (e) {
+          console.warn(`[task-state-reducer] absorb failed: ${(e as Error)?.message || e}`);
+        }
+      }
       onEntry(raw, lineNo, 'primary');
     },
     onError,
@@ -325,97 +358,8 @@ function buildMobiusUserEntry({
   return entry;
 }
 
-function buildMobiusExternalEntry(args: BuildMobiusUserEntryArgs & {
-  sourceSessionId?: string | null;
-  targetSessionId?: string | null;
-  messageId?: number | string | null;
-  channelId?: string | null;
-  batchId?: string | null;
-  threadId?: string | null;
-  externalMessages?: Array<Record<string, unknown>> | null;
-}): any {
-  const {
-    sessionId,
-    agentSessionId,
-    cwd,
-    backendName,
-    content,
-    inputText,
-    requestId,
-    source,
-    userId,
-    timestamp,
-    sourceSessionId,
-    targetSessionId,
-    messageId,
-    channelId,
-    batchId,
-    threadId,
-    externalMessages,
-  } = args;
-  const ts = timestamp || new Date().toISOString();
-  const body = String(content || '');
-  return {
-    parentUuid: null,
-    isSidechain: true,
-    type: 'external_session_message',
-    message: {
-      role: 'external',
-      content: body,
-    },
-    uuid: crypto.randomUUID(),
-    timestamp: ts,
-    permissionMode: 'default',
-    userType: 'external_session',
-    entrypoint: 'mobius',
-    cwd: cwd || null,
-    sessionId: agentSessionId || sessionId,
-    version: `mobius-jsonl/${MOBIUS_JSONL_VERSION}`,
-    mobius: {
-      schema_version: MOBIUS_JSONL_VERSION,
-      source: source || 'session.external',
-      kind: 'external_session_message',
-      backend: backendName || null,
-      session_id: sessionId || null,
-      agent_session_id: agentSessionId || null,
-      user_id: userId || null,
-      request_id: requestId || null,
-      input_text: inputText == null ? null : String(inputText),
-      content_length: body.length,
-      source_session_id: sourceSessionId || null,
-      target_session_id: targetSessionId || sessionId || null,
-      message_id: messageId == null ? null : String(messageId),
-      channel_id: channelId || null,
-      batch_id: batchId || null,
-      thread_id: threadId || null,
-      external_messages: Array.isArray(externalMessages) ? externalMessages : null,
-      trust: 'untrusted',
-      executable: false,
-      user_consent: false,
-      captured_at: ts,
-    },
-  };
-}
 
-function appendMobiusExternalEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & {
-  jsonlPath: any;
-  sourceSessionId?: string | null;
-  targetSessionId?: string | null;
-  messageId?: number | string | null;
-  channelId?: string | null;
-  batchId?: string | null;
-  threadId?: string | null;
-  externalMessages?: Array<Record<string, unknown>> | null;
-}): { filePath: string; entry: any } {
-  const filePath = mobiusJsonlPathOf(jsonlPath);
-  if (!filePath) throw new Error('缺少原始 JSONL 路径, 无法写入 mobius 外部事件');
-  const entry = buildMobiusExternalEntry(entryOpts);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n');
-  return { filePath, entry };
-}
-
-function appendMobiusPromptEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & { jsonlPath: any }): { filePath: string; entry: any } {
+function appendMobiusCoreEntry({ jsonlPath, ...entryOpts }: BuildMobiusUserEntryArgs & { jsonlPath: any }): { filePath: string; entry: any } {
   const filePath = mobiusJsonlPathOf(jsonlPath);
   if (!filePath) throw new Error('缺少原始 JSONL 路径, 无法写入 mobius JSONL');
   const entry = buildMobiusUserEntry(entryOpts);
@@ -479,6 +423,105 @@ function appendMobiusErrorEntry({ jsonlPath, ...entryOpts }: BuildMobiusErrorEnt
   return { filePath, entry };
 }
 
+// ── task_state 快照条目 (TaskCreate/TaskUpdate 工具调用的累积状态) ────────
+// timestamp 取触发它的原生条目时间戳 → compareRecords 的 tie-break (primary 优先)
+// 保证快照在合并序列里紧跟原生卡, 永远落在同一个前端尾部窗口内。
+function buildMobiusTaskStateEntry(args: {
+  anchorEntry: any;
+  anchorToolUseId?: string | null;
+  tasks: TaskRecord[];
+}): any {
+  const anchor = args.anchorEntry || {};
+  const ts = typeof anchor.timestamp === 'string' && anchor.timestamp ? anchor.timestamp : new Date().toISOString();
+  const tasks = taskRecordsSorted(new Map(args.tasks.map((t) => [t.id, t])));
+  return {
+    parentUuid: null,
+    isSidechain: false,
+    type: 'task_state',
+    message: { role: 'user', content: '' },
+    uuid: crypto.randomUUID(),
+    timestamp: ts,
+    permissionMode: 'bypassPermissions',
+    userType: 'external',
+    entrypoint: 'mobius',
+    cwd: typeof anchor.cwd === 'string' ? anchor.cwd : null,
+    sessionId: anchor.sessionId || null,
+    version: `mobius-jsonl/${MOBIUS_JSONL_VERSION}`,
+    mobius: {
+      schema_version: MOBIUS_JSONL_VERSION,
+      source: 'task.reducer',
+      kind: 'task_state',
+      anchor_uuid: typeof anchor.uuid === 'string' && anchor.uuid ? anchor.uuid : null,
+      anchor_tool_use_id: args.anchorToolUseId || null,
+      tasks,
+      captured_at: new Date().toISOString(),
+    },
+  };
+}
+
+// per-session 任务累积器 (懒初始化 + 去重签名)。每个 jsonlPath 一个实例,
+// 由 watchMergedJsonl / readMergedJsonlHistory 的调用方持有; 后端重启后
+// 首个任务事件触发全量回放重建。
+class TaskStateAccumulator {
+  private states = new Map<string, { state: Map<string, TaskRecord>; lastSig: string; replayed: boolean }>()
+
+  private ensure(jsonlPath: string): { state: Map<string, TaskRecord>; lastSig: string; replayed: boolean } {
+    let slot = this.states.get(jsonlPath)
+    if (!slot) {
+      slot = { state: buildTaskStateFromJsonl(jsonlPath), lastSig: '', replayed: true }
+      this.states.set(jsonlPath, slot)
+    }
+    return slot
+  }
+
+  // 处理一条 primary 新 entry。返回需要追加到 sidecar 的快照 entry (无则 null)。
+  absorbPrimaryEntry(jsonlPath: string, rawLine: string): any | null {
+    let entry: any
+    try { entry = JSON.parse(rawLine) } catch { return null }
+
+    const reminder = extractTaskReminderSnapshot(entry)
+    if (reminder) {
+      const slot = this.ensure(jsonlPath)
+      slot.state.clear()
+      for (const task of reminder) slot.state.set(task.id, task)
+      slot.lastSig = ''
+      return null // task_reminder 本身已渲染为计划卡, 快照只更新累积表
+    }
+
+    const calls = extractTaskToolCalls(entry)
+    if (calls.length === 0) return null
+
+    const slot = this.ensure(jsonlPath)
+    // 懒初始化的回放已吸收当前行 (watcher 触发时它已落盘) → 只应用一次。
+    if (!slot.replayed) applyTaskCalls(slot.state, calls)
+    slot.replayed = false
+
+    const tasks = taskRecordsSorted(slot.state)
+    const anchorUuid = typeof entry?.uuid === 'string' ? entry.uuid : null
+    const sig = taskSnapshotSignature(anchorUuid, tasks)
+    if (!anchorUuid || sig === slot.lastSig) return null
+    slot.lastSig = sig
+    return buildMobiusTaskStateEntry({
+      anchorEntry: entry,
+      anchorToolUseId: calls[0]?.toolUseId || null,
+      tasks,
+    })
+  }
+}
+
+const taskAccumulator = new TaskStateAccumulator()
+
+function appendMobiusTaskStateEntry(jsonlPath: string, entry: any): void {
+  const filePath = mobiusJsonlPathOf(jsonlPath)
+  if (!filePath) return
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.appendFileSync(filePath, JSON.stringify(entry) + '\n')
+  } catch (e) {
+    console.warn(`[task-state-reducer] sidecar append failed: ${(e as Error)?.message || e}`)
+  }
+}
+
 // 返回 .mobius.jsonl 末条 entry 的 type; 文件不存在/为空/解析失败 → null.
 // 用于 getRecentError 触发条件的去重判断 (末条已经是 error 就不再重复扫描写入).
 function readLastMobiusEntryType(jsonlPath: string | null | undefined): string | null {
@@ -504,18 +547,17 @@ function readLastMobiusEntryType(jsonlPath: string | null | undefined): string |
 
 export {
   mobiusJsonlPathOf,
-  buildMobiusExternalEntry,
-  appendMobiusExternalEntry,
   readMergedJsonlHistory,
   readMergedJsonlSlice,
   countMergedJsonl,
   currentMergedJsonlSentinel,
   watchMergedJsonl,
   buildMobiusUserEntry,
-  appendMobiusPromptEntry,
+  appendMobiusCoreEntry,
   buildMobiusErrorEntry,
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
+  MOBIUS_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 };

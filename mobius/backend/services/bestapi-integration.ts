@@ -400,6 +400,22 @@ function recordSyncFailure(error: any): void {
   autoSyncLastError = String(error?.message || error || '自动同步失败').slice(0, 300)
 }
 
+// 每类 backend 一次性读回 model-access 的全部 Key, 供 publicConnection 标注
+// 「该模型当前是否真的存在于系统配置」(管理员可能在文件配置里手动删过).
+// modelAccess 偶发 undefined (tsx/CJS 模块解析竞争) 时返回 null, 前端显示为未知态.
+function configuredModelKeys(): Record<BestApiBackend, Set<string>> | null {
+  if (!modelAccess || typeof modelAccess.listCodexModels !== 'function') return null
+  try {
+    return {
+      codex: new Set(modelAccess.listCodexModels().map((row: any) => row.key)),
+      claude_code: new Set(modelAccess.listClaudeCodeModels().map((row: any) => row.key)),
+      deepseek_harness: new Set(modelAccess.listHarnessModels().map((row: any) => row.key)),
+    }
+  } catch {
+    return null
+  }
+}
+
 function publicConnection(connection: StoredConnection | null): any {
   const integration = {
     default_base_url: DEFAULT_BESTAPI_BASE_URL,
@@ -408,6 +424,7 @@ function publicConnection(connection: StoredConnection | null): any {
   if (!connection) return { connected: false, ...integration }
   const counts = { codex: 0, claude_code: 0, deepseek_harness: 0 }
   for (const model of connection.models) counts[model.backend] += 1
+  const configuredKeys = configuredModelKeys()
   return {
     connected: true,
     id: connection.id,
@@ -423,7 +440,10 @@ function publicConnection(connection: StoredConnection | null): any {
     synced_at: connection.synced_at,
     model_count: connection.models.length,
     counts,
-    models: connection.models,
+    models: connection.models.map((model) => ({
+      ...model,
+      configured: configuredKeys ? configuredKeys[model.backend].has(model.key) : null,
+    })),
     ...integration,
   }
 }

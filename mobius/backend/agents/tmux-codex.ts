@@ -29,9 +29,9 @@ function resolveAimuxBin() {
 }
 
 const { AgentBackend } = require('./base')
+import type { HistorySnapshot, QueryOpts } from './base'
 const {
-  appendMobiusPromptEntry,
-  appendMobiusExternalEntry,
+  appendMobiusCoreEntry,
   readMergedJsonlHistory,
   watchMergedJsonl,
 } = require('../services/mobius-jsonl')
@@ -52,7 +52,7 @@ const { MOBIUS_DATA_PATH } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 
-let Database = null
+let Database: any = null
 try { Database = require('better-sqlite3') } catch {}
 
 const HUB = 'imac_codex_agent_hub'
@@ -104,7 +104,7 @@ const CODEX_WORKING_FRESH_MS = 60000
 const CODEX_STATUS_LINE_RE = /\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*•\s*esc to interrupt\s*\)|^[•◦]\s+\S[^\n()]*?\(\d+(?:s|m\s+\d{2}s|h\s+\d{2}m\s+\d{2}s)\s*\)/u
 // TTL 5s 缓存: /status 每 2s 轮询, 缓存把 capture-pane 频次压到 ≤1/5s. 空 "" 也缓存.
 const REALTIME_INFO_TTL_MS = 5 * 1000
-const _realTimeInfoCache = new Map() // sessionId → { ts: number, value: string }
+const _realTimeInfoCache = new Map<string, any>() // sessionId → { ts: number, value: string }
 
 // getPendingRequests: codex 把"忙时提交的输入"缓存在 TUI 的 InputQueueState
 // (queued_user_messages / pending_steers, 见 tui/src/chatwidget/input_flow.rs
@@ -125,7 +125,7 @@ const CODEX_USER_INTERRUPT_NOTICE_RE = /^■\s*Conversation interrupted\b/i
 const CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE =
   /^⚠\s*Model metadata for `[^`]+` not found\. Defaulting to fallback metadata;/
 
-function findCodexRecentErrorInPane(paneText) {
+function findCodexRecentErrorInPane(paneText: string) {
   const ANSI_RE = /\x1b\[[0-9;]*m/g
   const lines = String(paneText || '').split('\n')
   // Reverse scan so the newest Codex notice wins. If that newest notice is the normal
@@ -148,7 +148,7 @@ function findCodexRecentErrorInPane(paneText) {
 // 是否仍在跑 turn. busy 锚点 = CODEX_STATUS_LINE_RE ("(<elapsed> • esc to interrupt)" 等).
 // 命中 → C-c×3 未生效, 仍在工作; 不命中/失败 → 已回 idle 态, C-c 生效.
 // 失败/空 → false (不 escalate, 避免误杀正常软停的 window).
-function codexPaneStillBusy(sessionId) {
+function codexPaneStillBusy(sessionId: string) {
   let text = ''
   try {
     const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-J', '-S', '-15'])
@@ -201,7 +201,7 @@ function ensureHub() {
   log(`[tmux-codex] created tmux session ${HUB}`)
 }
 
-function windowExists(name) {
+function windowExists(name: string) {
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}'])
   if (r.status !== 0) return false
   return r.stdout.split('\n').includes(name)
@@ -214,7 +214,7 @@ function windowExists(name) {
 // 消除"偶发某次 tmux 慢 → 事件循环被占 → 期间请求全部排队"的雪崩.
 // 控制流 (create/terminate/pause/recovery 里的 windowExists) 仍走实时查询, 不受 TTL 影响.
 const LIST_WINDOWS_TTL_MS = 3 * 1000
-let _listWindowsCache = null // { ts: number, rows: string[][] }
+let _listWindowsCache: { ts: number; rows: string[][] } | null = null // { ts: number, rows: string[][] }
 
 function listWindowsRowsCached() {
   const now = Date.now()
@@ -223,17 +223,34 @@ function listWindowsRowsCached() {
   }
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}'])
   const rows = r.status === 0
-    ? r.stdout.trim().split('\n').filter(Boolean).map((l) => l.split('|'))
+    ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
   _listWindowsCache = { ts: now, rows }
   return rows
 }
 
-function shellQuote(s) {
+function shellQuote(s: string) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`
 }
 
-function normalizeCodexChannel(value) {
+// dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
+// 本后端在此解包出自己需要的字段 (model/settingsPath/codex*/代理挡位), 旧扁平字段作兼容兜底.
+function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; codexProfileKey: string | null; codexChannel: string | null; codexConfigPath: string | null; codexSecretEnvKey: string | null; codexSecretValue: string | null } {
+  const launch = (opts?.modelLaunchOptions || {}) as Record<string, any>
+  return {
+    model: launch.model || opts.model,
+    settingsPath: launch.settingsPath || launch.codexConfigPath || opts.settingsPath || opts.codexConfigPath || null,
+    useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
+    proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || opts.proxyMode || 'direct'),
+    codexProfileKey: launch.codexProfileKey || launch.codexChannel || opts.codexProfileKey || opts.codexChannel || null,
+    codexChannel: launch.codexChannel || launch.codexProfileKey || opts.codexChannel || opts.codexProfileKey || null,
+    codexConfigPath: launch.codexConfigPath || opts.codexConfigPath || null,
+    codexSecretEnvKey: launch.codexSecretEnvKey || opts.codexSecretEnvKey || null,
+    codexSecretValue: launch.codexSecretValue || opts.codexSecretValue || null,
+  }
+}
+
+function normalizeCodexChannel(value: unknown) {
   const channel = String(value || '').trim()
   if (!channel) throw new Error('tmux-codex requires codex channel (--profile)')
   if (!CODEX_CHANNEL_RE.test(channel)) {
@@ -242,32 +259,32 @@ function normalizeCodexChannel(value) {
   return channel
 }
 
-function normalizeSecretEnvKey(value) {
+function normalizeSecretEnvKey(value: unknown) {
   const key = String(value || '').trim()
   if (!key) throw new Error('tmux-codex requires codex secret env key')
   if (!ENV_KEY_RE.test(key)) throw new Error(`invalid codex secret env key '${key}'`)
   return key
 }
 
-function resolveSecretValue(secretEnvKey, secretValue) {
+function resolveSecretValue(secretEnvKey: string, secretValue: string | null | undefined) {
   const explicit = secretValue == null ? '' : String(secretValue)
   const value = explicit || process.env[secretEnvKey] || ''
   if (!value) throw new Error(`missing value for codex secret env key ${secretEnvKey}`)
   return value
 }
 
-function tomlStringValue(tomlText, key) {
+function tomlStringValue(tomlText: string, key: string) {
   const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = String(tomlText || '').match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*=\\s*(['"])([^'"]+)\\1`))
   return match ? match[2].trim() : ''
 }
 
-function resolveCodexConfigSecretValue(configText, fallbackValue) {
+function resolveCodexConfigSecretValue(configText: string, fallbackValue: string | null | undefined) {
   const configured = tomlStringValue(configText, 'api_key')
   return resolveSecretCandidate(configured, fallbackValue)
 }
 
-function normalizeUseProxy(value, fallback = false) {
+function normalizeUseProxy(value: unknown, fallback = false) {
   if (value === false || value === 0 || value === '0' || value === 'false') return false
   if (value === true || value === 1 || value === '1' || value === 'true') return true
   return !!fallback
@@ -275,7 +292,7 @@ function normalizeUseProxy(value, fallback = false) {
 
 // 四挡代理模式归一: direct | env | proxychains | env_proxychains.
 // 兼容旧 boolean: true→env_proxychains, false/null→direct.
-function normalizeProxyMode4(value, fallback = 'direct') {
+function normalizeProxyMode4(value: unknown, fallback = 'direct') {
   if (value === 'env' || value === 'proxychains' || value === 'env_proxychains') return value
   if (value === 'direct') return 'direct'
   if (value === true || value === 1 || value === '1' || value === 'true') return 'env_proxychains'
@@ -285,7 +302,7 @@ function normalizeProxyMode4(value, fallback = 'direct') {
 
 // 按四挡检查所需依赖: env 挡需要 proxy_envs 文件; proxychains 挡需要 conf + bin.
 function proxyPrereqMissing(mode = 'env_proxychains') {
-  const missing = []
+  const missing: string[] = []
   const needEnv = mode === 'env' || mode === 'env_proxychains'
   const needChains = mode === 'proxychains' || mode === 'env_proxychains'
   if (needEnv && !fs.existsSync(resolveProxyEnvsFile())) missing.push(`file: ${resolveProxyEnvsFile()}`)
@@ -301,21 +318,21 @@ function assertProxyAvailable(mode = 'env_proxychains') {
   if (missing.length) throw new Error(`代理依赖缺失 (${mode}): ${missing.join(', ')}`)
 }
 
-function tomlBasicString(s) {
+function tomlBasicString(s: string) {
   return `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
-function codexProjectHeader(cwd) {
+function codexProjectHeader(cwd: string) {
   return `[projects.${tomlBasicString(path.resolve(cwd))}]`
 }
 
-function ensureProjectTrusted(cwd) {
+function ensureProjectTrusted(cwd: string) {
   try {
     fs.mkdirSync(CODEX_HOME, { recursive: true })
     const header = codexProjectHeader(cwd)
     let text = fs.existsSync(CODEX_CONFIG) ? fs.readFileSync(CODEX_CONFIG, 'utf8') : ''
     const lines = text.split(/\r?\n/)
-    let start = lines.findIndex((line) => line.trim() === header)
+    let start = lines.findIndex((line: string) => line.trim() === header)
     if (start < 0) {
       if (text && !text.endsWith('\n')) text += '\n'
       fs.writeFileSync(CODEX_CONFIG, `${text}\n${header}\ntrust_level = "trusted"\n`)
@@ -327,7 +344,7 @@ function ensureProjectTrusted(cwd) {
     for (let i = start + 1; i < lines.length; i++) {
       if (/^\s*\[.*\]\s*$/.test(lines[i])) { end = i; break }
     }
-    const trustIdx = lines.slice(start + 1, end).findIndex((line) => /^\s*trust_level\s*=/.test(line))
+    const trustIdx = lines.slice(start + 1, end).findIndex((line: string) => /^\s*trust_level\s*=/.test(line))
     if (trustIdx >= 0) {
       const idx = start + 1 + trustIdx
       if (/^\s*trust_level\s*=\s*"trusted"\s*$/.test(lines[idx])) return true
@@ -346,7 +363,7 @@ function ensureProjectTrusted(cwd) {
   }
 }
 
-function summarizeScreen(screen) {
+function summarizeScreen(screen: string) {
   return String(screen || '')
     .split('\n')
     .map((line) => line.trimEnd())
@@ -356,15 +373,15 @@ function summarizeScreen(screen) {
     .slice(0, 2000)
 }
 
-function markRunning(root, sessionId) {
+function markRunning(root: string | null | undefined, sessionId: string) {
   return safeWriteRunningFlag(root, sessionId, { backend: 'tmux-codex' }, 'tmux-codex')
 }
 
-function clearRunning(root, sessionId) {
+function clearRunning(root: string | null | undefined, sessionId: string) {
   return safeRemoveRunningFlag(root, sessionId, 'tmux-codex')
 }
 
-function findAsciiTailMarker(text) {
+function findAsciiTailMarker(text: string) {
   const ASCII = /[\x20-\x7E]/
   let i = text.length - 1
   while (i >= 0 && /\s/.test(text[i])) i--
@@ -379,7 +396,7 @@ function findAsciiTailMarker(text) {
 
 // ── 启动时 preflight (模块加载时一次性, 缺失降级为警告) ────
 ;(function preflight() {
-  const missing = []
+  const missing: string[] = []
   for (const bin of ['tmux', 'codex']) {
     if (spawnSync('which', [bin]).status !== 0) missing.push(`bin (PATH): ${bin}`)
   }
@@ -405,12 +422,12 @@ function openStateDb() {
   }
 }
 
-function snapshotThreadIds(cwd) {
+function snapshotThreadIds(cwd: string | null | undefined) {
   const db = openStateDb()
   if (!db) return new Set()
   try {
     const rows = db.prepare('SELECT id FROM threads WHERE cwd = ?').all(path.resolve(cwd))
-    return new Set(rows.map((r) => r.id))
+    return new Set(rows.map((r: any) => r.id))
   } catch {
     return new Set()
   } finally {
@@ -418,7 +435,7 @@ function snapshotThreadIds(cwd) {
   }
 }
 
-function codexThreadById(threadId) {
+function codexThreadById(threadId: string) {
   if (!threadId) return null
   const db = openStateDb()
   if (!db) return null
@@ -438,7 +455,7 @@ function codexThreadById(threadId) {
   }
 }
 
-function findRolloutPathByThreadId(threadId) {
+function findRolloutPathByThreadId(threadId: string) {
   const row = codexThreadById(threadId)
   if (row?.rollout_path) return row.rollout_path
 
@@ -448,7 +465,7 @@ function findRolloutPathByThreadId(threadId) {
   const stack = [root]
   while (stack.length) {
     const dir = stack.pop()
-    let items = []
+    let items: any[] = []
     try { items = fs.readdirSync(dir, { withFileTypes: true }) } catch { continue }
     for (const it of items) {
       const p = path.join(dir, it.name)
@@ -459,7 +476,7 @@ function findRolloutPathByThreadId(threadId) {
   return null
 }
 
-function findNewestThread({ cwd, model, sinceMs, excludeIds }) {
+function findNewestThread({ cwd, model, sinceMs, excludeIds }: { cwd: string; model: string; sinceMs: number; excludeIds?: Set<string> | null }) {
   const db = openStateDb()
   if (!db) return null
   try {
@@ -474,7 +491,7 @@ function findNewestThread({ cwd, model, sinceMs, excludeIds }) {
       ORDER BY COALESCE(created_at_ms, created_at * 1000) DESC
       LIMIT 20
     `).all(path.resolve(cwd), sinceMs)
-    return rows.find((r) => {
+    return rows.find((r: any) => {
       if (excludeIds?.has(r.id)) return false
       if (model && r.model && r.model !== model) return false
       return true
@@ -487,7 +504,7 @@ function findNewestThread({ cwd, model, sinceMs, excludeIds }) {
   }
 }
 
-function findRecentlyUpdatedThread({ cwd, model, sinceMs }) {
+function findRecentlyUpdatedThread({ cwd, model, sinceMs }: { cwd: string; model: string; sinceMs: number }) {
   const db = openStateDb()
   if (!db) return null
   try {
@@ -502,7 +519,7 @@ function findRecentlyUpdatedThread({ cwd, model, sinceMs }) {
       ORDER BY COALESCE(updated_at_ms, updated_at * 1000) DESC
       LIMIT 20
     `).all(path.resolve(cwd), sinceMs)
-    return rows.find((r) => {
+    return rows.find((r: any) => {
       if (model && r.model && r.model !== model) return false
       return true
     }) || null
@@ -514,19 +531,66 @@ function findRecentlyUpdatedThread({ cwd, model, sinceMs }) {
   }
 }
 
-function codexRolloutPathOf(threadId) {
+function codexRolloutPathOf(threadId: string) {
   return findRolloutPathByThreadId(threadId)
 }
 
-function isCodexTaskComplete(entry) {
+function isCodexTaskComplete(entry: any) {
   return entry?.type === 'event_msg' && entry?.payload?.type === 'task_complete'
 }
 
-function isCodexTaskStart(entry) {
+function isCodexTaskStart(entry: any) {
   return entry?.type === 'event_msg' && ['task_started', 'user_message'].includes(entry?.payload?.type)
 }
 
+
+// runtime 条目: 每个 mobius session 对应一个 tmux window + codex TUI 运行态.
+interface CodexRuntimeEntry {
+  agentSessionId: string | null // restore 阶段 thread 尚未绑定时为 null
+  cwd: string
+  flagRoot: string
+  model: string
+  codexProfileKey: string | null
+  codexConfigPath: string | null
+  codexSecretEnvKey: string | null
+  useProxy: boolean
+  proxyMode: string
+  displayName: string | null
+  jsonlPath: string | null // 同上, 绑定前未知
+  startedAt: number
+  working?: boolean
+  watch: { stop?: () => void } | null
+  [key: string]: unknown
+}
+
+// dispatch 契约: createNewSession / queue / pause 共用 (modelLaunchOptions 整包 + 兼容扁平).
+interface CodexDispatchOpts {
+  sessionId?: string
+  prompt?: string
+  initialPrompt?: string
+  cwd?: string
+  flagRoot?: string
+  displayName?: string | null
+  agentSessionId?: string | null
+  isInitialContextPrompt?: boolean
+  mobiusPromptRecord?: Record<string, unknown> | null
+  suppressRunningFlag?: boolean
+  urgent?: boolean
+  aimuxRemoteName?: string
+  modelLaunchOptions?: Record<string, unknown>
+  model?: string | null
+  useProxy?: boolean
+  proxyMode?: string
+  codexProfileKey?: string | null
+  codexChannel?: string | null
+  codexConfigPath?: string | null
+  codexSecretEnvKey?: string | null
+  codexSecretValue?: string | null
+  [key: string]: unknown
+}
+
 class TmuxCodexBackend extends AgentBackend {
+  declare runtime: Map<string, CodexRuntimeEntry>
   constructor() {
     super({ name: 'tmux-codex', runtimeFile: RUNTIME_FILE, archiveFile: ARCHIVE_FILE })
     this.runtime = new Map()
@@ -535,7 +599,7 @@ class TmuxCodexBackend extends AgentBackend {
 
   _restoreFromPersisted() {
     let total = 0
-    for (const [sid, p] of Object.entries(this.persisted)) {
+    for (const [sid, p] of Object.entries(this.persisted) as Array<[string, any]>) {
       total++
       if (!p?.agentSessionId) {
         if (!p?.cwd || !windowExists(sid)) continue
@@ -628,7 +692,7 @@ class TmuxCodexBackend extends AgentBackend {
     log(`[tmux-codex] runtime loaded ${this.runtime.size}/${total}`)
   }
 
-  _ensureWatcher(sessionId, startOffset = null) {
+  _ensureWatcher(sessionId: string, startOffset: any = null) {
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath || entry.watch) return
     const startSentinel = startOffset == null
@@ -637,41 +701,41 @@ class TmuxCodexBackend extends AgentBackend {
     entry.watch = watchMergedJsonl({
       path: entry.jsonlPath,
       startSentinel,
-      onEntry: (raw) => {
+      onEntry: (raw: any) => {
         this._emitRaw(sessionId, raw)
       },
-      onPrimaryEntry: (raw) => this._updateWorkingFromEntry(entry, raw),
-      onError: (e) => console.warn(`[tmux-codex/watch ${sessionId}] ${e.message}`),
+      onPrimaryEntry: (raw: any) => this._updateWorkingFromEntry(entry, raw),
+      onError: (e: unknown) => console.warn(`[tmux-codex/watch ${sessionId}] ${(e as Error)?.message || e}`),
     })
   }
 
-  createNewSession(opts) {
+  createNewSession(opts: CodexDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._createImpl(opts))
   }
-  pauseCurrentAndResumeFromSession(opts) {
+  pauseCurrentAndResumeFromSession(opts: CodexDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._pauseImpl(opts))
   }
-  noPauseCurrentAndQueueQueryAtSession(opts) {
+  noPauseCurrentAndQueueQueryAtSession(opts: CodexDispatchOpts) {
     return this._withLock(opts?.sessionId, () => this._queueImpl(opts))
   }
-  terminateSession(sessionId) {
+  terminateSession(sessionId: string) {
     return this._withLock(sessionId, () => this._terminateImpl(sessionId))
   }
 
-  isAlive(sessionId) {
+  isAlive(sessionId: string) {
     // 状态查询走缓存 (12s TTL); 控制流 (create/terminate 等) 请用 windowExists (实时).
-    return listWindowsRowsCached().some((cols) => cols[0] === sessionId)
+    return listWindowsRowsCached().some((cols: string[]) => cols[0] === sessionId)
   }
 
-  isWorking(sessionId) {
+  isWorking(sessionId: string) {
     if (!this.isAlive(sessionId)) return false
     const entry = this.runtime.get(sessionId)
     if (entry?.working && !entry?.jsonlPath) return true
-    const fromJsonl = this._readWorkingFromJsonl(entry?.jsonlPath)
+    const fromJsonl = this._readWorkingFromJsonl(entry?.jsonlPath || null)
     return fromJsonl == null ? !!entry?.working : fromJsonl
   }
 
-  _readWorkingFromJsonl(jsonlPath) {
+  _readWorkingFromJsonl(jsonlPath: string | null): boolean | null {
     if (!jsonlPath || !fs.existsSync(jsonlPath)) return null
     let stat
     let lines
@@ -706,14 +770,14 @@ class TmuxCodexBackend extends AgentBackend {
     return null
   }
 
-  isJobGoalAccomplished(sessionId) {
+  isJobGoalAccomplished(sessionId: string) {
     const entry = this.runtime.get(sessionId)
     const root = entry?.flagRoot || entry?.cwd
     if (!root) return false
     return !fs.existsSync(runningFlagPathOf(root, sessionId))
   }
 
-  isFailed(sessionId) {
+  isFailed(sessionId: string) {
     const entry = this.runtime.get(sessionId)
     const root = entry?.flagRoot || entry?.cwd
     if (!root) return false
@@ -723,7 +787,7 @@ class TmuxCodexBackend extends AgentBackend {
   // 实时状态行 (给 session 页 LIVE 卡片): 抓 tmux pane 倒数 15 行, 找 Codex TUI 状态行
   // ("• Working (4s • esc to interrupt)" 等). 非 alive / 非 working → "". TTL 5s 缓存 (含空结果),
   // 把 capture-pane 频次压到 ≤1/5s. 锦上添花: 失败静默 "", 绝不抛错压垮 /status 轮询.
-  realTimeInfo(sessionId) {
+  realTimeInfo(sessionId: string) {
     const now = Date.now()
     const cached = _realTimeInfoCache.get(sessionId)
     if (cached && now - cached.ts < REALTIME_INFO_TTL_MS) return cached.value
@@ -756,7 +820,7 @@ class TmuxCodexBackend extends AgentBackend {
   // 与 claude-code 的差异:claude-code 读 JSONL 的 queue-operation/enqueue(完整 content+timestamp);
   // codex 只能拿到**截断预览**且**无时间戳**(TUI 不暴露)→ enqueuedAt 恒 null. 仅 alive 时扫, 失败静默 [].
   // capture-pane -J 拼接折行, 故一条多行 pending 仍是一行 ↳. 见到首个头部后收集所有 ↳ 行.
-  getPendingRequests(sessionId) {
+  getPendingRequests(sessionId: string) {
     if (!this.isAlive(sessionId)) return []
     let text = ''
     try {
@@ -765,7 +829,7 @@ class TmuxCodexBackend extends AgentBackend {
       if (cap.status === 0 && cap.stdout) text = cap.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
     } catch { return [] }
     if (!text) return []
-    const pending = []
+    const pending: any[] = []
     let inBlock = false
     for (const raw of text.split('\n')) {
       const line = raw.replace(/\r$/, '')
@@ -793,7 +857,7 @@ class TmuxCodexBackend extends AgentBackend {
   //       且它是最新通知时直接返回 null, 避免继续向前捞出已过期错误.
   // 坑: Codex TUI 用 alt screen, 进程退出时内容会被销毁; 因此仅在 isAlive 时扫,
   //     历史 session 拿不到. 调用方需要时应另开后台 capture 循环落盘.
-  getRecentError(sessionId) {
+  getRecentError(sessionId: string) {
     if (!this.isAlive(sessionId)) return null
     // -p stdout; -e 保留 ANSI; -S -N 只抓尾部 N 行 (避免全量 scrollback 扫描); -J 拼接折行避免错误被切行.
     const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-e', '-S', `-${CODEX_ERROR_SCAN_TAIL_LINES}`, '-J'])
@@ -803,7 +867,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   listSessions() {
-    return listWindowsRowsCached().map((cols) => {
+    return listWindowsRowsCached().map((cols: string[]) => {
       const [name, pid, idx, activity, paneDead, paneCurrentCommand] = cols
       const entry = this.runtime.get(name)
       const lastActivitySec = Number(activity)
@@ -826,14 +890,14 @@ class TmuxCodexBackend extends AgentBackend {
 
   // sessionId → jsonl 文件路径的三级查表 (跟 tmux-claude-code 对称):
   //   runtime (Map, 进程内) > persisted (codex-hub-runtime.json, live) > archive (codex-hub-archive.json, all-time)
-  _resolveJsonlPath(sessionId) {
+  _resolveJsonlPath(sessionId: string) {
     return this.runtime.get(sessionId)?.jsonlPath
         || this._lookupPersistedJsonlPath(sessionId)
         || this._lookupArchivedJsonlPath(sessionId)
         || null
   }
 
-  getHistory(sessionId, opts = {}) {
+  getHistory(sessionId: string, opts: QueryOpts = {}): HistorySnapshot {
     const jsonlPath = this._resolveJsonlPath(sessionId)
     if (!jsonlPath) {
       return { entries: [], total: 0, truncated: false, sentinel: 0 }
@@ -842,47 +906,44 @@ class TmuxCodexBackend extends AgentBackend {
     return { entries: r.entries, total: r.total, totalApproximate: r.totalApproximate, truncated: r.truncated, sentinel: r.sentinel }
   }
 
-  get_time_consume_waterfall(sessionId, opts = {}) {
+  get_time_consume_waterfall(sessionId: string, opts: any = {}) {
     return timeConsumeWaterfallFromBackend(this, sessionId, opts)
   }
 
-  clear_time_consume_waterfall(sessionId, opts = {}) {
+  clear_time_consume_waterfall(sessionId: string, opts: any = {}) {
     return clearTimeConsumeWaterfallForBackend(this, sessionId, opts)
   }
 
-  getAgentRawThoughtStream(sessionId, listener, opts = {}) {
+  getAgentRawThoughtStream(sessionId: string, listener: (raw: unknown) => void, opts: QueryOpts = {}) {
     if (opts && opts.fromSentinel != null) {
       const jsonlPath = this._resolveJsonlPath(sessionId)
       if (!jsonlPath) return super.getAgentRawThoughtStream(sessionId, listener, opts)
       const w = watchMergedJsonl({
         path: jsonlPath,
         startSentinel: opts.fromSentinel,
-        onEntry: (raw) => listener(raw),
-        onError: (e) => console.warn(`[tmux-codex/sub ${sessionId}] ${e.message}`),
+        onEntry: (raw: any) => listener(raw),
+        onError: (e: unknown) => console.warn(`[tmux-codex/sub ${sessionId}] ${(e as Error)?.message || e}`),
       })
       return () => { try { w.stop() } catch {} }
     }
     return super.getAgentRawThoughtStream(sessionId, listener, opts)
   }
 
-  _appendMobiusPromptEntry(sessionId, mobiusJsonl) {
-    if (!mobiusJsonl) return false
+  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
+    if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     if (!entry?.jsonlPath) {
       console.warn(`[tmux-codex] mobius jsonl skipped (${sessionId}): original jsonl path missing`)
       return false
     }
     try {
-      const append = mobiusJsonl?.kind === 'external_session_message'
-        ? appendMobiusExternalEntry
-        : appendMobiusPromptEntry
-      append({
+      appendMobiusCoreEntry({
         jsonlPath: entry.jsonlPath,
         sessionId,
         agentSessionId: entry.agentSessionId || null,
         cwd: entry.cwd || null,
         backendName: this.name,
-        ...mobiusJsonl,
+        ...mobiusPromptRecord,
       })
       return true
     } catch (e) {
@@ -891,12 +952,14 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, initialPrompt, agentSessionId, aimuxRemoteName }) {
+  async _createImpl(opts: CodexDispatchOpts) {
+    const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName } = opts
+    const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
 
-    let spawnInfo = null
+    let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
       spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName })
@@ -937,11 +1000,15 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName }) {
+  async _queueImpl(opts: CodexDispatchOpts) {
+    const { sessionId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName } = opts
+    let { cwd, flagRoot, displayName } = opts
+    let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
+    let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
 
-    let spawnInfo = null
+    let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
       const persisted = this.runtime.get(sessionId)
@@ -973,10 +1040,10 @@ class TmuxCodexBackend extends AgentBackend {
       model = model || persisted?.model || DEFAULT_MODEL
       useProxy = finalUseProxy
       proxyMode = finalProxyMode
-      codexProfileKey = finalProfileKey
-      codexConfigPath = finalConfigPath
-      codexSecretEnvKey = finalSecretEnvKey
-      displayName = displayName || persisted?.displayName
+      codexProfileKey = finalProfileKey ?? null
+      codexConfigPath = finalConfigPath ?? null
+      codexSecretEnvKey = finalSecretEnvKey ?? null
+      displayName = displayName || (persisted?.displayName ?? null)
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -986,9 +1053,9 @@ class TmuxCodexBackend extends AgentBackend {
     const bindSinceMs = spawnInfo?.startedAt || Date.now()
     const entry = this.runtime.get(sessionId)
     if (entry) entry.working = true
-    let mobiusJsonlWritten = false
+    let mobiusPromptWritten = false
     if (entry?.jsonlPath) {
-      mobiusJsonlWritten = this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
+      mobiusPromptWritten = this.harnessWriteMobiusCoreEntry(sessionId, mobiusPromptRecord)
     }
     await this._sendPromptToWindow(sessionId, prompt)
     if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
@@ -1008,13 +1075,13 @@ class TmuxCodexBackend extends AgentBackend {
         knownThreadIds: bindKnownThreadIds,
         allowUpdatedThreadFallback,
       })
-      if (!mobiusJsonlWritten) {
-        mobiusJsonlWritten = this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
+      if (!mobiusPromptWritten) {
+        mobiusPromptWritten = this.harnessWriteMobiusCoreEntry(sessionId, mobiusPromptRecord)
       }
     }
   }
 
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusJsonl = null }) {
+  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }: CodexDispatchOpts) {
     if (!sessionId) throw new Error('sessionId required')
     const persisted = this.runtime.get(sessionId)
 
@@ -1070,15 +1137,15 @@ class TmuxCodexBackend extends AgentBackend {
       codexSecretEnvKey: persisted?.codexSecretEnvKey,
       displayName: persisted?.displayName,
       agentSessionId: persisted?.agentSessionId,
-      mobiusJsonl,
+      mobiusPromptRecord,
     })
   }
 
-  async _terminateImpl(sessionId) {
+  async _terminateImpl(sessionId: string) {
     const wasAlive = windowExists(sessionId)
     const wasWorking = wasAlive && this.isWorking(sessionId)
     const entry = this.runtime.get(sessionId)
-    if (entry?.watch) { try { entry.watch.stop() } catch {} }
+    if (entry?.watch?.stop) { try { entry.watch.stop() } catch {} }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1092,10 +1159,11 @@ class TmuxCodexBackend extends AgentBackend {
     return { sessionId, killed: wasAlive, wasWorking }
   }
 
-  async _ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }) {
+  async _ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }: CodexDispatchOpts) {
+    if (!sessionId || !cwd) return null
     if (this.runtime.has(sessionId)) return this.runtime.get(sessionId)
     if (!agentSessionId) return null
-    const jsonlPath = codexRolloutPathOf(agentSessionId)
+    const jsonlPath = codexRolloutPathOf(agentSessionId!)
     if (!jsonlPath) return null
     const entry = {
       agentSessionId,
@@ -1133,16 +1201,17 @@ class TmuxCodexBackend extends AgentBackend {
     return entry
   }
 
-  async _bindRuntimeAfterPrompt({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, sinceMs, knownThreadIds, allowUpdatedThreadFallback = false }) {
+  async _bindRuntimeAfterPrompt({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, sinceMs, knownThreadIds, allowUpdatedThreadFallback }: CodexDispatchOpts) {
+    if (!sessionId || !cwd) throw new Error('_bindRuntimeAfterPrompt requires sessionId + cwd')
     const deadline = Date.now() + THREAD_BIND_TIMEOUT_MS
-    let found = null
+    let found: any = null
     let foundBy = 'created'
     while (Date.now() < deadline) {
       found = findNewestThread({
-        cwd,
+        cwd: cwd || '',
         model: model || DEFAULT_MODEL,
-        sinceMs: sinceMs || Date.now() - 10000,
-        excludeIds: knownThreadIds || new Set(),
+        sinceMs: Number(sinceMs) || Date.now() - 10000,
+        excludeIds: (knownThreadIds as Set<string> | null | undefined) || new Set<string>(),
       })
       if (found?.id) {
         foundBy = 'created'
@@ -1150,9 +1219,9 @@ class TmuxCodexBackend extends AgentBackend {
       }
       if (allowUpdatedThreadFallback) {
         found = findRecentlyUpdatedThread({
-          cwd,
+          cwd: cwd || '',
           model: model || DEFAULT_MODEL,
-          sinceMs: Math.max(0, (sinceMs || Date.now()) - THREAD_BIND_UPDATED_SKEW_MS),
+          sinceMs: Math.max(0, (Number(sinceMs) || Date.now()) - THREAD_BIND_UPDATED_SKEW_MS),
         })
         if (found?.id) {
           foundBy = 'updated'
@@ -1203,7 +1272,7 @@ class TmuxCodexBackend extends AgentBackend {
     return entry
   }
 
-  _updateWorkingFromEntry(entry, raw) {
+  _updateWorkingFromEntry(entry: any, raw: any) {
     if (!entry) return
     if (isCodexTaskComplete(raw)) entry.working = false
     else if (isCodexTaskStart(raw)) entry.working = true
@@ -1214,7 +1283,8 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }: CodexDispatchOpts) {
+    if (!sessionId || !cwd) throw new Error('_spawnWindow requires sessionId + cwd')
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
     // 记录启动时间，后续会写入 runtime 和持久化状态。
@@ -1260,7 +1330,7 @@ class TmuxCodexBackend extends AgentBackend {
     // 只有 resume 模式需要查找旧 rollout。
     if (useResume) {
       // 根据 Codex thread id 查找对应 rollout 文件。
-      rolloutPath = codexRolloutPathOf(agentSessionId)
+      rolloutPath = codexRolloutPathOf(agentSessionId!)
       // 找不到 rollout 时不能可靠 resume。
       if (!rolloutPath) {
         // 打印警告，并退化为新建 thread。
@@ -1287,11 +1357,11 @@ class TmuxCodexBackend extends AgentBackend {
       codexArgs.push('-c', `mcp_servers.aimux.args=["mcp","serve","--remote","${aimuxRemoteName}"]`)
     }
     // resume 模式下把 thread id 追加给 codex resume 子命令。
-    if (useResume) codexArgs.push(agentSessionId)
+    if (useResume && agentSessionId) codexArgs.push(agentSessionId)
     // Codex 新会话不需要子命令，resume 模式需要 "resume " 前缀。
     const subcommand = useResume ? 'resume ' : ''
     // 对每个 Codex 参数做 shell 转义后拼成命令行字符串。
-    const argStr = codexArgs.map(shellQuote).join(' ')
+    const argStr = codexArgs.filter((a: unknown): a is string => typeof a === 'string').map(shellQuote).join(' ')
     // profile 参数固定指向归一化后的 channel/profile。
     const profileArg = `--profile ${shellQuote(profileKey)}`
 
@@ -1432,6 +1502,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
         useProxy: finalUseProxy,
+        // 代理模式四挡.
+        proxyMode: finalProxyMode,
         // UI 展示名。
         displayName: displayName || null,
         // 新会话尚未绑定 rollout，因此 jsonlPath 为空。
@@ -1465,8 +1537,8 @@ class TmuxCodexBackend extends AgentBackend {
     } else {
       // resume 会话已经知道 thread id 和 rollout 路径，可以立即登记完整状态。
       const entry = {
-        // 恢复的 Codex thread id。
-        agentSessionId,
+        // 恢复的 Codex thread id (useResume 为真时必非空).
+        agentSessionId: agentSessionId || null,
         // 工作目录。
         cwd,
         // running flag 写入根目录。
@@ -1481,6 +1553,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
         useProxy: finalUseProxy,
+        // 代理模式四挡.
+        proxyMode: finalProxyMode,
         // UI 展示名。
         displayName: displayName || null,
         // 已找到的 Codex rollout jsonl 路径。
@@ -1525,7 +1599,7 @@ class TmuxCodexBackend extends AgentBackend {
     return { startedAt, knownThreadIds }
   }
 
-  async _sendPromptToWindow(sessionId, text) {
+  async _sendPromptToWindow(sessionId: string, text: string) {
     if (!windowExists(sessionId)) throw new Error(`window ${sessionId} does not exist`)
     const marker = findAsciiTailMarker(text)
     log(`[tmux-codex] sendPrompt window=${sessionId} len=${text.length} marker=${marker ? JSON.stringify(marker) : '(none)'}`)
@@ -1575,3 +1649,6 @@ module.exports = {
   findCodexRecentErrorInPane,
   resolveCodexConfigSecretValue,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { ArrowLeft, ChevronDown, Dices, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, Eye, Square, CheckSquare, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Dices, ExternalLink, FlaskConical, Folder, FolderOpen, FolderPlus, Loader2, Pencil, Puzzle, AlertTriangle, CopyPlus, Eye, Square, CheckSquare, X } from 'lucide-react'
 import { useStore, api, APP_DIR } from '../store'
-import { timeAgo } from './shell'
+import { GithubIcon, timeAgo } from './shell'
 import { SkillsManager } from './skills'
 import { MemoriesManager } from './memories'
 import { ProjectUserContextWhitelist } from './context-whitelist'
@@ -2375,13 +2375,13 @@ export function NewSessionModal({
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
   const [previewingSkill, setPreviewingSkill] = useState<WizardItem | null>(null)
-  // 用户级与项目级之间的副本管理 (Skill 与 Memory)
+  // 用户级与项目级之间的复制管理 (Skill 与 Memory)
   const [currentUserId, setCurrentUserId] = useState('')
   const [scopeBusyId, setScopeBusyId] = useState('')
   const [scopeNotice, setScopeNotice] = useState('')
   const [cancelTarget, setCancelTarget] = useState<{ kind: 'skill' | 'memory'; item: WizardItem } | null>(null)
-  // 项目级目录: resolver 会把与用户级同名的项目副本去重隐藏 (user 优先),
-  // 副本状态必须单独拉项目列表判断, 不能依赖 availableSkills。
+  // 项目级目录: resolver 会把与用户级同名的项目级条目去重隐藏 (user 优先),
+  // 是否已复制必须单独拉项目列表判断, 不能依赖 availableSkills。
   const [scopeRefreshKey, setScopeRefreshKey] = useState(0)
   const [projectSkillCatalog, setProjectSkillCatalog] = useState<any[]>([])
   const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
@@ -2719,11 +2719,11 @@ export function NewSessionModal({
     try { setPreview(await fetchPreview(excludedSkills, next)) } catch { /* 静默 */ }
   }
 
-  // ---- 用户级 ↔ 项目级: 创建 / 移除项目副本 ---------------------------------
-  // 创建项目副本 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目副本。
+  // ---- 用户级 ↔ 项目级: 复制为项目级 / 移除项目级条目 -------------------------
+  // 复制为项目级 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目级条目。
   // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
   const canScopeChange = !!projectId && !isGuidedDemo
-  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我创建的项目级副本。
+  // 拉项目级 Skill/Memory 目录, 用于判断是否已有我复制的项目级条目。
   useEffect(() => {
     if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
     let alive = true
@@ -2755,10 +2755,10 @@ export function NewSessionModal({
         method: 'POST',
         body: JSON.stringify({ project_id: projectId }),
       })
-      setScopeNotice(`已为「${item.name}」创建项目级副本, 对项目成员可见`)
+      setScopeNotice(`已将「${item.name}」复制为项目级${kind === 'skill' ? ' Skill' : ' Memory'}, 对项目成员可见`)
       await refreshWizardSources()
     } catch (e: any) {
-      setErr(e?.message || '创建项目级副本失败')
+      setErr(e?.message || '复制为项目级失败')
     } finally { setScopeBusyId('') }
   }
   const removeProjectCopy = async () => {
@@ -2771,10 +2771,10 @@ export function NewSessionModal({
         method: 'POST',
       })
       setCancelTarget(null)
-      setScopeNotice(`已移除「${item.name}」的项目级副本, 你的用户级原件保留`)
+      setScopeNotice(`已移除「${item.name}」的项目级条目, 你的用户级原件保留`)
       await refreshWizardSources()
     } catch (e: any) {
-      setErr(e?.message || '移除项目级副本失败')
+      setErr(e?.message || '移除项目级条目失败')
     } finally { setScopeBusyId('') }
   }
 
@@ -2870,7 +2870,7 @@ export function NewSessionModal({
   const skillCheckedCount = availableSkills.filter(s => matchesRequiredSkill(s) || isChosenAgentSkill(s.id) || (!isMutuallyExclusiveAgentSkill(s.id) && !excludedSkills.has(s.id))).length
   const memoryCheckedCount = availableMemories.filter(m => !excludedMemories.has(m.id)).length
   const projectSkillCount = availableSkills.filter(s => s.scope === 'project').length
-  // 项目副本分组与匹配: skill 按 id 里的 dirName, memory 按名称 (副本保留原名)。
+  // 项目级条目分组与匹配: skill 按 id 里的 dirName, memory 按名称 (复制后保留原名)。
   const projectSkillItems = availableSkills.filter(s => s.scope === 'project')
   const userSkillItems = availableSkills.filter(s => s.scope === 'user')
   const otherSkillItems = availableSkills.filter(s => s.scope !== 'project' && s.scope !== 'user')
@@ -2880,7 +2880,7 @@ export function NewSessionModal({
     if (parts[0] === 'user') return parts.slice(2).join(':')
     return null
   }
-  // dirName → 我创建的项目副本 (catalog 行, 含项目 id)
+  // dirName → 我复制的项目级条目 (catalog 行, 含项目 id)
   const myProjectCopySkillByDir = new Map<string, any>()
   const allProjectCopySkillDirs = new Set<string>()
   for (const s of projectSkillCatalog) {
@@ -2901,58 +2901,42 @@ export function NewSessionModal({
       type="button"
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
       disabled={!!scopeBusyId}
-      title="移除我创建的项目级副本 (你的用户级原件保留)"
+      title="移除我复制的项目级条目 (你的用户级原件保留)"
       className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
       style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
-      移除项目副本
+      移除项目级
     </button>
   )
-  const projectCopyChip = (label = '已有项目级副本') => (
-    <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: 'rgba(34,197,94,0.12)', color: isDark ? '#86efac' : '#15803d' }}>{label}</span>
-  )
+  // 复制为项目级条目的小图标按钮 (kind 决定悬浮提示 Skill/Memory)。
+  const copyToProjectButton = (kind: 'skill' | 'memory', item: WizardItem) => {
+    const busy = scopeBusyId === `${kind}:${item.id}`
+    const noun = kind === 'skill' ? 'Skill' : 'Memory'
+    return (
+      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); createProjectCopy(kind, item) }} disabled={!!scopeBusyId}
+        title={`复制为项目级${noun}`}
+        aria-label={`复制为项目级${noun}`}
+        className="inline-flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:opacity-40"
+        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
+        {busy
+          ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.8} />
+          : <CopyPlus className="h-3 w-3" strokeWidth={1.8} />}
+      </button>
+    )
+  }
   const skillProjectCopyAction = (sk: WizardItem) => {
     if (!canScopeChange || sk.scope !== 'user') return null
     const dir = sk.dirName || scopeIdDir(sk.id) || sk.name
     const mine = myProjectCopySkillByDir.get(dir)
-    if (mine) {
-      return (<>
-        {projectCopyChip()}
-        {removeProjectCopyButton('skill', mine.id, sk.name)}
-      </>)
-    }
-    if (allProjectCopySkillDirs.has(dir)) return projectCopyChip('项目已有同名副本')
-    const busy = scopeBusyId === `skill:${sk.id}`
-    return (
-      <button type="button" onClick={() => createProjectCopy('skill', sk)} disabled={!!scopeBusyId}
-        title="为这条用户级 Skill 创建项目级副本, 对项目成员可见 (个人原件保留)"
-        className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
-        style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
-        {busy ? '创建中…' : '创建项目副本'}
-      </button>
-    )
+    if (mine) return removeProjectCopyButton('skill', mine.id, sk.name)
+    if (allProjectCopySkillDirs.has(dir)) return null
+    return copyToProjectButton('skill', sk)
   }
   const memoryProjectCopyAction = (m: WizardItem) => {
     if (!canScopeChange) return null
     if (m.scope === 'user') {
-      const mine = myProjectCopyMemoryByName.get(m.name)
-      if (mine) {
-        return projectCopyChip()
-      }
-      if (allProjectCopyMemoryNames.has(m.name)) return projectCopyChip('项目已有同名副本')
-      const busy = scopeBusyId === `memory:${m.id}`
-      return (
-        <button type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); createProjectCopy('memory', m) }}
-          disabled={!!scopeBusyId}
-          title="为这条用户级 Memory 创建项目级副本, 对项目成员可见 (个人原件保留)"
-          className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
-          style={{ color: isDark ? '#86efac' : '#15803d', borderColor: isDark ? 'rgba(34,197,94,0.35)' : 'rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)' }}>
-          {busy ? '创建中…' : '创建项目副本'}
-        </button>
-      )
-    }
-    if (m.scope === 'project' && isProjectCopyByMe(m)) {
-      return projectCopyChip()
+      if (myProjectCopyMemoryByName.has(m.name)) return null
+      if (allProjectCopyMemoryNames.has(m.name)) return null
+      return copyToProjectButton('memory', m)
     }
     return null
   }
@@ -3333,9 +3317,9 @@ export function NewSessionModal({
 
         {step === 2 && preview && (
           <>
-            <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto xl:overflow-hidden pr-1 xl:pr-0">
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 xl:h-full xl:min-h-0 xl:overflow-hidden">
-                <div className="space-y-3 min-h-0 xl:h-full xl:overflow-y-auto xl:overscroll-contain xl:pr-2">
+            <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto lg:overflow-hidden pr-1 lg:pr-0">
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
+                <div className="space-y-3 min-h-0 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
                   <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
                     background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)',
                     border: `1px solid ${isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)'}`,
@@ -3402,10 +3386,10 @@ export function NewSessionModal({
                                     type="button"
                                     onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
                                     disabled={!!scopeBusyId}
-                                    title="移除我创建的项目级副本 (你的用户级原件保留)"
+                                    title="移除我复制的项目级条目 (你的用户级原件保留)"
                                     className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
                                     style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
-                                    移除项目副本
+                                    移除项目级
                                   </button>
                                 )}
                                 {showProjectCopy && skillProjectCopyAction(sk)}
@@ -3444,7 +3428,7 @@ export function NewSessionModal({
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
-                          {canScopeChange && ' 在「用户 Skill」分组点「创建项目副本」可把个人 Skill 复制为项目级供项目成员使用; 由你创建的副本可随时移除。'}
+                          {canScopeChange && ' 在「用户 Skill」分组点复制图标可把个人 Skill 复制为项目级供项目成员使用; 由你复制的项目级条目可随时移除。'}
                         </p>
                       )}
                     </div>
@@ -3506,11 +3490,11 @@ export function NewSessionModal({
                   </section>
                 </div>
 
-                <section className="order-first min-h-[320px] xl:order-none xl:h-full xl:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                <section className="order-first min-h-[320px] lg:order-none lg:h-full lg:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                   <h4 className="shrink-0 text-[12px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                     完整注入文本 ({previewBodyText.length} 字)
                   </h4>
-                  <pre className="m-0 flex-1 min-h-[260px] xl:min-h-0 max-h-[45vh] xl:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
+                  <pre className="m-0 flex-1 min-h-[260px] lg:min-h-0 max-h-[45vh] lg:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
                     style={{ background: isDark ? '#111827' : '#ffffff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, color: isDark ? '#f1f5f9' : '#1e293b', fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace' }}>
                     {previewBodyText || '暂无可注入文本。'}
                   </pre>
@@ -3553,10 +3537,10 @@ export function NewSessionModal({
             background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
           }}>
             <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-              移除项目副本「{cancelTarget.item.name}」?
+              移除项目级「{cancelTarget.item.name}」?
             </h3>
             <p className="text-[12px] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-              项目级副本将被移除, 你的用户级原件保留。若副本创建后被编辑过, 这些修改会一并丢弃;
+              这条项目级{cancelTarget.kind === 'skill' ? ' Skill' : ' Memory'}将被移除, 你的用户级原件保留。若复制到项目级后被编辑过, 这些修改会一并丢弃;
               已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
             </p>
             <div className="flex gap-2">
@@ -3566,7 +3550,7 @@ export function NewSessionModal({
               <button type="button" onClick={removeProjectCopy} disabled={!!scopeBusyId}
                 className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
                 style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)' }}>
-                {scopeBusyId ? '处理中…' : '确认移除项目副本'}
+                {scopeBusyId ? '处理中…' : '确认移除'}
               </button>
             </div>
           </div>
@@ -3885,10 +3869,12 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
 }
 
 // =====================================================================
-// 下载桌面客户端 — 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取。
+// 下载桌面客户端 — 双 Tab: 「GitHub 最新版」(默认, 跳转 GitHub Release) | 「本地服务器」(manifest 下载)。
+//   - GitHub Tab: releases/latest 自动重定向到最新 desktop-v* Release (CI 三平台构建)
+//   - 本地 Tab: 下载清单从服务器 /desktop-builds/manifest.json 运行时拉取 (首次切入才请求)
 //   - 内置 python + 自动装 aimux 反连, 把本机注册为可调度节点
 //   - manifest 由 build.py / scripts/desktop_manifest.py 从构建产物生成, 含 version/size/sha256
-//   - 不再在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
+//   - 不在前端硬编码版本号: manifest 是单一可信源, 缺失/损坏 → 「暂不可用」不发下载
 // =====================================================================
 interface DesktopManifestBuild { platform: string; arch: string; format: string; file: string; size: number; sha256: string }
 interface DesktopManifest { version: string; generatedAt?: string; builds: DesktopManifestBuild[] }
@@ -3935,7 +3921,7 @@ function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
 // size / sha256 由 build.py --build-mobile 从 momo-mobile 拷 APK 后自动回填
 // (按各 ABI 的 file 行匹配更新); iOS 暂留空 (file='' → 显示「未上线」)。
-const MOBILE_VERSION = '0.1.7'
+const MOBILE_VERSION = '0.1.18'
 // iOS 走 TestFlight 公开邀请链接: build 上传后在 App Store Connect → TestFlight 开启"公开链接",
 // 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE。
 // 仍是占位时, iOS 行显示"未上线"; 填入真实 code 后自动变成 TestFlight 下载按钮。
@@ -3945,15 +3931,15 @@ const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: num
     label: 'Android',
     sub: 'arm64-v8a · 大多数现代手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
-    size: 15433314,
-    sha256: '20cf95fc8a09697877085aad192cc56de214c4e81730c1ba1462991af4f26dc2',
+    size: 4991680,
+    sha256: '73b878c466e4d978680a0268b56cbc7d241b039ffd936e8e3586fbfabfce2592',
   },
   {
     label: 'Android',
     sub: 'armeabi-v7a · 老旧手机',
     file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
-    size: 15441282,
-    sha256: '2f2d5f691b6a88a5a44863b04350829e6cfb218603289deac842eb0961af3b4a',
+    size: 4999648,
+    sha256: '8344c5ea0513ca4a87eeab8cd63b511e7e5fd37c0701807900d59d76428380e4',
   },
   {
     label: 'iOS',
@@ -4003,13 +3989,26 @@ function DesktopDownloadRowItem({ row, theme }: { row: DesktopDownloadRow; theme
   )
 }
 
+// GitHub Release 跳转地址 — releases/latest 由 GitHub 自动重定向到最新 desktop-v* 版本。
+const DESKTOP_GITHUB_RELEASES_URL = 'https://github.com/mobius-system/mobius/releases/latest'
+
+type DesktopDownloadTab = 'github' | 'local'
+
 export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
+  const [tab, setTab] = useState<DesktopDownloadTab>('github')
   const [manifest, setManifest] = useState<DesktopManifest | null>(null)
   const [error, setError] = useState<string | null>(null)
-
+  // 本地清单只在首次切到「本地服务器」Tab 时才拉取 (默认 GitHub Tab 无需请求 manifest)。
+  // 用 ref 记录已发起: 若放进 state 会触发 effect 重跑, cleanup 的 abort 会立刻杀掉在途请求。
+  const localRequestedRef = useRef(false)
+  const localAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { localAbortRef.current?.abort() }, [])
   useEffect(() => {
+    if (tab !== 'local' || localRequestedRef.current) return
+    localRequestedRef.current = true
     const ctrl = new AbortController()
+    localAbortRef.current = ctrl
     const timer = setTimeout(() => ctrl.abort(), 8000)
     fetch('/desktop-builds/manifest.json', { signal: ctrl.signal, cache: 'no-cache' })
       .then(async r => {
@@ -4025,11 +4024,14 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
       })
       .catch(e => setError(e?.name === 'AbortError' ? '获取版本信息超时，请稍后再试' : (e?.message || '无法获取版本信息')))
       .finally(() => clearTimeout(timer))
-    return () => { clearTimeout(timer); ctrl.abort() }
-  }, [])
+  }, [tab])
 
   const rows = manifest ? manifestToRows(manifest) : []
   const muted = theme !== 'light' ? '#6b7280' : '#94a3b8'
+  const subMuted = theme !== 'light' ? '#94a3b8' : '#64748b'
+  const subtitle = tab === 'github'
+    ? 'GitHub 上的 Release 由 CI 自动构建, 始终为最新版本'
+    : (manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取本服务器版本信息…')
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -4039,26 +4041,69 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: muted }}>
-              {manifest ? `Mobius Desktop v${manifest.version} · 登录后自动把本机注册为可调度节点 (aimux 反连)` : '正在获取最新版本信息…'}
-            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: muted }}>{subtitle}</div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
-        <div className="space-y-2 mt-4">
-          {error ? (
-            <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
-            </div>
-          ) : rows.length ? (
-            rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
-          ) : (
-            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
-          )}
+        {/* Tab: GitHub 最新 Release (默认, 跳转) | 本地服务器 (原 manifest 下载) */}
+        <div className="flex justify-start mt-3">
+          <div className="inline-flex rounded-md border p-0.5 text-[12px]"
+            style={{ background: 'var(--input-bg)', borderColor: 'var(--border-color)' }}>
+            {([
+              ['github', 'GitHub 最新版（推荐）'],
+              ['local', '本地服务器'],
+            ] as Array<[DesktopDownloadTab, string]>).map(([k, label]) => {
+              const active = tab === k
+              return (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className="h-7 rounded px-3 transition-colors"
+                  style={{
+                    background: active ? 'var(--bg-card)' : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontWeight: active ? 600 : 400,
+                  }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
+
+        {tab === 'github' ? (
+          <div className="space-y-2 mt-4">
+            <div className="px-4 py-4 rounded-xl" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-3">
+                <GithubIcon className="w-6 h-6 shrink-0" strokeWidth={2} style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>GitHub 最新 Release</div>
+                  <div className="text-[11px]" style={{ color: subMuted }}>CI 自动构建 macOS (Apple Silicon / Intel) 与 Windows 安装包</div>
+                </div>
+                <a href={DESKTOP_GITHUB_RELEASES_URL} target="_blank" rel="noopener noreferrer"
+                  className="text-[12px] px-3 py-1.5 rounded-lg font-medium shrink-0 inline-flex items-center gap-1.5" style={{ background: '#0a84ff', color: '#fff' }}>
+                  前往下载
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <div className="mt-2 pl-9 text-[11px] break-all" style={{ color: subMuted }}>{DESKTOP_GITHUB_RELEASES_URL}</div>
+            </div>
+            <div className="text-[11px] px-1" style={{ color: subMuted }}>如无法访问 GitHub, 可切换到「本地服务器」从当前服务器下载。</div>
+          </div>
+        ) : (
+          <div className="space-y-2 mt-4">
+            {error ? (
+              <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+                <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
+                <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
+                <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
+              </div>
+            ) : rows.length ? (
+              rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
+            ) : (
+              <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+            )}
+          </div>
+        )}
 
         <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>

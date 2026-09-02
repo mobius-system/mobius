@@ -252,8 +252,8 @@ function resolveDeliveryWorkspace(session: any, researchId: string): any {
 }
 
 async function deliverBlackboardBatchToSession({ researchId, session, records }: any): Promise<void> {
-  const launch = modelRegistry.launchOptionsForSession(session);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
+  const backend = agents.get(modelLaunchOptions.backend);
   const prompt = buildNotifyPrompt(records);
   const { cwd, flagRoot } = resolveDeliveryWorkspace(session, researchId);
 
@@ -262,22 +262,10 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
     prompt,
     cwd,
     flagRoot,
-    model: launch.model || undefined,
-    settingsPath: launch.settingsPath,
-    forceNoProxy: launch.forceNoProxy,
-    useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-    codexProfileKey: launch.codexProfileKey || undefined,
-    codexChannel: launch.codexChannel || undefined,
-    codexConfigPath: launch.codexConfigPath || undefined,
-    codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-    codexSecretValue: launch.codexSecretValue || undefined,
-    harnessProvider: launch.harnessProvider || undefined,
-    harnessBaseUrl: launch.harnessBaseUrl || undefined,
-    harnessSecretValue: launch.harnessSecretValue || undefined,
-    harnessMaxTokens: launch.harnessMaxTokens || undefined,
-    harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+    // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+    modelLaunchOptions: modelLaunchOptions,
     displayName: session.name || undefined,
-    agentSessionId: session.claude_session_id || undefined,
+    agentSessionId: session.agent_session_id || undefined,
   });
 
   try {

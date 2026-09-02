@@ -27,6 +27,12 @@ const EXT_TYPE = {
   ".blockmap": "application/octet-stream",
   ".yaml": "text/yaml; charset=utf-8",
   ".yml": "text/yaml; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
 };
 
 function contentTypeFor(filename) {

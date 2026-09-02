@@ -229,6 +229,10 @@ function attachmentKindOf(file: File): 'image' | 'file' {
   return file.type.startsWith('image/') ? 'image' : 'file'
 }
 
+// 粘贴的纯文本超过该字节数 (100KB) 时不再灌进 textarea (巨量字符卡顿且易超消息上限),
+// 参考截图粘贴的同一路径: 转成 .txt 附件走 /api/upload 上传.
+const PASTE_TEXT_AS_FILE_THRESHOLD = 100 * 1024
+
 function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
   if (bytes < 1024) return `${bytes} B`
@@ -2540,7 +2544,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       })
       if (voiceStopTimerRef.current !== null) window.clearTimeout(voiceStopTimerRef.current)
       if (voiceTickTimerRef.current !== null) window.clearInterval(voiceTickTimerRef.current)
-      if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
       const recorder = mediaRecorderRef.current
       try {
         if (recorder && recorder.state !== 'inactive') recorder.stop()
@@ -2603,8 +2606,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [bridgeQueueNotice, setBridgeQueueNotice] = useState<string | null>(null)
-  const bridgeQueueNoticeTimerRef = useRef<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -3174,6 +3175,18 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     if (files.length > 0) {
       e.preventDefault()
       enqueueFiles(files)
+      return
+    }
+    // 无文件时看纯文本: 超过阈值 (100KB) 的巨型粘贴同样转成 .txt 附件上传,
+    // 与截图粘贴共用 enqueueFiles → /api/upload 链路, 不再把几十万字塞进输入框.
+    let text = ''
+    try { text = cd.getData('text/plain') || '' } catch { text = '' }
+    if (text && new Blob([text]).size > PASTE_TEXT_AS_FILE_THRESHOLD) {
+      e.preventDefault()
+      const stamp = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const fname = `pasted-text-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.txt`
+      enqueueFiles([new File([text], fname, { type: 'text/plain' })])
     }
   }, [enqueueFiles])
 
@@ -4025,21 +4038,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
-      .then((resp) => {
-        const queued = Array.isArray(resp?.external_messages_queued)
-          ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
-          : []
-        if (queued.length > 0) {
-          const queuedIds = new Set(queued.map((item: any) => String(item.target_session_id || '')))
-          const queuedNames = selectedAgentMentions.filter((item) => queuedIds.has(item.sessionId)).map((item) => item.name)
-          const targetLabel = queuedNames.length <= 2 ? queuedNames.join('、') : `${queuedNames.slice(0, 2).join('、')} 等 ${queuedNames.length} 个 Session`
-          setBridgeQueueNotice(`已通知 ${targetLabel || `${queued.length} 个 Session`}，等待目标空闲后投递`)
-          if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
-          bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
-            setBridgeQueueNotice(null)
-            bridgeQueueNoticeTimerRef.current = null
-          }, 5000)
-        }
+      .then(() => {
         setEditingMsg(null)
         clearAttachments()
         setSelectedAgentMentions([])
@@ -4599,15 +4598,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               <span className="h-2.5 w-2.5 rounded-sm bg-white" />
             </span>
             终止指令已发送
-          </div>
-        </div>
-      )}
-
-      {bridgeQueueNotice && (
-        <div className="pointer-events-none fixed right-4 top-16 z-[80] max-w-[min(360px,calc(100vw-2rem))]">
-          <div className="flex items-center gap-2 rounded-lg border border-blue-400/30 bg-[var(--bg-card)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-xl">
-            <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
-            <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
           </div>
         </div>
       )}

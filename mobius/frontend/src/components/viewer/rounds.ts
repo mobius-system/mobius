@@ -7,6 +7,7 @@
  */
 import type { AnyEntry, JsonlViewItem, Round, RoundItem } from './types'
 import { isNewRound } from '../jsonl-round-helpers'
+import { QuestionTitle } from '../../../../backend/services/session-context-sections'
 
 // 提取一个"开新轮"候选条目里实际呈现给用户的归一化文本, 仅用于 buildRounds 内部去重比较.
 // 三种格式对应同一次输入: mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
@@ -44,6 +45,20 @@ function isAssistantOutput(e: AnyEntry): boolean {
   return false
 }
 
+// 该 entry 是否为 mobius 边车写入的"干净原始输入"卡 (见 services/mobius-jsonl.ts 双轨记录):
+// 边车存未经 context 包装的原文, 原生 jsonl 存包装后的全文.
+function isMobiusSidecarUserEntry(e: AnyEntry): boolean {
+  return e?.entrypoint === 'mobius' || e?.mobius?.kind === 'user_input'
+}
+
+// 判断 text 是否为 prevText 的"首轮 context 包装版" — wrapUserMessage (session-context.ts) 固定形态:
+// <上下文正文>\n\n---\n\n## 用户的问题\n<原文> (英文为 User's Question, 文案唯一事实源在 session-context-sections).
+// 原文之后可能还接 @提及的 <agent_reference> 等尾巴, 故用包含关系而非 endWith 判断.
+function isWrappedVariant(text: string, prevText: string): boolean {
+  if (!text || !prevText) return false
+  return text.includes(`${QuestionTitle.zh}\n${prevText}`) || text.includes(`${QuestionTitle.en}\n${prevText}`)
+}
+
 export function buildRounds(
   visibleItems: JsonlViewItem[],
 ): { preItems: JsonlViewItem[]; rounds: Round[] } {
@@ -61,6 +76,14 @@ export function buildRounds(
       const prevText = prev ? userTextOf(prev.items[0]?.entry) : ''
       const prevHasAssistant = !!prev && prev.items.some((it) => isAssistantOutput(it.entry))
       if (text && prev && text === prevText && !prevHasAssistant) continue
+      // 首轮 context 包装去重: 同一条首条输入被双轨记录 (mobius 边车记"原始文本",
+      // Claude Code 原生 jsonl 记"包装全文"). 包装全文出现且期间无 agent 输出 →
+      // 以包装卡作首条消息、隐藏前面的原始文本卡; 包装全文从未出现则保留原始文本卡 (不变).
+      const prevIsSidecar = !!prev && !!prev.items[0] && isMobiusSidecarUserEntry(prev.items[0].entry)
+      if (text && prev && !prevHasAssistant && prevIsSidecar && isWrappedVariant(text, prevText)) {
+        prev.items[0] = { ...(item as RoundItem), relIdx: 0 }
+        continue
+      }
       rounds.push({ roundNum: rounds.length + 1, items: [] })
     }
     if (rounds.length === 0) {

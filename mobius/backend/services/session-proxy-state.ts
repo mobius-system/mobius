@@ -8,16 +8,16 @@ function normalizeUseProxy(value: any): boolean | null {
 }
 
 function useProxyForSession(session: any, backend: any = null): number {
-  let launch: any
+  let modelLaunchOptions: any
   try {
-    launch = modelRegistry.launchOptionsForSession(session)
+    modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session)
   } catch {
     // Historical sessions may reference removed models (for example old Sonnet ids).
     // They are not launchable, but admin/status views should stay quiet and direct.
     return 0
   }
-  if (launch.forceNoProxy) return 0
-  const backendName = backend?.name || launch.backend
+  if (modelLaunchOptions.forceNoProxy) return 0
+  const backendName = backend?.name || modelLaunchOptions.backend
   const resolvedBackend = backend || agents.get(backendName)
   const runtimeUseProxy = typeof resolvedBackend.getSessionUseProxy === 'function'
     ? resolvedBackend.getSessionUseProxy(session?.session_id)
@@ -25,15 +25,15 @@ function useProxyForSession(session: any, backend: any = null): number {
   const normalizedRuntime = normalizeUseProxy(runtimeUseProxy)
   if (normalizedRuntime !== null) return normalizedRuntime ? 1 : 0
   // 管理中心的模型级网络代理设置是唯一信源; 缺省一律直连.
-  if (typeof launch.useProxy === 'boolean') return launch.useProxy ? 1 : 0
+  if (typeof modelLaunchOptions.useProxy === 'boolean') return modelLaunchOptions.useProxy ? 1 : 0
   return 0
 }
 
 function withSessionProxyState(session: any): any {
   if (!session) return session
-  let launch: any
+  let modelLaunchOptions: any
   try {
-    launch = modelRegistry.launchOptionsForSession(session)
+    modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session)
   } catch {
     return {
       ...session,
@@ -45,8 +45,8 @@ function withSessionProxyState(session: any): any {
   return {
     ...session,
     use_proxy: useProxyForSession(session),
-    agent_backend: launch.backend,
-    model_label: launch.label,
+    agent_backend: modelLaunchOptions.backend,
+    model_label: modelLaunchOptions.label,
   }
 }
 

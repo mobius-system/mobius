@@ -1,9 +1,22 @@
 const readline = require('readline')
 
-class HarnessProtocolError extends Error {}
+class HarnessProtocolError extends Error {
+  code: any
+  data: any
+}
 
 class HarnessJsonRpcPeer {
-  constructor(child, { requestTimeoutMs = 30000, onNotification = () => {}, onProtocolError = () => {} } = {}) {
+  // constructor 裸赋值属性的字段声明 (TS2339).
+  child: any // ChildProcess-like (spawn 返回值, 测试注入 fake)
+  requestTimeoutMs: number
+  onNotification: (method: string, params: any) => void
+  onProtocolError: (error: Error) => void
+  nextId: number
+  pending: Map<string, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>
+  closed: boolean
+  reader: any // readline.Interface
+
+  constructor(child: any, { requestTimeoutMs = 30000, onNotification = () => {}, onProtocolError = () => {} }: { requestTimeoutMs?: number; onNotification?: (method: string, params: any) => void; onProtocolError?: (error: Error) => void } = {}) {
     this.child = child
     this.requestTimeoutMs = requestTimeoutMs
     this.onNotification = onNotification
@@ -12,12 +25,12 @@ class HarnessJsonRpcPeer {
     this.pending = new Map()
     this.closed = false
     this.reader = readline.createInterface({ input: child.stdout, crlfDelay: Infinity })
-    this.reader.on('line', (line) => this._onLine(line))
-    child.once('exit', (code, signal) => this.close(new HarnessProtocolError(`runtime exited (code=${code}, signal=${signal || 'none'})`)))
-    child.once('error', (error) => this.close(error))
+    this.reader.on('line', (line: string) => this._onLine(line))
+    child.once('exit', (code: any, signal: any) => this.close(new HarnessProtocolError(`runtime exited (code=${code}, signal=${signal || 'none'})`)))
+    child.once('error', (error: Error) => this.close(error))
   }
 
-  _onLine(line) {
+  _onLine(line: string) {
     if (!line.trim()) return
     let frame
     try { frame = JSON.parse(line) }
@@ -41,7 +54,7 @@ class HarnessJsonRpcPeer {
     if (typeof frame.method === 'string') this.onNotification(frame.method, frame.params || {})
   }
 
-  request(method, params, timeoutMs = this.requestTimeoutMs) {
+  request(method: string, params?: any, timeoutMs: number = this.requestTimeoutMs): Promise<any> {
     if (this.closed || !this.child.stdin?.writable) return Promise.reject(new HarnessProtocolError('runtime transport is closed'))
     const id = String(this.nextId++)
     return new Promise((resolve, reject) => {
@@ -50,7 +63,7 @@ class HarnessJsonRpcPeer {
         reject(new HarnessProtocolError(`${method} timed out after ${timeoutMs}ms`))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
-      this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) })}\n`, (error) => {
+      this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) })}\n`, (error: Error | undefined | null) => {
         if (!error) return
         const pending = this.pending.get(id)
         if (!pending) return
@@ -61,7 +74,7 @@ class HarnessJsonRpcPeer {
     })
   }
 
-  close(reason = new HarnessProtocolError('runtime transport closed')) {
+  close(reason: Error = new HarnessProtocolError('runtime transport closed')) {
     if (this.closed) return
     this.closed = true
     try { this.reader.close() } catch {}
@@ -73,4 +86,5 @@ class HarnessJsonRpcPeer {
   }
 }
 
+export { HarnessJsonRpcPeer, HarnessProtocolError }
 module.exports = { HarnessJsonRpcPeer, HarnessProtocolError }

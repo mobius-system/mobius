@@ -8,6 +8,8 @@ import {
   GitBranch,
   LocateFixed,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   Pause,
   Play,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
@@ -41,15 +44,6 @@ type ClusterModel = {
   parentClusters: ParentCluster[]
   projectClusters: ProjectCluster[]
   creatorClusters: CreatorCluster[]
-}
-
-type BridgeEdge = {
-  source_session_id: string
-  target_session_id: string
-  channel_ids: string[]
-  accepted: boolean
-  queued_count: number
-  last_active?: string
 }
 
 type ClusterSession = {
@@ -197,6 +191,7 @@ const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
+const COMMUNICATION_LINK_COLOR = '#38bdf8'
 
 function activeTimeMs(item: any) {
   const value = item?.last_session_activity_at || item?.last_active || item?.updated_at || item?.created_at
@@ -1503,6 +1498,36 @@ function drawSessionPath(ctx: CanvasRenderingContext2D, node: ClusterSession, r 
   drawCirclePath(ctx, node.x, node.y, r)
 }
 
+function drawCommunicationLinks(ctx: CanvasRenderingContext2D, nodes: ClusterSession[], links: Array<{ source: string; target: string }>, now: number, zoom: number) {
+  if (links.length === 0 || nodes.length < 2) return
+  const nodeById = new Map<string, ClusterSession>()
+  nodes.forEach((node) => nodeById.set(node.id, node))
+  ctx.lineCap = 'round'
+  links.forEach((link) => {
+    const a = nodeById.get(link.source)
+    const b = nodeById.get(link.target)
+    // 仅当两端 Agent 都在当前可见节点集内才画线
+    if (!a || !b) return
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < a.r + b.r + 6) return
+    const nx = dx / dist
+    const ny = dy / dist
+    ctx.beginPath()
+    ctx.moveTo(a.x + nx * (a.r + 2), a.y + ny * (a.r + 2))
+    ctx.lineTo(b.x - nx * (b.r + 2), b.y - ny * (b.r + 2))
+    ctx.strokeStyle = rgba(COMMUNICATION_LINK_COLOR, 0.75)
+    ctx.lineWidth = Math.max(1, 1.3 / zoom)
+    ctx.setLineDash([6, 5])
+    // lineDashOffset 随时间流动 → 动态虚线
+    ctx.lineDashOffset = -((now / 45) % 11)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.lineDashOffset = 0
+  })
+}
+
 function drawSessionNode(ctx: CanvasRenderingContext2D, node: ClusterSession, now: number, zoom: number) {
   const fill = sessionColor(node)
   const isRunning = node.source?.agent_status === 'running' || node.status === 'running'
@@ -1760,8 +1785,10 @@ export default function MobiusOverviewClusterPage() {
     setCurrentResearch,
     setCurrentSession,
     setCurrentTask,
+    setMobileNavOpen,
   } = useStore()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   // 全屏工具页的出口: 优先回到真正的"上一界面", 直接进入/刷新时兜底回用户主页。
   const goBack = useCallback(() => {
     if (window.history.length > 1) navigate(-1)
@@ -1777,17 +1804,30 @@ export default function MobiusOverviewClusterPage() {
   })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
-  const [bridgeEdges, setBridgeEdges] = useState<BridgeEdge[]>([])
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
   const [hoverLabel, setHoverLabel] = useState<{ x: number; y: number; title: string; meta: string } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [paused, setPaused] = useState(false)
+  const [showCommunication, setShowCommunication] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:overview-cluster-comm') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:ui:sidebar:overview-cluster:hidden') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [communicationLinks, setCommunicationLinks] = useState<Array<{ source: string; target: string }>>([])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
-  const bridgeEdgesRef = useRef<BridgeEdge[]>([])
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
   const pendingAutoFitRef = useRef(true)
@@ -1795,6 +1835,8 @@ export default function MobiusOverviewClusterPage() {
   const userViewportInteractedRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
+  const showCommunicationRef = useRef(showCommunication)
+  const communicationLinksRef = useRef(communicationLinks)
   const zoomRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
@@ -1810,6 +1852,22 @@ export default function MobiusOverviewClusterPage() {
     moved: boolean
     hit?: HitTarget | null
   }>(null)
+
+  const hideSidebar = useCallback(() => {
+    // 移动端由 TopNav 汉堡按钮控制抽屉显隐；桌面端才持久化「隐藏」状态。
+    if (isMobile) {
+      setMobileNavOpen(false)
+      return
+    }
+    setSidebarCollapsed(true)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '1') } catch {}
+  }, [isMobile, setMobileNavOpen])
+
+  const showSidebar = useCallback(() => {
+    setSidebarCollapsed(false)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '0') } catch {}
+    if (isMobile) setMobileNavOpen(true)
+  }, [isMobile, setMobileNavOpen])
 
   const selectedRange = useMemo(
     () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[0],
@@ -1844,17 +1902,6 @@ export default function MobiusOverviewClusterPage() {
       .then((arr: any[]) => setProjects(sortByRecent(arr || [])))
       .catch((e: any) => setError(e?.message || '项目加载失败'))
   }, [setProjects])
-
-  useEffect(() => {
-    return pollRecursive(async (signal) => {
-      try {
-        const result: any = await api('/api/agent-bridge/edges', { signal })
-        setBridgeEdges(Array.isArray(result?.edges) ? result.edges : [])
-      } catch (e: any) {
-        if (e?.name !== 'AbortError') setError(e?.message || '通信关系加载失败')
-      }
-    }, 10_000, 10_000)
-  }, [])
 
   const candidateProjects = useMemo(
     () => sortByRecent((projects || []).filter((project: any) => (
@@ -2032,31 +2079,6 @@ export default function MobiusOverviewClusterPage() {
       ctx.stroke()
     })
 
-    const nodeById = new Map(nodes.map((node) => [node.id, node]))
-    bridgeEdgesRef.current.forEach((edge) => {
-      const source = nodeById.get(edge.source_session_id)
-      const target = nodeById.get(edge.target_session_id)
-      if (!source || !target) return
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(source.x, source.y)
-      ctx.lineTo(target.x, target.y)
-      ctx.lineWidth = (edge.accepted ? 1.8 : 1.25) / zoomRef.current
-      ctx.strokeStyle = edge.accepted ? 'rgba(34,197,94,0.68)' : 'rgba(148,163,184,0.48)'
-      ctx.setLineDash(edge.accepted ? [] : [5 / zoomRef.current, 5 / zoomRef.current])
-      ctx.stroke()
-      if (edge.queued_count > 0) {
-        const midX = (source.x + target.x) / 2
-        const midY = (source.y + target.y) / 2
-        ctx.setLineDash([])
-        ctx.beginPath()
-        ctx.arc(midX, midY, 3.5 / zoomRef.current, 0, Math.PI * 2)
-        ctx.fillStyle = 'rgba(250,204,21,0.9)'
-        ctx.fill()
-      }
-      ctx.restore()
-    })
-
     if (zoomRef.current > 0.35) {
       if (mode === 'creator') {
         creatorClusters.forEach((cluster) => {
@@ -2086,6 +2108,9 @@ export default function MobiusOverviewClusterPage() {
     }
 
     const now = performance.now()
+    if (showCommunicationRef.current) {
+      drawCommunicationLinks(ctx, nodes, communicationLinksRef.current, now, zoomRef.current)
+    }
     nodes.forEach((node) => drawSessionNode(ctx, node, now, zoomRef.current))
 
     if (zoomRef.current > 0.48) {
@@ -2127,11 +2152,6 @@ export default function MobiusOverviewClusterPage() {
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
-
-  useEffect(() => {
-    bridgeEdgesRef.current = bridgeEdges
-    draw()
-  }, [bridgeEdges, draw])
 
   useEffect(() => {
     const previous = modelRef.current
@@ -2250,6 +2270,38 @@ export default function MobiusOverviewClusterPage() {
   }, [paused])
 
   useEffect(() => {
+    showCommunicationRef.current = showCommunication
+  }, [showCommunication])
+
+  useEffect(() => {
+    communicationLinksRef.current = communicationLinks
+  }, [communicationLinks])
+
+  // 通讯虚线数据源: 开启开关后自递归轮询当前用户有效的双向通讯链接 (48h 窗口内).
+  // 无现成轮询基建时的旧 edges 模式即 pollRecursive; 关闭开关即 stop 停止.
+  useEffect(() => {
+    if (!showCommunication) return undefined
+    const stop = pollRecursive((signal) => {
+      return api('/api/multiagent_communication_links', { signal })
+        .then((data: any) => {
+          const seen = new Set<string>()
+          const unique: Array<{ source: string; target: string }> = []
+          ;(data?.links || []).forEach((link: any) => {
+            const source = String(link?.source_session_id || '')
+            const target = String(link?.target_session_id || '')
+            if (!source || !target) return
+            const key = [source, target].sort().join('|')
+            if (seen.has(key)) return
+            seen.add(key)
+            unique.push({ source, target })
+          })
+          setCommunicationLinks(unique)
+        })
+    }, 10_000)
+    return stop
+  }, [showCommunication])
+
+  useEffect(() => {
     const step = () => {
       const currentModel = modelRef.current
       const gatherExcess = currentModel.mode === 'creator'
@@ -2332,6 +2384,14 @@ export default function MobiusOverviewClusterPage() {
     setHoverLabel(null)
     setClusterMode(value)
     try { localStorage.setItem('mobius:overview-cluster-mode', value) } catch {}
+  }
+
+  const handleShowCommunicationChange = () => {
+    setShowCommunication((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-cluster-comm', next ? '1' : '0') } catch {}
+      return next
+    })
   }
 
   useEffect(() => {
@@ -2442,13 +2502,35 @@ export default function MobiusOverviewClusterPage() {
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       <TopNav />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}>
+        {(!sidebarCollapsed || isMobile) && (
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:overview-cluster"
+          defaultWidth={292}
+          minWidth={220}
+          maxWidth={460}
+          side="left"
+          data-tour="overview-cluster-sidebar"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}
+        >
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
               <div className="text-[13px] font-semibold">Cluster Overview</div>
-              <div className="ml-auto rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
-                {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+              <div className="ml-auto flex items-center gap-1">
+                <div className="rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+                  {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+                </div>
+                <button
+                  type="button"
+                  onClick={hideSidebar}
+                  title={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  aria-label={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div className="relative mt-3">
@@ -2537,10 +2619,23 @@ export default function MobiusOverviewClusterPage() {
               })
             )}
           </div>
-        </aside>
+        </ResizablePanel>
+        )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
           <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+            {sidebarCollapsed && !isMobile && (
+              <button
+                type="button"
+                onClick={showSidebar}
+                title="显示侧栏"
+                aria-label="显示侧栏"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={goBack}
@@ -2599,6 +2694,18 @@ export default function MobiusOverviewClusterPage() {
               </button>
               <button type="button" title="重新布局" onClick={reheat} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button
+                type="button"
+                title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
+                onClick={handleShowCommunicationChange}
+                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors"
+                style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                通讯
               </button>
             </div>
             {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}

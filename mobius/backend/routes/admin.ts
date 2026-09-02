@@ -230,7 +230,7 @@ function loadSessionContexts(sessionIds: Array<string>): Map<string, any> {
     SELECT s.session_id, s.name AS session_name, s.status AS session_status,
            s.agent_status AS db_agent_status, s.model,
            s.scope_type, s.issue_id, s.research_id, s.research_role,
-           s.claude_session_id, s.created_at, s.last_active,
+           s.agent_session_id, s.created_at, s.last_active,
            u.id AS user_id, u.display_name AS user_display_name,
            p.id AS project_id, p.name AS project_name, p.bind_path,
            i.title AS issue_title,
@@ -304,7 +304,7 @@ function shapeContext(row: any): any {
     issue_id: row.issue_id || null,
     research_id: row.research_id || null,
     research_role: row.research_role || null,
-    claude_session_id: row.claude_session_id || null,
+    agent_session_id: row.agent_session_id || null,
     created_at: row.created_at,
     last_active: row.last_active,
   };
@@ -370,7 +370,7 @@ function shapeWindow(def: typeof BACKENDS[number], backend: any, windowInfo: any
     pane_current_command: windowInfo.paneCurrentCommand || null,
     last_activity_ms: windowInfo.lastActivityMs || null,
     last_activity_at: windowInfo.lastActivityAt || null,
-    agent_session_id: windowInfo.agentSessionId || runtime?.agentSessionId || contextRow?.claude_session_id || null,
+    agent_session_id: windowInfo.agentSessionId || runtime?.agentSessionId || contextRow?.agent_session_id || null,
     state: status.state,
     tmux_open: status.tmuxOpen,
     tui_agent_pid_exists: status.tuiAgentPidExists,
@@ -412,7 +412,7 @@ function shapeClosedRuntime(def: typeof BACKENDS[number], sessionId: string, run
     pane_current_command: null,
     last_activity_ms: startedAt || null,
     last_activity_at: contextRow?.last_active || startedAtIso,
-    agent_session_id: runtime?.agentSessionId || contextRow?.claude_session_id || null,
+    agent_session_id: runtime?.agentSessionId || contextRow?.agent_session_id || null,
     state: 'closed',
     tmux_open: false,
     tui_agent_pid_exists: false,
@@ -1035,7 +1035,7 @@ router.put('/settings/model-display-order', adminAuth, (req: express.Request, re
   }
 });
 
-// ── 自动生成 Session 标题: 默认关闭; 开启后由后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
+// ── 自动生成 Session 标题: 默认开启; 后端订阅 agent raw_entry 事件更新 sessions_v2.name ──
 router.get('/settings/auto-generate-session-title', adminAuth, (_req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getAutoGenerateSessionTitle());

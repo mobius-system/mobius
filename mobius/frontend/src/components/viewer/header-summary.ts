@@ -31,9 +31,11 @@ import {
   isBashToolUseName,
   extractPlanUpdate,
   extractTaskReminder,
+  extractTaskToolCalls,
   summarizePlanUpdate,
   parseMcpResultEnvelope,
 } from './entry-extract'
+import { extractInitialContext, initialContextSummaryLine } from './initial-context'
 
 // 阈值=80: 一行 summary 在常规桌面宽度下大概 80~100 字就会被 CSS truncate 截断,
 // 比 JS slice 阈值低更稳, 否则会出现"视觉上 ... 但 JS 判定没截断 → 没精简模式入口"的脱节.
@@ -179,6 +181,26 @@ function summarizePatchApplyFiles(changes: any): string | null {
   return names.join(', ')
 }
 
+// buildHeaderSummary 的调用方 (JsonlView 末轮摘要 / RoundGroup header) 只传 entry;
+// 任务工具卡的摘要增强由 EntryCard 内部用 resolveTaskHeaderSummary 完成 —
+// 该函数把跨条目累积的任务快照归一成一行摘要 (计划 · X/N · 任务标题), 无快照时
+// 回退到原始 tool_use JSON 文案.
+export function resolveTaskHeaderSummary(entry: AnyEntry, taskPlan: { steps: Array<{ step: string; status: string; id?: string }>; completed: number; inProgress?: number; pending?: number; currentStep?: string | null } | null | undefined): HeaderSummary | null {
+  if (!taskPlan) return null
+  const calls = extractTaskToolCalls(entry)
+  if (calls.length === 0) return null
+  const first = calls[0]
+  const taskId = typeof first.input?.taskId === 'string' ? first.input.taskId.trim()
+    : typeof first.input?.task_id === 'string' ? first.input.task_id.trim() : ''
+  const subject = taskPlan.steps.find((s) => (taskId ? s.id === taskId : s.status === 'in_progress'))?.step
+    || taskPlan.steps.find((s) => s.status === 'in_progress')?.step
+    || taskPlan.steps[taskPlan.steps.length - 1]?.step
+    || ''
+  const base = summarizePlanUpdate(taskPlan as any)
+  const text = subject && subject !== '(空任务)' ? `${base} · ${subject}` : base
+  return clip(text, HEADER_SHORT_LIMIT)
+}
+
 export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   const t = entry?.type
   const msg = entry?.message
@@ -211,6 +233,13 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   if (t === 'response_item') {
     const pt = payload?.type || 'response_item'
     if (pt === 'message') {
+      // 首轮注入上下文包装 (codex 形态): 摘要显示「初始 · 问题首行」而非样板引导语;
+      // full 保留原始全文 (初始模式复制 / 下游折叠规则仍依赖完整文本)。
+      const ic = payload?.role === 'user' ? extractInitialContext(entry) : null
+      if (ic) {
+        const clipped = clip(initialContextSummaryLine(ic), HEADER_SHORT_LIMIT)
+        return { short: clipped.short, shortTail: clipped.short, full: ic.raw, truncated: true, canCompact: true }
+      }
       const body = contentBlocksText(payload?.content)
       return clip(`${payload?.role || 'message'}${body ? ` · ${body}` : ''}`, HEADER_SHORT_LIMIT)
     }
@@ -237,6 +266,13 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   }
 
   if (t === 'user') {
+    // 首轮注入上下文包装 (claude 形态): 摘要显示「初始 · 问题首行」而非样板引导语;
+    // full 保留原始全文 (初始模式复制 / 下游折叠规则仍依赖完整文本)。
+    const ic = extractInitialContext(entry)
+    if (ic) {
+      const clipped = clip(initialContextSummaryLine(ic), HEADER_SHORT_LIMIT)
+      return { short: clipped.short, shortTail: clipped.short, full: ic.raw, truncated: true, canCompact: true }
+    }
     // Claude Code 本地命令产物 (<local-command-*> / <command-*> 标签): 展示干净文案, 不暴露原始标签 (避免乱码).
     const lcParts = extractLocalCommandParts(entry)
     if (lcParts.length > 0) return clip(summarizeLocalCommandForHeader(lcParts), HEADER_SHORT_LIMIT)

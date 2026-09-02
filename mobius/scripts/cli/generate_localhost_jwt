@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# generate_localhost_jwt — 从 mobius .env 读 JWT_SECRET, 签发 localhost 用户 JWT.
+# 与 backend/middleware/auth.ts 的 AuthPayload {id} 同构, 走现有 auth 中间件.
+#
+# 用法: generate_localhost_jwt <user_id>
+#   MOBIUS_ENV_FILE   覆盖 .env 路径 (默认下方写死的部署路径)
+set -euo pipefail
+
+ENV_FILE="${MOBIUS_ENV_FILE:-/home/tianyi/imac-test/.env}"
+USER_ID="${1:?用法: generate_localhost_jwt <user_id>}"
+
+SECRET="$(grep -E '^JWT_SECRET=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '\"'"'"'')"
+if [ -z "$SECRET" ]; then
+  echo "✗ 认证失败：$ENV_FILE 中未找到 JWT_SECRET" >&2
+  exit 1
+fi
+
+# mobius 根目录 (jsonwebtoken 所在的 node_modules 的父目录), 部署机固定路径, env 可覆盖:
+MOBIUS_ROOT="${MOBIUS_ROOT:-/home/tianyi/imac-test/mobius}"
+exec /usr/bin/node -e '
+  const path = require("path");
+  const jwt = require(path.join(process.argv[3], "node_modules", "jsonwebtoken"));
+  console.log(jwt.sign({ id: process.argv[1] }, process.argv[2], { expiresIn: "1h" }));
+' "$USER_ID" "$SECRET" "$MOBIUS_ROOT"

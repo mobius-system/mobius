@@ -1,10 +1,6 @@
 /**
- * agent-status-syncer.ts — sessions_v2.agent_status 的唯一真相源写入者.
- *
- * 背景: agent_status 曾有 7 个写入点 (发消息/收工/停止/admin/SSE/巡检), 状态判定
- * 分散且易不一致. 现统一收口到本 service: 周期性地用与 GET /api/sessions/:id/status
- * 完全相同的判定逻辑 (computeSessionRuntimeStatus) 重算每个 session 的状态并写回,
- * 前端小圆点只读 agent_status. 删除了其它所有 agent_status 写入点.
+ * agent-status-syncer.ts:
+ * 处理 sessions_v2.agent_status 的赋值
  *
  * 分级扫描 (降低计算量):
  *   - 活跃集 (idle/running/waiting/completed): 每 60s 扫一遍 — 可能随时变化
@@ -15,6 +11,7 @@
  * 复用: 判定逻辑来自 backend/utils/session-runtime-status.ts, 与 /status 接口共用,
  *       改判定逻辑只需改那一处.
  */
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../../db';
@@ -25,11 +22,13 @@ import {
 } from '../utils/session-runtime-status';
 
 const SCAN_INTERVAL_MS = 60 * 1000;          // 活跃集扫描间隔
+
 const TERMINAL_SCAN_TICKS = 60;              // 终态集: 每 60 个 tick (= 3600s) 扫一次
 const FIRST_RUN_DELAY_MS = 20 * 1000;        // 启动先等 backend runtime 恢复
 
 // 活跃集: 可能随时变化的状态. completed 也在此 (重新发消息会激活).
 const ACTIVE_STATUSES = ['idle', 'running', 'waiting', 'completed'];
+
 // 终态集: 稳定态, 低频扫. failed/stale 通常需人工介入.
 const TERMINAL_STATUSES = ['failed', 'stale'];
 
@@ -47,6 +46,7 @@ function nowIso(): string {
 function appendLog(text: string): void {
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
+    // ⭐ 真正落盘的动作; 前一行 mkdirSync 只是为它扫清目录障碍.
     fs.appendFileSync(LOG_FILE, text);
   } catch (e) {
     console.warn(`[agent-status-syncer] 写日志失败: ${(e as Error).message}`);
@@ -62,6 +62,7 @@ interface SessionRow {
 
 function loadSessions(statuses: string[]): SessionRow[] {
   const placeholders = statuses.map(() => '?').join(',');
+  // ⭐ 前面的 placeholders 拼接只为喂这次查询; 耗时全在此.
   return db.prepare(`
     SELECT s.session_id, s.model, s.agent_status, p.bind_path AS bind_path
     FROM sessions_v2 s
@@ -70,34 +71,34 @@ function loadSessions(statuses: string[]): SessionRow[] {
   `).all(...statuses) as SessionRow[];
 }
 
-// 写回 sessions_v2.agent_status 的逻辑统一在 syncAgentStatusIfChanged (util),
+// syncBatch: 给一批会话, 挨个查状态、写回数据库; 谁给的、为什么给, 不管. 写回 sessions_v2.agent_status 的逻辑统一在 syncAgentStatusIfChanged (util),
 // 与 /status 接口共用, 这里只调用它. 单 session 故障不拖垮整批.
 async function syncBatch(batch: SessionRow[], batchLabel: string): Promise<{ checked: number; changed: number }> {
   let checked = 0;
   let changed = 0;
-  for (const s of batch) {
+  for (const session of batch) {
     checked++;
     try {
-      const bindPath = s.bind_path ? path.resolve(s.bind_path) : null;
-      const runtime = computeSessionRuntimeStatus(
-        { session_id: s.session_id, model: s.model },
-        bindPath,
-      );
-      const { changed: didChange, next } = syncAgentStatusIfChanged(s.session_id, s.agent_status, runtime);
+      const bindPath = session.bind_path ? path.resolve(session.bind_path) : null;
+      // ⭐ syncer 最贵的一步 (tmux 探测/jsonl 尾读/flag I/O); bindPath 解析只为喂它.
+      const runtime = computeSessionRuntimeStatus( { session_id: session.session_id, model: session.model }, bindPath );
+      // ⭐ 把上面的判定写回 agent_status; 没有它探测白做.
+      const { changed: didChange, next } = syncAgentStatusIfChanged(session.session_id, session.agent_status, runtime);
       if (didChange) {
         changed++;
         appendLog(
-          `[${nowIso()}] ${batchLabel} sid=${s.session_id} ${s.agent_status} -> ${next} ` +
+          `[${nowIso()}] ${batchLabel} sid=${session.session_id} ${session.agent_status} -> ${next} ` +
           `(alive=${runtime.alive} working=${runtime.working} accomplished=${runtime.jobAccomplished} failed=${runtime.failed})\n`
         );
       }
     } catch (e) {
-      appendLog(`[${nowIso()}] ${batchLabel} sid=${s.session_id} 计算失败: ${(e as Error).message}\n`);
+      appendLog(`[${nowIso()}] ${batchLabel} sid=${session.session_id} 计算失败: ${(e as Error).message}\n`);
     }
   }
   return { checked, changed };
 }
 
+// scanOnce: 定时器每分钟触发的一轮 — 先查出"这轮该查哪些会话"的名单, 再交给 syncBatch 去干.
 async function scanOnce(opts: { includeTerminal: boolean }): Promise<void> {
   if (scanning) {
     appendLog(`[${nowIso()}] (skip) 上一轮同步尚未结束, 跳过本轮\n`);
@@ -106,6 +107,7 @@ async function scanOnce(opts: { includeTerminal: boolean }): Promise<void> {
   scanning = true;
   const startedAt = Date.now();
   try {
+    // ⭐ 真正干活的地方; 守卫与耗时日志都是外围.
     const active = await syncBatch(loadSessions(ACTIVE_STATUSES), 'active');
     let terminal = { checked: 0, changed: 0 };
     if (opts.includeTerminal) {
@@ -146,6 +148,7 @@ function startAgentStatusSyncer(): NodeJS.Timeout | null {
     scanOnce({ includeTerminal: true }).catch(
       (e) => appendLog(`[${nowIso()}] (error) 首次全扫异常: ${(e as Error).stack || e}\n`)
     );
+    // ⭐ 整个文件的"心跳": 启动横幅/首次全扫/延迟等待全为建立这条 60s 周期.
     timer = setInterval(safeScan, SCAN_INTERVAL_MS);
     timer.unref();
   }, FIRST_RUN_DELAY_MS).unref();

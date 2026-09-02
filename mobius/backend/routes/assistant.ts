@@ -744,7 +744,7 @@ function assistantSessionModelUnavailableReason(session: any): string | null {
   try {
     if (modelRegistry.resolveSessionModel(session?.model)) return null;
   } catch {
-    // Treat registry failures as unavailable for read paths; launch still fails
+    // Treat registry failures as unavailable for read paths; modelLaunchOptions still fails
     // with the original error when the user tries to run that exact session.
   }
   return `模型配置已失效: ${session?.model || modelRegistry.DEFAULT_MODEL_KEY || 'codex'}`;
@@ -1167,8 +1167,8 @@ function handleAssistantPresetContextPreview(req: express.Request, res: express.
 
 async function startAssistantSession(req: express.Request, session: any, questionText: string, requestId: string, workDir: string, clientContext: any = null, attachments: any[] = [], userContent: string = ''): Promise<void> {
   const user = (req as any).user;
-  const launch = modelRegistry.launchOptionsForSession(session);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
+  const backend = agents.get(modelLaunchOptions.backend);
   const isCompactCommand = String(questionText || '').trim().startsWith('/compact');
   const personality = assistantSessionPersonality(session);
   const promptQuestion = isCompactCommand ? questionText : assistantQuestionWithAttachments(questionText, attachments);
@@ -1179,7 +1179,7 @@ async function startAssistantSession(req: express.Request, session: any, questio
   Messages.insertUser(session.session_id, displayContent, turnNumber);
   Sessions.touchActive(session.session_id);
 
-  const mobiusJsonl = {
+  const mobiusPromptRecord = {
     source: 'assistant.question',
     kind: String(questionText || '').trim().startsWith('/compact') ? 'compact' : 'user_input',
     content: displayContent,
@@ -1213,23 +1213,11 @@ async function startAssistantSession(req: express.Request, session: any, questio
       prompt: finalPrompt,
       cwd: workDir,
       flagRoot: workDir,
-      model: launch.model || undefined,
-      settingsPath: launch.settingsPath,
-      forceNoProxy: launch.forceNoProxy,
-      useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-      codexProfileKey: launch.codexProfileKey || undefined,
-      codexChannel: launch.codexChannel || undefined,
-      codexConfigPath: launch.codexConfigPath || undefined,
-      codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-      codexSecretValue: launch.codexSecretValue || undefined,
-      harnessProvider: launch.harnessProvider || undefined,
-      harnessBaseUrl: launch.harnessBaseUrl || undefined,
-      harnessSecretValue: launch.harnessSecretValue || undefined,
-      harnessMaxTokens: launch.harnessMaxTokens || undefined,
-      harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+      // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+      modelLaunchOptions: modelLaunchOptions,
       displayName: session.name,
-      agentSessionId: session.claude_session_id || undefined,
-      mobiusJsonl,
+      agentSessionId: session.agent_session_id || undefined,
+      mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(session?.pc_client_metadata),
       // 小莫 assistant 注入 guling 实盘 MCP (HTTP), 让 claude 直接读资金/持仓.
       // resolveGulingMcp() 未配置 env 时返回 null, 这里恒传 true 是安全 no-op.
@@ -1237,9 +1225,9 @@ async function startAssistantSession(req: express.Request, session: any, questio
     });
 
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === session.session_id);
-    const newAgentSid = runtimeInfo?.agentSessionId || null;
-    if (newAgentSid && newAgentSid !== session.claude_session_id) {
-      db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, session.session_id);
+    const newAgentSessionId = runtimeInfo?.agentSessionId || null;
+    if (newAgentSessionId && newAgentSessionId !== session.agent_session_id) {
+      db.prepare('UPDATE sessions_v2 SET agent_session_id=? WHERE session_id=?').run(newAgentSessionId, session.session_id);
     }
   } catch (e) {
     safeRemoveRunningFlag(workDir, session.session_id, 'assistant/messages');

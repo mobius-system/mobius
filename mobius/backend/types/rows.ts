@@ -195,7 +195,7 @@ export interface SessionRawRow {
   name: string;
   description: string | null;
   session_key: string;
-  claude_session_id: string | null;
+  agent_session_id: string | null;
   model: string | null;
   /** DEPRECATED，保留以避免 migration 风险 */
   use_proxy: number;

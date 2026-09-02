@@ -87,7 +87,7 @@ function main() {
   assert.strictEqual(memberResult.total, 1)
   assert.strictEqual(memberResult.truncated, false)
   const memberMatch = memberResult.issues['i-main'][0]
-  for (const forbidden of ['session_key', 'claude_session_id', 'model', 'context_snapshot_body', 'session_selection_snapshot']) {
+  for (const forbidden of ['session_key', 'agent_session_id', 'model', 'context_snapshot_body', 'session_selection_snapshot']) {
     assert.ok(!(forbidden in memberMatch), `search result should not expose ${forbidden}`)
   }
 

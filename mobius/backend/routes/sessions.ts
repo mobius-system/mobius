@@ -42,6 +42,7 @@ import {
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
+  MOBIUS_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 } from '../services/mobius-jsonl';
 // @ts-ignore — service 仍是 .js
@@ -294,7 +295,7 @@ function auditSessionAccess(user: AnyUser, action: string, session: AnySession |
   recordAdminAuditIfCrossUser(user, action, 'session', session.session_id, session.user_id);
 }
 
-function backendForSession(session: AnySession | null | undefined): AnyBackend {
+export function backendForSession(session: AnySession | null | undefined): AnyBackend {
   return agents.get(modelRegistry.backendNameForSessionModel(session?.model));
 }
 
@@ -394,7 +395,7 @@ function shapeSessionForStream(s: AnySession): Record<string, any> {
     total_cost_usd: s.total_cost_usd,
     use_proxy: useProxyForSession(s, backend as any),
     model_label: modelRegistry.labelForSessionModel(s.model),
-    claude_session_id: s.claude_session_id,
+    agent_session_id: s.agent_session_id,
     agent_backend: modelRegistry.backendNameForSessionModel(s.model),
   };
 }
@@ -591,6 +592,26 @@ export async function terminateBackgroundSession(session: AnySession, sid: strin
     : '旧 Session 没有正在运行的后台 agent。';
 
   return { wasAlive, wasWorking, terminated, message };
+}
+
+// "修改模型并继续"的探测版: 只报告旧 agent 状态, 永不终止它.
+// 需求是触发该功能时原 agent 继续跑; 仅当其本来就不在时做 flag/idle 清理.
+export function inspectBackgroundSession(session: AnySession, sid: string): BackgroundCloseResult {
+  const backend = backendForSession(session);
+  let wasAlive = false;
+  let wasWorking = false;
+  try {
+    wasAlive = backend.isAlive(sid);
+    wasWorking = wasAlive && backend.isWorking(sid);
+  } catch {}
+
+  const message = wasAlive
+    ? (wasWorking
+      ? `检测到旧 Session 的后台 agent 仍在执行任务, 已保留其继续运行 (window=${sid})。`
+      : `旧 Session 的后台 agent 仍在线, 已保留其继续运行 (window=${sid})。`)
+    : '旧 Session 没有正在运行的后台 agent。';
+
+  return { wasAlive, wasWorking, terminated: false, message };
 }
 
 function shouldNotifyResearchPeers(req: express.Request): boolean {
@@ -884,6 +905,8 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
             total: metaTotal,
             total_approximate: metaApproximate,
             tail_count: DEFAULT_HISTORY_TAIL,
+            // 特殊规则: .mobius.jsonl 轨尾部阈值 (不受 tail_count 限制)
+            mobius_tail_count: MOBIUS_HISTORY_TAIL,
             jsonl_path: counted?.paths?.primary || histPath || null,
           });
           if (!metaSent || closed) { endStream(); return; }
@@ -1405,7 +1428,7 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     pid,
     agent_backend: backend.name,
     use_proxy: useProxyForSession(session, backend as any),
-    claude_session_id: session.claude_session_id || null,
+    agent_session_id: session.agent_session_id || null,
     worktree_ignored: worktreeIgnored,
     real_time_info: realTimeInfo,
     // 会话当前 model 是否仍可用 (管理员可能已删除该模型配置).
@@ -1939,12 +1962,16 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     } catch (e) {
       console.warn(`[sessions] save transfer marker failed (${sessionId}): ${(e as Error).message}`);
     }
-    const closed = await terminateBackgroundSession(sourceSession, sourceSession.session_id);
-    try {
-      const project = Projects.findById(issue.project_id) as any;
-      if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
-    } catch {}
-    try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
+    // 不终止原 agent: 探测其状态供审计/提示, 活着就让它继续跑.
+    const closed = inspectBackgroundSession(sourceSession, sourceSession.session_id);
+    if (!closed.wasAlive) {
+      // 原 agent 本来就不在: 才清理 flag 并落 idle 痕迹 (与旧行为一致).
+      try {
+        const project = Projects.findById(issue.project_id) as any;
+        if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
+      } catch {}
+      try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
+    }
     try {
       Messages.insertSystem(
         sourceSession.session_id,

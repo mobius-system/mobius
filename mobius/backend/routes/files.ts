@@ -63,6 +63,20 @@ function isSystemTempPath(absPath: string): boolean {
   return resolved === tmpRoot || resolved.startsWith(tmpRoot + path.sep);
 }
 
+// 会话里 AI 产出的文件 (如 display_images 展示的图片) 常落在项目绑定路径下,
+// 而不在请求者 work_dir 内. 放行"用户可读项目"的 bind_path 内路径;
+// git worktree 恒在 bind_path 之下, 一并覆盖.
+function isReadableProjectPath(req: express.Request, absPath: string): boolean {
+  const user = (req as any).user as ScopedUser;
+  if (!user?.id) return false;
+  for (const project of Projects.listAll()) {
+    const bindPath = path.resolve(String(project?.bind_path || ''));
+    if (!bindPath || (absPath !== bindPath && !absPath.startsWith(bindPath + path.sep))) continue;
+    if (canReadProject(user, project)) return true;
+  }
+  return false;
+}
+
 function canDownloadPath(req: express.Request, absPath: string): boolean {
   const user = (req as any).user as ScopedUser;
   const userRoot = path.resolve(user.work_dir);
@@ -70,7 +84,8 @@ function canDownloadPath(req: express.Request, absPath: string): boolean {
     || absPath.startsWith(userRoot + path.sep)
     || isExtensionUserDataPath(absPath, user.id)
     || isMobiusUploadPath(absPath)
-    || isSystemTempPath(absPath);
+    || isSystemTempPath(absPath)
+    || isReadableProjectPath(req, absPath);
 }
 
 router.post('/upload', auth, upload.single('file'), (req: express.Request, res: express.Response) => {

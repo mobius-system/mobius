@@ -26,7 +26,7 @@ function recordBootFailure(err) {
 }
 
 function clearEmittedTsShadows() {
-  const dirs = ['backend/services', 'backend/repositories', 'backend/types'];
+  const dirs = ['backend/services', 'backend/repositories', 'backend/types', 'backend/agents'];
   for (const rel of dirs) {
     const dir = path.join(__dirname, rel);
     let names;

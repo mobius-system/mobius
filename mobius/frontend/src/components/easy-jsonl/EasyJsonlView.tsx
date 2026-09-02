@@ -24,7 +24,8 @@ import { buildRounds } from '../viewer/rounds'
 import { buildEasyJsonlRounds, type EasyActivity, type EasyActivityKind } from './easy-jsonl-model'
 import './easy-jsonl.css'
 
-const EASY_INITIAL_WINDOW_SIZE = 200
+// 首屏窗口对齐后端 SSE 首包上限 (主轨 200 + .mobius.jsonl 轨 600, 见 JsonlView 同名注释)。
+const EASY_INITIAL_WINDOW_SIZE = 800
 
 export type EasyJsonlViewProps = {
   entries: AnyEntry[]
@@ -237,7 +238,7 @@ export default function EasyJsonlView({
                     <strong>回复</strong>
                     {!roundWorking && <CheckCircle2 />}
                   </div>
-                  <JsonlCompactMarkdown text={round.assistantResponse} />
+                  <JsonlCompactMarkdown text={round.assistantResponse} variant="conversation" />
                 </article>
               )}
             </section>

@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   session_key TEXT NOT NULL UNIQUE,
-  claude_session_id TEXT,
+  agent_session_id TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','deleted')),
   agent_status TEXT NOT NULL DEFAULT 'idle' CHECK(agent_status IN ('idle','running','stale','completed','failed','waiting')),
   risk_level TEXT NOT NULL DEFAULT 'medium',

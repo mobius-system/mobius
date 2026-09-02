@@ -11,6 +11,7 @@ import {
   isFunctionCallPayload,
 } from '../viewer/entry-extract'
 import { assistantEntryText } from '../viewer/entry-classify'
+import { extractInitialContext } from '../viewer/initial-context'
 
 export type EasyActivityKind = 'explore' | 'command' | 'file-change' | 'plan' | 'tool' | 'progress' | 'error' | 'image'
 
@@ -61,6 +62,13 @@ function contentText(content: unknown, acceptedTypes: string[]): string {
 }
 
 export function easyUserText(entry: AnyEntry): string {
+  // 首轮注入上下文包装: 只返回用户问题部分, 「你的任务」气泡不再铺整段样板上下文
+  const initial = extractInitialContext(entry)
+  if (initial) return initial.question || easyUserTextRaw(entry)
+  return easyUserTextRaw(entry)
+}
+
+function easyUserTextRaw(entry: AnyEntry): string {
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'user_message') {
     return String(entry.payload.message || entry.payload.content || '').trim()
   }
@@ -88,6 +96,126 @@ function entryTimestamp(entry: AnyEntry): string | undefined {
 function compactText(value: unknown, limit = 220): string {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
+}
+
+// ── 极简最终回复选择 ──────────────────────────────────────────────────────
+// 旧实现"只取最后一条 assistant 文本, 其余全压缩成 320 字进度", 在两种真实场景下丢正文:
+//   1. 长最终回复被原生 Agent 拆成多条 assistant entry → 前段被当进度截断;
+//   2. 末条是 event_msg.agent_message 短镜像, 前一条才是 stop_reason=end_turn 完整回复
+//      → 反而选中了短镜像。
+// 按证据强度分级选取: 完整 turn-complete assistant > 明确 final phase > canonical
+// message > event_msg 镜像; 同级多条做去重合并, 最终正文一律不 compactText。
+
+type AssistantCandidate = {
+  text: string
+  lineNo: number
+  index: number
+  // 证据等级: 3 = Claude stop_reason 完整回复; 2 = Codex 明确 final phase;
+  // 1 = 普通 canonical assistant message; 0 = event_msg.agent_message 镜像。
+  tier: number
+}
+
+// Claude: type=assistant 且 message.stop_reason 存在且不为 tool_use → 完整最终回复。
+function claudeCompleteText(entry: AnyEntry): string | null {
+  if (entry?.type !== 'assistant') return null
+  const stopReason = (entry as any)?.message?.stop_reason
+  if (!stopReason || stopReason === 'tool_use') return null
+  const text = easyAssistantText(entry)
+  return text || null
+}
+
+// Codex: response_item.payload.phase / channel 标记为 final 的 assistant message。
+function codexFinalText(entry: AnyEntry): string | null {
+  if (entry?.type !== 'response_item' || (entry as any)?.payload?.type !== 'message') return null
+  if ((entry as any)?.payload?.role !== 'assistant') return null
+  const payload = entry.payload as any
+  const phase = payload?.phase || payload?.channel || (entry as any)?.phase
+  if (phase !== 'final' && phase !== 'final_answer') return null
+  const text = easyAssistantText(entry)
+  return text || null
+}
+
+function isCanonicalAssistant(entry: AnyEntry): boolean {
+  if (entry?.type === 'assistant') return true
+  return entry?.type === 'response_item'
+    && (entry as any)?.payload?.type === 'message'
+    && (entry as any)?.payload?.role === 'assistant'
+}
+
+function isAgentMessageMirror(entry: AnyEntry): boolean {
+  return entry?.type === 'event_msg' && (entry as any)?.payload?.type === 'agent_message'
+}
+
+// 同轮最终正文去重合并 (不做简单拼接, 避免"我先检查一下"混入最终答案):
+//   相同 → 一份; 互相包含 → 取长者; 首尾重叠 → 缝合; 否则按序以空行连接。
+function mergeFinalTexts(texts: string[]): string {
+  const merged: string[] = []
+  for (const raw of texts) {
+    const text = raw.trim()
+    if (!text) continue
+    const prev = merged[merged.length - 1]
+    if (!prev) { merged.push(text); continue }
+    if (prev === text) continue
+    if (prev.includes(text)) continue
+    if (text.includes(prev)) { merged[merged.length - 1] = text; continue }
+    const overlap = findOverlap(prev, text)
+    if (overlap > 0) {
+      merged[merged.length - 1] = prev + text.slice(overlap)
+      continue
+    }
+    merged.push(text)
+  }
+  return merged.join('\n\n')
+}
+
+// 首尾最长重叠长度 (a 尾与 b 头), 用于流式镜像分片的缝合; 上限 2000 字防极端退化。
+function findOverlap(a: string, b: string): number {
+  const max = Math.min(a.length, b.length, 2000)
+  for (let len = max; len >= 16; len--) {
+    if (a.slice(a.length - len) === b.slice(0, len)) return len
+  }
+  return 0
+}
+
+// 选出一轮的最终回复: 取最高非空 tier 的全部候选做去重合并; 无任何候选时返回空串。
+// event_msg.agent_message 镜像仅在没有任何 canonical assistant 输出时才作为正文来源。
+// 若存在完整 turn-complete 回复 (tier 3), 更低证据的 canonical 文本全部降级为进度,
+// 不并入最终正文 — 这是"中间进度 + 最终回复"场景的正确语义。
+export function buildEasyAssistantResponse(items: Array<{ entry: AnyEntry; lineNo: number }>): string {
+  const candidates: AssistantCandidate[] = []
+  items.forEach((item, index) => {
+    const entry = item.entry
+    const complete = claudeCompleteText(entry)
+    if (complete != null) {
+      candidates.push({ text: complete, lineNo: item.lineNo, index, tier: 3 })
+      return
+    }
+    const final = codexFinalText(entry)
+    if (final != null) {
+      candidates.push({ text: final, lineNo: item.lineNo, index, tier: 2 })
+      return
+    }
+    if (isCanonicalAssistant(entry)) {
+      const text = easyAssistantText(entry)
+      if (text) candidates.push({ text, lineNo: item.lineNo, index, tier: 1 })
+      return
+    }
+    if (isAgentMessageMirror(entry)) {
+      const text = easyAssistantText(entry)
+      if (text) candidates.push({ text, lineNo: item.lineNo, index, tier: 0 })
+    }
+  })
+  if (candidates.length === 0) return ''
+  const topTier = Math.max(...candidates.map(candidate => candidate.tier))
+  // tier 1 (无 stop_reason 标记的普通 canonical assistant) 信息不足: 只取最后一条,
+  // 前面的视为中间进度 — 与旧行为兼容, 避免"我先检查一下"混入最终答案。
+  // tier 3/2 (完整 turn-complete / 明确 final) 证据充分: 同级全部候选去重合并。
+  if (topTier < 2) {
+    const last = candidates.filter(candidate => candidate.tier === topTier).pop()
+    return last ? last.text : ''
+  }
+  const finalists = candidates.filter(candidate => candidate.tier === topTier)
+  return mergeFinalTexts(finalists.map(candidate => candidate.text))
 }
 
 function toolBlocks(entry: AnyEntry): any[] {
@@ -223,8 +351,16 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
       if (error) add('error', error, item.lineNo, index)
     })
 
-    const finalMessage = assistantMessages[assistantMessages.length - 1]
-    assistantMessages.slice(0, -1).forEach(message => add('progress', compactText(message.text, 320), message.lineNo, message.index))
+    // 最终正文由分级选择 + 去重合并产出 (见 buildEasyAssistantResponse);
+    // 未进入最终正文的 assistant 文本才降级为进度摘要。
+    const finalResponse = buildEasyAssistantResponse(
+      round.items.map(item => ({ entry: item.entry, lineNo: item.lineNo })),
+    )
+    // 未入选最终正文的 assistant 文本 → 降级为进度摘要 (可压缩)。
+    assistantMessages.forEach(message => {
+      if (finalResponse && finalResponse.includes(message.text.trim())) return
+      add('progress', compactText(message.text, 320), message.lineNo, message.index)
+    })
 
     const activities = Array.from(buckets.values())
       .sort((a, b) => a.firstIndex - b.firstIndex)
@@ -251,7 +387,7 @@ export function buildEasyJsonlRounds(rounds: Round[]): EasyJsonlRound[] {
       roundNum: round.roundNum,
       userPrompt: easyUserText(firstEntry),
       activities,
-      assistantResponse: finalMessage?.text || '',
+      assistantResponse: finalResponse,
       lineNos,
       startedAt: entryTimestamp(firstEntry),
       completedAt: entryTimestamp(lastEntry),
