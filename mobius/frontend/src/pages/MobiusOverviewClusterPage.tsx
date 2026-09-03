@@ -2797,9 +2797,7 @@ export default function MobiusOverviewClusterPage() {
               <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
               <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
-                <span>{model.projectClusters.length} Projects</span>
-                <span>{model.parentClusters.length} Issues / Research</span>
-                <span>{model.nodes.length} Sessions / Agents</span>
+                <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
               </div>
             </div>
