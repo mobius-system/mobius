@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { Bot, Paperclip, Pin, PinOff, Send, X } from 'lucide-react'
+import { ArrowUpRight, Bot, Paperclip, Pin, PinOff, Send, X } from 'lucide-react'
 import { api } from '../store'
 import { uploadAttachmentFile } from './attachments'
 import { EntryCardWithImages } from './viewer/RoundGroups'
@@ -10,7 +10,7 @@ import { readJsonlCacheFromIdb, readJsonlCacheSync, writeJsonlCache } from '../s
 import { RemoteFileMentionDrawer, type AgentMentionMode, type MentionAgentSession } from './chat'
 import type { AnyEntry } from './viewer/types'
 
-type OverlaySession = { id: string; title: string; projectId: string; projectName: string; parentId: string; parentKind: 'issue' | 'research'; color: string; x: number; y: number; active: boolean }
+type OverlaySession = { id: string; title: string; projectId: string; projectName: string; creatorId?: string; parentId: string; parentKind: 'issue' | 'research'; color: string; x: number; y: number; active: boolean }
 type OverlayTransform = { offset: { x: number; y: number }; zoom: number; width: number; height: number }
 
 export type AgentConversationOverlaysProps = {
@@ -19,6 +19,7 @@ export type AgentConversationOverlaysProps = {
   modelRef: MutableRefObject<{ nodes: any[] }>
   transformRef: MutableRefObject<OverlayTransform>
   onClose: (sessionId: string) => void
+  onOpenSession: (session: OverlaySession) => void
 }
 
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
@@ -57,7 +58,7 @@ function visibleOverlayEntries(raw: AnyEntry[]): AnyEntry[] {
   return merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
 }
 
-function SessionOverlay({ session, state, setState, onClose, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
+function SessionOverlay({ session, state, setState, onClose, onOpenSession, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; onOpenSession: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionDrawerOpen, setMentionDrawerOpen] = useState(false)
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{ sessionId: string; name: string; mode: AgentMentionMode }>>([])
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
@@ -178,6 +179,7 @@ function SessionOverlay({ session, state, setState, onClose, positionRef, transf
         <span className="h-2 w-2 rounded-full" style={{ background: session.color, boxShadow: `0 0 10px ${session.color}` }} />
         <span className="min-w-0 flex-1 truncate text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
         <button type="button" aria-label={state.pinned ? '取消固定浮窗' : '固定浮窗'} title={state.pinned ? '取消固定' : '固定'} className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: state.pinned ? session.color : 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => setState((prev) => ({ ...prev, pinned: !prev.pinned }))}>{state.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}</button>
+        <button type="button" aria-label="打开 Session 页面" title="打开 Session 页面" className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onOpenSession}><ArrowUpRight className="h-3.5 w-3.5" /></button>
         <button type="button" aria-label="关闭对话浮窗" title="关闭" className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X className="h-3.5 w-3.5" /></button>
       </div>
       <div ref={messagesRef} data-testid="agent-conversation-messages" className="max-h-[280px] space-y-1 overflow-y-auto px-2 py-2" style={{ scrollbarWidth: 'thin' }}>
@@ -252,7 +254,7 @@ function SessionOverlay({ session, state, setState, onClose, positionRef, transf
   </>
 }
 
-export function AgentConversationOverlays({ sessions, enabled, modelRef, transformRef, onClose }: AgentConversationOverlaysProps) {
+export function AgentConversationOverlays({ sessions, enabled, modelRef, transformRef, onClose, onOpenSession }: AgentConversationOverlaysProps) {
   const [pins, setPins] = useState<Set<string>>(readPins)
   const [states, setStates] = useState<Record<string, OverlayState>>({})
   const positionRef = useRef<Record<string, OverlayPosition>>({})
@@ -330,5 +332,5 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
     return () => cancelAnimationFrame(frame)
   }, [enabled, openSessions, modelRef, transformRef])
   if (!enabled) return null
-  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} positionRef={positionRef} transformRef={transformRef} register={register} /></div>)}</div>
+  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} onOpenSession={() => onOpenSession(session)} positionRef={positionRef} transformRef={transformRef} register={register} /></div>)}</div>
 }

@@ -2072,7 +2072,7 @@ export default function MobiusOverviewClusterPage() {
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
   const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
-  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
+  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -2880,7 +2880,7 @@ export default function MobiusOverviewClusterPage() {
           </div>
 
           <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
-          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
         </main>
       </div>
     </div>
