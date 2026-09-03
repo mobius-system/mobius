@@ -1806,11 +1806,15 @@ export function RemoteFileMentionDrawer({
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
       if (pendingAgent) setPendingAgent(null)
       else onClose()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // Capture Escape before host pages (for example overview) process their own
+    // global Escape shortcut and navigate away while this drawer is open.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, onClose, pendingAgent])
 
   // 近期活跃会话（跨项目，登录用户自己的），与 IssuePage 侧栏「近期会话」同数据源。
