@@ -123,6 +123,10 @@ export function JsonlView({
   loadingMore,
   showMeta = true,
   cursorStyleTools = true,
+  onLoadRoundDetail,
+  roundDetailLoaded,
+  roundDetailVersion,
+  loadingRoundUuid,
   scrollToEntryUuid,
   scrollToMatchTs,
   onScrollResolved,
@@ -140,6 +144,11 @@ export function JsonlView({
   loadingMore?: boolean
   // false 时 jsonl 卡片标题里不再显示 "#序号" 和 "MM-DD HH:MM:SS" 时间戳前缀.
   showMeta?: boolean
+  // 超长会话按需加载: 骨架模式下某轮展开时, 拉取 [本轮 opener ts, 下一轮 opener ts) 的主轨切片.
+  onLoadRoundDetail?: (openerUuid: string, fromTs: string, toTs: string | null) => void
+  roundDetailLoaded?: Set<string>
+  roundDetailVersion?: number
+  loadingRoundUuid?: string | null
   // Cursor 式工具调用展示开关: true 时工具卡显示状态图标 + 连续探索类聚合; false 回退原始展示.
   cursorStyleTools?: boolean
   // 搜索结果跳转: 把命中条目的 uuid / timestamp 传进来, 解析到所属轮次后滚动到该轮卡片.
@@ -340,12 +349,26 @@ export function JsonlView({
         />
       )
     }
+    const openerEntry = block.round.items[0]?.entry
+    const openerUuid = openerEntry?.uuid || openerEntry?.id || null
+    const openerTs = openerEntry?.timestamp || openerEntry?.created_at || null
+    const nextOpenerEntry = rounds[block.index + 1]?.items[0]?.entry
+    const nextTs = nextOpenerEntry?.timestamp || nextOpenerEntry?.created_at || null
     return (
       <RoundGroup
         round={block.round}
         isLast={block.index === rounds.length - 1}
         isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
+        detailLoaded={(() => {
+          // 轮内已有非开篇条目 (尾部窗口带来的主轨明细) = 已加载;
+          // 骨架轮 (只有一张用户输入卡) 才看按需加载集合.
+          if (block.round.items.some((it: any) => it.relIdx > 0)) return true
+          if (!roundDetailLoaded || !openerUuid) return undefined
+          return roundDetailLoaded.has(openerUuid)
+        })()}
+        detailLoading={!!openerUuid && loadingRoundUuid === openerUuid}
+        onNeedDetail={openerUuid && openerTs && onLoadRoundDetail ? () => onLoadRoundDetail(openerUuid, openerTs, nextTs) : undefined}
         forceExpandAll={forceExpandAll}
         forceOpen={block.key === extTarget?.key && extFocusLineNo !== null}
         showMeta={showMeta}

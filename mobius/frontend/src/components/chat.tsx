@@ -60,6 +60,31 @@ const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
 
+// 按 uuid/id 去重合并两个 entries 数组 (骨架/切片与已加载内容可能重叠), 合并后按时间戳归位.
+function mergeJsonlEntriesByIdentity(prev: any[], incoming: any[]): any[] {
+  if (!incoming || incoming.length === 0) return prev
+  const seen = new Set<string>()
+  for (const e of prev) {
+    const k = e?.uuid || e?.id
+    if (k) seen.add(k)
+  }
+  const add = incoming.filter((e: any) => {
+    const k = e?.uuid || e?.id
+    if (!k) return true
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  if (add.length === 0) return prev
+  const merged = prev.concat(add)
+  const ts = (e: any) => {
+    const ms = Date.parse(e?.timestamp || e?.created_at || '')
+    return Number.isFinite(ms) ? ms : 0
+  }
+  merged.sort((a: any, b: any) => ts(a) - ts(b))
+  return merged
+}
+
 function clampChatInputRatio(value: number) {
   if (!Number.isFinite(value)) return CHAT_INPUT_DEFAULT_RATIO
   return Math.max(CHAT_INPUT_MIN_RATIO, Math.min(0.6, value))
@@ -3837,9 +3862,10 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
 
   useEffect(() => { loadHistoryRef.current = loadHistory }, [loadHistory])
 
-  // count-then-tail: "加载全部" 时, 用 REST 拉缺失的头部 entries 并 prepend.
-  // 服务端按 0..total 排好序; 当前 entries 已经是末尾 N 条, 我们拉 [0, total - entries.length)
-  // 然后 prepend 到本地 entries. 全部加载完后 hasRemoteMore 自动变 false (entries.length 追上 total).
+  // count-then-tail: "加载全部" = 只拉伴生轨全量骨架 (超长会话按需加载).
+  // 骨架 = 每轮一张用户输入卡, 主轨明细等用户展开该轮时再按时间戳切片取 (loadRoundJsonlDetail).
+  // 伴生轨为空的旧会话回退旧路径 (拉双轨 merge 头部窗口).
+  const spineModeRef = useRef(false)
   const handleLoadAllJsonl = useCallback(async () => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
@@ -3848,22 +3874,67 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     if (jsonlTotal <= jsonlEntries.length) return
     setJsonlLoadingMore(true)
     try {
-      const missing = jsonlTotal - jsonlEntries.length
-      // 限制单次请求 ≤ 5000; 超过的会被后端 clip, 但我们就拿到能拿的部分.
-      const data = await api(`/api/sessions/${sid}/jsonl-history?from=0&limit=${Math.max(missing, 1)}`)
-      const head = Array.isArray(data?.entries) ? data.entries : []
-      if (!head.length) return
-      // 切换 session 防御: 加载期间用户切了 session, 丢弃结果.
+      const data = await api(`/api/sessions/${sid}/jsonl-history?track=mobius`)
+      const spine = Array.isArray(data?.entries) ? data.entries : []
       const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
       if (sid !== activeSid) return
-      setJsonlEntries(prev => head.concat(prev))
-      if (Number.isFinite(Number(data?.total))) setJsonlTotal(Number(data.total))
+      if (spine.length > 0) {
+        const merged = mergeJsonlEntriesByIdentity(jsonlEntries, spine)
+        setJsonlEntries(merged)
+        spineModeRef.current = true
+        // 骨架已全量在手: total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
+        setJsonlTotal(merged.length)
+      } else {
+        // 回退: 无伴生轨的旧会话走旧 merge 窗口
+        const missing = jsonlTotal - jsonlEntries.length
+        const legacy = await api(`/api/sessions/${sid}/jsonl-history?from=0&limit=${Math.max(missing, 1)}`)
+        const head = Array.isArray(legacy?.entries) ? legacy.entries : []
+        if (!head.length) return
+        setJsonlEntries(prev => head.concat(prev))
+        if (Number.isFinite(Number(legacy?.total))) setJsonlTotal(Number(legacy.total))
+      }
     } catch (e) {
       console.warn('[jsonl] load all failed:', e)
     } finally {
       setJsonlLoadingMore(false)
     }
   }, [currentSession?.session_id, currentTask?.task_id, flushPendingJsonlEntries, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
+
+  // 按轮加载主轨明细: [openerTs, nextOpenerTs) 时间戳切片, 游标自动续页; 已加载轮去重.
+  const roundDetailLoadedRef = useRef<Set<string>>(new Set())
+  const [roundDetailTick, setRoundDetailTick] = useState(0)
+  const [loadingRoundUuid, setLoadingRoundUuid] = useState<string | null>(null)
+  const loadRoundJsonlDetail = useCallback(async (openerUuid: string, fromTs: string, toTs: string | null) => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid || !fromTs) return
+    if (roundDetailLoadedRef.current.has(openerUuid)) return
+    setLoadingRoundUuid(openerUuid)
+    try {
+      const collected: any[] = []
+      let fromByte: number | null = null
+      for (let page = 0; page < 10; page++) {
+        const q = new URLSearchParams({ track: 'primary', from_ts: fromTs, limit: '2000' })
+        if (toTs) q.set('to_ts', toTs)
+        if (fromByte != null) q.set('from_byte', String(fromByte))
+        const data = await api(`/api/sessions/${sid}/jsonl-history?${q.toString()}`)
+        const part = Array.isArray(data?.entries) ? data.entries : []
+        collected.push(...part)
+        if (!data?.has_more || !data?.next_from_byte) break
+        fromByte = Number(data.next_from_byte)
+      }
+      const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+      if (sid !== activeSid) return
+      if (collected.length > 0) {
+        setJsonlEntries(prev => mergeJsonlEntriesByIdentity(prev, collected))
+      }
+      roundDetailLoadedRef.current.add(openerUuid)
+      setRoundDetailTick(t => t + 1)
+    } catch (e) {
+      console.warn('[jsonl] load round detail failed:', e)
+    } finally {
+      setLoadingRoundUuid(null)
+    }
+  }, [currentSession?.session_id, currentTask?.task_id])
 
   useEffect(() => {
     const sid = currentSession?.session_id || currentTask?.task_id
@@ -4670,6 +4741,10 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
           hasNewMessages={hasNewMessages}
           onLoadAllJsonl={handleLoadAllJsonl}
+          onLoadRoundDetail={loadRoundJsonlDetail}
+          roundDetailLoaded={spineModeRef.current ? roundDetailLoadedRef.current : undefined}
+          roundDetailVersion={roundDetailTick}
+          loadingRoundUuid={loadingRoundUuid}
           onScrollPositionChange={handleJsonlScrollPositionChange}
           onJumpToBottom={jumpToJsonlBottom}
           scrollToEntryUuid={matchUuid}

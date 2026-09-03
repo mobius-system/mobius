@@ -154,7 +154,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo, headerPalette, taskPlans }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo, headerPalette, taskPlans, detailLoaded, detailLoading, onNeedDetail }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null; detailLoaded?: boolean; detailLoading?: boolean; onNeedDetail?: () => void }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -174,7 +174,10 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
   const toggle = () => {
     userToggledRef.current = true
-    setOpen(o => !o)
+    const next = !open
+    // 骨架模式下用户展开 → 自动拉取该轮主轨明细 (只在"确认未加载"时触发一次)
+    if (next && detailLoaded === false && onNeedDetail) onNeedDetail()
+    setOpen(next)
   }
 
   const userItem = round.items[0]
@@ -225,6 +228,18 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
       {open && (
         <div className="mt-2 jsonl-thread">
+          {detailLoaded === false && onNeedDetail && (
+            <div className="mb-1 flex justify-center">
+              <button
+                type="button"
+                onClick={onNeedDetail}
+                disabled={!!detailLoading}
+                className="text-[10px] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+              >
+                {detailLoading ? '正在加载本轮明细…' : '加载本轮明细 (主轨条目未加载)'}
+              </button>
+            </div>
+          )}
           {renderSeq.map((ri, idx) => {
             if (ri.kind === 'explore') {
               return (
