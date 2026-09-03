@@ -17,6 +17,7 @@ type OverlayTransform = { offset: { x: number; y: number }; zoom: number; width:
 export type AgentConversationOverlaysProps = {
   sessions: OverlaySession[]
   enabled: boolean
+  compact: boolean
   modelRef: MutableRefObject<{ nodes: any[] }>
   transformRef: MutableRefObject<OverlayTransform>
   onClose: (sessionId: string) => void
@@ -31,11 +32,13 @@ const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // same coordinate space as the floating windows.
 const CANVAS_TOP_OFFSET = 58
 const OVERLAY_WIDTH = 312
+const COMPACT_OVERLAY_WIDTH = 156
 const MIN_VISIBLE_HEADER_WIDTH = 72
 const MIN_VISIBLE_HEADER_HEIGHT = 16
 
-function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform) {
-  const minLeft = MIN_VISIBLE_HEADER_WIDTH - OVERLAY_WIDTH
+function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
+  const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
+  const minLeft = MIN_VISIBLE_HEADER_WIDTH - overlayWidth
   const maxLeft = Math.max(minLeft, viewport.width - MIN_VISIBLE_HEADER_WIDTH)
   const minTop = CANVAS_TOP_OFFSET
   const maxTop = Math.max(minTop, CANVAS_TOP_OFFSET + viewport.height - MIN_VISIBLE_HEADER_HEIGHT)
@@ -59,7 +62,7 @@ function visibleOverlayEntries(raw: AnyEntry[]): AnyEntry[] {
   return merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
 }
 
-function SessionOverlay({ session, state, setState, onClose, onOpenSession, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; onOpenSession: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
+function SessionOverlay({ session, state, compact, setState, onClose, onOpenSession, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; compact: boolean; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; onOpenSession: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionDrawerOpen, setMentionDrawerOpen] = useState(false)
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{ sessionId: string; name: string; mode: AgentMentionMode }>>([])
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
@@ -185,29 +188,29 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
     <div ref={panelRef} data-testid="agent-conversation-overlay" data-session-id={session.id} className="absolute z-10 w-[312px] overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl" style={{ left: 0, top: 0, transform: 'translate3d(24px,84px,0)', borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
       <div className="flex h-8 cursor-grab items-center gap-2 border-b px-2.5 active:cursor-grabbing" style={{ borderColor: `${session.color}44`, background: `${session.color}16` }}
         onPointerDown={(event) => { const current = positionRef.current[session.id] || { left: 24, top: 84, targetX: 0, targetY: 0 }; start.current = { x: event.clientX, y: event.clientY, left: current.left, top: current.top }; event.currentTarget.setPointerCapture(event.pointerId) }}
-        onPointerMove={(event) => { const s = start.current; if (!s) return; const clamped = clampOverlayPosition(s.left + event.clientX - s.x, s.top + event.clientY - s.y, transformRef.current); const next = { ...(positionRef.current[session.id] || { targetX: 0, targetY: 0 }), ...clamped, manual: true }; positionRef.current[session.id] = next; panelRef.current?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`) }}
+        onPointerMove={(event) => { const s = start.current; if (!s) return; const clamped = clampOverlayPosition(s.left + event.clientX - s.x, s.top + event.clientY - s.y, transformRef.current, compact); const next = { ...(positionRef.current[session.id] || { targetX: 0, targetY: 0 }), ...clamped, manual: true }; positionRef.current[session.id] = next; panelRef.current?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`) }}
         onPointerUp={() => { start.current = null }}
         onPointerCancel={() => { start.current = null }}
         onLostPointerCapture={() => { start.current = null }}>
-        <span className="h-2 w-2 rounded-full" style={{ background: session.color, boxShadow: `0 0 10px ${session.color}` }} />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
-        <button type="button" aria-label={state.pinned ? '取消固定浮窗' : '固定浮窗'} title={state.pinned ? '取消固定' : '固定'} className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: state.pinned ? session.color : 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => setState((prev) => ({ ...prev, pinned: !prev.pinned }))}>{state.pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}</button>
-        <button type="button" aria-label="打开 Session 页面" title="打开 Session 页面" className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onOpenSession}><ArrowUpRight className="h-3.5 w-3.5" /></button>
-        <button type="button" aria-label="关闭对话浮窗" title="关闭" className="rounded p-1 transition-colors hover:bg-white/10" style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X className="h-3.5 w-3.5" /></button>
+        <span className={compact ? 'h-1.5 w-1.5 rounded-full' : 'h-2 w-2 rounded-full'} style={{ background: session.color, boxShadow: `0 0 10px ${session.color}` }} />
+        <span className={`min-w-0 flex-1 truncate font-semibold ${compact ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: 'var(--text-primary)' }}>{session.title}</span>
+        <button type="button" aria-label={state.pinned ? '取消固定浮窗' : '固定浮窗'} title={state.pinned ? '取消固定' : '固定'} className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: state.pinned ? session.color : 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => setState((prev) => ({ ...prev, pinned: !prev.pinned }))}>{state.pinned ? <Pin className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /> : <PinOff className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}</button>
+        <button type="button" aria-label="打开 Session 页面" title="打开 Session 页面" className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onOpenSession}><ArrowUpRight className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
+        <button type="button" aria-label="关闭对话浮窗" title="关闭" className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
       </div>
-      <div ref={messagesRef} data-testid="agent-conversation-messages" className="max-h-[280px] space-y-1 overflow-y-auto px-2 py-2" style={{ scrollbarWidth: 'thin' }}>
-        {state.entries.length === 0 ? <div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>等待最新消息…</div> : state.entries.map((entry, index) => <div key={`${entry.uuid || entry.id || entry.timestamp || index}`} className="[&_.jsonl-entry-card]:!mb-1 [&_.jsonl-entry-card]:!rounded-md [&_.jsonl-entry-card_summary]:!px-2 [&_.jsonl-entry-card_summary]:!py-1"><EntryCardWithImages entry={entry} lineNo={index + 1} showMeta={false} parentOrderedCollapse /></div>)}
+      <div ref={messagesRef} data-testid="agent-conversation-messages" className={`overflow-y-auto ${compact ? 'max-h-[140px] space-y-0.5 px-1 py-1' : 'max-h-[280px] space-y-1 px-2 py-2'}`} style={{ scrollbarWidth: 'thin' }}>
+        {state.entries.length === 0 ? <div className={`${compact ? 'py-3 text-[9px]' : 'py-6 text-[11px]'} text-center`} style={{ color: 'var(--text-muted)' }}>等待最新消息…</div> : state.entries.map((entry, index) => <div key={`${entry.uuid || entry.id || entry.timestamp || index}`} className={compact ? '[&_.jsonl-entry-card]:!mb-0.5 [&_.jsonl-entry-card]:!rounded [&_.jsonl-entry-card_summary]:!px-1 [&_.jsonl-entry-card_summary]:!py-0.5 [&_.jsonl-entry-card_summary]:!text-[9px]' : '[&_.jsonl-entry-card]:!mb-1 [&_.jsonl-entry-card]:!rounded-md [&_.jsonl-entry-card_summary]:!px-2 [&_.jsonl-entry-card_summary]:!py-1'}><EntryCardWithImages entry={entry} lineNo={index + 1} showMeta={false} parentOrderedCollapse /></div>)}
       </div>
       <div className="mobius-chat-input border-t" style={{ borderColor: `${session.color}33`, background: 'transparent' }}>
-        <div className="mobius-chat-input-editor min-w-0 flex-shrink-0 p-2">
+        <div className={`mobius-chat-input-editor min-w-0 flex-shrink-0 ${compact ? 'p-1' : 'p-2'}`}>
           {selectedAgentMentions.length > 0 && (
-            <div className="mb-1.5 flex max-h-14 flex-wrap gap-1 overflow-y-auto">
+            <div className={`${compact ? 'mb-1 max-h-8 gap-0.5' : 'mb-1.5 max-h-14 gap-1'} flex flex-wrap overflow-y-auto`}>
               {selectedAgentMentions.map((mention) => (
-                <span key={mention.sessionId} className="inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: `${session.color}44`, color: 'var(--text-secondary)', background: `${session.color}12` }}>
-                  <Bot className="h-3 w-3 flex-shrink-0" />
-                  <span className="max-w-32 truncate">@{mention.name}</span>
+                <span key={mention.sessionId} className={`inline-flex max-w-full items-center rounded border ${compact ? 'gap-0.5 px-1 py-0 text-[8px]' : 'gap-1 px-1.5 py-0.5 text-[10px]'}`} style={{ borderColor: `${session.color}44`, color: 'var(--text-secondary)', background: `${session.color}12` }}>
+                  <Bot className={compact ? 'h-2.5 w-2.5 flex-shrink-0' : 'h-3 w-3 flex-shrink-0'} />
+                  <span className={compact ? 'max-w-16 truncate' : 'max-w-32 truncate'}>@{mention.name}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{mention.mode === 'bidirectional' ? '双向' : '只读'}</span>
-                  <button type="button" aria-label={`移除引用 ${mention.name}`} onClick={() => setSelectedAgentMentions((current) => current.filter((item) => item.sessionId !== mention.sessionId))} className="rounded p-0.5 hover:bg-white/10"><X className="h-2.5 w-2.5" /></button>
+                  <button type="button" aria-label={`移除引用 ${mention.name}`} onClick={() => setSelectedAgentMentions((current) => current.filter((item) => item.sessionId !== mention.sessionId))} className="rounded p-0.5 hover:bg-white/10"><X className={compact ? 'h-2 w-2' : 'h-2.5 w-2.5'} /></button>
                 </span>
               ))}
             </div>
@@ -276,17 +279,17 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
               }
             }}
             placeholder="发送指令… @引用 · ↑回溯"
-            className="min-h-[42px] w-full resize-none bg-transparent px-1 py-1 text-[12px] leading-5 outline-none placeholder:text-[var(--text-muted)]"
+            className={`w-full resize-none bg-transparent px-1 outline-none placeholder:text-[var(--text-muted)] ${compact ? 'min-h-[24px] py-0 text-[9px] leading-3' : 'min-h-[42px] py-1 text-[12px] leading-5'}`}
             style={{ color: 'var(--text-primary)' }}
           />
-          <div className="flex items-center justify-between pt-1">
-            <span className="truncate text-[10px]" style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span>
+          <div className={`flex items-center justify-between ${compact ? 'pt-0.5' : 'pt-1'}`}>
+            <span className={`truncate ${compact ? 'text-[8px]' : 'text-[10px]'}`} style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span>
             <div className="flex items-center gap-1">
-              <label className="cursor-pointer rounded p-1.5 transition-colors hover:bg-white/10" title="粘贴或选择文件" style={{ color: 'var(--text-muted)' }}>
-                <Paperclip className="h-3.5 w-3.5" />
+              <label className={`cursor-pointer rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1.5'}`} title="粘贴或选择文件" style={{ color: 'var(--text-muted)' }}>
+                <Paperclip className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
                 <input type="file" multiple className="hidden" onChange={async (event) => { const files = Array.from(event.target.files || []); if (!files.length) return; try { const uploaded = await Promise.all(files.map((file) => uploadAttachmentFile(file, session.projectId))); setState((prev) => ({ ...prev, draft: `${prev.draft}${prev.draft ? '\n' : ''}${uploaded.map((item) => item.path).join('\n')}` })) } catch (error: any) { setState((prev) => ({ ...prev, error: error?.message || '文件上传失败' })) } event.currentTarget.value = '' }} />
               </label>
-              <button type="button" aria-label="发送指令" disabled={state.sending || !state.draft.trim()} onClick={() => { void send() }} className="rounded-md p-1.5 transition-colors disabled:opacity-40" style={{ color: session.color, background: `${session.color}18` }}><Send className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label="发送指令" disabled={state.sending || !state.draft.trim()} onClick={() => { void send() }} className={`rounded-md transition-colors disabled:opacity-40 ${compact ? 'p-0.5' : 'p-1.5'}`} style={{ color: session.color, background: `${session.color}18` }}><Send className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
             </div>
           </div>
         </div>
@@ -295,7 +298,7 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
   </>
 }
 
-export function AgentConversationOverlays({ sessions, enabled, modelRef, transformRef, onClose, onOpenSession }: AgentConversationOverlaysProps) {
+export function AgentConversationOverlays({ sessions, enabled, compact, modelRef, transformRef, onClose, onOpenSession }: AgentConversationOverlaysProps) {
   const [pins, setPins] = useState<Set<string>>(readPins)
   const [states, setStates] = useState<Record<string, OverlayState>>({})
   const positionRef = useRef<Record<string, OverlayPosition>>({})
@@ -347,10 +350,11 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
           const node = nodeById.get(session.id)
           const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
           const targetY = node ? node.y * t.zoom + t.offset.y + CANVAS_TOP_OFFSET : 120 + Math.floor(index / 3) * 230 + CANVAS_TOP_OFFSET
-          const computedLeft = Math.max(8, Math.min(Math.max(8, t.width - 320), targetX + 18))
+          const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
+          const computedLeft = Math.max(8, Math.min(Math.max(8, t.width - overlayWidth - 8), targetX + 18))
           const computedTop = Math.max(68, Math.min(Math.max(68, t.height - 180), targetY - 30))
           const previous = positionRef.current[session.id]
-          const manualPosition = previous?.manual ? clampOverlayPosition(previous.left, previous.top, t) : null
+          const manualPosition = previous?.manual ? clampOverlayPosition(previous.left, previous.top, t, compact) : null
           const next: OverlayPosition = {
             left: manualPosition?.left ?? computedLeft,
             top: manualPosition?.top ?? computedTop,
@@ -361,7 +365,7 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
           positionRef.current[session.id] = next
           const elements = elementRefs.current[session.id]
           elements?.panel?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`)
-          elements?.line?.setAttribute('x1', String(next.left + 154))
+          elements?.line?.setAttribute('x1', String(next.left + overlayWidth / 2))
           elements?.line?.setAttribute('y1', String(next.top + 4))
           elements?.line?.setAttribute('x2', String(next.targetX))
           elements?.line?.setAttribute('y2', String(next.targetY))
@@ -371,7 +375,7 @@ export function AgentConversationOverlays({ sessions, enabled, modelRef, transfo
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [enabled, openSessions, modelRef, transformRef])
+  }, [compact, enabled, openSessions, modelRef, transformRef])
   if (!enabled) return null
-  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} onOpenSession={() => onOpenSession(session)} positionRef={positionRef} transformRef={transformRef} register={register} /></div>)}</div>
+  return <div className="pointer-events-none absolute inset-0 z-[15] overflow-hidden">{openSessions.map((session) => <div key={session.id} className="pointer-events-auto"><SessionOverlay session={session} compact={compact} state={states[session.id] || { pinned: pins.has(session.id), entries: [], draft: '', sending: false }} setState={(updater) => { setSessionState(session.id, (prev) => { const next = updater(prev); if (next.pinned !== prev.pinned) { setPins((current) => { const copy = new Set(current); if (next.pinned) copy.add(session.id); else copy.delete(session.id); return copy }) } return next }) }} onClose={() => { if (pins.has(session.id)) setPins((current) => { const copy = new Set(current); copy.delete(session.id); return copy }); onClose(session.id) }} onOpenSession={() => onOpenSession(session)} positionRef={positionRef} transformRef={transformRef} register={register} /></div>)}</div>
 }

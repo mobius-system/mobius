@@ -7,7 +7,9 @@ import {
   FlaskConical,
   GitBranch,
   LocateFixed,
+  Maximize2,
   MessageSquare,
+  Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -1842,6 +1844,9 @@ export default function MobiusOverviewClusterPage() {
   const [showConversationWindows, setShowConversationWindows] = useState<boolean>(() => {
     try { return localStorage.getItem('mobius:overview-conversation-windows') === '1' } catch { return false }
   })
+  const [compactConversationWindows, setCompactConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
+  })
   const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -2518,6 +2523,14 @@ export default function MobiusOverviewClusterPage() {
     })
   }
 
+  const handleCompactConversationWindowsChange = () => {
+    setCompactConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-compact', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
@@ -2813,6 +2826,9 @@ export default function MobiusOverviewClusterPage() {
               <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-3.5 w-3.5" />对话窗</button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩至 50%'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩至 50%'} onClick={handleCompactConversationWindowsChange} className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}微缩</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <ZoomOut className="h-3.5 w-3.5" />
               </button>
@@ -2880,7 +2896,7 @@ export default function MobiusOverviewClusterPage() {
           </div>
 
           <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
-          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
         </main>
       </div>
     </div>
