@@ -1646,9 +1646,9 @@ type MentionFileSource = {
   remote_path?: string
 }
 
-type AgentMentionMode = 'read_only' | 'bidirectional'
+export type AgentMentionMode = 'read_only' | 'bidirectional'
 
-type MentionAgentSession = {
+export type MentionAgentSession = {
   session_id: string
   name: string
   description?: string
@@ -1685,7 +1685,7 @@ function getChatDesktopFileBridge(): ChatDesktopFileBridge | undefined {
   return (window as { mobiusDesktop?: ChatDesktopFileBridge }).mobiusDesktop
 }
 
-function RemoteFileMentionDrawer({
+export function RemoteFileMentionDrawer({
   projectId,
   issueId,
   researchId,
