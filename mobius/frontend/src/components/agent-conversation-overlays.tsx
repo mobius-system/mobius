@@ -6,6 +6,7 @@ import { EntryCardWithImages } from './viewer/RoundGroups'
 import { mergeBashToolResultItems } from './viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from './viewer/entry-classify'
 import { pollRecursive } from '../services/polling'
+import { clampOverlayToBounds, resolveOverlayCollisions, type OverlayCollisionItem } from '../services/overlay-collision'
 import { readJsonlCacheFromIdb, readJsonlCacheSync, writeJsonlCache } from '../services/session-jsonl-cache'
 import { preloadSessionInputCache, prependSessionInputCache, readSessionInputCache, refreshSessionInputCache, type SessionInputEntry } from '../services/session-input-cache'
 import { RemoteFileMentionDrawer, type AgentMentionMode, type MentionAgentSession } from './chat'
@@ -26,6 +27,7 @@ export type AgentConversationOverlaysProps = {
 
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
 type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
+type OverlayLayoutItem = OverlayPosition & OverlayCollisionItem
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // The canvas begins below the 40px overview header, while the overlay layer is
 // positioned against the full page main element. Keep line endpoints in the
@@ -35,6 +37,10 @@ const OVERLAY_WIDTH = 312
 const COMPACT_OVERLAY_WIDTH = Math.round((OVERLAY_WIDTH / 2) * 1.3)
 const MIN_VISIBLE_HEADER_WIDTH = 72
 const MIN_VISIBLE_HEADER_HEIGHT = 16
+const OVERLAY_COLLISION_PASSES = 4
+const OVERLAY_COLLISION_GAP = 10
+const COMPACT_OVERLAY_COLLISION_GAP = 6
+const OVERLAY_ANCHOR_PULL = 0.04
 
 function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
   const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
@@ -46,6 +52,15 @@ function clampOverlayPosition(left: number, top: number, viewport: OverlayTransf
     left: Math.max(minLeft, Math.min(maxLeft, left)),
     top: Math.max(minTop, Math.min(maxTop, top)),
   }
+}
+
+function clampAutoOverlayPosition(left: number, top: number, width: number, height: number, viewport: OverlayTransform) {
+  return clampOverlayToBounds({ left, top, width, height }, {
+    left: 8,
+    top: CANVAS_TOP_OFFSET + 8,
+    right: viewport.width - 8,
+    bottom: CANVAS_TOP_OFFSET + viewport.height - 8,
+  })
 }
 
 function readPins() {
@@ -302,7 +317,7 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
   const [pins, setPins] = useState<Set<string>>(readPins)
   const [states, setStates] = useState<Record<string, OverlayState>>({})
   const positionRef = useRef<Record<string, OverlayPosition>>({})
-  const elementRefs = useRef<Record<string, { panel: HTMLDivElement | null; line: SVGLineElement | null }>>({})
+  const elementRefs = useRef<Record<string, { panel: HTMLDivElement | null; line: SVGLineElement | null; height: number; observer?: ResizeObserver }>>({})
   const knownSessionsRef = useRef<Record<string, OverlaySession>>({})
   sessions.forEach((session) => { knownSessionsRef.current[session.id] = session })
   const setSessionState = (id: string, updater: (prev: OverlayState) => OverlayState) => setStates((prev) => ({ ...prev, [id]: updater(prev[id] || { pinned: pins.has(id), entries: [], draft: '', sending: false }) }))
@@ -326,12 +341,21 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
     return () => window.removeEventListener('mobius:pin-overlay', onPin)
   }, [])
   const register = useCallback((id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => {
+    const previous = elementRefs.current[id]
     if (!panel && !line) {
+      previous?.observer?.disconnect()
       delete elementRefs.current[id]
       delete positionRef.current[id]
       return
     }
-    elementRefs.current[id] = { panel, line }
+    if (previous?.panel === panel && previous?.line === line) return
+    previous?.observer?.disconnect()
+    const record = { panel, line, height: panel?.offsetHeight || previous?.height || 0, observer: undefined as ResizeObserver | undefined }
+    if (panel && typeof ResizeObserver !== 'undefined') {
+      record.observer = new ResizeObserver(() => { record.height = panel.offsetHeight })
+      record.observer.observe(panel)
+    }
+    elementRefs.current[id] = record
   }, [])
   useEffect(() => {
     if (!enabled || openSessions.length === 0) return
@@ -346,26 +370,51 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
         const t = transformRef.current
         const nodeById = new Map<string, any>()
         modelRef.current.nodes.forEach((node: any) => { if (node?.id) nodeById.set(node.id, node) })
-        openSessions.forEach((session, index) => {
+        const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
+        const layouts = openSessions.map((session, index): OverlayLayoutItem => {
           const node = nodeById.get(session.id)
           const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
           const targetY = node ? node.y * t.zoom + t.offset.y + CANVAS_TOP_OFFSET : 120 + Math.floor(index / 3) * 230 + CANVAS_TOP_OFFSET
-          const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
-          const computedLeft = Math.max(8, Math.min(Math.max(8, t.width - overlayWidth - 8), targetX + 18))
-          const computedTop = Math.max(68, Math.min(Math.max(68, t.height - 180), targetY - 30))
+          const elements = elementRefs.current[session.id]
+          const overlayHeight = elements?.height || (compact ? 210 : 390)
+          const automatic = clampAutoOverlayPosition(targetX + 18, targetY - 30, overlayWidth, overlayHeight, t)
           const previous = positionRef.current[session.id]
           const manualPosition = previous?.manual ? clampOverlayPosition(previous.left, previous.top, t, compact) : null
-          const next: OverlayPosition = {
-            left: manualPosition?.left ?? computedLeft,
-            top: manualPosition?.top ?? computedTop,
+          const trackedPosition = previous && !previous.manual
+            ? {
+                left: previous.left + targetX - previous.targetX,
+                top: previous.top + targetY - previous.targetY,
+              }
+            : automatic
+          const restingPosition = clampAutoOverlayPosition(
+            trackedPosition.left + (automatic.left - trackedPosition.left) * OVERLAY_ANCHOR_PULL,
+            trackedPosition.top + (automatic.top - trackedPosition.top) * OVERLAY_ANCHOR_PULL,
+            overlayWidth,
+            overlayHeight,
+            t,
+          )
+          return {
+            id: session.id,
+            left: manualPosition?.left ?? restingPosition.left,
+            top: manualPosition?.top ?? restingPosition.top,
             targetX,
             targetY,
-            manual: previous?.manual,
+            width: overlayWidth,
+            height: overlayHeight,
+            manual: Boolean(previous?.manual),
           }
-          positionRef.current[session.id] = next
-          const elements = elementRefs.current[session.id]
+        })
+        const resolved = resolveOverlayCollisions(layouts, {
+          left: 8,
+          top: CANVAS_TOP_OFFSET + 8,
+          right: t.width - 8,
+          bottom: CANVAS_TOP_OFFSET + t.height - 8,
+        }, compact ? COMPACT_OVERLAY_COLLISION_GAP : OVERLAY_COLLISION_GAP, OVERLAY_COLLISION_PASSES)
+        resolved.forEach((next) => {
+          positionRef.current[next.id] = next
+          const elements = elementRefs.current[next.id]
           elements?.panel?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`)
-          elements?.line?.setAttribute('x1', String(next.left + overlayWidth / 2))
+          elements?.line?.setAttribute('x1', String(next.left + next.width / 2))
           elements?.line?.setAttribute('y1', String(next.top + 4))
           elements?.line?.setAttribute('x2', String(next.targetX))
           elements?.line?.setAttribute('y2', String(next.targetY))
