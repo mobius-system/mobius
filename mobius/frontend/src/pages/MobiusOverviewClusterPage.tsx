@@ -2549,9 +2549,18 @@ export default function MobiusOverviewClusterPage() {
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 3
       drag.moved = drag.moved || moved
       if (drag.mode === 'pan') {
-        offsetRef.current = {
+        const nextOffset = {
           x: drag.originX + event.clientX - drag.startX,
           y: drag.originY + event.clientY - drag.startY,
+        }
+        offsetRef.current = nextOffset
+        // Publish immediately as well as during draw(). The overlay RAF can run
+        // before the canvas RAF, so waiting for paint leaves connectors one frame behind.
+        overlayTransformRef.current = {
+          offset: nextOffset,
+          zoom: zoomRef.current,
+          width: sizeRef.current.width,
+          height: sizeRef.current.height,
         }
       }
       return
