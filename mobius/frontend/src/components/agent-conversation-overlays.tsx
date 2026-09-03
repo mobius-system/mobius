@@ -185,7 +185,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
     <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-visible" aria-hidden="true">
       <line ref={lineRef} stroke={session.color} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 5" />
     </svg>
-    <div ref={panelRef} data-testid="agent-conversation-overlay" data-session-id={session.id} className={`absolute z-10 overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl ${compact ? 'agent-conversation-overlay--compact' : ''}`} style={{ left: 0, top: 0, width: compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH, transform: 'translate3d(24px,84px,0)', borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
+    <div ref={panelRef} data-testid="agent-conversation-overlay" data-session-id={session.id} className={`agent-conversation-overlay absolute z-10 overflow-hidden rounded-xl border shadow-2xl backdrop-blur-xl ${compact ? 'agent-conversation-overlay--compact' : ''}`} style={{ left: 0, top: 0, width: compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH, transform: 'translate3d(24px,84px,0)', borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
       <div className={`flex cursor-grab items-center border-b active:cursor-grabbing ${compact ? 'h-4 gap-1 px-1' : 'h-8 gap-2 px-2.5'}`} style={{ borderColor: `${session.color}44`, background: `${session.color}16` }}
         onPointerDown={(event) => { const current = positionRef.current[session.id] || { left: 24, top: 84, targetX: 0, targetY: 0 }; start.current = { x: event.clientX, y: event.clientY, left: current.left, top: current.top }; event.currentTarget.setPointerCapture(event.pointerId) }}
         onPointerMove={(event) => { const s = start.current; if (!s) return; const clamped = clampOverlayPosition(s.left + event.clientX - s.x, s.top + event.clientY - s.y, transformRef.current, compact); const next = { ...(positionRef.current[session.id] || { targetX: 0, targetY: 0 }), ...clamped, manual: true }; positionRef.current[session.id] = next; panelRef.current?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`) }}
@@ -193,20 +193,20 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
         onPointerCancel={() => { start.current = null }}
         onLostPointerCapture={() => { start.current = null }}>
         <span className={compact ? 'h-1.5 w-1.5 rounded-full' : 'h-2 w-2 rounded-full'} style={{ background: session.color, boxShadow: `0 0 10px ${session.color}` }} />
-        <span className={`min-w-0 flex-1 truncate font-semibold ${compact ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: 'var(--text-primary)' }}>{session.title}</span>
+        <span className="agent-conversation-overlay__title min-w-0 flex-1 truncate font-semibold" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
         <button type="button" aria-label={state.pinned ? '取消固定浮窗' : '固定浮窗'} title={state.pinned ? '取消固定' : '固定'} className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: state.pinned ? session.color : 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={() => setState((prev) => ({ ...prev, pinned: !prev.pinned }))}>{state.pinned ? <Pin className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /> : <PinOff className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}</button>
         <button type="button" aria-label="打开 Session 页面" title="打开 Session 页面" className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onOpenSession}><ArrowUpRight className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
         <button type="button" aria-label="关闭对话浮窗" title="关闭" className={`rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1'}`} style={{ color: 'var(--text-muted)' }} onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
       </div>
       <div ref={messagesRef} data-testid="agent-conversation-messages" className={`overflow-y-auto ${compact ? 'max-h-[140px] space-y-0.5 px-1 py-1' : 'max-h-[280px] space-y-1 px-2 py-2'}`} style={{ scrollbarWidth: 'thin' }}>
-        {state.entries.length === 0 ? <div className={`${compact ? 'py-3 text-[9px]' : 'py-6 text-[11px]'} text-center`} style={{ color: 'var(--text-muted)' }}>等待最新消息…</div> : state.entries.map((entry, index) => <div key={`${entry.uuid || entry.id || entry.timestamp || index}`} className={compact ? '[&_.jsonl-entry-card]:!mb-0.5 [&_.jsonl-entry-card]:!rounded' : '[&_.jsonl-entry-card]:!mb-1 [&_.jsonl-entry-card]:!rounded-md [&_.jsonl-entry-card_summary]:!px-2 [&_.jsonl-entry-card_summary]:!py-1'}><EntryCardWithImages entry={entry} lineNo={index + 1} showMeta={false} dense={compact} parentOrderedCollapse /></div>)}
+        {state.entries.length === 0 ? <div className={`agent-conversation-overlay__empty ${compact ? 'py-3' : 'py-6'} text-center`} style={{ color: 'var(--text-muted)' }}>等待最新消息…</div> : state.entries.map((entry, index) => <div key={`${entry.uuid || entry.id || entry.timestamp || index}`} className={compact ? '[&_.jsonl-entry-card]:!mb-0.5 [&_.jsonl-entry-card]:!rounded' : '[&_.jsonl-entry-card]:!mb-1 [&_.jsonl-entry-card]:!rounded-md [&_.jsonl-entry-card_summary]:!px-2 [&_.jsonl-entry-card_summary]:!py-1'}><EntryCardWithImages entry={entry} lineNo={index + 1} showMeta={false} dense={compact} parentOrderedCollapse /></div>)}
       </div>
       <div className="mobius-chat-input border-t" style={{ borderColor: `${session.color}33`, background: 'transparent' }}>
         <div className={`mobius-chat-input-editor min-w-0 flex-shrink-0 ${compact ? 'p-1' : 'p-2'}`}>
           {selectedAgentMentions.length > 0 && (
             <div className={`${compact ? 'mb-1 max-h-8 gap-0.5' : 'mb-1.5 max-h-14 gap-1'} flex flex-wrap overflow-y-auto`}>
               {selectedAgentMentions.map((mention) => (
-                <span key={mention.sessionId} className={`inline-flex max-w-full items-center rounded border ${compact ? 'gap-0.5 px-1 py-0 text-[8px]' : 'gap-1 px-1.5 py-0.5 text-[10px]'}`} style={{ borderColor: `${session.color}44`, color: 'var(--text-secondary)', background: `${session.color}12` }}>
+                <span key={mention.sessionId} className={`agent-conversation-overlay__mention inline-flex max-w-full items-center rounded border ${compact ? 'gap-0.5 px-1 py-0' : 'gap-1 px-1.5 py-0.5'}`} style={{ borderColor: `${session.color}44`, color: 'var(--text-secondary)', background: `${session.color}12` }}>
                   <Bot className={compact ? 'h-2.5 w-2.5 flex-shrink-0' : 'h-3 w-3 flex-shrink-0'} />
                   <span className={compact ? 'max-w-16 truncate' : 'max-w-32 truncate'}>@{mention.name}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{mention.mode === 'bidirectional' ? '双向' : '只读'}</span>
@@ -279,11 +279,11 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
               }
             }}
             placeholder="发送指令… @引用 · ↑回溯"
-            className={`w-full resize-none bg-transparent px-1 outline-none placeholder:text-[var(--text-muted)] ${compact ? 'min-h-[24px] py-0 text-[9px] leading-3' : 'min-h-[42px] py-1 text-[12px] leading-5'}`}
+            className={`agent-conversation-overlay__input w-full resize-none bg-transparent px-1 outline-none placeholder:text-[var(--text-muted)] ${compact ? 'min-h-[24px] py-0 leading-3' : 'min-h-[42px] py-1 leading-5'}`}
             style={{ color: 'var(--text-primary)' }}
           />
           <div className={`flex items-center justify-between ${compact ? 'pt-0.5' : 'pt-1'}`}>
-            <span className={`truncate ${compact ? 'text-[8px]' : 'text-[10px]'}`} style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span>
+            <span className="agent-conversation-overlay__status truncate" style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span>
             <div className="flex items-center gap-1">
               <label className={`cursor-pointer rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1.5'}`} title="粘贴或选择文件" style={{ color: 'var(--text-muted)' }}>
                 <Paperclip className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />

@@ -384,9 +384,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary className={`cursor-pointer ${dense ? 'px-1 pt-0.5 gap-1 text-[8px]' : 'px-3 pt-1.5 gap-2 text-[12px]'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
-        {showMeta && typeof lineNo === 'number' && <span className={`${dense ? 'text-[8px]' : 'text-[10px]'} text-[var(--text-muted)] font-mono flex-shrink-0`}>#{lineNo}</span>}
-        {showMeta && ts && <span className={`${dense ? 'text-[8px]' : 'text-[10px]'} text-[var(--text-muted)] font-mono flex-shrink-0`}>{ts}</span>}
+      <summary className={`jsonl-entry-summary cursor-pointer ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+        {showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
+        {showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
@@ -415,7 +415,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         )}
         {oversized && (
           <span
-            className={`flex-shrink-0 ${dense ? 'text-[8px]' : 'text-[10px]'} font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5`}
+            className="jsonl-entry-summary-meta flex-shrink-0 font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5"
             title={`该条目原始约 ${totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 已截断显示以避免卡顿`}
           >
             ⚠ 已截断
@@ -424,7 +424,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className={`${dense ? 'text-[8px]' : 'text-[11px]'} text-[var(--text-muted)] truncate flex-1`}>{effectiveHeaderSummary.short}</span>}
+        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className="jsonl-entry-summary-preview text-[var(--text-muted)] truncate flex-1">{effectiveHeaderSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
@@ -498,7 +498,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       {open && (
         <div className="px-1 pb-1 pt-1">
           {oversized && (
-            <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-[11px] text-amber-200">
+            <div className="jsonl-entry-note mb-2 rounded border border-amber-500/30 bg-amber-500/[0.06] px-2 py-1 text-amber-200">
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.
             </div>
           )}
