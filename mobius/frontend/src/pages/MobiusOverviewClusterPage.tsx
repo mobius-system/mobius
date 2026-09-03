@@ -1805,6 +1805,8 @@ export default function MobiusOverviewClusterPage() {
   })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
+  const graphDataByProjectRef = useRef<Record<string, ProjectGraphData>>({})
+  const missingSessionRefreshesRef = useRef<Map<string, number>>(new Map())
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
@@ -1858,6 +1860,8 @@ export default function MobiusOverviewClusterPage() {
     moved: boolean
     hit?: HitTarget | null
   }>(null)
+
+  graphDataByProjectRef.current = graphDataByProject
 
   const hideSidebar = useCallback(() => {
     // 移动端由 TopNav 汉堡按钮控制抽屉显隐；桌面端才持久化「隐藏」状态。
@@ -1955,9 +1959,42 @@ export default function MobiusOverviewClusterPage() {
       }))
   }, [graphDataByProject, loadingIds])
 
+  const mergeSessionBuckets = useCallback((
+    projectId: string,
+    scope: 'issue' | 'research',
+    previous: Record<string, any[]>,
+    incoming: Record<string, any[]>,
+  ) => {
+    const merged: Record<string, any[]> = {}
+    const parentIds = new Set([...Object.keys(previous || {}), ...Object.keys(incoming || {})])
+    parentIds.forEach((parentId) => {
+      const nextSessions = Array.isArray(incoming?.[parentId]) ? incoming[parentId] : []
+      const nextIds = new Set(nextSessions.map((session: any) => String(session?.session_id || session?.id || '')).filter(Boolean))
+      const preserved: any[] = []
+      nextSessions.forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (sessionId) missingSessionRefreshesRef.current.delete(`${projectId}:${scope}:${parentId}:${sessionId}`)
+      })
+      ;(previous?.[parentId] || []).forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (!sessionId || nextIds.has(sessionId)) return
+        const key = `${projectId}:${scope}:${parentId}:${sessionId}`
+        const misses = (missingSessionRefreshesRef.current.get(key) || 0) + 1
+        if (misses < 3) {
+          missingSessionRefreshesRef.current.set(key, misses)
+          preserved.push(session)
+        } else {
+          missingSessionRefreshesRef.current.delete(key)
+        }
+      })
+      merged[parentId] = [...nextSessions, ...preserved]
+    })
+    return merged
+  }, [])
+
   const refreshProjectGraph = useCallback(async (projectId: string, signal?: AbortSignal) => {
-    const data = graphDataByProject[projectId]
-    if (!data) return
+    const data = graphDataByProjectRef.current[projectId]
+    if (!data) return null
     try {
       const issueIds = data.issues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean)
       const researchIds = data.researches.map((research: any) => String(research?.id || '').trim()).filter(Boolean)
@@ -1966,23 +2003,48 @@ export default function MobiusOverviewClusterPage() {
       if (researchIds.length) qs.set('research_ids', researchIds.join(','))
       qs.set('preview_limit', '500')
       const sessionsOverview = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`, signal ? { signal } : undefined)
-      setGraphDataByProject((prev) => ({ ...prev, [projectId]: { ...data, sessionsByIssue: sessionsOverview?.issues || {}, sessionsByResearch: sessionsOverview?.researches || {} } }))
+      if (signal?.aborted) return null
+      return {
+        projectId,
+        sessionsByIssue: sessionsOverview?.issues || {},
+        sessionsByResearch: sessionsOverview?.researches || {},
+      }
     } catch (e: any) {
       // Polling teardown/timeout aborts the request intentionally. Do not expose the
       // browser's "signal is aborted without reason" text as a page error.
       if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
       setError(e?.message || '会话状态刷新失败')
+      return null
     }
-  }, [graphDataByProject])
+  }, [])
 
   useEffect(() => {
     const stop = pollRecursive(async (signal) => {
       const arr: any[] = await api('/api/projects?all=true', { signal })
+      if (signal.aborted) return
+      const projectIds = Object.keys(graphDataByProjectRef.current)
+      const updates = await Promise.all(projectIds.map((id) => refreshProjectGraph(id, signal)))
+      if (signal.aborted) return
       setProjects(sortByRecent(arr || []))
-      await Promise.all(Object.keys(graphDataByProject).map((id) => refreshProjectGraph(id, signal)))
+      const validUpdates = updates.filter((update): update is NonNullable<typeof update> => !!update)
+      if (validUpdates.length === 0) return
+      setGraphDataByProject((previous) => {
+        const next = { ...previous }
+        validUpdates.forEach((update) => {
+          const current = previous[update.projectId]
+          if (!current) return
+          next[update.projectId] = {
+            ...current,
+            sessionsByIssue: mergeSessionBuckets(update.projectId, 'issue', current.sessionsByIssue, update.sessionsByIssue),
+            sessionsByResearch: mergeSessionBuckets(update.projectId, 'research', current.sessionsByResearch, update.sessionsByResearch),
+          }
+        })
+        graphDataByProjectRef.current = next
+        return next
+      })
     }, 10_000)
     return stop
-  }, [refreshProjectGraph, setProjects])
+  }, [mergeSessionBuckets, refreshProjectGraph, setProjects])
 
   useEffect(() => {
     let cancelled = false
