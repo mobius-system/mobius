@@ -27,10 +27,10 @@ export type AgentConversationOverlaysProps = {
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
 type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
-// The canvas begins below the 58px overview header, while the overlay layer is
+// The canvas begins below the 40px overview header, while the overlay layer is
 // positioned against the full page main element. Keep line endpoints in the
 // same coordinate space as the floating windows.
-const CANVAS_TOP_OFFSET = 58
+const CANVAS_TOP_OFFSET = 40
 const OVERLAY_WIDTH = 312
 const COMPACT_OVERLAY_WIDTH = Math.round((OVERLAY_WIDTH / 2) * 1.3)
 const MIN_VISIBLE_HEADER_WIDTH = 72
