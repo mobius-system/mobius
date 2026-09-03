@@ -7,6 +7,7 @@ import { mergeBashToolResultItems } from './viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from './viewer/entry-classify'
 import { pollRecursive } from '../services/polling'
 import { readJsonlCacheFromIdb, readJsonlCacheSync, writeJsonlCache } from '../services/session-jsonl-cache'
+import { preloadSessionInputCache, prependSessionInputCache, readSessionInputCache, refreshSessionInputCache, type SessionInputEntry } from '../services/session-input-cache'
 import { RemoteFileMentionDrawer, type AgentMentionMode, type MentionAgentSession } from './chat'
 import type { AnyEntry } from './viewer/types'
 
@@ -68,9 +69,20 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const mentionRangeRef = useRef<{ start: number; end: number } | null>(null)
   const composingRef = useRef(false)
+  const inputRecallRef = useRef<{ active: boolean; index: number; entries: SessionInputEntry[]; timer: ReturnType<typeof setTimeout> | null; fetching: boolean }>({ active: false, index: -1, entries: [], timer: null, fetching: false })
   const liveDataRef = useRef(false)
   const setStateRef = useRef(setState)
   useEffect(() => { setStateRef.current = setState }, [setState])
+  useEffect(() => {
+    const recall = inputRecallRef.current
+    if (recall.timer) clearTimeout(recall.timer)
+    recall.active = false
+    recall.index = -1
+    recall.entries = []
+    recall.fetching = false
+    preloadSessionInputCache(session.id)
+    return () => { if (recall.timer) clearTimeout(recall.timer) }
+  }, [session.id])
   useEffect(() => { register(session.id, panelRef.current, lineRef.current); return () => register(session.id, null, null) }, [register, session.id])
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -113,6 +125,7 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
     try {
       const mentions = selectedAgentMentions.map((mention) => ({ kind: 'agent', session_id: mention.sessionId, mode: mention.mode, name: mention.name }))
       await api(`/api/sessions/${encodeURIComponent(session.id)}/messages`, { method: 'POST', body: JSON.stringify({ content: text, input_text: text, request_id: `overview-${Date.now()}-${Math.random().toString(16).slice(2)}`, mentions }) })
+      prependSessionInputCache(session.id, text)
       setState((prev) => ({ ...prev, draft: '', sending: false }))
       setSelectedAgentMentions([])
       await load()
@@ -218,14 +231,42 @@ function SessionOverlay({ session, state, setState, onClose, onOpenSession, posi
             }}
             onPaste={onPaste}
             onKeyDown={async (event) => {
-              if (event.key === 'ArrowUp' && !event.shiftKey && !event.currentTarget.value) {
+              if (event.key === 'ArrowUp' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+                const recall = inputRecallRef.current
+                const put = (index: number) => {
+                  const item = recall.entries[index]
+                  const text = typeof item?.input_text === 'string' && item.input_text.trim() ? item.input_text : (item?.content || '')
+                  if (!text) return false
+                  recall.index = index
+                  recall.active = true
+                  setState((prev) => ({ ...prev, draft: text }))
+                  requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.focus(); try { el.setSelectionRange(text.length, text.length) } catch {} } })
+                  if (recall.timer) clearTimeout(recall.timer)
+                  recall.timer = setTimeout(() => { recall.active = false; recall.index = -1; recall.timer = null }, 2000)
+                  return true
+                }
+                if (recall.active) {
+                  event.preventDefault()
+                  put(Math.min(recall.index + 1, recall.entries.length - 1))
+                  return
+                }
+                if (event.currentTarget.value.trim()) return
                 event.preventDefault()
+                const cached = readSessionInputCache(session.id)
+                if (cached?.length) {
+                  recall.entries = cached.filter((item) => ((item.input_text || item.content || '').trim().length > 0))
+                  if (recall.entries.length) put(0)
+                  return
+                }
+                if (recall.fetching) return
+                recall.fetching = true
                 try {
-                  const data: any = await api(`/api/sessions/${encodeURIComponent(session.id)}/inputs`)
-                  const items = Array.isArray(data) ? data : (data?.inputs || [])
-                  const text = items.map((item: any) => item?.input_text || item?.content || '').filter(Boolean)[0]
-                  if (text) setState((prev) => ({ ...prev, draft: text }))
-                } catch {}
+                  const entries = await refreshSessionInputCache(session.id)
+                  if (!inputRef.current?.value.trim()) {
+                    recall.entries = entries.filter((item) => ((item.input_text || item.content || '').trim().length > 0))
+                    if (recall.entries.length) put(0)
+                  }
+                } catch {} finally { recall.fetching = false }
               }
               if (event.key === 'Enter' && !event.shiftKey) {
                 const nativeEvent = event.nativeEvent as KeyboardEvent
