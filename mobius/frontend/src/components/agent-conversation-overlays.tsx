@@ -32,7 +32,7 @@ const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // same coordinate space as the floating windows.
 const CANVAS_TOP_OFFSET = 58
 const OVERLAY_WIDTH = 312
-const COMPACT_OVERLAY_WIDTH = 156
+const COMPACT_OVERLAY_WIDTH = Math.round((OVERLAY_WIDTH / 2) * 1.3)
 const MIN_VISIBLE_HEADER_WIDTH = 72
 const MIN_VISIBLE_HEADER_HEIGHT = 16
 
