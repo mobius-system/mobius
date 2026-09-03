@@ -179,7 +179,7 @@ const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
-const TOP_BAR_HEIGHT = 58
+const TOP_BAR_HEIGHT = 40
 const SESSION_RADIUS_SCALE = 2
 const PROJECT_TARGET_GAP = 34
 const PROJECT_COLLISION_GAP = 18
@@ -2769,17 +2769,17 @@ export default function MobiusOverviewClusterPage() {
         )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
-          <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+          <div className="absolute inset-x-0 top-0 z-10 flex h-[40px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
             {sidebarCollapsed && !isMobile && (
               <button
                 type="button"
                 onClick={showSidebar}
                 title="显示侧栏"
                 aria-label="显示侧栏"
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
               >
-                <PanelLeftOpen className="h-4 w-4" />
+                <PanelLeftOpen className="h-3 w-3" />
               </button>
             )}
             <button
@@ -2787,15 +2787,15 @@ export default function MobiusOverviewClusterPage() {
               onClick={goBack}
               title="返回上一页 (Esc)"
               aria-label="返回上一页"
-              className="group flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border pl-2.5 pr-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              className="group flex h-6 flex-shrink-0 items-center gap-1 rounded-md border pl-1.5 pr-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
             >
-              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
+              <ArrowLeft className="h-2.5 w-2.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
               返回
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
-              <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[10px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
+              <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
                 <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
@@ -2809,7 +2809,7 @@ export default function MobiusOverviewClusterPage() {
                     key={option.key}
                     type="button"
                     onClick={() => handleTimeRangeChange(option.key)}
-                    className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
+                    className="h-5 rounded px-1.5 text-[8px] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -2821,29 +2821,29 @@ export default function MobiusOverviewClusterPage() {
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-3.5 w-3.5" />对话窗</button>
+              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}微缩</button>
+              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomOut className="h-3.5 w-3.5" />
+              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomOut className="h-2.5 w-2.5" />
               </button>
-              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-7 min-w-[58px] items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <LocateFixed className="h-3 w-3" />
+              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <LocateFixed className="h-2 w-2" />
                 {Math.round(zoom * 100)}%
               </button>
-              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomIn className="h-3.5 w-3.5" />
+              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomIn className="h-2.5 w-2.5" />
               </button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                {paused ? <Play className="h-2.5 w-2.5" /> : <Pause className="h-2.5 w-2.5" />}
               </button>
-              <button type="button" title="重新布局" onClick={reheat} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <RotateCcw className="h-3.5 w-3.5" />
+              <button type="button" title="重新布局" onClick={reheat} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <RotateCcw className="h-2.5 w-2.5" />
               </button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
@@ -2851,17 +2851,17 @@ export default function MobiusOverviewClusterPage() {
                 type="button"
                 title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
                 onClick={handleShowCommunicationChange}
-                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors"
+                className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors"
                 style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
               >
-                <MessageSquare className="h-3.5 w-3.5" />
+                <MessageSquare className="h-2.5 w-2.5" />
                 通讯
               </button>
             </div>
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[250px] truncate text-[8px] text-red-400">{error}</div>}
           </div>
 
-          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[58px] overflow-hidden">
+          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[40px] overflow-hidden">
             <canvas
               ref={canvasRef}
               className="block h-full w-full cursor-crosshair"
