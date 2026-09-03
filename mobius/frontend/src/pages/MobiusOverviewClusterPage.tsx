@@ -191,6 +191,8 @@ const CREATOR_COLLISION_GAP = 28
 const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
+const SESSION_VELOCITY_DAMPING = 0.82
+const SESSION_VELOCITY_EPSILON = 0.012
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 const COMMUNICATION_LINK_COLOR = '#38bdf8'
 
@@ -1065,7 +1067,10 @@ function separateCircles(
   if (dist >= minDist) return null
   const nx = dx / dist
   const ny = dy / dist
-  const push = (minDist - dist) / 2 + 0.35
+  // Resolve only the actual deficit.  An unconditional cushion makes a pair
+  // that is exactly at its minimum distance get nudged every frame, which in
+  // turn keeps the otherwise-settled node positions visibly trembling.
+  const push = (minDist - dist) / 2
   return { x: nx * push, y: ny * push }
 }
 
@@ -1337,13 +1342,14 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       const sameParent = a.parentId === b.parentId
       const sameProject = a.projectId === b.projectId
       const minDist = a.r + b.r + (sameParent ? 7 : sameProject ? 14 : 22)
-      const influence = sameParent ? 84 : sameProject ? 130 : 178
-      if (dist > influence && dist > minDist) continue
+      if (dist >= minDist) continue
       const nx = dx / dist
       const ny = dy / dist
-      const overlap = Math.max(0, minDist - dist)
-      const repel = (sameParent ? 0.22 : sameProject ? 0.4 : 0.68) * alpha
-      const strength = (overlap * 0.08 + repel / Math.max(1, dist * 0.025)) * 0.5
+      const overlap = minDist - dist
+      // Keep the force proportional to the actual overlap.  The previous
+      // distance-independent repel term never reached zero inside its
+      // influence radius, so settled agents accumulated a tiny oscillation.
+      const strength = overlap * 0.08 * alpha
       if (!a.fixed) {
         a.vx -= nx * strength
         a.vy -= ny * strength
@@ -1361,8 +1367,13 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       node.vy = 0
       return
     }
-    node.vx = clamp(node.vx * 0.82, -12, 12)
-    node.vy = clamp(node.vy * 0.82, -12, 12)
+    node.vx = clamp(node.vx * SESSION_VELOCITY_DAMPING, -12, 12)
+    node.vy = clamp(node.vy * SESSION_VELOCITY_DAMPING, -12, 12)
+    // Do not carry sub-pixel numerical noise into the next frame.  This is a
+    // true settle threshold (not a visual snap), so larger corrections still
+    // pass through the normal spring and collision logic.
+    if (Math.abs(node.vx) < SESSION_VELOCITY_EPSILON) node.vx = 0
+    if (Math.abs(node.vy) < SESSION_VELOCITY_EPSILON) node.vy = 0
     node.x += node.vx
     node.y += node.vy
   })
