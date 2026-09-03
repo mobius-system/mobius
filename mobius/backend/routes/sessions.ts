@@ -39,6 +39,8 @@ import { gitTopLevel, isGitRepoRoot, resolveSessionWorkspace } from '../services
 import {
   countMergedJsonl,
   readMergedJsonlSlice,
+  readMobiusSpine,
+  readPrimaryTsSlice,
   appendMobiusErrorEntry,
   readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
@@ -951,6 +953,8 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
 
 // jsonl-history REST — "展开全部" 时按需补齐. SSE 默认只回灌末尾 DEFAULT_HISTORY_TAIL,
 // 前端要看完整历史时调用这个端点拉指定窗口 [from, from+limit).
+// track=mobius  → 伴生轨全量骨架 (超长会话"加载全部"只拉它, 主轨明细等展开轮次再取).
+// track=primary → 主轨时间戳切片 [from_ts 含, to_ts 排), 字节二分定界, from_byte 游标续拉.
 router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
@@ -967,11 +971,62 @@ router.get('/:id/jsonl-history', auth, (req: express.Request, res: express.Respo
     return;
   }
 
+  const track = String(req.query.track || '');
+  if (track === 'mobius') {
+    try {
+      const spine = readMobiusSpine(histPath);
+      res.json({
+        session_id: id,
+        track: 'mobius',
+        entries: spine.entries,
+        total: spine.total,
+        returned: spine.entries.length,
+        truncated: spine.truncated,
+      });
+    } catch (e) {
+      res.status(500).json({ error: `mobius spine 读取失败: ${(e as Error).message}` });
+    }
+    return;
+  }
+  if (track === 'primary') {
+    try {
+      const slice = readPrimaryTsSlice(histPath, {
+        fromTs: req.query.from_ts,
+        toTs: req.query.to_ts,
+        fromByte: req.query.from_byte,
+        limit: req.query.limit,
+      });
+      if (slice.error) { res.status(400).json({ error: slice.error }); return; }
+      res.json({ session_id: id, track: 'primary', ...slice });
+    } catch (e) {
+      res.status(500).json({ error: `primary slice 读取失败: ${(e as Error).message}` });
+    }
+    return;
+  }
+
   const fromIndex = Math.max(0, Math.floor(Number(req.query.from) || 0));
   const requestedLimit = Math.floor(Number(req.query.limit) || DEFAULT_HISTORY_TAIL);
   const limit = Math.max(0, Math.min(MAX_HISTORY_FETCH, requestedLimit));
+  // Overlay/preview callers only need the newest records.  Using getHistory(tailCount)
+  // avoids readMergedJsonlSlice's intentionally-expensive full-file parse.
+  const requestedTail = Math.floor(Number(req.query.tail_count) || 0);
+  const tailCount = Math.max(0, Math.min(MAX_HISTORY_FETCH, requestedTail));
 
   try {
+    if (tailCount > 0) {
+      const history = backend.getHistory(id, { tailCount });
+      const entries = Array.isArray(history?.entries) ? history.entries : [];
+      res.json({
+        session_id: id,
+        entries,
+        total: Number(history?.total || entries.length),
+        from: Math.max(0, Number(history?.total || entries.length) - entries.length),
+        returned: entries.length,
+        has_more: Boolean(history?.truncated),
+        path: history?.paths?.primary || histPath,
+      });
+      return;
+    }
     const slice = readMergedJsonlSlice(histPath, { fromIndex, limit });
     if (slice.exceeded) {
       res.status(413).json({

@@ -7,7 +7,9 @@ import {
   FlaskConical,
   GitBranch,
   LocateFixed,
+  Maximize2,
   MessageSquare,
+  Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -24,6 +26,7 @@ import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
+import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
@@ -176,7 +179,7 @@ const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
-const TOP_BAR_HEIGHT = 58
+const TOP_BAR_HEIGHT = 40
 const SESSION_RADIUS_SCALE = 2
 const PROJECT_TARGET_GAP = 34
 const PROJECT_COLLISION_GAP = 18
@@ -190,6 +193,8 @@ const CREATOR_COLLISION_GAP = 28
 const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
+const SESSION_VELOCITY_DAMPING = 0.82
+const SESSION_VELOCITY_EPSILON = 0.012
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
 const COMMUNICATION_LINK_COLOR = '#38bdf8'
 
@@ -1064,7 +1069,10 @@ function separateCircles(
   if (dist >= minDist) return null
   const nx = dx / dist
   const ny = dy / dist
-  const push = (minDist - dist) / 2 + 0.35
+  // Resolve only the actual deficit.  An unconditional cushion makes a pair
+  // that is exactly at its minimum distance get nudged every frame, which in
+  // turn keeps the otherwise-settled node positions visibly trembling.
+  const push = (minDist - dist) / 2
   return { x: nx * push, y: ny * push }
 }
 
@@ -1336,13 +1344,14 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       const sameParent = a.parentId === b.parentId
       const sameProject = a.projectId === b.projectId
       const minDist = a.r + b.r + (sameParent ? 7 : sameProject ? 14 : 22)
-      const influence = sameParent ? 84 : sameProject ? 130 : 178
-      if (dist > influence && dist > minDist) continue
+      if (dist >= minDist) continue
       const nx = dx / dist
       const ny = dy / dist
-      const overlap = Math.max(0, minDist - dist)
-      const repel = (sameParent ? 0.22 : sameProject ? 0.4 : 0.68) * alpha
-      const strength = (overlap * 0.08 + repel / Math.max(1, dist * 0.025)) * 0.5
+      const overlap = minDist - dist
+      // Keep the force proportional to the actual overlap.  The previous
+      // distance-independent repel term never reached zero inside its
+      // influence radius, so settled agents accumulated a tiny oscillation.
+      const strength = overlap * 0.08 * alpha
       if (!a.fixed) {
         a.vx -= nx * strength
         a.vy -= ny * strength
@@ -1360,8 +1369,13 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       node.vy = 0
       return
     }
-    node.vx = clamp(node.vx * 0.82, -12, 12)
-    node.vy = clamp(node.vy * 0.82, -12, 12)
+    node.vx = clamp(node.vx * SESSION_VELOCITY_DAMPING, -12, 12)
+    node.vy = clamp(node.vy * SESSION_VELOCITY_DAMPING, -12, 12)
+    // Do not carry sub-pixel numerical noise into the next frame.  This is a
+    // true settle threshold (not a visual snap), so larger corrections still
+    // pass through the normal spring and collision logic.
+    if (Math.abs(node.vx) < SESSION_VELOCITY_EPSILON) node.vx = 0
+    if (Math.abs(node.vy) < SESSION_VELOCITY_EPSILON) node.vy = 0
     node.x += node.vx
     node.y += node.vy
   })
@@ -1660,7 +1674,7 @@ function InfoRow({ label, value }: { label: string; value: any }) {
   )
 }
 
-function DetailDrawer({ selection, userParam, onClose }: { selection: Selection | null; userParam: string; onClose: () => void }) {
+function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { selection: Selection | null; userParam: string; onClose: () => void; onShowConversation?: (session: ClusterSession) => void }) {
   const navigate = useNavigate()
   const path = getSelectionPath(userParam, selection)
   const color = selection && isClusterSelection(selection)
@@ -1738,18 +1752,13 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                   <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>最近 Session / Agent</div>
                   <div className="space-y-1">
                     {recentSessions.map((session) => (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
-                      >
-                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
-                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span>
-                        </span>
-                      </button>
+                      <div key={session.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]">
+                        <button type="button" onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                          <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
+                          <span className="min-w-0 flex-1"><span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span><span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span></span>
+                        </button>
+                        {onShowConversation && <button type="button" title="显示对话浮窗" aria-label={`显示 ${session.title} 对话浮窗`} onClick={() => onShowConversation(session)} className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-active)] hover:text-[var(--accent-primary)]"><MessageSquare className="h-3.5 w-3.5" /></button>}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1757,6 +1766,11 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
             )}
           </div>
           <div className="border-t p-4" style={{ borderColor: 'var(--border-color)' }}>
+            {selection && isSessionSelection(selection) && onShowConversation && (
+              <button type="button" onClick={() => onShowConversation(selection.session)} className="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-md border text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: `${color}66`, color }}>
+                <MessageSquare className="h-3.5 w-3.5" />显示对话浮窗
+              </button>
+            )}
             <button
               type="button"
               disabled={!path}
@@ -1804,6 +1818,8 @@ export default function MobiusOverviewClusterPage() {
   })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
+  const graphDataByProjectRef = useRef<Record<string, ProjectGraphData>>({})
+  const missingSessionRefreshesRef = useRef<Map<string, number>>(new Map())
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
@@ -1825,6 +1841,13 @@ export default function MobiusOverviewClusterPage() {
     }
   })
   const [communicationLinks, setCommunicationLinks] = useState<Array<{ source: string; target: string }>>([])
+  const [showConversationWindows, setShowConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-windows') === '1' } catch { return false }
+  })
+  const [compactConversationWindows, setCompactConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
+  })
+  const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
@@ -1840,6 +1863,7 @@ export default function MobiusOverviewClusterPage() {
   const zoomRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
+  const overlayTransformRef = useRef({ offset: { x: 0, y: 0 }, zoom: 1, width: 1, height: 1 })
   const frameRef = useRef<number | null>(null)
   const viewportAnimationRef = useRef<null | { frame: number; startedAt: number; duration: number; fromZoom: number; toZoom: number; fromOffset: Point; toOffset: Point }>(null)
   const dragRef = useRef<null | {
@@ -1852,6 +1876,8 @@ export default function MobiusOverviewClusterPage() {
     moved: boolean
     hit?: HitTarget | null
   }>(null)
+
+  graphDataByProjectRef.current = graphDataByProject
 
   const hideSidebar = useCallback(() => {
     // 移动端由 TopNav 汉堡按钮控制抽屉显隐；桌面端才持久化「隐藏」状态。
@@ -1949,6 +1975,93 @@ export default function MobiusOverviewClusterPage() {
       }))
   }, [graphDataByProject, loadingIds])
 
+  const mergeSessionBuckets = useCallback((
+    projectId: string,
+    scope: 'issue' | 'research',
+    previous: Record<string, any[]>,
+    incoming: Record<string, any[]>,
+  ) => {
+    const merged: Record<string, any[]> = {}
+    const parentIds = new Set([...Object.keys(previous || {}), ...Object.keys(incoming || {})])
+    parentIds.forEach((parentId) => {
+      const nextSessions = Array.isArray(incoming?.[parentId]) ? incoming[parentId] : []
+      const nextIds = new Set(nextSessions.map((session: any) => String(session?.session_id || session?.id || '')).filter(Boolean))
+      const preserved: any[] = []
+      nextSessions.forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (sessionId) missingSessionRefreshesRef.current.delete(`${projectId}:${scope}:${parentId}:${sessionId}`)
+      })
+      ;(previous?.[parentId] || []).forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (!sessionId || nextIds.has(sessionId)) return
+        const key = `${projectId}:${scope}:${parentId}:${sessionId}`
+        const misses = (missingSessionRefreshesRef.current.get(key) || 0) + 1
+        if (misses < 3) {
+          missingSessionRefreshesRef.current.set(key, misses)
+          preserved.push(session)
+        } else {
+          missingSessionRefreshesRef.current.delete(key)
+        }
+      })
+      merged[parentId] = [...nextSessions, ...preserved]
+    })
+    return merged
+  }, [])
+
+  const refreshProjectGraph = useCallback(async (projectId: string, signal?: AbortSignal) => {
+    const data = graphDataByProjectRef.current[projectId]
+    if (!data) return null
+    try {
+      const issueIds = data.issues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean)
+      const researchIds = data.researches.map((research: any) => String(research?.id || '').trim()).filter(Boolean)
+      const qs = new URLSearchParams()
+      if (issueIds.length) qs.set('issue_ids', issueIds.join(','))
+      if (researchIds.length) qs.set('research_ids', researchIds.join(','))
+      qs.set('preview_limit', '500')
+      const sessionsOverview = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`, signal ? { signal } : undefined)
+      if (signal?.aborted) return null
+      return {
+        projectId,
+        sessionsByIssue: sessionsOverview?.issues || {},
+        sessionsByResearch: sessionsOverview?.researches || {},
+      }
+    } catch (e: any) {
+      // Polling teardown/timeout aborts the request intentionally. Do not expose the
+      // browser's "signal is aborted without reason" text as a page error.
+      if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
+      setError(e?.message || '会话状态刷新失败')
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    const stop = pollRecursive(async (signal) => {
+      const arr: any[] = await api('/api/projects?all=true', { signal })
+      if (signal.aborted) return
+      const projectIds = Object.keys(graphDataByProjectRef.current)
+      const updates = await Promise.all(projectIds.map((id) => refreshProjectGraph(id, signal)))
+      if (signal.aborted) return
+      setProjects(sortByRecent(arr || []))
+      const validUpdates = updates.filter((update): update is NonNullable<typeof update> => !!update)
+      if (validUpdates.length === 0) return
+      setGraphDataByProject((previous) => {
+        const next = { ...previous }
+        validUpdates.forEach((update) => {
+          const current = previous[update.projectId]
+          if (!current) return
+          next[update.projectId] = {
+            ...current,
+            sessionsByIssue: mergeSessionBuckets(update.projectId, 'issue', current.sessionsByIssue, update.sessionsByIssue),
+            sessionsByResearch: mergeSessionBuckets(update.projectId, 'research', current.sessionsByResearch, update.sessionsByResearch),
+          }
+        })
+        graphDataByProjectRef.current = next
+        return next
+      })
+    }, 10_000)
+    return stop
+  }, [mergeSessionBuckets, refreshProjectGraph, setProjects])
+
   useEffect(() => {
     let cancelled = false
     const ids = candidateProjects.map((project: any) => project.id).filter((id: string) => !graphDataByProject[id])
@@ -1964,6 +2077,7 @@ export default function MobiusOverviewClusterPage() {
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
   const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
+  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -2042,6 +2156,9 @@ export default function MobiusOverviewClusterPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { width, height, dpr } = sizeRef.current
+    // Panning mutates refs without a React render. Publish that transform in the
+    // same animation frame as the canvas paint so overlay connectors stay attached.
+    overlayTransformRef.current = { offset: offsetRef.current, zoom: zoomRef.current, width, height }
     const { nodes, parentClusters: parents, projectClusters, creatorClusters, mode } = modelRef.current
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, width, height)
@@ -2274,6 +2391,10 @@ export default function MobiusOverviewClusterPage() {
   }, [showCommunication])
 
   useEffect(() => {
+    overlayTransformRef.current = { offset: offsetRef.current, zoom: zoomRef.current, width: sizeRef.current.width, height: sizeRef.current.height }
+  })
+
+  useEffect(() => {
     communicationLinksRef.current = communicationLinks
   }, [communicationLinks])
 
@@ -2394,6 +2515,22 @@ export default function MobiusOverviewClusterPage() {
     })
   }
 
+  const handleConversationWindowsChange = () => {
+    setShowConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-windows', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
+  const handleCompactConversationWindowsChange = () => {
+    setCompactConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-compact', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
@@ -2436,9 +2573,18 @@ export default function MobiusOverviewClusterPage() {
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 3
       drag.moved = drag.moved || moved
       if (drag.mode === 'pan') {
-        offsetRef.current = {
+        const nextOffset = {
           x: drag.originX + event.clientX - drag.startX,
           y: drag.originY + event.clientY - drag.startY,
+        }
+        offsetRef.current = nextOffset
+        // Publish immediately as well as during draw(). The overlay RAF can run
+        // before the canvas RAF, so waiting for paint leaves connectors one frame behind.
+        overlayTransformRef.current = {
+          offset: nextOffset,
+          zoom: zoomRef.current,
+          width: sizeRef.current.width,
+          height: sizeRef.current.height,
         }
       }
       return
@@ -2623,17 +2769,17 @@ export default function MobiusOverviewClusterPage() {
         )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
-          <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+          <div className="absolute inset-x-0 top-0 z-10 flex h-[40px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
             {sidebarCollapsed && !isMobile && (
               <button
                 type="button"
                 onClick={showSidebar}
                 title="显示侧栏"
                 aria-label="显示侧栏"
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
               >
-                <PanelLeftOpen className="h-4 w-4" />
+                <PanelLeftOpen className="h-3 w-3" />
               </button>
             )}
             <button
@@ -2641,19 +2787,17 @@ export default function MobiusOverviewClusterPage() {
               onClick={goBack}
               title="返回上一页 (Esc)"
               aria-label="返回上一页"
-              className="group flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border pl-2.5 pr-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              className="group flex h-6 flex-shrink-0 items-center gap-1 rounded-md border pl-1.5 pr-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
             >
-              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
+              <ArrowLeft className="h-2.5 w-2.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
               返回
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
-              <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[10px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
+              <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
-                <span>{model.projectClusters.length} Projects</span>
-                <span>{model.parentClusters.length} Issues / Research</span>
-                <span>{model.nodes.length} Sessions / Agents</span>
+                <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
               </div>
             </div>
@@ -2665,7 +2809,7 @@ export default function MobiusOverviewClusterPage() {
                     key={option.key}
                     type="button"
                     onClick={() => handleTimeRangeChange(option.key)}
-                    className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
+                    className="h-5 rounded px-1.5 text-[8px] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -2677,23 +2821,29 @@ export default function MobiusOverviewClusterPage() {
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomOut className="h-3.5 w-3.5" />
+              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomOut className="h-2.5 w-2.5" />
               </button>
-              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-7 min-w-[58px] items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <LocateFixed className="h-3 w-3" />
+              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <LocateFixed className="h-2 w-2" />
                 {Math.round(zoom * 100)}%
               </button>
-              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomIn className="h-3.5 w-3.5" />
+              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomIn className="h-2.5 w-2.5" />
               </button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                {paused ? <Play className="h-2.5 w-2.5" /> : <Pause className="h-2.5 w-2.5" />}
               </button>
-              <button type="button" title="重新布局" onClick={reheat} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <RotateCcw className="h-3.5 w-3.5" />
+              <button type="button" title="重新布局" onClick={reheat} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <RotateCcw className="h-2.5 w-2.5" />
               </button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
@@ -2701,17 +2851,17 @@ export default function MobiusOverviewClusterPage() {
                 type="button"
                 title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
                 onClick={handleShowCommunicationChange}
-                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors"
+                className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors"
                 style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
               >
-                <MessageSquare className="h-3.5 w-3.5" />
+                <MessageSquare className="h-2.5 w-2.5" />
                 通讯
               </button>
             </div>
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[250px] truncate text-[8px] text-red-400">{error}</div>}
           </div>
 
-          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[58px] overflow-hidden">
+          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[40px] overflow-hidden">
             <canvas
               ref={canvasRef}
               className="block h-full w-full cursor-crosshair"
@@ -2743,7 +2893,8 @@ export default function MobiusOverviewClusterPage() {
             )}
           </div>
 
-          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} />
+          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
         </main>
       </div>
     </div>

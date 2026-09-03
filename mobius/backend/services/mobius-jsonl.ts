@@ -197,6 +197,202 @@ function readMergedJsonlSlice(jsonlPath: string | null | undefined, opts: ReadSl
   };
 }
 
+// ── 超长会话按需加载: 伴生轨全量骨架 + 主轨时间戳切片 ────────────────────────
+
+// 伴生轨全量 (骨架): 每轮 1 条 user_input + 少量 task_state/error, 体量极小,
+// 一次全量返回给前端做轮次索引; 主轨明细等展开轮次时再按 ts 切片取.
+// 缓存: 按 (path, 文件大小) 失效的 LRU (≤32 会话) — 反复点"加载全部"/切换会话回来不重读盘.
+const SPINE_CACHE_LIMIT = 32;
+const spineCache = new Map<string, { size: number; spine: any }>();
+function readMobiusSpine(jsonlPath: string | null | undefined, opts: any = {}): any {
+  const mobiusPath = mobiusJsonlPathOf(jsonlPath);
+  if (!mobiusPath || !fs.existsSync(mobiusPath)) {
+    return { entries: [], total: 0, truncated: false };
+  }
+  const size = fileSize(mobiusPath);
+  const hit = spineCache.get(mobiusPath);
+  if (hit && hit.size === size) {
+    // LRU 触碰: 删了重插到尾部
+    spineCache.delete(mobiusPath);
+    spineCache.set(mobiusPath, hit);
+    return hit.spine;
+  }
+  const maxLines = positiveNum(opts.maxLines, 50000);
+  const r = watcher.readAll(mobiusPath, { maxLines, tailCount: 0 });
+  const spine = { entries: r.entries, total: r.total || r.entries.length, truncated: !!r.truncated };
+  spineCache.delete(mobiusPath);
+  spineCache.set(mobiusPath, { size, spine });
+  while (spineCache.size > SPINE_CACHE_LIMIT) {
+    spineCache.delete(spineCache.keys().next().value as string);
+  }
+  return spine;
+}
+
+function positiveNum(v: any, fallback: number): number {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const TS_SLICE_MAX_ENTRIES = 2000;
+const TS_SLICE_PROBE_CHUNK = 64 * 1024;
+
+// 读取 fd 上"包含字节 pos"的那一行; 返回 {start, end, text}。
+// start=行首字节, end=换行之后一字节 (下一行起点); pos 越界返回 null。
+// 注意必须是"包含"而非"pos 之后的下一行": 二分探针落在行中间时, 答案行可能正是这一行,
+// 跳到下一行会让二分漏看该行并原地踏步 (实测死循环)。
+function readLineContaining(fd: number, size: number, pos: number): { start: number; end: number; text: string } | null {
+  if (pos < 0 || pos >= size) return null;
+  let start = 0;
+  if (pos > 0) {
+    const prevNl = lastNewlineBefore(fd, pos);   // pos 前面最近的 \n (pos 恰为行首时就是 pos-1)
+    start = prevNl < 0 ? 0 : prevNl + 1;
+  }
+  const nl = readChunkUntil(fd, size, start, (b) => b.indexOf(10));
+  const end = nl < 0 ? size : nl + 1;
+  const buf = Buffer.alloc(end - start);
+  fs.readSync(fd, buf, 0, buf.length, start);
+  return { start, end, text: buf.toString('utf8').replace(/\n$/, '') };
+}
+
+// 在 [0, pos) 内找最后一个 \n 的字节位置; 没有返回 -1 (说明 pos 在文件第一行内)。
+function lastNewlineBefore(fd: number, pos: number): number {
+  let hi = pos;   // 排他上界
+  while (hi > 0) {
+    const lo = Math.max(0, hi - TS_SLICE_PROBE_CHUNK);
+    const len = hi - lo;
+    const buf = Buffer.allocUnsafe(len);
+    const n = fs.readSync(fd, buf, 0, len, lo);
+    if (n <= 0) return -1;
+    const idx = (n === len ? buf : buf.subarray(0, n)).lastIndexOf(10);
+    if (idx >= 0) return lo + idx;
+    hi = lo;
+  }
+  return -1;
+}
+
+// 从 from 字节起找第一个满足 pred(buffer) 的字节位置 (用于找 \n), 跨 chunk 续读; 找不到返回 -1。
+function readChunkUntil(fd: number, size: number, from: number, pred: (b: Buffer) => number): number {
+  let pos = from;
+  while (pos < size) {
+    const len = Math.min(TS_SLICE_PROBE_CHUNK, size - pos);
+    const buf = Buffer.allocUnsafe(len);
+    const n = fs.readSync(fd, buf, 0, len, pos);
+    if (n <= 0) return -1;
+    const idx = pred(n === len ? buf : buf.subarray(0, n));
+    if (idx >= 0) return pos + idx;
+    pos += n;
+  }
+  return -1;
+}
+
+// 二分: 返回第一条 ts >= targetMs 的行的起始字节; 全部小于 targetMs 则返回 size。
+// 前提: 行按写入顺序追加, ts 单调不减 (claude-code/codex 均满足)。
+function tsLowerBoundByte(fd: number, size: number, targetMs: number): number {
+  let lo = 0;
+  let hi = size;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const line = readLineContaining(fd, size, mid);
+    if (!line) { hi = mid; continue; }
+    const ms = parseTimestampMs(safeParseJson(line.text));
+    if (ms == null || ms < targetMs) lo = Math.max(mid + 1, line.end);
+    else hi = line.start;
+  }
+  return lo;
+}
+
+function safeParseJson(text: string): any {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+// 主轨时间戳切片 [fromTs, toTs): 字节二分定界 + 区间顺序读取, 不整文件 parse。
+// 支持游标续拉: fromByte (上页 next_from_byte) 优先于 fromTs。
+// 单调性被破坏时 (lo > hi) 回退整文件过滤 (mode:'scan'), 保证正确性。
+function readPrimaryTsSlice(jsonlPath: string | null | undefined, opts: {
+  fromTs?: any; toTs?: any; fromByte?: any; limit?: any; forceScan?: boolean;
+} = {}): any {
+  const maxEntries = Math.max(1, Math.min(TS_SLICE_MAX_ENTRIES, Math.floor(Number(opts.limit) || TS_SLICE_MAX_ENTRIES)));
+  const fromMs = parseTsParam(opts.fromTs);
+  const toMs = parseTsParam(opts.toTs);
+  const fromByte = Number.isFinite(Number(opts.fromByte)) && Number(opts.fromByte) > 0 ? Math.floor(Number(opts.fromByte)) : null;
+  if (!jsonlPath || !fs.existsSync(jsonlPath)) {
+    return { entries: [], returned: 0, has_more: false, mode: 'bisect' };
+  }
+  const size = fileSize(jsonlPath);
+  let fd: number | null = null;
+  const parsed: any[] = [];
+  let nextFromByte: number | null = null;
+  let mode = 'bisect';
+  try {
+    fd = fs.openSync(jsonlPath, 'r');
+    let loByte: number;
+    let hiByte: number;
+    if (opts.forceScan) {
+      loByte = 1; hiByte = 0;   // 直接触发下方 scan 回退
+    } else if (fromByte != null) {
+      loByte = Math.min(fromByte, size);
+      hiByte = (toMs != null && Number.isFinite(toMs)) ? tsLowerBoundByte(fd, size, toMs) : size;
+    } else {
+      if (fromMs == null && toMs == null) {
+        return { entries: [], returned: 0, has_more: false, mode, error: '缺少 from_ts 或 from_byte' };
+      }
+      loByte = fromMs != null && Number.isFinite(fromMs) ? tsLowerBoundByte(fd, size, fromMs) : 0;
+      hiByte = toMs != null && Number.isFinite(toMs) ? tsLowerBoundByte(fd, size, toMs) : size;
+    }
+    if (loByte > hiByte) {
+      if (fromByte != null) {
+        // 游标已越过 to_ts 边界: 本窗口读完, 非异常
+        return { entries: [], returned: 0, has_more: false, mode, next_from_byte: null };
+      }
+      // ts 非单调 → 二分结果不可信, 回退整读过滤 (小文件安全上限内)
+      mode = 'scan';
+      const whole = watcher.readSlice(jsonlPath, { fromIndex: 0, limit: Number.MAX_SAFE_INTEGER });
+      const filtered = (whole.entries || []).filter((e: any) => {
+        const ms = parseTimestampMs(e);
+        if (fromMs != null && Number.isFinite(fromMs) && (ms == null || ms < fromMs)) return false;
+        if (toMs != null && Number.isFinite(toMs) && (ms != null && ms >= toMs)) return false;
+        return true;
+      });
+      const page = filtered.slice(0, maxEntries);
+      return { entries: page, returned: page.length, has_more: filtered.length > page.length, mode, total_in_window: filtered.length };
+    }
+    // 顺序读 [loByte, hiByte), 行级 parse, 满 maxEntries 停
+    let pos = loByte;
+    while (pos < hiByte) {
+      const line = readLineContaining(fd, size, pos);
+      if (!line) break;
+      if (line.start >= hiByte) break;
+      const entry = safeParseJson(line.text);
+      if (entry) parsed.push(entry);
+      pos = line.end;
+      if (parsed.length >= maxEntries) {
+        nextFromByte = pos < hiByte ? pos : null;
+        break;
+      }
+    }
+  } finally {
+    if (fd != null) { try { fs.closeSync(fd); } catch {} }
+  }
+  const hasMore = nextFromByte != null;
+  const nextFromTs = hasMore && parsed.length > 0
+    ? ((parsed[parsed.length - 1]?.timestamp as string) || null)
+    : null;
+  return {
+    entries: parsed,
+    returned: parsed.length,
+    has_more: hasMore,
+    next_from_byte: nextFromByte,
+    next_from_ts: nextFromTs,
+    mode,
+  };
+}
+
+function parseTsParam(v: any): number | null {
+  if (v == null || v === '') return null;
+  const ms = new Date(String(v)).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function currentMergedJsonlSentinel(jsonlPath: string | null | undefined): { primary: number; mobius: number } {
   const mobiusPath = mobiusJsonlPathOf(jsonlPath);
   return {
@@ -549,6 +745,8 @@ export {
   mobiusJsonlPathOf,
   readMergedJsonlHistory,
   readMergedJsonlSlice,
+  readMobiusSpine,
+  readPrimaryTsSlice,
   countMergedJsonl,
   currentMergedJsonlSentinel,
   watchMergedJsonl,

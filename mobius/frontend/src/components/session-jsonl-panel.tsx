@@ -23,6 +23,11 @@ type SessionJsonlPanelProps = {
   lastTimestamp?: string | null
   hasNewMessages: boolean
   onLoadAllJsonl: () => void
+  // 超长会话按需加载: 骨架模式下展开某轮时拉取该轮的主轨明细切片.
+  onLoadRoundDetail?: (openerUuid: string, fromTs: string, toTs: string | null) => void
+  roundDetailLoaded?: Set<string>
+  roundDetailVersion?: number
+  loadingRoundUuid?: string | null
   onScrollPositionChange: (userScrolledUp: boolean) => void
   onJumpToBottom: () => void
   // 搜索结果跳转: 命中条目 uuid / timestamp, JsonlView 解析到所属轮次卡片后滚动.
@@ -54,6 +59,10 @@ function SessionJsonlPanelInner({
   lastTimestamp,
   hasNewMessages,
   onLoadAllJsonl,
+  onLoadRoundDetail,
+  roundDetailLoaded,
+  roundDetailVersion,
+  loadingRoundUuid,
   onScrollPositionChange,
   onJumpToBottom,
   scrollToEntryUuid,
@@ -111,6 +120,10 @@ function SessionJsonlPanelInner({
                 loadingMore={jsonlLoadingMore}
                 showMeta={showJsonlMeta}
                 cursorStyleTools={cursorStyleTools}
+                onLoadRoundDetail={onLoadRoundDetail}
+                roundDetailLoaded={roundDetailLoaded}
+                roundDetailVersion={roundDetailVersion}
+                loadingRoundUuid={loadingRoundUuid}
                 scrollToEntryUuid={scrollToEntryUuid}
                 scrollToMatchTs={scrollToMatchTs}
                 onScrollResolved={onMatchScrollResolved}

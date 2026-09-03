@@ -5036,9 +5036,31 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 }
 
 .jsonl-entry-card {
+  --jsonl-entry-summary-font-size: 12px;
+  --jsonl-entry-summary-meta-font-size: 10px;
+  --jsonl-entry-summary-preview-font-size: 11px;
+  --jsonl-entry-note-font-size: 11px;
+  --jsonl-entry-body-font-size: 12px;
+  --jsonl-entry-code-font-size: 11px;
+  --jsonl-entry-line-height: 1.5;
+  --jsonl-entry-code-line-height: 1.4;
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;
 }
+.jsonl-entry-card[data-density="dense"] {
+  --jsonl-entry-summary-font-size: 8px;
+  --jsonl-entry-summary-meta-font-size: 8px;
+  --jsonl-entry-summary-preview-font-size: 8px;
+  --jsonl-entry-note-font-size: 8px;
+  --jsonl-entry-body-font-size: 8px;
+  --jsonl-entry-code-font-size: 7px;
+  --jsonl-entry-line-height: 1.25;
+  --jsonl-entry-code-line-height: 1.2;
+}
+.jsonl-entry-summary { font-size: var(--jsonl-entry-summary-font-size); }
+.jsonl-entry-summary-meta { font-size: var(--jsonl-entry-summary-meta-font-size); }
+.jsonl-entry-summary-preview { font-size: var(--jsonl-entry-summary-preview-font-size); }
+.jsonl-entry-note { font-size: var(--jsonl-entry-note-font-size); }
 
 /* 对话轮次标题：高度与折叠态 JSONL entry 卡片一致；Ctrl+Shift+K 在两套微纹理间切换。 */
 .round-group-trigger {
@@ -5469,6 +5491,51 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-compact-md blockquote { margin: .45rem 0; padding-left: .7rem; border-left: 2px solid #3b82f6; color: var(--text-secondary); }
 .jsonl-compact-md-table-wrap { margin: .45rem 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--prose-border); border-radius: .375rem; }
 .jsonl-compact-md table { width: 100%; border-collapse: collapse; margin: .45rem 0; font-size: 10.5px; }
+
+.agent-conversation-overlay {
+  --agent-overlay-title-font-size: 11px;
+  --agent-overlay-empty-font-size: 11px;
+  --agent-overlay-mention-font-size: 10px;
+  --agent-overlay-input-font-size: 12px;
+  --agent-overlay-status-font-size: 10px;
+}
+.agent-conversation-overlay--compact {
+  --agent-overlay-title-font-size: 9px;
+  --agent-overlay-empty-font-size: 9px;
+  --agent-overlay-mention-font-size: 8px;
+  --agent-overlay-input-font-size: 9px;
+  --agent-overlay-status-font-size: 8px;
+}
+.agent-conversation-overlay__title { font-size: var(--agent-overlay-title-font-size); }
+.agent-conversation-overlay__empty { font-size: var(--agent-overlay-empty-font-size); }
+.agent-conversation-overlay__mention { font-size: var(--agent-overlay-mention-font-size); }
+.agent-conversation-overlay__input { font-size: var(--agent-overlay-input-font-size); }
+.agent-conversation-overlay__status { font-size: var(--agent-overlay-status-font-size); }
+
+/* Expanded content in dense shared cards follows the same variable contract. */
+.jsonl-entry-card[data-density="dense"],
+.jsonl-entry-card[data-density="dense"] *,
+.jsonl-entry-card[data-density="dense"] .jsonl-compact-md,
+.jsonl-entry-card[data-density="dense"] .jsonl-compact-md * {
+  font-size: var(--jsonl-entry-body-font-size) !important;
+  line-height: var(--jsonl-entry-line-height) !important;
+}
+.jsonl-entry-card[data-density="dense"] summary {
+  font-size: var(--jsonl-entry-summary-font-size) !important;
+  padding: 2px 4px !important;
+  gap: 3px !important;
+}
+.jsonl-entry-card[data-density="dense"] pre,
+.jsonl-entry-card[data-density="dense"] code {
+  font-size: var(--jsonl-entry-code-font-size) !important;
+  line-height: var(--jsonl-entry-code-line-height) !important;
+}
+.jsonl-entry-card[data-density="dense"] p,
+.jsonl-entry-card[data-density="dense"] ul,
+.jsonl-entry-card[data-density="dense"] ol,
+.jsonl-entry-card[data-density="dense"] table {
+  margin-block: 2px !important;
+}
 .jsonl-compact-md-table-wrap table { margin: 0; min-width: 100%; width: max-content; }
 .jsonl-compact-md th, .jsonl-compact-md td { border: 1px solid var(--prose-border); padding: .25rem .4rem; }
 .jsonl-compact-md th { color: var(--text-primary); background: var(--bg-card-hover); }
