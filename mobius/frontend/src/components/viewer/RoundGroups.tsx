@@ -19,7 +19,7 @@ import { DisplayImagesCard } from './DisplayImages'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, resolvedMap, taskPlans }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, dense = false, resolvedMap, taskPlans }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
@@ -29,6 +29,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   // parentOrderedCollapse: forgotten-flag 收尾卡, 透传给 JsonEntryCard 默认折叠 (用户仍可手动展开).
   parentOrderedCollapse?: boolean
   showMeta?: boolean
+  dense?: boolean
   resolvedMap?: ResolvedCallMap | null
   // 任务工具跨条目累积快照 (anchor uuid → PlanUpdate), 按卡片 uuid 取值透传给计划视图.
   taskPlans?: TaskPlanByUuid | null
@@ -46,7 +47,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   const uuid = typeof entry?.uuid === 'string' ? entry.uuid : null
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )

@@ -162,7 +162,7 @@ function resolveDesiredOpen(opts: {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, bashResults = [], readResults = [], resolvedMap, taskPlan }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, dense = false, bashResults = [], readResults = [], resolvedMap, taskPlan }: {
   entry: AnyEntry
   lineNo?: number
   // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
@@ -171,6 +171,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
   // 默认折叠, 压过本地展开条件, 但被 forceOpen 压过. 用户仍可手动展开 (onToggle 写回 state, userToggledRef 阻止自动掀开).
   parentOrderedCollapse?: boolean
   showMeta?: boolean
+  // dense: compact surfaces render the shared card with genuinely smaller
+  // header classes instead of relying only on a parent CSS override.
+  dense?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   resolvedMap?: ResolvedCallMap | null
@@ -377,12 +380,13 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       data-tour={tourTarget}
       data-jsonl-line-no={lineNo}
       data-jsonl-entry-id={entry?.uuid || entry?.id || undefined}
+      data-density={dense ? 'dense' : undefined}
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm card-enter ${theme.border} ${theme.bg}`}>
-      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
-        {showMeta && typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
-        {showMeta && ts && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
+      <summary className={`cursor-pointer ${dense ? 'px-1 pt-0.5 gap-1 text-[8px]' : 'px-3 pt-1.5 gap-2 text-[12px]'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+        {showMeta && typeof lineNo === 'number' && <span className={`${dense ? 'text-[8px]' : 'text-[10px]'} text-[var(--text-muted)] font-mono flex-shrink-0`}>#{lineNo}</span>}
+        {showMeta && ts && <span className={`${dense ? 'text-[8px]' : 'text-[10px]'} text-[var(--text-muted)] font-mono flex-shrink-0`}>{ts}</span>}
         {toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
@@ -411,7 +415,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         )}
         {oversized && (
           <span
-            className="flex-shrink-0 text-[10px] font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5"
+            className={`flex-shrink-0 ${dense ? 'text-[8px]' : 'text-[10px]'} font-mono text-amber-300 border border-amber-500/40 rounded px-1 py-0.5`}
             title={`该条目原始约 ${totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 已截断显示以避免卡顿`}
           >
             ⚠ 已截断
@@ -420,7 +424,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">{effectiveHeaderSummary.short}</span>}
+        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className={`${dense ? 'text-[8px]' : 'text-[11px]'} text-[var(--text-muted)] truncate flex-1`}>{effectiveHeaderSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
@@ -536,5 +540,5 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.taskPlan === next.taskPlan,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && prev.bashResults === next.bashResults && prev.readResults === next.readResults && prev.resolvedMap === next.resolvedMap && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.taskPlan === next.taskPlan,
 )
