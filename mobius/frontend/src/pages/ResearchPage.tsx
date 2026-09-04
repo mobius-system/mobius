@@ -749,7 +749,7 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                         {!isFailed && !isRunning && !isCompleted && <span>{s.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant'}</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <div className={`flex h-6 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] duration-150 flex-shrink-0 ${s.research_role === 'chief_researcher' ? 'w-0 group-hover:w-6 group-focus-within:w-6' : 'w-0 group-hover:w-12 group-focus-within:w-12'}`}>
                       <button onClick={(e) => { e.stopPropagation(); onEdit(s) }} className="p-1 rounded hover:bg-white/10" title="重命名">
                         <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>

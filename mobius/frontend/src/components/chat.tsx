@@ -1600,6 +1600,14 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
   const modelLabel = sessionModelLabel(session.model, session.model_label)
   const proxyLabel = sessionProxyLabel(session.use_proxy, session.model)
   const nameMuted = isSessionNameMuted(session.agent_status)
+  const actionCount = [onEdit, onDelete, pinnedIds && onTogglePinned].filter(Boolean).length
+  const actionWidthClass = actionCount >= 3
+    ? 'group-hover:w-16 group-focus-within:w-16'
+    : actionCount === 2
+      ? 'group-hover:w-11 group-focus-within:w-11'
+      : actionCount === 1
+        ? 'group-hover:w-6 group-focus-within:w-6'
+        : ''
 
   return (
     <div onClick={() => onSelect(session)}
@@ -1614,7 +1622,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
         <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
         <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{[`${session.message_count} 消息`, timeAgo(session.last_active), modelLabel].filter(Boolean).join(' · ')}</div>
       </div>
-      <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">
+      <div className={`relative h-6 w-0 flex-shrink-0 overflow-hidden transition-[width] duration-150 ${actionWidthClass}`}>
         <div className="absolute inset-0 flex items-center justify-end gap-1 overflow-hidden opacity-100 transition-opacity group-hover:opacity-0">
           {session.research_role && (
             <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
