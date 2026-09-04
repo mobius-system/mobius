@@ -29,6 +29,8 @@ type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sendi
 type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
 type OverlayLayoutItem = OverlayPosition & OverlayCollisionItem
 type OverlayAnchor = { x: number; y: number; side: 'top' | 'bottom' | 'left' | 'right' }
+type ScreenPoint = { x: number; y: number }
+type OverlayAttractionTarget = { left: number; top: number }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // The canvas begins below the 40px overview header, while the overlay layer is
 // positioned against the full page main element. Keep line endpoints in the
@@ -41,7 +43,8 @@ const MIN_VISIBLE_HEADER_HEIGHT = 16
 const OVERLAY_COLLISION_PASSES = 4
 const OVERLAY_COLLISION_GAP = 10
 const COMPACT_OVERLAY_COLLISION_GAP = 6
-const OVERLAY_ANCHOR_PULL = 0.0
+const OVERLAY_ANCHOR_PULL = 0.045
+const OVERLAY_EDGE_RETRACT_GAP = 12
 
 function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
   const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
@@ -62,6 +65,110 @@ function clampAutoOverlayPosition(left: number, top: number, width: number, heig
     right: viewport.width - 8,
     bottom: CANVAS_TOP_OFFSET + viewport.height - 8,
   })
+}
+
+function normalizeAngle360(degrees: number) {
+  const normalized = degrees % 360
+  return normalized < 0 ? normalized + 360 : normalized
+}
+
+function convexHull(points: ScreenPoint[]): ScreenPoint[] {
+  if (points.length <= 1) return points.slice()
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y)
+  const cross = (o: ScreenPoint, a: ScreenPoint, b: ScreenPoint) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+  const lower: ScreenPoint[] = []
+  sorted.forEach((point) => {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop()
+    lower.push(point)
+  })
+  const upper: ScreenPoint[] = []
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const point = sorted[index]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop()
+    upper.push(point)
+  }
+  lower.pop()
+  upper.pop()
+  return lower.concat(upper)
+}
+
+function polygonCentroid(points: ScreenPoint[]): ScreenPoint {
+  if (points.length === 0) return { x: 0, y: 0 }
+  if (points.length < 3) {
+    return points.reduce((center, point) => ({ x: center.x + point.x / points.length, y: center.y + point.y / points.length }), { x: 0, y: 0 })
+  }
+  let areaTwice = 0
+  let x = 0
+  let y = 0
+  points.forEach((point, index) => {
+    const next = points[(index + 1) % points.length]
+    const cross = point.x * next.y - next.x * point.y
+    areaTwice += cross
+    x += (point.x + next.x) * cross
+    y += (point.y + next.y) * cross
+  })
+  if (Math.abs(areaTwice) < 1e-6) {
+    return points.reduce((center, point) => ({ x: center.x + point.x / points.length, y: center.y + point.y / points.length }), { x: 0, y: 0 })
+  }
+  return { x: x / (3 * areaTwice), y: y / (3 * areaTwice) }
+}
+
+function rayToBounds(center: ScreenPoint, direction: ScreenPoint, bounds: { left: number; top: number; right: number; bottom: number }): ScreenPoint {
+  const epsilon = 1e-6
+  let distance = Number.POSITIVE_INFINITY
+  if (direction.x > epsilon) distance = Math.min(distance, (bounds.right - center.x) / direction.x)
+  else if (direction.x < -epsilon) distance = Math.min(distance, (bounds.left - center.x) / direction.x)
+  if (direction.y > epsilon) distance = Math.min(distance, (bounds.bottom - center.y) / direction.y)
+  else if (direction.y < -epsilon) distance = Math.min(distance, (bounds.top - center.y) / direction.y)
+  if (!Number.isFinite(distance) || distance < 0) return center
+  return { x: center.x + direction.x * distance, y: center.y + direction.y * distance }
+}
+
+function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: Map<string, any>, transform: OverlayTransform, compact: boolean, heights: Map<string, number>): Map<string, OverlayAttractionTarget> {
+  const nodePoints = sessions
+    .map((session) => {
+      const node = nodeById.get(session.id)
+      return node ? { id: session.id, point: { x: node.x * transform.zoom + transform.offset.x, y: node.y * transform.zoom + transform.offset.y + CANVAS_TOP_OFFSET } } : null
+    })
+    .filter((item): item is { id: string; point: ScreenPoint } => Boolean(item))
+  const targets = new Map<string, OverlayAttractionTarget>()
+  if (nodePoints.length === 0) return targets
+  const center = polygonCentroid(convexHull(nodePoints.map((item) => item.point)))
+  const bounds = {
+    left: 8,
+    top: CANVAS_TOP_OFFSET + 8,
+    right: Math.max(8, transform.width - 8),
+    bottom: Math.max(CANVAS_TOP_OFFSET + 8, CANVAS_TOP_OFFSET + transform.height - 8),
+  }
+  const right: Array<{ id: string; angle: number }> = []
+  const left: Array<{ id: string; angle: number }> = []
+  nodePoints.forEach(({ id, point }) => {
+    const angle = normalizeAngle360(Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI)
+    if (angle < 90 || angle >= 270) right.push({ id, angle: angle >= 270 ? angle - 360 : angle })
+    else left.push({ id, angle })
+  })
+  right.sort((a, b) => a.angle - b.angle || a.id.localeCompare(b.id))
+  left.sort((a, b) => a.angle - b.angle || a.id.localeCompare(b.id))
+  const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
+  const assign = (group: Array<{ id: string; angle: number }>, baseAngle: number) => {
+    const count = group.length
+    if (count === 0) return
+    const delta = 180 / (count + 1)
+    group.forEach(({ id }, index) => {
+      const beta = -90 + (index + 1) * delta
+      const radians = (baseAngle + beta) * Math.PI / 180
+      const direction = { x: Math.cos(radians), y: Math.sin(radians) }
+      const boundary = rayToBounds(center, direction, bounds)
+      const overlayHeight = heights.get(id) || (compact ? 210 : 390)
+      const margin = Math.abs(direction.x) * overlayWidth / 2 + Math.abs(direction.y) * overlayHeight / 2 + OVERLAY_EDGE_RETRACT_GAP
+      const attractionCenter = { x: boundary.x - direction.x * margin, y: boundary.y - direction.y * margin }
+      const clamped = clampAutoOverlayPosition(attractionCenter.x - overlayWidth / 2, attractionCenter.y - overlayHeight / 2, overlayWidth, overlayHeight, transform)
+      targets.set(id, clamped)
+    })
+  }
+  assign(right, 0)
+  assign(left, 180)
+  return targets
 }
 
 /**
@@ -371,6 +478,7 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
   const [states, setStates] = useState<Record<string, OverlayState>>({})
   const positionRef = useRef<Record<string, OverlayPosition>>({})
   const elementRefs = useRef<Record<string, { panel: HTMLDivElement | null; line: SVGLineElement | null; height: number; observer?: ResizeObserver }>>({})
+  const attractionTargetsRef = useRef<{ key: string; width: number; height: number; zoom: number; offsetX: number; offsetY: number; compact: boolean; targets: Map<string, OverlayAttractionTarget> }>({ key: '', width: 0, height: 0, zoom: 0, offsetX: 0, offsetY: 0, compact, targets: new Map() })
   const knownSessionsRef = useRef<Record<string, OverlaySession>>({})
   sessions.forEach((session) => { knownSessionsRef.current[session.id] = session })
   const setSessionState = (id: string, updater: (prev: OverlayState) => OverlayState) => setStates((prev) => ({ ...prev, [id]: updater(prev[id] || { pinned: pins.has(id), entries: [], draft: '', sending: false }) }))
@@ -424,17 +532,44 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
         const nodeById = new Map<string, any>()
         modelRef.current.nodes.forEach((node: any) => { if (node?.id) nodeById.set(node.id, node) })
         const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
+        const targetKey = openSessions.map((session) => `${session.id}:${elementRefs.current[session.id]?.height || 0}`).join('|')
+        const targetCache = attractionTargetsRef.current
+        const zoomChanged = Math.abs(targetCache.zoom - t.zoom) > 1e-4
+        const offsetChanged = targetCache.offsetX !== t.offset.x || targetCache.offsetY !== t.offset.y
+        if (targetCache.key !== targetKey || targetCache.width !== t.width || targetCache.height !== t.height || targetCache.compact !== compact || zoomChanged || targetCache.targets.size === 0) {
+          const heights = new Map<string, number>()
+          openSessions.forEach((session) => { heights.set(session.id, elementRefs.current[session.id]?.height || (compact ? 210 : 390)) })
+          targetCache.key = targetKey
+          targetCache.width = t.width
+          targetCache.height = t.height
+          targetCache.zoom = t.zoom
+          targetCache.offsetX = t.offset.x
+          targetCache.offsetY = t.offset.y
+          targetCache.compact = compact
+          targetCache.targets = computeOverlayAttractionTargets(openSessions, nodeById, t, compact, heights)
+        } else if (offsetChanged) {
+          // A pure canvas pan should carry the cached initial/attraction points
+          // with the viewport instead of rebuilding the layout and reordering
+          // every overlay.
+          const dx = t.offset.x - targetCache.offsetX
+          const dy = t.offset.y - targetCache.offsetY
+          targetCache.targets.forEach((target, id) => { targetCache.targets.set(id, { left: target.left + dx, top: target.top + dy }) })
+          targetCache.offsetX = t.offset.x
+          targetCache.offsetY = t.offset.y
+        }
         const layouts = openSessions.map((session, index): OverlayLayoutItem => {
           const node = nodeById.get(session.id)
           const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
           const targetY = node ? node.y * t.zoom + t.offset.y + CANVAS_TOP_OFFSET : 120 + Math.floor(index / 3) * 230 + CANVAS_TOP_OFFSET
           const elements = elementRefs.current[session.id]
           const overlayHeight = elements?.height || (compact ? 210 : 390)
-          const automatic = clampAutoOverlayPosition(targetX + 18, targetY - 30, overlayWidth, overlayHeight, t)
+          const automatic = targetCache.targets.get(session.id) || clampAutoOverlayPosition(targetX + 18, targetY - 30, overlayWidth, overlayHeight, t)
           const previous = positionRef.current[session.id]
           const manualPosition = previous?.manual ? clampOverlayPosition(previous.left, previous.top, t, compact) : null
           const trackedPosition = previous && !previous.manual
             ? {
+                // Keep the overlay attached to the moving/panned node while
+                // the cached edge target provides the slow restoring force.
                 left: previous.left + targetX - previous.targetX,
                 top: previous.top + targetY - previous.targetY,
               }
