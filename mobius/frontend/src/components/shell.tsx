@@ -1013,7 +1013,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className={`mobius-topnav h-10 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
+      <div className={`mobius-topnav h-9 border-b flex items-center justify-between px-5 flex-shrink-0 select-none`}
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
         onPointerDown={onTopNavPointerDown}
         onDoubleClick={onTopNavDoubleClick}>

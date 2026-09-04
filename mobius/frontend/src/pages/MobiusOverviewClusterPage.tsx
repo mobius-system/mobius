@@ -26,6 +26,7 @@ import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
+import { redactDisplayText } from '../services/text-redaction'
 import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
@@ -1486,7 +1487,8 @@ function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, wi
 function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, maxWidth: number, color: string, font: string) {
   ctx.font = font
   ctx.textBaseline = 'middle'
-  const text = textEllipsis(ctx, label, Math.max(36, maxWidth))
+  // canvas 文字不经过 DOM, 全局文字替换对它不可见; 落笔前用同一套规则替换.
+  const text = textEllipsis(ctx, redactDisplayText(label), Math.max(36, maxWidth))
   const width = Math.min(maxWidth, ctx.measureText(text).width + 14)
   const height = 18
   const left = x - width / 2

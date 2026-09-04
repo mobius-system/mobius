@@ -294,6 +294,40 @@ function redactValue(value: string, rules: TextRedactionRule[]) {
   return next
 }
 
+// ── 非 DOM 文本 (canvas 等) 的替换出口 ──
+// canvas 逐帧重绘, 文字在落笔前调用本函数做同样的关键词替换.
+// 关闭态/无规则/任何异常一律原样返回 (fail-open), 保证不影响渲染路径与帧率.
+let displayRulesCache: TextRedactionRule[] | null = null
+let displayRulesCacheWired = false
+
+function invalidateDisplayRulesCache() {
+  displayRulesCache = null
+}
+
+function wireDisplayRulesCacheInvalidation() {
+  if (displayRulesCacheWired || typeof window === 'undefined') return
+  displayRulesCacheWired = true
+  // 规则/开关的本地写入都会派发对应事件; storage 覆盖跨 tab 场景. 命中即丢缓存, 下次调用重建.
+  window.addEventListener(TEXT_REDACTION_RULES_EVENT, invalidateDisplayRulesCache)
+  window.addEventListener(TEXT_REDACTION_ENABLED_EVENT, invalidateDisplayRulesCache)
+  window.addEventListener(TEXT_REDACTION_GLOBAL_SYNC_EVENT, invalidateDisplayRulesCache)
+  window.addEventListener('storage', invalidateDisplayRulesCache)
+}
+
+export function redactDisplayText(value: string): string {
+  try {
+    if (!value) return value
+    if (displayRulesCache == null) {
+      displayRulesCache = readTextRedactionEnabled() ? activeRules(readTextRedactionRules()) : []
+      wireDisplayRulesCacheInvalidation()
+    }
+    if (displayRulesCache.length === 0) return value
+    return redactValue(value, displayRulesCache)
+  } catch (_) {
+    return value
+  }
+}
+
 function canUseLocalStorage() {
   try {
     return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
