@@ -124,6 +124,12 @@ const CODEX_PENDING_ITEM_RE = /^\s*↳\s+(.*)$/
 const CODEX_USER_INTERRUPT_NOTICE_RE = /^■\s*Conversation interrupted\b/i
 const CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE =
   /^⚠\s*Model metadata for `[^`]+` not found\. Defaulting to fallback metadata;/
+// MCP servers failing to boot is common in sandboxed/offline agent environments and does not
+// stop the turn itself — codex still answers with its built-in tools. TUI renders both
+// finish_mcp_startup warnings as "⚠ MCP startup incomplete (failed: ...)" /
+// "⚠ MCP startup interrupted. The following servers were not initialized: ..." (tui/src/
+// chatwidget/mcp_startup.rs). Treat them as ignorable, same as the fallback metadata banner.
+const CODEX_MCP_STARTUP_NOTICE_RE = /^⚠\s*MCP startup (?:incomplete|interrupted)\b/i
 
 function findCodexRecentErrorInPane(paneText: string) {
   const ANSI_RE = /\x1b\[[0-9;]*m/g
@@ -136,6 +142,7 @@ function findCodexRecentErrorInPane(paneText: string) {
     if (!cleaned.startsWith('■') && !cleaned.startsWith('⚠')) continue
     if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
     if (CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE.test(cleaned)) return null
+    if (CODEX_MCP_STARTUP_NOTICE_RE.test(cleaned)) return null
     return {
       message: cleaned.trim(),
       rawLine: line,
