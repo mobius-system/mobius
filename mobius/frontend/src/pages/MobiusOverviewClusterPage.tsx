@@ -297,6 +297,17 @@ function sessionRadius(session: any) {
   return base * SESSION_RADIUS_SCALE
 }
 
+// 模型 → 执行引擎渠道。镜像后端 model-registry.backendNameForSessionModel 的
+// 前缀兜底规则 (读已有会话场景), 保证左上角统计与后端口径一致。
+function sessionHarness(session: any): 'codex' | 'cc' | 'other' {
+  const key = String(session?.model || '').trim()
+  if (!key) return 'other'
+  if (key.startsWith('deepseek-harness:')) return 'other'
+  if (key.startsWith('codex:') || key === 'codex' || key === 'gpt-5.5') return 'codex'
+  if (key.startsWith('claude-code:') || key.startsWith('claude-') || key === 'opus' || key === 'opus-4.8') return 'cc'
+  return 'codex'
+}
+
 function projectMatchesSearch(project: any, query: string) {
   const q = query.trim().toLowerCase()
   if (!q) return true
@@ -2077,6 +2088,15 @@ export default function MobiusOverviewClusterPage() {
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
   const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
+  const harnessStats = useMemo(() => {
+    const stats = { cc: 0, codex: 0 }
+    model.nodes.forEach((node) => {
+      const harness = sessionHarness(node.source)
+      if (harness === 'cc') stats.cc += 1
+      else if (harness === 'codex') stats.codex += 1
+    })
+    return stats
+  }, [model.nodes])
   const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
@@ -2798,6 +2818,7 @@ export default function MobiusOverviewClusterPage() {
               <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
                 <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
+                <span title="按执行引擎统计当前视图内的智能体节点">cc {harnessStats.cc} · codex {harnessStats.codex}</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
               </div>
             </div>
