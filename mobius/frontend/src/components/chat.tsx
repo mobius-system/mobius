@@ -1612,21 +1612,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
-        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{session.message_count} 消息 · {timeAgo(session.last_active)}</div>
+        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{[`${session.message_count} 消息`, timeAgo(session.last_active), modelLabel].filter(Boolean).join(' · ')}</div>
       </div>
       <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-end gap-1 overflow-hidden opacity-100 transition-opacity group-hover:opacity-0">
-          {modelLabel && (
-            <span className="min-w-0 max-w-[82px] truncate rounded px-1.5 py-[1px] text-[9px] leading-4 border"
-              title={`模型: ${modelLabel}`}
-              style={{
-                color: theme !== 'light' ? '#93c5fd' : '#1d4ed8',
-                background: theme !== 'light' ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.07)',
-                borderColor: theme !== 'light' ? 'rgba(147,197,253,0.22)' : 'rgba(37,99,235,0.16)',
-              }}>
-              {modelLabel}
-            </span>
-          )}
           {session.research_role && (
             <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
               title={`研究角色: ${session.research_role}`}
