@@ -3865,6 +3865,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   // count-then-tail: "加载全部" = 只拉伴生轨全量骨架 (超长会话按需加载).
   // 骨架 = 每轮一张用户输入卡, 主轨明细等用户展开该轮时再按时间戳切片取 (loadRoundJsonlDetail).
   // 伴生轨为空的旧会话回退旧路径 (拉双轨 merge 头部窗口).
+  const [spineMode, setSpineMode] = useState(false)
   const spineModeRef = useRef(false)
   const handleLoadAllJsonl = useCallback(async () => {
     const sid = currentSession?.session_id || currentTask?.task_id
@@ -3882,6 +3883,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         const merged = mergeJsonlEntriesByIdentity(jsonlEntries, spine)
         setJsonlEntries(merged)
         spineModeRef.current = true
+        setSpineMode(true)
         // 骨架已全量在手: total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
         setJsonlTotal(merged.length)
       } else {
@@ -3936,10 +3938,28 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     }
   }, [currentSession?.session_id, currentTask?.task_id])
 
+  // 骨架自动加载: 首包历史到位后, 若远端还有头部未加载 (total > entries), 后台自动拉伴生轨骨架.
+  // 骨架极小; 拉完后旧轮次立即以"仅问题卡"形态出现, 展开时按需取明细, 无需先点"加载全部".
+  const spineAutoLoadedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid || jsonlInitialLoading) return
+    if (spineAutoLoadedForRef.current === sid) return
+    if (spineModeRef.current) { spineAutoLoadedForRef.current = sid; return }
+    if (jsonlLoadingMore) return   // 正在加载 (如用户手点): 等结束后本 effect 重跑再试, 不标记
+    if (!(jsonlTotal > jsonlEntries.length)) return
+    spineAutoLoadedForRef.current = sid
+    handleLoadAllJsonl()
+  }, [currentSession?.session_id, currentTask?.task_id, jsonlInitialLoading, jsonlLoadingMore, jsonlTotal, jsonlEntries.length, handleLoadAllJsonl])
+
   useEffect(() => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
     clearPendingJsonlEntries()
+    spineModeRef.current = false
+    setSpineMode(false)
+    roundDetailLoadedRef.current = new Set()
+    setLoadingRoundUuid(null)
     freshHistoryReceivedRef.current = false
     setStreamContent('')
     setTyping(false)
@@ -4742,7 +4762,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           hasNewMessages={hasNewMessages}
           onLoadAllJsonl={handleLoadAllJsonl}
           onLoadRoundDetail={loadRoundJsonlDetail}
-          roundDetailLoaded={spineModeRef.current ? roundDetailLoadedRef.current : undefined}
+          roundDetailLoaded={roundDetailLoadedRef.current}
+          spineMode={spineMode}
           roundDetailVersion={roundDetailTick}
           loadingRoundUuid={loadingRoundUuid}
           onScrollPositionChange={handleJsonlScrollPositionChange}

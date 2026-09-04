@@ -127,6 +127,7 @@ export function JsonlView({
   roundDetailLoaded,
   roundDetailVersion,
   loadingRoundUuid,
+  spineMode,
   scrollToEntryUuid,
   scrollToMatchTs,
   onScrollResolved,
@@ -149,6 +150,8 @@ export function JsonlView({
   roundDetailLoaded?: Set<string>
   roundDetailVersion?: number
   loadingRoundUuid?: string | null
+  // 骨架模式: 伴生轨全量已并入 entries, 视窗自动全开 (不必再点"加载全部"才看见旧轮).
+  spineMode?: boolean
   // Cursor 式工具调用展示开关: true 时工具卡显示状态图标 + 连续探索类聚合; false 回退原始展示.
   cursorStyleTools?: boolean
   // 搜索结果跳转: 把命中条目的 uuid / timestamp 传进来, 解析到所属轮次后滚动到该轮卡片.
@@ -186,7 +189,9 @@ export function JsonlView({
       window.removeEventListener('storage', onStorage)
     }
   }, [roundHeaderPaletteIndex])
-  const recent = useMemo(() => entries.slice(-(showAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, showAll])
+  // 骨架模式下视窗自动全开: 骨架已全量在手, 没必要再裁 800 窗口 (旧轮问题卡要直接可见).
+  const windowAll = showAll || !!spineMode
+  const recent = useMemo(() => entries.slice(-(windowAll ? entries.length : JSONL_INITIAL_WINDOW_SIZE)), [entries, windowAll])
   const windowOffset = entries.length - recent.length
   // 工具调用状态集合: 哪些 tool_use_id 已有结果落地 (供卡片推导 running/success/error).
   // 基于原始 recent 窗口扫描 (含被 merge/过滤隐藏的纯 tool_result entry), 引用随 recent 稳定.
@@ -212,6 +217,17 @@ export function JsonlView({
     [mergedItems, suppressedTaskUuids],
   )
   const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
+  // 已加载主轨条目的最早时间戳: opener 早于它的轮, 远端才可能还有未加载的主轨明细;
+  // 不早于它的轮 (尾部窗口内, 主轨本来就全在本地) 一律视为已加载, 不给"加载明细"提示.
+  const oldestPrimaryMs = useMemo(() => {
+    let min = Infinity
+    for (const e of entries) {
+      if (!e || e.entrypoint === 'mobius' || e.mobius) continue
+      const ms = Date.parse(e?.timestamp || e?.created_at || '')
+      if (Number.isFinite(ms) && ms < min) min = ms
+    }
+    return min
+  }, [entries])
   // forgotten-flag 收尾折叠规则: 含 "running.flag" 且往前 8 个条目有 forgotten-flag 用户卡的卡片,
   // 默认折叠 (agent 被 forgotten-flag-scanner 系统提醒触发的机械删 flag 收尾链路, 对浏览对话价值低).
   // 在 visibleItems (已合并/已过滤) 序列上扫描, 命中的 lineNo 集合透传给各卡片渲染入口.
@@ -361,10 +377,12 @@ export function JsonlView({
         isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
         detailLoaded={(() => {
-          // 轮内已有非开篇条目 (尾部窗口带来的主轨明细) = 已加载;
-          // 骨架轮 (只有一张用户输入卡) 才看按需加载集合.
-          if (block.round.items.some((it: any) => it.relIdx > 0)) return true
           if (!roundDetailLoaded || !openerUuid) return undefined
+          // 轮内已有非开篇条目 = 已加载; opener 不早于已加载主轨最早 ts = 本地已齐, 也视为已加载
+          // (否则空轮/纯噪声轮会被误报"有未加载明细"). 只有更早的骨架轮才可能真的缺主轨.
+          if (block.round.items.some((it: any) => it.relIdx > 0)) return true
+          const openerMs = openerTs ? Date.parse(openerTs) : NaN
+          if (!Number.isFinite(openerMs) || !(openerMs < oldestPrimaryMs)) return true
           return roundDetailLoaded.has(openerUuid)
         })()}
         detailLoading={!!openerUuid && loadingRoundUuid === openerUuid}
@@ -431,7 +449,7 @@ export function JsonlView({
             {loadingMore ? '加载中…' : `加载全部 (共 ${displayTotal} 条)`}
           </button>
         )}
-        {!hasRemoteMore && entries.length > JSONL_INITIAL_WINDOW_SIZE && !showAll && (
+        {!hasRemoteMore && entries.length > JSONL_INITIAL_WINDOW_SIZE && !windowAll && (
           <button onClick={() => setShowAll(true)} className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)]">
             展开全部 ({entries.length})
           </button>

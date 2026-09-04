@@ -27,6 +27,7 @@ type SessionJsonlPanelProps = {
   onLoadRoundDetail?: (openerUuid: string, fromTs: string, toTs: string | null) => void
   roundDetailLoaded?: Set<string>
   roundDetailVersion?: number
+  spineMode?: boolean
   loadingRoundUuid?: string | null
   onScrollPositionChange: (userScrolledUp: boolean) => void
   onJumpToBottom: () => void
@@ -62,6 +63,7 @@ function SessionJsonlPanelInner({
   onLoadRoundDetail,
   roundDetailLoaded,
   roundDetailVersion,
+  spineMode,
   loadingRoundUuid,
   onScrollPositionChange,
   onJumpToBottom,
@@ -123,6 +125,7 @@ function SessionJsonlPanelInner({
                 onLoadRoundDetail={onLoadRoundDetail}
                 roundDetailLoaded={roundDetailLoaded}
                 roundDetailVersion={roundDetailVersion}
+                spineMode={spineMode}
                 loadingRoundUuid={loadingRoundUuid}
                 scrollToEntryUuid={scrollToEntryUuid}
                 scrollToMatchTs={scrollToMatchTs}
