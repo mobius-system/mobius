@@ -8,7 +8,7 @@
 // 提供: Attachment 类型 / newAttId / formatFileSize / uploadAttachmentFile /
 //       appendAttachmentsToDesc / AttachmentComposer (整合附件输入壳)
 //
-// AttachmentComposer = 单一边框容器内依次放 [附件芯片] + children(文本框) + [上传工具条],
+// AttachmentComposer = 单一边框容器内依次放 [附件芯片] + children(文本框, 右列绝对定位附件按钮) + [上传状态提示行],
 // 拖拽 / Ctrl+V 粘贴 / 点击上传三合一, 与快捷菜单的融合输入框形态一致.
 // =====================================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -60,7 +60,7 @@ export function appendAttachmentsToDesc(desc: string, atts: Attachment[]): strin
   return `${desc.replace(/\s+$/, '')}\n\n--- 附件 ---\n${lines.join('\n')}`
 }
 
-// 整合附件输入壳: 单一边框容器内依次放 [附件芯片] + children(文本框) + [上传工具条].
+// 整合附件输入壳: 单一边框容器内依次放 [附件芯片] + children(文本框, 右列绝对定位附件按钮) + [上传状态提示行].
 // children 应是**无边框透明背景**的文本输入 (border-0 bg-transparent), 外边框由本组件统一提供.
 // 拖拽 / Ctrl+V 粘贴 / 点击上传三合一. 一个弹窗内只挂一个实例, 避免粘贴重复入列.
 export function AttachmentComposer({ attachments, setAttachments, projectId, dark, children }: {
@@ -144,13 +144,19 @@ export function AttachmentComposer({ attachments, setAttachments, projectId, dar
           ))}
         </div>
       )}
-      {children}
-      <div className="flex items-center gap-2 px-3 pb-2">
+      {/* 附件上传按钮: 与 NewSessionModal 描述框 innerControl (稍后再写) 同款样式,
+          绝对定位在其正下方 — innerControl 在 top-10(2.5rem)/h-6, 故 top-[4.5rem] 保持
+          与 展开→稍后再写 相同的 8px 间距节奏; 包在 children 外层 relative 里,
+          附件芯片出现时随文本框一起下移, 永远贴着文本框右列. */}
+      <div className="relative">
+        {children}
         <button type="button" onClick={() => fileRef.current?.click()}
-          className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
-          style={{ color: 'var(--text-secondary)' }}>
-          <Paperclip className="w-3.5 h-3.5" /> 附件
+          className="absolute right-2 top-[4.5rem] inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+          <Paperclip className="h-3 w-3" strokeWidth={1.9} /> <span>附件</span>
         </button>
+      </div>
+      <div className="flex items-center gap-2 px-3 pb-2">
         <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
       </div>
     </div>

@@ -40,7 +40,7 @@ const MIN_VISIBLE_HEADER_HEIGHT = 16
 const OVERLAY_COLLISION_PASSES = 4
 const OVERLAY_COLLISION_GAP = 10
 const COMPACT_OVERLAY_COLLISION_GAP = 6
-const OVERLAY_ANCHOR_PULL = 0.04
+const OVERLAY_ANCHOR_PULL = 0.0
 
 function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
   const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
