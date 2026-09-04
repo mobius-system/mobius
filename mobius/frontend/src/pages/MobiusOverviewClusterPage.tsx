@@ -2818,7 +2818,7 @@ export default function MobiusOverviewClusterPage() {
               <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
                 <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
-                <span title="按执行引擎统计当前视图内的智能体节点">cc {harnessStats.cc} · codex {harnessStats.codex}</span>
+                <span title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
               </div>
             </div>
