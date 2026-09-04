@@ -61,6 +61,16 @@ function clampInt(v: any, def: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+// ---- 小莫助理项目排除 ----
+// 全局搜索不扫描小莫助理项目 (每用户一个的系统项目 "XX的小莫助理", 旧版 "XX的小莫项目",
+// 见 routes/assistant.ts): 其会话是用户与助理的日常对话, 混进全局搜索结果是噪声。
+// 识别口径与 assistant.ts findAssistantProject 一致: 系统描述 (含旧版) + 名称后缀,
+// 任一命中即视为小莫项目。assistant.ts 为 export=router 形式无法导出常量, 在此同步复制。
+const ASSISTANT_PROJECT_DESCRIPTIONS = [
+  '系统自动创建的小莫助理项目。小莫会在这里保存该用户的独立对话 Session 和预设配置。',
+  '系统自动创建的小莫项目。小莫会在这里保存该用户的独立对话 Session。',
+];
+
 // ---- 从一条 JSONL entry 提取 {role, text, timestamp} ----
 // content 可能是 string (user/error) 或 content-block 数组 (assistant: text/tool_use/tool_result/thinking).
 function tryStringify(v: any, cap: number): string {
@@ -290,6 +300,19 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   const conds: string[] = [];
   const params: any[] = [];
   if (projectId) { conds.push('s.project_id = ?'); params.push(projectId); }
+  else {
+    // 全局搜索 (未显式指定项目): 排除小莫助理项目 (系统描述或名称后缀命中, 见上方常量)。
+    // 显式带 project_id 的调用 = 明确要搜该项目内内容, 不在此排除。
+    // p 为 LEFT JOIN, 项目行不存在或字段为 NULL 时 NOT IN/NOT LIKE 结果为 NULL,
+    // 需显式 IS NULL 分支放行 (保持旧行为: 非小莫项目不受影响)。
+    conds.push(`(
+      s.project_id IS NULL OR (
+        (p.description IS NULL OR p.description NOT IN (${ASSISTANT_PROJECT_DESCRIPTIONS.map(() => '?').join(', ')}))
+        AND (p.name IS NULL OR (p.name NOT LIKE ? AND p.name NOT LIKE ?))
+      )
+    )`);
+    params.push(...ASSISTANT_PROJECT_DESCRIPTIONS, '%的小莫助理', '%的小莫项目');
+  }
   if (rangeModifier) {
     // 会话创建时间可能很早, 但其 JSONL 仍会持续追加内容。按 last_active
     // 过滤才能让近期更新的老会话参与默认搜索；极旧且无活跃时间的存量回落 created_at。
