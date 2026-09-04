@@ -28,6 +28,7 @@ export type AgentConversationOverlaysProps = {
 type OverlayState = { pinned: boolean; entries: AnyEntry[]; draft: string; sending: boolean; attached?: string[]; error?: string }
 type OverlayPosition = { left: number; top: number; targetX: number; targetY: number; manual?: boolean }
 type OverlayLayoutItem = OverlayPosition & OverlayCollisionItem
+type OverlayAnchor = { x: number; y: number; side: 'top' | 'bottom' | 'left' | 'right' }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // The canvas begins below the 40px overview header, while the overlay layer is
 // positioned against the full page main element. Keep line endpoints in the
@@ -61,6 +62,32 @@ function clampAutoOverlayPosition(left: number, top: number, width: number, heig
     right: viewport.width - 8,
     bottom: CANVAS_TOP_OFFSET + viewport.height - 8,
   })
+}
+
+/**
+ * Pick the nearest side-center for the connector endpoint. Keeping this as a
+ * pure calculation makes the anchor stable while dragging and lets the same
+ * geometry be used for every animation-frame paint without React state.
+ */
+function selectOverlayAnchor(position: Pick<OverlayPosition, 'left' | 'top'>, width: number, height: number, targetX: number, targetY: number): OverlayAnchor {
+  const candidates: OverlayAnchor[] = [
+    { side: 'top', x: position.left + width / 2, y: position.top },
+    { side: 'bottom', x: position.left + width / 2, y: position.top + height },
+    { side: 'left', x: position.left, y: position.top + height / 2 },
+    { side: 'right', x: position.left + width, y: position.top + height / 2 },
+  ]
+  let nearest = candidates[0]
+  let nearestDistance = Number.POSITIVE_INFINITY
+  candidates.forEach((candidate) => {
+    const dx = candidate.x - targetX
+    const dy = candidate.y - targetY
+    const distance = dx * dx + dy * dy
+    if (distance < nearestDistance) {
+      nearest = candidate
+      nearestDistance = distance
+    }
+  })
+  return nearest
 }
 
 function readPins() {
@@ -224,7 +251,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
       onPickAgent={insertAgentMention}
     />
     <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full overflow-visible" aria-hidden="true">
-      <line ref={lineRef} stroke={session.color} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 5" />
+      <line ref={lineRef} className="agent-conversation-overlay__connector" stroke={session.color} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 5" strokeLinecap="round" />
     </svg>
     <div ref={panelRef} data-testid="agent-conversation-overlay" data-session-id={session.id} className={`agent-conversation-overlay absolute z-10 overflow-hidden border shadow-2xl backdrop-blur-xl ${compact ? 'agent-conversation-overlay--compact rounded-md' : 'rounded-xl'}`} style={{ left: 0, top: 0, width: compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH, transform: 'translate3d(24px,84px,0)', borderColor: `${session.color}66`, background: 'color-mix(in srgb, var(--modal-bg) 72%, transparent)', boxShadow: `0 16px 42px rgba(0,0,0,.35), 0 0 0 1px ${session.color}18 inset` }}>
       <div className={`flex cursor-grab items-center border-b active:cursor-grabbing ${compact ? 'h-4 gap-1 px-1' : 'h-8 gap-2 px-2.5'}`} style={{ borderColor: `${session.color}44`, background: `${session.color}16` }}
@@ -440,10 +467,14 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
           positionRef.current[next.id] = next
           const elements = elementRefs.current[next.id]
           elements?.panel?.style.setProperty('transform', `translate3d(${next.left}px,${next.top}px,0)`)
-          elements?.line?.setAttribute('x1', String(next.left + next.width / 2))
-          elements?.line?.setAttribute('y1', String(next.top + 4))
-          elements?.line?.setAttribute('x2', String(next.targetX))
-          elements?.line?.setAttribute('y2', String(next.targetY))
+          const anchor = selectOverlayAnchor(next, next.width, next.height, next.targetX, next.targetY)
+          // The SVG path starts at the agent node and ends at the selected
+          // overlay side, so the animated dash visibly travels toward the
+          // conversation window.
+          elements?.line?.setAttribute('x1', String(next.targetX))
+          elements?.line?.setAttribute('y1', String(next.targetY))
+          elements?.line?.setAttribute('x2', String(anchor.x))
+          elements?.line?.setAttribute('y2', String(anchor.y))
         })
       }
       frame = requestAnimationFrame(tick)

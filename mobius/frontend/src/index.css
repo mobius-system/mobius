@@ -5512,6 +5512,18 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .agent-conversation-overlay__input { font-size: var(--agent-overlay-input-font-size); }
 .agent-conversation-overlay__status { font-size: var(--agent-overlay-status-font-size); }
 
+/* A quiet, directional signal from the agent node into its conversation window. */
+@keyframes agent-overlay-connector-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -18; }
+}
+.agent-conversation-overlay__connector {
+  animation: agent-overlay-connector-flow 4.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-conversation-overlay__connector { animation: none; }
+}
+
 /* Expanded content in dense shared cards follows the same variable contract. */
 .jsonl-entry-card[data-density="dense"],
 .jsonl-entry-card[data-density="dense"] *,
