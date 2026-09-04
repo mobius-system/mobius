@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { ArrowUpRight, Bot, Paperclip, Pin, PinOff, Send, X } from 'lucide-react'
+import { ArrowUpRight, Bot, Paperclip, Pin, PinOff, RefreshCw, Send, X } from 'lucide-react'
 import { api } from '../store'
 import { uploadAttachmentFile } from './attachments'
 import { EntryCardWithImages } from './viewer/RoundGroups'
@@ -139,15 +139,28 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
   }, [state.entries])
   const send = async () => {
     const text = state.draft.trim(); if (!text || state.sending) return
-    setState((prev) => ({ ...prev, sending: true, error: undefined }))
+    const sentMentions = selectedAgentMentions
+    const requestId = `overview-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    // Match the main chat composer: acknowledge the submit immediately instead of
+    // waiting for the POST response before changing the editor.
+    setState((prev) => ({ ...prev, draft: '', sending: true, error: undefined }))
+    setSelectedAgentMentions([])
+    prependSessionInputCache(session.id, text, requestId)
     try {
-      const mentions = selectedAgentMentions.map((mention) => ({ kind: 'agent', session_id: mention.sessionId, mode: mention.mode, name: mention.name }))
-      await api(`/api/sessions/${encodeURIComponent(session.id)}/messages`, { method: 'POST', body: JSON.stringify({ content: text, input_text: text, request_id: `overview-${Date.now()}-${Math.random().toString(16).slice(2)}`, mentions }) })
-      prependSessionInputCache(session.id, text)
-      setState((prev) => ({ ...prev, draft: '', sending: false }))
-      setSelectedAgentMentions([])
+      const mentions = sentMentions.map((mention) => ({ kind: 'agent', session_id: mention.sessionId, mode: mention.mode, name: mention.name }))
+      await api(`/api/sessions/${encodeURIComponent(session.id)}/messages`, { method: 'POST', body: JSON.stringify({ content: text, input_text: text, request_id: requestId, mentions }) })
+      setState((prev) => ({ ...prev, sending: false }))
       await load()
-    } catch (e: any) { setState((prev) => ({ ...prev, sending: false, error: e?.message || '发送失败' })) }
+    } catch (e: any) {
+      setState((prev) => ({
+        ...prev,
+        // Preserve a new draft typed while the request was in flight.
+        draft: prev.draft.trim() ? prev.draft : text,
+        sending: false,
+        error: e?.message || '发送失败',
+      }))
+      setSelectedAgentMentions((current) => current.length ? current : sentMentions)
+    }
   }
   const onPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(event.clipboardData?.files || [])
@@ -298,13 +311,13 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
             style={{ color: 'var(--text-primary)' }}
           />
           <div className={`flex items-center justify-between ${compact ? 'pt-0.5' : 'pt-1'}`}>
-            <span className="agent-conversation-overlay__status truncate" style={{ color: state.error ? '#f87171' : 'var(--text-muted)' }}>{state.error || `${session.projectName} · 最近 ${state.entries.length} 条`}</span>
+            <span className="agent-conversation-overlay__status truncate" style={{ color: state.error ? '#f87171' : state.sending ? session.color : 'var(--text-muted)' }}>{state.error || (state.sending ? '发送中…' : `${session.projectName} · 最近 ${state.entries.length} 条`)}</span>
             <div className="flex items-center gap-1">
               <label className={`cursor-pointer rounded transition-colors hover:bg-white/10 ${compact ? 'p-0.5' : 'p-1.5'}`} title="粘贴或选择文件" style={{ color: 'var(--text-muted)' }}>
                 <Paperclip className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
                 <input type="file" multiple className="hidden" onChange={async (event) => { const files = Array.from(event.target.files || []); if (!files.length) return; try { const uploaded = await Promise.all(files.map((file) => uploadAttachmentFile(file, session.projectId))); setState((prev) => ({ ...prev, draft: `${prev.draft}${prev.draft ? '\n' : ''}${uploaded.map((item) => item.path).join('\n')}` })) } catch (error: any) { setState((prev) => ({ ...prev, error: error?.message || '文件上传失败' })) } event.currentTarget.value = '' }} />
               </label>
-              <button type="button" aria-label="发送指令" disabled={state.sending || !state.draft.trim()} onClick={() => { void send() }} className={`rounded-md transition-colors disabled:opacity-40 ${compact ? 'p-0.5' : 'p-1.5'}`} style={{ color: session.color, background: `${session.color}18` }}><Send className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></button>
+              <button type="button" aria-label={state.sending ? '发送中' : '发送指令'} title={state.sending ? '发送中…' : '发送指令'} disabled={state.sending || !state.draft.trim()} onClick={() => { void send() }} className={`rounded-md transition-colors disabled:opacity-40 ${compact ? 'p-0.5' : 'p-1.5'}`} style={{ color: session.color, background: `${session.color}18` }}>{state.sending ? <RefreshCw className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} animate-spin`} /> : <Send className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}</button>
             </div>
           </div>
         </div>
