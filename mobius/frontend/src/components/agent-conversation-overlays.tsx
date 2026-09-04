@@ -48,6 +48,7 @@ const OVERLAY_COLLISION_MAX_PUSH = 3
 const COMPACT_OVERLAY_COLLISION_MAX_PUSH = 2
 const OVERLAY_ANCHOR_PULL = 0.045
 const OVERLAY_EDGE_RETRACT_GAP = 12
+const OVERLAY_ATTRACTION_OMEGA_DEG = 70
 
 function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
   const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
@@ -156,9 +157,9 @@ function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: M
   const assign = (group: Array<{ id: string; angle: number }>, baseAngle: number) => {
     const count = group.length
     if (count === 0) return
-    const delta = 180 / (count + 1)
+    const delta = (2 * OVERLAY_ATTRACTION_OMEGA_DEG) / (count + 1)
     group.forEach(({ id }, index) => {
-      const beta = -90 + (index + 1) * delta
+      const beta = -OVERLAY_ATTRACTION_OMEGA_DEG + (index + 1) * delta
       const radians = (baseAngle + beta) * Math.PI / 180
       const direction = { x: Math.cos(radians), y: Math.sin(radians) }
       const boundary = rayToBounds(center, direction, bounds)
