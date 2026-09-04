@@ -27,8 +27,9 @@ export function clampOverlayToBounds(item: Pick<OverlayCollisionItem, 'left' | '
  * the large instantaneous jumps that are especially noticeable in the
  * overview conversation overlays.
  */
-export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: T[], bounds: OverlayCollisionBounds, gap: number, passes = 4, strength = 1): T[] {
+export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: T[], bounds: OverlayCollisionBounds, gap: number, passes = 4, strength = 1, maxPush = Number.POSITIVE_INFINITY): T[] {
   const pushStrength = Math.max(0, Math.min(1, strength))
+  const pushLimit = Math.max(0, maxPush)
   const next = items.map((item) => ({ ...item }))
   const clampAuto = (item: T) => {
     if (item.manual) return
@@ -65,12 +66,12 @@ export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: 
         const moveAlong = (axis: 'x' | 'y') => {
           if (axis === 'x') {
             const direction = centerAX < centerBX || (centerAX === centerBX && i < j) ? -1 : 1
-            const share = (moveA && moveB ? overlapX / 2 : overlapX) * pushStrength
+            const share = Math.min(pushLimit, (moveA && moveB ? overlapX / 2 : overlapX) * pushStrength)
             if (moveA) a.left += direction * share
             if (moveB) b.left -= direction * share
           } else {
             const direction = centerAY < centerBY || (centerAY === centerBY && i < j) ? -1 : 1
-            const share = (moveA && moveB ? overlapY / 2 : overlapY) * pushStrength
+            const share = Math.min(pushLimit, (moveA && moveB ? overlapY / 2 : overlapY) * pushStrength)
             if (moveA) a.top += direction * share
             if (moveB) b.top -= direction * share
           }
