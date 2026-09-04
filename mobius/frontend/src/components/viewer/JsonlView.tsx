@@ -421,9 +421,9 @@ export function JsonlView({
             onClick={() => {
               if (loadingMore) return
               onLoadMore()
-              // 加载全部后: 打开整窗 (showAll 让头部条目进入视窗) + 强制展开所有组, 一步 "全部可见且展开".
+              // 加载全部后只打开整窗 (showAll 让头部条目进入视窗); 轮次组展开状态保持原样 —
+              // 不强制展开 (骨架模式下全部展开 = 一长串空轮头), 用户已展开/折叠的也不动.
               setShowAll(true)
-              setForceExpandAll(true)
             }}
             disabled={!!loadingMore}
             className="text-[11px] px-2 py-0.5 rounded border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-[var(--text-muted)] disabled:opacity-50"
