@@ -1503,6 +1503,59 @@ function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: numbe
   ctx.fillText(text, x - ctx.measureText(text).width / 2, y + 0.5)
 }
 
+/**
+ * Draw a project name on the inside of the lower semicircle, like an
+ * inscription on a coin. Characters are laid out by their measured width so
+ * mixed CJK/Latin names stay centered and evenly distributed along the arc.
+ */
+function drawCircularClusterLabel(ctx: CanvasRenderingContext2D, label: string, cx: number, cy: number, radius: number, maxArcWidth: number, color: string, font: string) {
+  const text = redactDisplayText(label).trim()
+  if (!text || radius <= 0) return
+  ctx.save()
+  ctx.font = font
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const textRadius = Math.max(20, radius - 14)
+  const arcLimit = Math.max(36, Math.min(Math.PI * textRadius * 0.84, maxArcWidth))
+  const sourceChars = Array.from(text)
+  const measureChars = (chars: string[]) => chars.reduce((sum, char) => sum + ctx.measureText(char).width, 0)
+  let chars = sourceChars
+  if (measureChars(chars) > arcLimit) {
+    chars = []
+    for (const char of sourceChars) {
+      const candidate = [...chars, char, '…']
+      if (measureChars(candidate) > arcLimit) break
+      chars.push(char)
+    }
+    if (chars.length < sourceChars.length) chars.push('…')
+    while (chars.length > 1 && measureChars(chars) > arcLimit) chars.pop()
+  }
+  if (!chars.length) return
+  const widths = chars.map((char) => ctx.measureText(char).width)
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0)
+  const span = Math.min(Math.PI * 0.84, totalWidth / textRadius)
+  let distance = 0
+  chars.forEach((char, index) => {
+    const angle = Math.PI / 2 + span / 2 - (distance + widths[index] / 2) / textRadius
+    const x = cx + Math.cos(angle) * textRadius
+    const y = cy + Math.sin(angle) * textRadius
+    ctx.save()
+    ctx.translate(x, y)
+    // Angle follows the lower arc from left to right; at the bottom center
+    // the glyphs remain upright instead of appearing upside down.
+    ctx.rotate(angle - Math.PI / 2)
+    ctx.strokeStyle = 'rgba(7, 18, 24, 0.82)'
+    ctx.lineWidth = 2.6 / zoomSafe(ctx)
+    ctx.lineJoin = 'round'
+    ctx.strokeText(char, 0, 0)
+    ctx.fillStyle = rgba(color, 0.94)
+    ctx.fillText(char, 0, 0)
+    ctx.restore()
+    distance += widths[index]
+  })
+  ctx.restore()
+}
+
 function drawDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
   ctx.beginPath()
   ctx.moveTo(x, y - r)
@@ -2234,11 +2287,12 @@ export default function MobiusOverviewClusterPage() {
       }
       projectClusters.forEach((cluster) => {
         if (cluster.radius < 64) return
-        drawClusterLabel(
+        drawCircularClusterLabel(
           ctx,
           cluster.title,
           cluster.cx,
-          cluster.cy - cluster.radius + 24,
+          cluster.cy,
+          cluster.radius,
           Math.max(70, cluster.radius * 1.25),
           cluster.color,
           '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
