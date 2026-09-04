@@ -40,9 +40,10 @@ const OVERLAY_WIDTH = 312
 const COMPACT_OVERLAY_WIDTH = Math.round((OVERLAY_WIDTH / 2) * 1.3)
 const MIN_VISIBLE_HEADER_WIDTH = 72
 const MIN_VISIBLE_HEADER_HEIGHT = 16
-const OVERLAY_COLLISION_PASSES = 4
-const OVERLAY_COLLISION_GAP = 10
-const COMPACT_OVERLAY_COLLISION_GAP = 6
+const OVERLAY_COLLISION_PASSES = 2
+const OVERLAY_COLLISION_GAP = 3
+const COMPACT_OVERLAY_COLLISION_GAP = 2
+const OVERLAY_COLLISION_STRENGTH = 0.22
 const OVERLAY_ANCHOR_PULL = 0.045
 const OVERLAY_EDGE_RETRACT_GAP = 12
 
@@ -597,7 +598,7 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
           top: CANVAS_TOP_OFFSET + 8,
           right: t.width - 8,
           bottom: CANVAS_TOP_OFFSET + t.height - 8,
-        }, compact ? COMPACT_OVERLAY_COLLISION_GAP : OVERLAY_COLLISION_GAP, OVERLAY_COLLISION_PASSES)
+        }, compact ? COMPACT_OVERLAY_COLLISION_GAP : OVERLAY_COLLISION_GAP, OVERLAY_COLLISION_PASSES, OVERLAY_COLLISION_STRENGTH)
         resolved.forEach((next) => {
           positionRef.current[next.id] = next
           const elements = elementRefs.current[next.id]

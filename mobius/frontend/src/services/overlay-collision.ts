@@ -21,7 +21,14 @@ export function clampOverlayToBounds(item: Pick<OverlayCollisionItem, 'left' | '
   }
 }
 
-export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: T[], bounds: OverlayCollisionBounds, gap: number, passes = 4): T[] {
+/**
+ * Resolve overlapping panels with a tunable, intentionally gentle push. A
+ * strength below 1 leaves room for the next layout frame to settle, avoiding
+ * the large instantaneous jumps that are especially noticeable in the
+ * overview conversation overlays.
+ */
+export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: T[], bounds: OverlayCollisionBounds, gap: number, passes = 4, strength = 1): T[] {
+  const pushStrength = Math.max(0, Math.min(1, strength))
   const next = items.map((item) => ({ ...item }))
   const clampAuto = (item: T) => {
     if (item.manual) return
@@ -58,12 +65,12 @@ export function resolveOverlayCollisions<T extends OverlayCollisionItem>(items: 
         const moveAlong = (axis: 'x' | 'y') => {
           if (axis === 'x') {
             const direction = centerAX < centerBX || (centerAX === centerBX && i < j) ? -1 : 1
-            const share = moveA && moveB ? overlapX / 2 : overlapX
+            const share = (moveA && moveB ? overlapX / 2 : overlapX) * pushStrength
             if (moveA) a.left += direction * share
             if (moveB) b.left -= direction * share
           } else {
             const direction = centerAY < centerBY || (centerAY === centerBY && i < j) ? -1 : 1
-            const share = moveA && moveB ? overlapY / 2 : overlapY
+            const share = (moveA && moveB ? overlapY / 2 : overlapY) * pushStrength
             if (moveA) a.top += direction * share
             if (moveB) b.top -= direction * share
           }
