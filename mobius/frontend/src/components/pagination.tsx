@@ -80,11 +80,11 @@ export function PaginationControls({
           onClick={() => goTo(page - 1)}
           disabled={page <= 1}
           className="h-8 sm:h-7 px-2 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+          style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
         >
           上一页
         </button>
-        <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+        <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
           {pageStart}-{pageEnd} / {totalItems}
         </span>
         <button
@@ -92,7 +92,7 @@ export function PaginationControls({
           onClick={() => goTo(page + 1)}
           disabled={page >= totalPages}
           className="h-8 sm:h-7 px-2 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+          style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
         >
           下一页
         </button>
