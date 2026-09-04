@@ -1129,6 +1129,39 @@ async function testCompactSlash() {
   } finally { restoreFetch() }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 17 — /version displays the client/runtime versions and environment
+// ════════════════════════════════════════════════════════════════════════════
+async function testVersionSlash() {
+  console.log('\n[UI 17] /version slash command')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  installMock((url) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({ start(c: any) { sseController = c; c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) } }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const { stdin, lastFrame, unmount } = render(
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+    )
+    await delay(60)
+    stdin.write('/version'); await delay(40); stdin.write('\r'); await delay(80)
+    const out = lastFrame() ?? ''
+    unmount()
+    ok(out.includes('Mobius 版本信息'), '/version renders a version information block')
+    ok(out.includes('TUI       v'), '/version includes the TUI version')
+    ok(out.includes('AIMUX     v'), '/version includes the AIMUX version')
+    ok(out.includes(`Node      ${process.version}`), '/version includes the Node.js version')
+    ok(out.includes(`平台      ${process.platform}/${process.arch}`), '/version includes the platform and architecture')
+  } finally { restoreFetch() }
+}
+
 async function main() {
   await testLogin()
   await testChat()
@@ -1154,6 +1187,7 @@ async function main() {
   await testIdleCompletedSessionReopensSseOnSend()
   await testSendRetries502()
   await testCompactSlash()
+  await testVersionSlash()
   // cleanup temp home
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }) } catch { /* ignore */ }
   console.log(`\n==== UI RESULT: ${pass} passed, ${fail} failed ====\n`)

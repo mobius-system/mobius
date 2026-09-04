@@ -20,6 +20,8 @@ export interface AimuxStatus {
   state: AimuxState
   phase?: AimuxPhase
   detail?: string
+  /** Runtime package version when known; falls back to the bundled version. */
+  version?: string
   identifier?: string
   attempt?: number
 }
@@ -91,6 +93,8 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
 const BUNDLE_VER = '3'
 const BUNDLE_AIMUX_VERSION = '0.1.27'
+/** Version expected from the installed or bundled AIMUX runtime. */
+export const AIMUX_VERSION = BUNDLE_AIMUX_VERSION
 const bundleDir = () => path.join(mobiusHome(), 'python-bundle')
 const bundlePython = () => WIN
   ? path.join(bundleDir(), 'python', 'python.exe')

@@ -24,7 +24,7 @@ import {
 import type { ReadyState } from './PrepScreen.js'
 import type { AnyEntry } from '../types.js'
 import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
-import type { AimuxStatus } from '../aimux.js'
+import { AIMUX_VERSION, type AimuxStatus } from '../aimux.js'
 import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
 import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
@@ -63,6 +63,7 @@ const SLASH_COMMANDS = [
   { cmd: '/config', desc: '重新选择项目、任务和模型' },
   { cmd: '/logout', desc: '断开当前连接并返回登录界面' },
   { cmd: '/help', desc: '显示帮助' },
+  { cmd: '/version', desc: '显示 TUI、AIMUX 和运行环境版本' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
@@ -78,6 +79,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const [reconfigOpen, setReconfigOpen] = useState(false)
   // 本地命令错误 (如无会话时 /compact): 与 chat.error 分开, 下一次提交时清除。
   const [slashError, setSlashError] = useState<string | null>(null)
+  const [versionInfo, setVersionInfo] = useState<string[] | null>(null)
   // Ink may deliver one final event to Composer while an async config picker is
   // replacing it. The shared ref lets that stale listener report "not handled"
   // so App can replay the key after the new Select mounts.
@@ -112,13 +114,27 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       }
       case '/resume': onResume(); return true
       case '/help': setShowHelp(s => !s); return true
+      case '/version': {
+        const details = [
+          `TUI       v${TUI_VERSION}`,
+          `AIMUX     v${aimuxStatus?.version ?? AIMUX_VERSION}`,
+          `Node      ${process.version}`,
+          `平台      ${process.platform}/${process.arch}`,
+          `服务器    ${client.server}`,
+          `模型      ${modelLabel ?? ready.prefs.model ?? 'default'}`,
+          `AIMUX状态 ${aimuxStatus ? aimuxStatusText(aimuxStatus, true) : '未知'}`,
+        ]
+        setVersionInfo(details)
+        setShowHelp(false)
+        return true
+      }
       case '/model': setConfigOpen(true); return true
       case '/config': setReconfigOpen(true); return true
       case '/logout': onLogout(); return true
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
-  }, [chat, onClear, onResume, onQuit, onLogout])
+  }, [aimuxStatus, chat, client.server, modelLabel, ready.prefs.model, onClear, onResume, onQuit, onLogout])
 
   const onSubmit = useCallback((text: string) => {
     const t = text.trim()
@@ -129,6 +145,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
+    setVersionInfo(null)
     setRowAnchor(null)
     void chat.send(t)
   }, [chat, runSlash])
@@ -181,7 +198,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     (entry) => rowsForEntry(entry),
   ), [transcriptEntries, rowsForEntry])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
-  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0) + (slashError ? 1 : 0)
+  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0) + (slashError ? 1 : 0) + (versionInfo ? versionInfo.length + 2 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
   // Conversation chrome is exactly two rows: compact header + navigation.
   const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 2)
@@ -388,6 +405,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
         {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
         {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
         {slashError ? <Text color="red">⚠ {slashError}</Text> : null}
+        {versionInfo ? <VersionBlock lines={versionInfo} /> : null}
 
         <Composer
           onSubmit={onSubmit}
@@ -576,6 +594,15 @@ function HelpBlock({ commands }: { commands: { cmd: string; desc: string }[] }) 
         </Text>
       ))}
       <Text dimColor>  {mouseNote}</Text>
+    </Box>
+  )
+}
+
+function VersionBlock({ lines }: { lines: string[] }) {
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="gray" borderDimColor paddingX={1} marginTop={1}>
+      <Text bold color="cyan">Mobius 版本信息</Text>
+      {lines.map(line => <Text key={line} dimColor>{line}</Text>)}
     </Box>
   )
 }
