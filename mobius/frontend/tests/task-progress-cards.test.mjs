@@ -64,19 +64,18 @@ function taskUpdateEntry() {
   assert.equal(extractors.isTaskToolUseEntry({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: {} }] } }), false)
 }
 
-// 2) 前端兜底累积: TaskCreate → TaskUpdate 跨条目
+// 2) 前端兜底累积: TaskCreate → TaskUpdate 跨条目 (同簇只留最后一张)
 {
   const { plans } = taskProgress.buildTaskPlans([
     { entry: taskCreateEntry(), lineNo: 1 },
     { entry: taskUpdateEntry(), lineNo: 2 },
   ])
-  const planA = plans.get(uuidA)
+  // 簇规则: 两个调用背靠背 (只隔空) → 只留最后一张 (TaskUpdate, 含簇内累积)
+  assert.equal(plans.size, 1, '同簇任务调用只留最后一张')
   const planB = plans.get(uuidB)
-  assert.ok(planA, 'TaskCreate 卡应有计划')
-  assert.ok(planB, 'TaskUpdate 卡应有计划')
-  assert.equal(planA.steps.length, 1)
-  assert.equal(planA.steps[0].step, '迁移 agents 为 TS')
-  assert.equal(planA.steps[0].status, 'pending', 'TaskCreate 时刻任务尚 pending')
+  assert.ok(planB, 'TaskUpdate (簇尾) 应有计划')
+  assert.equal(planB.steps.length, 1)
+  assert.equal(planB.steps[0].step, '迁移 agents 为 TS')
   assert.equal(planB.steps[0].status, 'completed', 'TaskUpdate 时刻任务 completed')
   assert.equal(planB.completed, 1)
 }
@@ -92,12 +91,16 @@ function taskUpdateEntry() {
       tasks: [{ id: '1', subject: '迁移 agents 为 TS', status: 'completed' }, { id: '2', subject: '补全类型', status: 'in_progress' }],
     },
   }
+  const text = { type: 'assistant', uuid: 'tx', message: { role: 'assistant', content: [{ type: 'text', text: '正文切断簇' }] } }
   const { plans } = taskProgress.buildTaskPlans([
     { entry: taskCreateEntry(), lineNo: 1 },
-    { entry: taskUpdateEntry(), lineNo: 2 },
-    { entry: snapshotEntry, lineNo: 3 },
+    { entry: text, lineNo: 2 },
+    { entry: taskUpdateEntry(), lineNo: 3 },
+    { entry: snapshotEntry, lineNo: 4 },
   ])
+  // 正文切簇: TaskCreate 簇 + TaskUpdate 簇 (sidecar 快照挂在 uuidB 同簇尾)
   const planB = plans.get(uuidB)
+  assert.ok(planB, 'TaskUpdate 卡应有计划')
   assert.equal(planB.steps.length, 2, 'sidecar 快照应覆盖单任务兜底推断')
   assert.equal(planB.steps[1].status, 'in_progress')
   assert.equal(planB.completed, 1)
@@ -145,16 +148,32 @@ function taskUpdateEntry() {
     uuid,
     attachment: { type: 'task_reminder', content: [{ id: '1', subject: '任务X', status }] },
   })
-  const { plans, suppressed } = taskProgress.buildTaskPlans([
-    { entry: reminder('r1', 'in_progress'), lineNo: 1 },
-    { entry: reminder('r2', 'in_progress'), lineNo: 2 },
-    { entry: reminder('r3', 'completed'), lineNo: 3 },
-    { entry: reminder('r4', 'completed'), lineNo: 4 },
-  ])
-  assert.equal(plans.size, 2, '两个状态段各留一张')
-  assert.ok(plans.has('r2'), 'in_progress 段留段尾')
-  assert.ok(plans.has('r4'), 'completed 段留段尾')
-  assert.equal(suppressed.size, 2)
+  // 无实质内容隔开时全部 reminder 同簇 → 只留最后一张 (completed)
+  {
+    const { plans, suppressed } = taskProgress.buildTaskPlans([
+      { entry: reminder('r1', 'in_progress'), lineNo: 1 },
+      { entry: reminder('r2', 'in_progress'), lineNo: 2 },
+      { entry: reminder('r3', 'completed'), lineNo: 3 },
+      { entry: reminder('r4', 'completed'), lineNo: 4 },
+    ])
+    assert.equal(plans.size, 1, '同簇 (无实质内容隔开) 只留最后一张')
+    assert.ok(plans.has('r4'))
+    assert.equal(suppressed.size, 3)
+  }
+  // 有正文隔开 → 各簇各留一张
+  {
+    const text = { type: 'assistant', uuid: 'tx', message: { role: 'assistant', content: [{ type: 'text', text: '干活' }] } }
+    const { plans } = taskProgress.buildTaskPlans([
+      { entry: reminder('r1', 'in_progress'), lineNo: 1 },
+      { entry: reminder('r2', 'in_progress'), lineNo: 2 },
+      { entry: text, lineNo: 3 },
+      { entry: reminder('r3', 'completed'), lineNo: 4 },
+      { entry: reminder('r4', 'completed'), lineNo: 5 },
+    ])
+    assert.equal(plans.size, 2, '正文切开的两簇各留一张')
+    assert.ok(plans.has('r2'), 'in_progress 簇留段尾')
+    assert.ok(plans.has('r4'), 'completed 簇留段尾')
+  }
 }
 
 // 4d) 段内混合 tool 卡与 reminder: 计划挂到 (段内最后的) 工具卡, reminder 全隐藏
@@ -169,14 +188,102 @@ function taskUpdateEntry() {
     uuid,
     message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'TaskUpdate', input: { taskId: '1', status: 'in_progress' } }] },
   })
-  const { plans, suppressed } = taskProgress.buildTaskPlans([
-    { entry: reminder('r1'), lineNo: 1 },
-    { entry: update('t1'), lineNo: 2 },
-    { entry: reminder('r2'), lineNo: 3 },
+  // 无实质内容隔开: r1/t1/r2 同簇, 只留簇尾 r2 (reminder 也可是簇尾载体)
+  {
+    const { plans, suppressed } = taskProgress.buildTaskPlans([
+      { entry: reminder('r1'), lineNo: 1 },
+      { entry: update('t1'), lineNo: 2 },
+      { entry: reminder('r2'), lineNo: 3 },
+    ])
+    assert.equal(plans.size, 1)
+    assert.ok(plans.has('r2'), '簇尾 reminder 携带最终快照')
+    assert.ok(suppressed.has('r1'), '簇内其余 reminder 隐藏')
+    assert.ok(!plans.has('t1'), '簇内 tool 卡退回普通卡')
+  }
+  // 簧尾是 tool 卡 (reminder 在前): 计划挂 tool 卡, reminder 隐藏
+  {
+    const { plans, suppressed } = taskProgress.buildTaskPlans([
+      { entry: reminder('r1'), lineNo: 1 },
+      { entry: update('t1'), lineNo: 2 },
+    ])
+    assert.equal(plans.size, 1)
+    assert.ok(plans.has('t1'), '簇尾 tool 卡挂计划')
+    assert.ok(suppressed.has('r1'))
+  }
+}
+
+// 4e) 任务推进簇: 连发 TaskCreate (中间只隔回执) 只显示最后一个
+{
+  const receipt = (uuid) => ({
+    type: 'user',
+    uuid,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] },
+  })
+  const create = (uuid, subject) => ({
+    type: 'assistant',
+    uuid,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'TaskCreate', input: { subject } }] },
+  })
+  const { plans } = taskProgress.buildTaskPlans([
+    { entry: create('c1', '任务1'), lineNo: 1 },
+    { entry: receipt('k1'), lineNo: 2 },
+    { entry: create('c2', '任务2'), lineNo: 3 },
+    { entry: receipt('k2'), lineNo: 4 },
+    { entry: create('c3', '任务3'), lineNo: 5 },
+    { entry: receipt('k3'), lineNo: 6 },
   ])
-  assert.equal(plans.size, 1)
-  assert.ok(plans.has('t1'), '同签名段优先挂任务工具卡')
-  assert.ok(suppressed.has('r1') && suppressed.has('r2'), 'reminder 载体全隐藏')
+  // 簇内只留最后一张 (c3, 含 3 个任务); c1/c2 退回普通工具卡 (无计划但可见)
+  assert.equal(plans.size, 1, '连发 TaskCreate 簇只留最后一张')
+  assert.ok(plans.has('c3'))
+  assert.equal(plans.get('c3').steps.length, 3, '最后一张含簇内累积的全部任务')
+}
+
+// 4f) 簇被实质内容切断: TaskCreate → 正文 → TaskUpdate 各自成簇各留一张
+{
+  const create = (uuid) => ({
+    type: 'assistant',
+    uuid,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'TaskCreate', input: { subject: '任务1' } }] },
+  })
+  const text = { type: 'assistant', uuid: 'tx', message: { role: 'assistant', content: [{ type: 'text', text: '开始干活' }] } }
+  const update = (uuid) => ({
+    type: 'assistant',
+    uuid,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c2', name: 'TaskUpdate', input: { taskId: '1', status: 'completed' } }] },
+  })
+  const { plans } = taskProgress.buildTaskPlans([
+    { entry: create('c1'), lineNo: 1 },
+    { entry: text, lineNo: 2 },
+    { entry: update('u1'), lineNo: 3 },
+  ])
+  assert.equal(plans.size, 2, '正文切断推进簇, 两簇各留一张')
+  assert.ok(plans.has('c1') && plans.has('u1'))
+  assert.equal(plans.get('u1').steps[0].status, 'completed')
+}
+
+// 4g) 背靠背 TaskUpdate (51 completed + 52 in_progress, 只隔回执): 只留最后一张
+{
+  const update = (uuid, taskId, status) => ({
+    type: 'assistant',
+    uuid,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'TaskUpdate', input: { taskId, status } }] },
+  })
+  const reminder = (uuid) => ({
+    type: 'attachment',
+    uuid,
+    attachment: { type: 'task_reminder', content: [{ id: '51', subject: '写测试', status: 'completed' }, { id: '52', subject: '构建镜像', status: 'pending' }] },
+  })
+  const receipt = { type: 'user', uuid: 'k', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } }
+  const { plans } = taskProgress.buildTaskPlans([
+    { entry: reminder('r1'), lineNo: 1 },
+    { entry: update('t1', '51', 'completed'), lineNo: 2 },
+    { entry: receipt, lineNo: 3 },
+    { entry: update('t2', '52', 'in_progress'), lineNo: 4 },
+  ])
+  assert.equal(plans.size, 1, '背靠背 TaskUpdate 只留最后一张')
+  assert.ok(plans.has('t2'), '计划挂在簇尾 TaskUpdate 卡上')
+  const plan = plans.get('t2')
+  assert.equal(plan.steps[1].status, 'in_progress')
 }
 
 // 5) 噪声过滤: task_state 载体与空 task_reminder 整卡隐藏
