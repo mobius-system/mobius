@@ -141,9 +141,22 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
     const text = state.draft.trim(); if (!text || state.sending) return
     const sentMentions = selectedAgentMentions
     const requestId = `overview-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const optimisticEntry: AnyEntry = {
+      uuid: `overview-optimistic-${requestId}`,
+      type: 'user',
+      timestamp: new Date().toISOString(),
+      request_id: requestId,
+      message: { role: 'user', content: text },
+    }
     // Match the main chat composer: acknowledge the submit immediately instead of
-    // waiting for the POST response before changing the editor.
-    setState((prev) => ({ ...prev, draft: '', sending: true, error: undefined }))
+    // waiting for the POST response before changing the editor or message list.
+    setState((prev) => ({
+      ...prev,
+      draft: '',
+      sending: true,
+      error: undefined,
+      entries: [...prev.entries, optimisticEntry].slice(-10),
+    }))
     setSelectedAgentMentions([])
     prependSessionInputCache(session.id, text, requestId)
     try {
