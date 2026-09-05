@@ -77,11 +77,18 @@ function mergeJsonlEntriesByIdentity(prev: any[], incoming: any[]): any[] {
   })
   if (add.length === 0) return prev
   const merged = prev.concat(add)
+  // ts 候选位与后端 parseTimestampMs 对齐 (codex 条目在 payload.timestamp);
+  // 无 ts 的条目比较视为相等 (稳定排序保持原位), 绝不落到队首.
   const ts = (e: any) => {
-    const ms = Date.parse(e?.timestamp || e?.created_at || '')
-    return Number.isFinite(ms) ? ms : 0
+    const ms = Date.parse(e?.timestamp || e?.created_at || e?.payload?.timestamp || e?.message?.created_at || '')
+    return Number.isFinite(ms) ? ms : NaN
   }
-  merged.sort((a: any, b: any) => ts(a) - ts(b))
+  merged.sort((a: any, b: any) => {
+    const ta = ts(a)
+    const tb = ts(b)
+    if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 0
+    return ta - tb
+  })
   return merged
 }
 
@@ -3877,16 +3884,15 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
       if (sid !== activeSid) return
       if (spine.length > 0) {
-        const merged = mergeJsonlEntriesByIdentity(jsonlEntries, spine)
-        setJsonlEntries(merged)
-        // total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
-        setJsonlTotal(merged.length)
-        // 只有骨架真的带来了本地没有的更早条目才进入骨架模式;
-        // 新会话/骨架与本地重合时保持普通模式, 避免"加载明细"误报.
-        if (merged.length > jsonlEntries.length) {
-          spineModeRef.current = true
-          setSpineMode(true)
-        }
+        // 必须函数式更新: 此刻可能有刚 flush 的 SSE 批次还在 setState 队列里,
+        // 用过期闭包整体覆盖会把它们抹掉 (表现为卡片消失). updater 内记录增量供 effect 判定.
+        spineAddedRef.current = null
+        setJsonlEntries(prev => {
+          const merged = mergeJsonlEntriesByIdentity(prev, spine)
+          spineAddedRef.current = merged.length - prev.length
+          return merged
+        })
+        spineEvalPendingRef.current = true
       } else {
         // 回退: 无伴生轨的旧会话走旧 merge 窗口
         const missing = jsonlTotal - jsonlEntries.length
@@ -3938,6 +3944,23 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       setLoadingRoundUuid(null)
     }
   }, [currentSession?.session_id, currentTask?.task_id])
+
+  // 骨架合并结果判定: updater 在 commit 时执行, 模式/total 决策放到 jsonlEntries 变化后的 effect 里做.
+  const spineAddedRef = useRef<number | null>(null)
+  const spineEvalPendingRef = useRef(false)
+  useEffect(() => {
+    if (!spineEvalPendingRef.current) return
+    spineEvalPendingRef.current = false
+    // total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
+    setJsonlTotal(jsonlEntries.length)
+    // 只有骨架真的带来了本地没有的条目才进入骨架模式;
+    // 新会话/骨架与本地重合时保持普通模式, 避免"加载明细"误报.
+    if ((spineAddedRef.current ?? 0) > 0) {
+      spineModeRef.current = true
+      setSpineMode(true)
+    }
+    spineAddedRef.current = null
+  }, [jsonlEntries])
 
   // 骨架自动加载: 首包历史到位后, 若远端还有头部未加载 (total > entries), 后台自动拉伴生轨骨架.
   // 骨架极小; 拉完后旧轮次立即以"仅问题卡"形态出现, 展开时按需取明细, 无需先点"加载全部".
