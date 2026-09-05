@@ -124,6 +124,7 @@ docs/*
 !docs/index.en.md
 !docs/macOS桌面客户端签名与分发修复方案.md
 !docs/jsonl_card_parse.md
+!docs/upload-page-media-to-cdn.md
 
 # mkdocs 本地构建产物 + 文档 venv
 site/
