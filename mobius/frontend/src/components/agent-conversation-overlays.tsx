@@ -31,6 +31,7 @@ type OverlayLayoutItem = OverlayPosition & OverlayCollisionItem
 type OverlayAnchor = { x: number; y: number; side: 'top' | 'bottom' | 'left' | 'right' }
 type ScreenPoint = { x: number; y: number }
 type OverlayAttractionTarget = { left: number; top: number }
+type OverlayAttractionLayout = { center: ScreenPoint; targets: Map<string, OverlayAttractionTarget> }
 const STORAGE_KEY = 'mobius:overview-conversation-pins'
 // The canvas begins below the 40px overview header, while the overlay layer is
 // positioned against the full page main element. Keep line endpoints in the
@@ -49,6 +50,8 @@ const COMPACT_OVERLAY_COLLISION_MAX_PUSH = 2
 const OVERLAY_ANCHOR_PULL = 0.045
 const OVERLAY_EDGE_RETRACT_GAP = 12
 const OVERLAY_ATTRACTION_OMEGA_DEG = 70
+const OVERLAY_ATTRACTION_UPDATE_MS = 2_000
+const OVERLAY_ATTRACTION_TRANSITION_MS = 2_000
 
 function clampOverlayPosition(left: number, top: number, viewport: OverlayTransform, compact: boolean) {
   const overlayWidth = compact ? COMPACT_OVERLAY_WIDTH : OVERLAY_WIDTH
@@ -128,7 +131,7 @@ function rayToBounds(center: ScreenPoint, direction: ScreenPoint, bounds: { left
   return { x: center.x + direction.x * distance, y: center.y + direction.y * distance }
 }
 
-function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: Map<string, any>, transform: OverlayTransform, compact: boolean, heights: Map<string, number>): Map<string, OverlayAttractionTarget> {
+function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: Map<string, any>, transform: OverlayTransform, compact: boolean, heights: Map<string, number>): OverlayAttractionLayout {
   const nodePoints = sessions
     .map((session) => {
       const node = nodeById.get(session.id)
@@ -136,7 +139,7 @@ function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: M
     })
     .filter((item): item is { id: string; point: ScreenPoint } => Boolean(item))
   const targets = new Map<string, OverlayAttractionTarget>()
-  if (nodePoints.length === 0) return targets
+  if (nodePoints.length === 0) return { center: { x: transform.width / 2, y: CANVAS_TOP_OFFSET + transform.height / 2 }, targets }
   const center = polygonCentroid(convexHull(nodePoints.map((item) => item.point)))
   const bounds = {
     left: 8,
@@ -172,7 +175,19 @@ function computeOverlayAttractionTargets(sessions: OverlaySession[], nodeById: M
   }
   assign(right, 0)
   assign(left, 180)
-  return targets
+  return { center, targets }
+}
+
+function shiftAttractionTargets(targets: Map<string, OverlayAttractionTarget>, dx: number, dy: number) {
+  targets.forEach((target, id) => { targets.set(id, { left: target.left + dx, top: target.top + dy }) })
+}
+
+function interpolateAttractionTargets(result: Map<string, OverlayAttractionTarget>, from: Map<string, OverlayAttractionTarget>, to: Map<string, OverlayAttractionTarget>, progress: number) {
+  result.clear()
+  to.forEach((target, id) => {
+    const start = from.get(id) || target
+    result.set(id, { left: start.left + (target.left - start.left) * progress, top: start.top + (target.top - start.top) * progress })
+  })
 }
 
 /**
@@ -482,7 +497,23 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
   const [states, setStates] = useState<Record<string, OverlayState>>({})
   const positionRef = useRef<Record<string, OverlayPosition>>({})
   const elementRefs = useRef<Record<string, { panel: HTMLDivElement | null; line: SVGLineElement | null; height: number; observer?: ResizeObserver }>>({})
-  const attractionTargetsRef = useRef<{ key: string; width: number; height: number; zoom: number; offsetX: number; offsetY: number; compact: boolean; targets: Map<string, OverlayAttractionTarget> }>({ key: '', width: 0, height: 0, zoom: 0, offsetX: 0, offsetY: 0, compact, targets: new Map() })
+  const attractionTargetsRef = useRef<{
+    key: string
+    width: number
+    height: number
+    zoom: number
+    offsetX: number
+    offsetY: number
+    compact: boolean
+    targets: Map<string, OverlayAttractionTarget>
+    transitionFrom: Map<string, OverlayAttractionTarget>
+    transitionTo: Map<string, OverlayAttractionTarget>
+    center: ScreenPoint
+    transitionFromCenter: ScreenPoint
+    transitionToCenter: ScreenPoint
+    transitionStartedAt: number
+    lastUpdateAt: number
+  }>({ key: '', width: 0, height: 0, zoom: 0, offsetX: 0, offsetY: 0, compact, targets: new Map(), transitionFrom: new Map(), transitionTo: new Map(), center: { x: 0, y: 0 }, transitionFromCenter: { x: 0, y: 0 }, transitionToCenter: { x: 0, y: 0 }, transitionStartedAt: 0, lastUpdateAt: 0 })
   const knownSessionsRef = useRef<Record<string, OverlaySession>>({})
   sessions.forEach((session) => { knownSessionsRef.current[session.id] = session })
   const setSessionState = (id: string, updater: (prev: OverlayState) => OverlayState) => setStates((prev) => ({ ...prev, [id]: updater(prev[id] || { pinned: pins.has(id), entries: [], draft: '', sending: false }) }))
@@ -540,27 +571,51 @@ export function AgentConversationOverlays({ sessions, enabled, compact, modelRef
         const targetCache = attractionTargetsRef.current
         const zoomChanged = Math.abs(targetCache.zoom - t.zoom) > 1e-4
         const offsetChanged = targetCache.offsetX !== t.offset.x || targetCache.offsetY !== t.offset.y
-        if (targetCache.key !== targetKey || targetCache.width !== t.width || targetCache.height !== t.height || targetCache.compact !== compact || zoomChanged || targetCache.targets.size === 0) {
+        if (targetCache.transitionTo.size > 0) {
+          const rawProgress = Math.min(1, Math.max(0, (now - targetCache.transitionStartedAt) / OVERLAY_ATTRACTION_TRANSITION_MS))
+          const smoothProgress = rawProgress * rawProgress * (3 - 2 * rawProgress)
+          interpolateAttractionTargets(targetCache.targets, targetCache.transitionFrom, targetCache.transitionTo, smoothProgress)
+          targetCache.center = {
+            x: targetCache.transitionFromCenter.x + (targetCache.transitionToCenter.x - targetCache.transitionFromCenter.x) * smoothProgress,
+            y: targetCache.transitionFromCenter.y + (targetCache.transitionToCenter.y - targetCache.transitionFromCenter.y) * smoothProgress,
+          }
+        }
+        if (offsetChanged && targetCache.targets.size > 0) {
+          // A pure canvas pan should carry the cached initial/attraction points
+          // and both ends of an active transition with the viewport.
+          const dx = t.offset.x - targetCache.offsetX
+          const dy = t.offset.y - targetCache.offsetY
+          shiftAttractionTargets(targetCache.targets, dx, dy)
+          shiftAttractionTargets(targetCache.transitionFrom, dx, dy)
+          shiftAttractionTargets(targetCache.transitionTo, dx, dy)
+          targetCache.center = { x: targetCache.center.x + dx, y: targetCache.center.y + dy }
+          targetCache.transitionFromCenter = { x: targetCache.transitionFromCenter.x + dx, y: targetCache.transitionFromCenter.y + dy }
+          targetCache.transitionToCenter = { x: targetCache.transitionToCenter.x + dx, y: targetCache.transitionToCenter.y + dy }
+        }
+        const structureChanged = targetCache.key !== targetKey || targetCache.width !== t.width || targetCache.height !== t.height || targetCache.compact !== compact || zoomChanged
+        if (targetCache.targets.size === 0 || structureChanged || now - targetCache.lastUpdateAt >= OVERLAY_ATTRACTION_UPDATE_MS) {
           const heights = new Map<string, number>()
           openSessions.forEach((session) => { heights.set(session.id, elementRefs.current[session.id]?.height || (compact ? 210 : 390)) })
+          const nextLayout = computeOverlayAttractionTargets(openSessions, nodeById, t, compact, heights)
+          const initial = targetCache.targets.size === 0
+          const transitionFrom = new Map<string, OverlayAttractionTarget>()
+          nextLayout.targets.forEach((target, id) => { transitionFrom.set(id, initial ? target : (targetCache.targets.get(id) || target)) })
+          targetCache.targets = transitionFrom
+          targetCache.transitionFrom = new Map(transitionFrom)
+          targetCache.transitionTo = nextLayout.targets
+          targetCache.transitionFromCenter = initial ? nextLayout.center : targetCache.center
+          targetCache.transitionToCenter = nextLayout.center
+          targetCache.center = targetCache.transitionFromCenter
+          targetCache.transitionStartedAt = now
+          targetCache.lastUpdateAt = now
           targetCache.key = targetKey
           targetCache.width = t.width
           targetCache.height = t.height
           targetCache.zoom = t.zoom
-          targetCache.offsetX = t.offset.x
-          targetCache.offsetY = t.offset.y
           targetCache.compact = compact
-          targetCache.targets = computeOverlayAttractionTargets(openSessions, nodeById, t, compact, heights)
-        } else if (offsetChanged) {
-          // A pure canvas pan should carry the cached initial/attraction points
-          // with the viewport instead of rebuilding the layout and reordering
-          // every overlay.
-          const dx = t.offset.x - targetCache.offsetX
-          const dy = t.offset.y - targetCache.offsetY
-          targetCache.targets.forEach((target, id) => { targetCache.targets.set(id, { left: target.left + dx, top: target.top + dy }) })
-          targetCache.offsetX = t.offset.x
-          targetCache.offsetY = t.offset.y
         }
+        targetCache.offsetX = t.offset.x
+        targetCache.offsetY = t.offset.y
         const layouts = openSessions.map((session, index): OverlayLayoutItem => {
           const node = nodeById.get(session.id)
           const targetX = node ? node.x * t.zoom + t.offset.x : 120 + (index % 3) * 330
