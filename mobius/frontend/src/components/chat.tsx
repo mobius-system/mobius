@@ -3922,7 +3922,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       const collected: any[] = []
       let fromByte: number | null = null
       for (let page = 0; page < 10; page++) {
-        const q = new URLSearchParams({ track: 'primary', from_ts: fromTs, limit: '2000' })
+        const q = new URLSearchParams({ track: 'primary', from_ts: fromTs, limit: '4000' })
         if (toTs) q.set('to_ts', toTs)
         if (fromByte != null) q.set('from_byte', String(fromByte))
         const data = await api(`/api/sessions/${sid}/jsonl-history?${q.toString()}`)

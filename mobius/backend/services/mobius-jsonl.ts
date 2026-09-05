@@ -13,7 +13,7 @@ import {
 } from './task-state-reducer';
 
 const DEFAULT_MAX_LINES = 10000;
-const DEFAULT_HISTORY_TAIL = 200;
+const DEFAULT_HISTORY_TAIL = 500;
 // 特殊规则: .mobius.jsonl 轨不受 DEFAULT_HISTORY_TAIL(200) 限制, 尾部窗口阈值提高到 600。
 // mobius 轨条目稀疏 (每轮 1 条 user_input + 少量 task_state), 而主轨条目高密度 (每轮可达
 // 上百条工具调用) — 时间上更早但仍有价值的用户输入卡会被主轨流量挤出 200 条窗口,
@@ -98,7 +98,7 @@ function readMergedJsonlHistory(jsonlPath: string | null | undefined, opts: Read
 
   const total = (primary.total || 0) + (mobius.total || 0);
   // tailCount 模式 (SSE 首包) 下不做全局再截尾: 两侧已按各自窗口截好
-  // (primary ≤ tailCount, mobius ≤ MOBIUS_HISTORY_TAIL, 合计 ≤ 800), 全局再砍会把
+  // (primary ≤ tailCount, mobius ≤ MOBIUS_HISTORY_TAIL, 合计 ≤ 1100), 全局再砍会把
   // 时间上更早的 mobius 用户输入卡重新挤出去, 违背特殊规则。
   // full 模式 (tailCount=0) 保留旧行为: 全局截到 maxLines。
   const entries = (tailCount > 0
@@ -233,7 +233,7 @@ function positiveNum(v: any, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-const TS_SLICE_MAX_ENTRIES = 2000;
+const TS_SLICE_MAX_ENTRIES = 4000;
 const TS_SLICE_PROBE_CHUNK = 64 * 1024;
 
 // 读取 fd 上"包含字节 pos"的那一行; 返回 {start, end, text}。

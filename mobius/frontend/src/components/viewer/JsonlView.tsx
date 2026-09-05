@@ -26,10 +26,10 @@ import {
   saveRoundHeaderPaletteIndex,
 } from './round-header-palette'
 
-// 首屏窗口 = 后端 SSE 首包的合并尾部窗口上限: 主轨尾 200 + .mobius.jsonl 轨尾 600
-// (特殊规则: mobius 轨不受 200 限制, 见 backend/services/mobius-jsonl.ts MOBIUS_HISTORY_TAIL)。
+// 首屏窗口 = 后端 SSE 首包的合并尾部窗口上限: 主轨尾 500 + .mobius.jsonl 轨尾 600
+// (特殊规则: mobius 轨不受 500 限制, 见 backend/services/mobius-jsonl.ts MOBIUS_HISTORY_TAIL)。
 // 窗口必须 ≥ 首包大小, 否则后端多回灌的更早用户输入卡会被前端重新裁掉。
-const JSONL_INITIAL_WINDOW_SIZE = 800
+const JSONL_INITIAL_WINDOW_SIZE = 1200
 
 function JsonlInitialSkeleton() {
   return (
@@ -370,6 +370,11 @@ export function JsonlView({
     const openerTs = openerEntry?.timestamp || openerEntry?.created_at || null
     const nextOpenerEntry = rounds[block.index + 1]?.items[0]?.entry
     const nextTs = nextOpenerEntry?.timestamp || nextOpenerEntry?.created_at || null
+    // 切片窗口向两侧各扩一轮: 排队消息造成的轮界模糊被吸收, 相邻轮顺带预载 (多加载一些总没错).
+    const prevOpenerEntry = block.index > 0 ? rounds[block.index - 1]?.items[0]?.entry : null
+    const sliceFromTs = prevOpenerEntry?.timestamp || prevOpenerEntry?.created_at || openerTs
+    const afterNextEntry = rounds[block.index + 2]?.items[0]?.entry
+    const sliceToTs = afterNextEntry?.timestamp || afterNextEntry?.created_at || nextTs
     return (
       <RoundGroup
         round={block.round}
@@ -388,7 +393,7 @@ export function JsonlView({
           return roundDetailLoaded.has(openerUuid)
         })()}
         detailLoading={!!openerUuid && loadingRoundUuid === openerUuid}
-        onNeedDetail={openerUuid && openerTs && onLoadRoundDetail ? () => onLoadRoundDetail(openerUuid, openerTs, nextTs) : undefined}
+        onNeedDetail={openerUuid && openerTs && onLoadRoundDetail ? () => onLoadRoundDetail(openerUuid, sliceFromTs, sliceToTs) : undefined}
         forceExpandAll={forceExpandAll}
         forceOpen={block.key === extTarget?.key && extFocusLineNo !== null}
         showMeta={showMeta}
