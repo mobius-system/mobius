@@ -111,6 +111,17 @@ export function isEmptyTaskReminderAttachment(entry: AnyEntry): boolean {
   return !Array.isArray(attachment?.content) || attachment.content.length === 0
 }
 
+// Claude Code 在"用户取消了本轮回复"(如 ESC 打断后的收尾/无待答提问的唤起)时写入的合成占位
+// assistant 消息: message.model 为 "<synthetic>", 文本恒为 "No response requested." — 本地生成、
+// 零 token, 不是任何模型的真实输出. 对浏览对话无价值, 整卡过滤隐藏.
+// 注意只精确匹配该占位文案: 同为 <synthetic> 的 "API Error: …" 卡有诊断价值必须保留,
+// 个别中断时落盘的半截真实回复也已观察到, 不能按 model 一刀切.
+export function isNoResponseRequestedEntry(entry: AnyEntry): boolean {
+  if (entry?.type !== 'assistant') return false
+  if (entry?.message?.model !== '<synthetic>') return false
+  return assistantResponseText(entry?.message?.content).trim() === 'No response requested.'
+}
+
 // jsonl 卡片视图里"整卡过滤隐藏"的噪声 entry 集合: 对浏览对话内容无价值的系统注入/元数据噪声.
 // 集中在此一处, viewer/JsonlView 的 visibleItems 过滤只调本谓词, 以后新增噪声类型往这里加即可.
 //   - token_count         : codex 每轮 token 用量统计 (event_msg)
@@ -122,6 +133,8 @@ export function isEmptyTaskReminderAttachment(entry: AnyEntry): boolean {
 //   - turn_context        : codex 每轮注入的本轮上下文元数据 (含 developer_instructions 系统提示词)
 //   - task_state          : mobius sidecar 任务快照载体 (数据并入 anchor 任务卡的计划视图)
 //   - empty task_reminder : 空 content 的 task_reminder 附件 (无任务时的空壳)
+//   - no_response_requested: Claude Code 合成占位 assistant 消息 ("No response requested.",
+//                            model "<synthetic>", 本地生成非模型输出; 同源的 API Error 卡保留)
 export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
   return (
     isTokenCountEvent(entry) ||
@@ -132,7 +145,8 @@ export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
     isSkillListingAttachment(entry) ||
     isAgentListingDeltaAttachment(entry) ||
     isTaskStateCarrierEntry(entry) ||
-    isEmptyTaskReminderAttachment(entry)
+    isEmptyTaskReminderAttachment(entry) ||
+    isNoResponseRequestedEntry(entry)
   )
 }
 
