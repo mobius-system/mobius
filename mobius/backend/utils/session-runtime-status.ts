@@ -1,19 +1,4 @@
-/**
- * session-runtime-status.ts — session 运行时状态判定的唯一真相源.
- *
- * 与 `GET /api/sessions/:id/status` (routes/sessions.ts) 和后台巡检
- * `agent-status-syncer.ts` 共用本函数, 保证 `sessions_v2.agent_status` 字段
- * 与实时 /status 接口返回的结果始终一致 (谁改了判定逻辑, 改这一处即可).
- *
- * 设计: computeSessionRuntimeStatus 纯判定无副作用; syncAgentStatusIfChanged 负责
- * 把判定结果写回 sessions_v2.agent_status (仅变化时写, /status 与 syncer 共用).
- * error_scan 这种写 .mobius.jsonl 的副作用仍留在 /status handler (会话内实时职责).
- *
- * 入参:
- *   session  - sessions_v2 行 (至少含 session_id 和用于选 backend 的 model)
- *   bindPath - 已 resolve 的项目 bind_path 仓库根 (真相源优先, flag 文件判定);
- *              null/空 则回退到 backend 抽象方法 (isJobGoalAccomplished / isFailed)
- */
+// session-runtime-status.ts — 运行时状态判定的唯一真相源, /status 接口与 agent-status-syncer 共用.
 import { db } from '../../db';
 import * as agents from '../agents';
 import * as modelRegistry from '../services/model-registry';
@@ -28,9 +13,7 @@ export interface RuntimeStatus {
   failedAt: string | null;
 }
 
-// 注意: 本函数刻意不包 try/catch (除了 flag 文件读取), 以保持与原 /status handler
-// 完全一致的行为. 调用方 (service 巡检) 自行对单个 session 包 try/catch, 避免单点
-// 故障拖垮整轮.
+// 刻意不包 try/catch (与原 /status handler 行为一致); 调用方自行按单 session 兜错.
 export function computeSessionRuntimeStatus(
   session: { session_id: string; model?: string | null },
   bindPath: string | null | undefined,
@@ -39,12 +22,11 @@ export function computeSessionRuntimeStatus(
   const id = session.session_id;
 
   const alive = !!backend.isAlive(id);
+  // ⭐ 最贵的探测 (jsonl 尾读 / tmux 抓屏); 上一行 alive 只是它的前置开关.
   // working: 进程活的前提下, 是否还在 turn 中. alive && !working = "alive 待命".
   const working = alive && !!backend.isWorking(id);
 
-  // 任务标记位: running.flag 在 → 未完成; 删除且无 failed.flag → 已结束(成功);
-  // failed.flag 在 → 失败. 有 bind_path 优先看 flag 文件 (运行时无关, 比 backend
-  // 抽象方法更可靠); 否则回退到 backend.isJobGoalAccomplished / isFailed.
+  // 任务标记位: 优先读 flag 文件, 失败或无 bindPath 才回退 backend 方法.
   let jobAccomplished: boolean;
   let jobFailed: boolean;
   let failedReason = '';
@@ -52,6 +34,7 @@ export function computeSessionRuntimeStatus(
 
   if (bindPath) {
     try {
+      // ⭐ 任务成败的真相源: 直接读 flag 文件; catch/else 里的 backend 方法全是它的备胎.
       const st = readJobFlagState(bindPath, id);
       jobAccomplished = st.accomplished;
       jobFailed = st.failed;
@@ -69,16 +52,11 @@ export function computeSessionRuntimeStatus(
   return { alive, working, jobAccomplished, failed: jobFailed, failedReason, failedAt };
 }
 
-// 把 RuntimeStatus 映射成 agent_status 枚举值. 优先级: failed > running > completed
-// > waiting > idle. 与前端小圆点颜色一一对应.
-//   failed    → failed.flag 在
-//   running   → alive && working
-//   completed → job_accomplished (running.flag 已被 agent 自删)
-//   waiting   → alive 但不在 turn 中 (等输入)
-//   idle      → 其余 (进程不在 / 新建 / 已收工)
+// RuntimeStatus → agent_status 枚举, 与前端小圆点颜色一一对应.
 export type AgentStatusValue = 'idle' | 'running' | 'waiting' | 'completed' | 'failed';
 
 export function runtimeStatusToAgentStatus(st: RuntimeStatus): AgentStatusValue {
+  // ⭐ 顺序即优先级: failed > running > completed > waiting > idle, 排前面的赢.
   if (st.failed) return 'failed';
   if (st.working) return 'running';
   if (st.jobAccomplished) return 'completed';
@@ -86,12 +64,7 @@ export function runtimeStatusToAgentStatus(st: RuntimeStatus): AgentStatusValue 
   return 'idle';
 }
 
-// 把判定结果写回 sessions_v2.agent_status (单一真相源). 仅在值变化时写, 避免高频
-// 调用方 (如 /status 每 2s 一次) 反复写同值. /status 接口和 agent-status-syncer 共用
-// 本函数, 保证"写回"逻辑只有这一处 (判定逻辑见上, 也只一处).
-//
-// 关键作用: /status 是前端打开会话时的高频查询, 顺便写回让"被查看的 session"的
-// agent_status 近乎实时更新, 列表小圆点读 DB 即可跟上, 不再只靠 syncer 60s 兜底.
+// 判定结果写回 sessions_v2.agent_status, 变了才写; /status 高频调用顺便把被查看的 session 近实时刷进 DB.
 export function syncAgentStatusIfChanged(
   sessionId: string,
   currentAgentStatus: string | null | undefined,
@@ -100,6 +73,7 @@ export function syncAgentStatusIfChanged(
   const next = runtimeStatusToAgentStatus(st);
   if (next === currentAgentStatus) return { changed: false, next };
   try {
+    // ⭐ 真正写库的一句; 前面的同值短路和这层 try-catch 都是围着它转.
     db.prepare(
       "UPDATE sessions_v2 SET agent_status = ?, last_agent_event = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE session_id = ?"
     ).run(next, sessionId);

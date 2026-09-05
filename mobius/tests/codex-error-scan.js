@@ -52,6 +52,28 @@ assert.deepStrictEqual(
     rawLine: '■ Latest real failure',
   },
 )
+assert.strictEqual(
+  findCodexRecentErrorInPane('\x1b[33m⚠ MCP startup incomplete (failed: alpha)\x1b[0m'),
+  null,
+  'MCP startup failure does not stop the turn; codex still answers with built-in tools',
+)
+assert.strictEqual(
+  findCodexRecentErrorInPane('⚠ MCP startup interrupted. The following servers were not initialized: alpha, beta'),
+  null,
+  'MCP startup interruption is not an agent failure either',
+)
+assert.strictEqual(
+  findCodexRecentErrorInPane(`■ API request failed with status 403\n⚠ MCP startup incomplete (failed: alpha)`),
+  null,
+  'a newer MCP startup warning must not expose an older stale error',
+)
+assert.deepStrictEqual(
+  findCodexRecentErrorInPane(`⚠ MCP startup incomplete (failed: alpha)\n■ API request failed with status 403`),
+  {
+    message: '■ API request failed with status 403',
+    rawLine: '■ API request failed with status 403',
+  },
+)
 assert.strictEqual(findCodexRecentErrorInPane('normal output only'), null)
 
 console.log('codex error scan: ok')

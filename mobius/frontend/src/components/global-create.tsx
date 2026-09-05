@@ -1045,11 +1045,12 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   const submit = async () => {
     if (!projectId) { setErr('请选择目标项目'); return }
     if (!title.trim()) { setErr('请填写任务标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写任务描述'); return }
+    // 描述留空时按提示「默认同标题」回落, 不再报错.
+    const submittedDesc = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
       const iss = await api(`/api/projects/${projectId}/issues`, { method: 'POST', body: JSON.stringify({
-        title, description: effectiveDesc,
+        title, description: submittedDesc,
         use_worktree: isPlanning ? false : useWorktree,
         worktree_branch: (!isPlanning && useWorktree) ? branch.trim() : '',
         visibility, is_planning: isPlanning,

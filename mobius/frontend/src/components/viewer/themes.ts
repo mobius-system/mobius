@@ -97,3 +97,7 @@ export const PLAN_THEME: CardTheme = { dot: 'bg-violet-400', border: 'border-vio
 // 特例: MCP 工具返回信封 ({"output":..., "wall_time_seconds":..., "original_token_count":...}) 的 user 卡片.
 // 套了 user 外壳但实质是工具返回, 标"返回"; 用 emerald 与用户 slate / 命令 cyan / 读取 sky 都拉开, 一眼可扫.
 export const MCP_RESULT_THEME: CardTheme = { dot: 'bg-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/[0.06]', text: 'text-emerald-300', label: '返回' }
+
+// 特例: 首轮注入上下文消息 (session-context 包装的初始消息) 的卡片 — 会话第一条大消息,
+// 展开走初始模式 (问题正文 + 注入上下文分块手风琴)。用 orange 与既有全部主题拉开, 一眼可扫.
+export const INITIAL_THEME: CardTheme = { dot: 'bg-orange-400', border: 'border-orange-500/20', bg: 'bg-orange-500/[0.06]', text: 'text-orange-300', label: '初始' }

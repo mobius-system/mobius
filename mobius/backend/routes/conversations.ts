@@ -271,8 +271,8 @@ function resolveAgentJsonlPath(sessionId: string): string | null {
   try {
     const sess = Sessions.findById(sessionId) as any;
     if (!sess) return null;
-    const launch = modelRegistry.launchOptionsForSession(sess);
-    const backend = agents.get(launch.backend);
+    const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(sess);
+    const backend = agents.get(modelLaunchOptions.backend);
     return typeof backend?._resolveJsonlPath === 'function' ? (backend._resolveJsonlPath(sessionId) as string) : null;
   } catch {
     return null;

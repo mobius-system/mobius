@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# multiagent_send — 跨智能体双向通讯 CLI (纯 curl).
+# 前置: 双向 @ 已建立通讯关系 (48h 有效); user_id 取工作区 .imac/multiagent.env.
+#
+# 用法: multiagent_send <self_id> <target_id> <content...>
+#   MOBIUS_BASE       覆盖后端地址 (默认 http://localhost:45616)
+#   MOBIUS_USER_ID    覆盖 user_id (默认读 cwd 向上第一个 .imac/multiagent.env)
+#
+# 输出契约: 成功/失败都打印一行人话到 terminal (stdout/stderr), agent 据此决策下一步.
+set -euo pipefail
+
+BASE="${MOBIUS_BASE:-http://localhost:45616}"
+prog="$(basename "$0")"
+
+usage() {
+  cat <<USAGE >&2
+Usage: $prog <self_id> <target_id> <content...>
+
+  向目标智能体发送跨智能体通讯 (需已通过双向 @ 建立, 48h 有效).
+
+Options:
+  -h, --help    show this help and exit
+
+Environment:
+  MOBIUS_BASE     backend base URL (default: http://localhost:45616)
+  MOBIUS_USER_ID  override user id (default: nearest .imac/multiagent.env)
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+[ $# -ge 3 ] || { usage; exit 2; }
+
+self_id="$1"; target_id="$2"; shift 2
+content="$*"
+
+# user_id: 显式 env 优先, 否则从 cwd 向上找最近的 .imac/multiagent.env
+user_id="${MOBIUS_USER_ID:-}"
+if [ -z "$user_id" ]; then
+  dir="$PWD"
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/.imac/multiagent.env" ]; then
+      user_id="$(grep -E '^MOBIUS_USER_ID=' "$dir/.imac/multiagent.env" | head -n1 | cut -d= -f2-)"
+      break
+    fi
+    dir="$(dirname "$dir")"
+  done
+fi
+if [ -z "$user_id" ]; then
+  echo "✗ 无法确定 user_id：未找到 .imac/multiagent.env 且 MOBIUS_USER_ID 未设置" >&2
+  exit 1
+fi
+
+token="$(generate_localhost_jwt "$user_id")" || exit 1
+
+body="$(python3 -c 'import json,sys; print(json.dumps({"self_id": sys.argv[1], "target_id": sys.argv[2], "content": " ".join(sys.argv[3:])}))' "$self_id" "$target_id" "$content")"
+
+resp="$(curl -sS -m 30 -w '\n%{http_code}' -X POST "$BASE/api/multiagent_communication" \
+  -H "Authorization: Bearer $token" \
+  -H "Content-Type: application/json" \
+  --data "$body")" || { echo "✗ 无法连接 Mobius 后端（$BASE）" >&2; exit 1; }
+
+http="$(tail -n1 <<<"$resp")"
+body_json="$(sed '$d' <<<"$resp")"
+
+err_from_json() { python3 -c 'import json,sys; print(json.load(sys.stdin).get("error", ""))' <<<"$1" 2>/dev/null || true; }
+
+case "$http" in
+  200)
+    turn="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("turn_number", "?"))' <<<"$body_json" 2>/dev/null || echo '?')"
+    echo "✓ 已送达 Session $target_id（第 ${turn} 轮）"
+    exit 0
+    ;;
+  401) echo "✗ 认证失败：JWT 生成/校验出错（generate_localhost_jwt 或 .env 问题）" >&2; exit 1 ;;
+  403) echo "✗ $(err_from_json "$body_json" || echo 无权限)" >&2; exit 1 ;;
+  404) echo "✗ $(err_from_json "$body_json" || echo "未建立双向通讯关系")" >&2; exit 1 ;;
+  410) echo "✗ $(err_from_json "$body_json" || echo "通讯已过期")" >&2; exit 1 ;;
+  *)   echo "✗ 发送失败（HTTP $http）：$(err_from_json "$body_json")" >&2; exit 1 ;;
+esac

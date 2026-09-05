@@ -14,9 +14,9 @@ const { TmuxClaudeCodeBackend } = require('./tmux-claude-code')
 const { TmuxCodexBackend } = require('./tmux-codex')
 const { DeepSeekHarnessBackend } = require('./deepseek-harness')
 
-const singletons = {}
+const singletons: Record<string, any> = {}
 
-function get(name) {
+function get(name: string): any {
   if (!singletons[name]) {
     switch (name) {
       case 'tmux-claude-code': singletons[name] = new TmuxClaudeCodeBackend(); break
@@ -28,4 +28,7 @@ function get(name) {
   return singletons[name]
 }
 
-module.exports = { get }
+// CJS require 消费方 (services/routes 里的 import agents from '../agents') 与
+// named import 消费方都兼容: default 指向同一 registry 对象.
+export { get }
+export default { get }

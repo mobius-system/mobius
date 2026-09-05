@@ -362,11 +362,11 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   const assistantSession = target.session;
   const prompt = lifecyclePromptForTarget(sourceSession, event, target);
   const storedPrompt = markAssistantInternalNotificationPrompt(prompt);
-  const launch = modelRegistry.launchOptionsForSession(assistantSession);
-  const backend = agents.get(launch.backend);
+  const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(assistantSession);
+  const backend = agents.get(modelLaunchOptions.backend);
   const workDir = path.resolve(assistantSession.bind_path || APP_DIR);
   const turnNum = (Messages.maxTurnFor(assistantSession.session_id) || 0) + 1;
-  const mobiusJsonl = {
+  const mobiusPromptRecord = {
     source: 'assistant.lifecycle-callback',
     kind: event.type,
     content: storedPrompt,
@@ -382,23 +382,11 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
     prompt,
     cwd: workDir,
     flagRoot: workDir,
-    model: launch.model || undefined,
-    settingsPath: launch.settingsPath,
-    forceNoProxy: launch.forceNoProxy,
-    useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-    codexProfileKey: launch.codexProfileKey || undefined,
-    codexChannel: launch.codexChannel || undefined,
-    codexConfigPath: launch.codexConfigPath || undefined,
-    codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-    codexSecretValue: launch.codexSecretValue || undefined,
-    harnessProvider: launch.harnessProvider || undefined,
-    harnessBaseUrl: launch.harnessBaseUrl || undefined,
-    harnessSecretValue: launch.harnessSecretValue || undefined,
-    harnessMaxTokens: launch.harnessMaxTokens || undefined,
-    harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+    // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+    modelLaunchOptions: modelLaunchOptions,
     displayName: assistantSession.name || undefined,
-    agentSessionId: assistantSession.claude_session_id || undefined,
-    mobiusJsonl,
+    agentSessionId: assistantSession.agent_session_id || undefined,
+    mobiusPromptRecord,
   });
 
   try {
@@ -410,9 +398,9 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
 
   try {
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === assistantSession.session_id);
-    const newAgentSid = runtimeInfo?.agentSessionId || null;
-    if (newAgentSid && newAgentSid !== assistantSession.claude_session_id) {
-      db.prepare('UPDATE sessions_v2 SET claude_session_id=? WHERE session_id=?').run(newAgentSid, assistantSession.session_id);
+    const newAgentSessionId = runtimeInfo?.agentSessionId || null;
+    if (newAgentSessionId && newAgentSessionId !== assistantSession.agent_session_id) {
+      db.prepare('UPDATE sessions_v2 SET agent_session_id=? WHERE session_id=?').run(newAgentSessionId, assistantSession.session_id);
     }
   } catch (e) {
     console.warn(`[forgotten-flag-scanner] 同步小莫 agent session id 失败 (${assistantSession.session_id}): ${e.message}`);
@@ -625,28 +613,16 @@ async function maybeNotify(f: any): Promise<string> {
   // 5) 发送: 此时已确认 window 存活, 直接 paste 进现有 TUI. (window 不存活的情况
   //    已在步骤 0 拦截并 skip, 不会走到这里, 故 backend 不会再 spawn 新窗口.)
   try {
-    const launch = modelRegistry.launchOptionsForSession(s);
+    const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(s);
     await backend.noPauseCurrentAndQueueQueryAtSession({
       sessionId: sid,
       prompt: message,
       cwd,
       flagRoot: flagRoot || cwd,
-      model: launch.model || undefined,
-      settingsPath: launch.settingsPath,
-      forceNoProxy: launch.forceNoProxy,
-      useProxy: launch.forceNoProxy ? false : launch.useProxy === true,
-      codexProfileKey: launch.codexProfileKey || undefined,
-      codexChannel: launch.codexChannel || undefined,
-      codexConfigPath: launch.codexConfigPath || undefined,
-      codexSecretEnvKey: launch.codexSecretEnvKey || undefined,
-      codexSecretValue: launch.codexSecretValue || undefined,
-      harnessProvider: launch.harnessProvider || undefined,
-      harnessBaseUrl: launch.harnessBaseUrl || undefined,
-      harnessSecretValue: launch.harnessSecretValue || undefined,
-      harnessMaxTokens: launch.harnessMaxTokens || undefined,
-      harnessRuntimeVersion: launch.harnessRuntimeVersion || undefined,
+      // 模型启动选项整包下传, 各 agent 后端自行解构所需字段.
+      modelLaunchOptions: modelLaunchOptions,
       displayName: s.session_name || undefined,
-      agentSessionId: s.claude_session_id || undefined,
+      agentSessionId: s.agent_session_id || undefined,
     });
   } catch (e) {
     return `notify=FAIL (backend 发送失败: ${e.message})`;
@@ -707,7 +683,7 @@ async function scanOnce(): Promise<void> {
              s.status,
              s.scope_type AS scope_type, s.research_id AS research_id,
              s.last_agent_event, s.last_active,
-             s.model AS model, s.claude_session_id AS claude_session_id,
+             s.model AS model, s.agent_session_id AS agent_session_id,
              p.bind_path AS bind_path, p.name AS project_name,
              p.forgotten_flag_message AS forgotten_flag_message,
              p.forgotten_flag_issue_interval_minutes AS forgotten_flag_issue_interval_minutes,

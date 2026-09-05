@@ -7,7 +7,11 @@ import {
   FlaskConical,
   GitBranch,
   LocateFixed,
+  Maximize2,
   MessageSquare,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   Pause,
   Play,
@@ -20,7 +24,10 @@ import {
 } from 'lucide-react'
 import { api, useStore } from '../store'
 import { TopNav, timeAgoPrecise } from '../components/shell'
+import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { pollRecursive } from '../services/polling'
+import { redactDisplayText } from '../services/text-redaction'
+import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
 type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
@@ -41,15 +48,6 @@ type ClusterModel = {
   parentClusters: ParentCluster[]
   projectClusters: ProjectCluster[]
   creatorClusters: CreatorCluster[]
-}
-
-type BridgeEdge = {
-  source_session_id: string
-  target_session_id: string
-  channel_ids: string[]
-  accepted: boolean
-  queued_count: number
-  last_active?: string
 }
 
 type ClusterSession = {
@@ -182,7 +180,7 @@ const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 3.2
 const ZOOM_STEP = 1.18
-const TOP_BAR_HEIGHT = 58
+const TOP_BAR_HEIGHT = 40
 const SESSION_RADIUS_SCALE = 2
 const PROJECT_TARGET_GAP = 34
 const PROJECT_COLLISION_GAP = 18
@@ -196,7 +194,10 @@ const CREATOR_COLLISION_GAP = 28
 const CLUSTER_RADIUS_GROW_LERP = 0.42
 const CLUSTER_RADIUS_SHRINK_LERP = 0.2
 const EXISTING_PARENT_ANCHOR_REPACK_LERP = 0.28
+const SESSION_VELOCITY_DAMPING = 0.82
+const SESSION_VELOCITY_EPSILON = 0.012
 const PROJECT_COLORS = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#14b8a6', '#e11d48', '#84cc16', '#6366f1', '#f59e0b', '#06b6d4']
+const COMMUNICATION_LINK_COLOR = '#38bdf8'
 
 function activeTimeMs(item: any) {
   const value = item?.last_session_activity_at || item?.last_active || item?.updated_at || item?.created_at
@@ -295,6 +296,17 @@ function sessionColor(session: ClusterSession) {
 function sessionRadius(session: any) {
   const base = session.agent_status === 'running' ? 6.2 : isResearchAgent(session) ? 5.2 : 4.6
   return base * SESSION_RADIUS_SCALE
+}
+
+// 模型 → 执行引擎渠道。镜像后端 model-registry.backendNameForSessionModel 的
+// 前缀兜底规则 (读已有会话场景), 保证左上角统计与后端口径一致。
+function sessionHarness(session: any): 'codex' | 'cc' | 'other' {
+  const key = String(session?.model || '').trim()
+  if (!key) return 'other'
+  if (key.startsWith('deepseek-harness:')) return 'other'
+  if (key.startsWith('codex:') || key === 'codex' || key === 'gpt-5.5') return 'codex'
+  if (key.startsWith('claude-code:') || key.startsWith('claude-') || key === 'opus' || key === 'opus-4.8') return 'cc'
+  return 'codex'
 }
 
 function projectMatchesSearch(project: any, query: string) {
@@ -1069,7 +1081,10 @@ function separateCircles(
   if (dist >= minDist) return null
   const nx = dx / dist
   const ny = dy / dist
-  const push = (minDist - dist) / 2 + 0.35
+  // Resolve only the actual deficit.  An unconditional cushion makes a pair
+  // that is exactly at its minimum distance get nudged every frame, which in
+  // turn keeps the otherwise-settled node positions visibly trembling.
+  const push = (minDist - dist) / 2
   return { x: nx * push, y: ny * push }
 }
 
@@ -1341,13 +1356,14 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       const sameParent = a.parentId === b.parentId
       const sameProject = a.projectId === b.projectId
       const minDist = a.r + b.r + (sameParent ? 7 : sameProject ? 14 : 22)
-      const influence = sameParent ? 84 : sameProject ? 130 : 178
-      if (dist > influence && dist > minDist) continue
+      if (dist >= minDist) continue
       const nx = dx / dist
       const ny = dy / dist
-      const overlap = Math.max(0, minDist - dist)
-      const repel = (sameParent ? 0.22 : sameProject ? 0.4 : 0.68) * alpha
-      const strength = (overlap * 0.08 + repel / Math.max(1, dist * 0.025)) * 0.5
+      const overlap = minDist - dist
+      // Keep the force proportional to the actual overlap.  The previous
+      // distance-independent repel term never reached zero inside its
+      // influence radius, so settled agents accumulated a tiny oscillation.
+      const strength = overlap * 0.08 * alpha
       if (!a.fixed) {
         a.vx -= nx * strength
         a.vy -= ny * strength
@@ -1365,8 +1381,13 @@ function tickLayout(nodes: ClusterSession[], parentClusters: ParentCluster[], pr
       node.vy = 0
       return
     }
-    node.vx = clamp(node.vx * 0.82, -12, 12)
-    node.vy = clamp(node.vy * 0.82, -12, 12)
+    node.vx = clamp(node.vx * SESSION_VELOCITY_DAMPING, -12, 12)
+    node.vy = clamp(node.vy * SESSION_VELOCITY_DAMPING, -12, 12)
+    // Do not carry sub-pixel numerical noise into the next frame.  This is a
+    // true settle threshold (not a visual snap), so larger corrections still
+    // pass through the normal spring and collision logic.
+    if (Math.abs(node.vx) < SESSION_VELOCITY_EPSILON) node.vx = 0
+    if (Math.abs(node.vy) < SESSION_VELOCITY_EPSILON) node.vy = 0
     node.x += node.vx
     node.y += node.vy
   })
@@ -1466,7 +1487,8 @@ function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, wi
 function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, maxWidth: number, color: string, font: string) {
   ctx.font = font
   ctx.textBaseline = 'middle'
-  const text = textEllipsis(ctx, label, Math.max(36, maxWidth))
+  // canvas 文字不经过 DOM, 全局文字替换对它不可见; 落笔前用同一套规则替换.
+  const text = textEllipsis(ctx, redactDisplayText(label), Math.max(36, maxWidth))
   const width = Math.min(maxWidth, ctx.measureText(text).width + 14)
   const height = 18
   const left = x - width / 2
@@ -1479,6 +1501,59 @@ function drawClusterLabel(ctx: CanvasRenderingContext2D, label: string, x: numbe
   ctx.stroke()
   ctx.fillStyle = rgba(color, 0.9)
   ctx.fillText(text, x - ctx.measureText(text).width / 2, y + 0.5)
+}
+
+/**
+ * Draw a project name on the inside of the lower semicircle, like an
+ * inscription on a coin. Characters are laid out by their measured width so
+ * mixed CJK/Latin names stay centered and evenly distributed along the arc.
+ */
+function drawCircularClusterLabel(ctx: CanvasRenderingContext2D, label: string, cx: number, cy: number, radius: number, maxArcWidth: number, color: string, font: string) {
+  const text = redactDisplayText(label).trim()
+  if (!text || radius <= 0) return
+  ctx.save()
+  ctx.font = font
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const textRadius = Math.max(20, radius - 14)
+  const arcLimit = Math.max(36, Math.min(Math.PI * textRadius * 0.84, maxArcWidth))
+  const sourceChars = Array.from(text)
+  const measureChars = (chars: string[]) => chars.reduce((sum, char) => sum + ctx.measureText(char).width, 0)
+  let chars = sourceChars
+  if (measureChars(chars) > arcLimit) {
+    chars = []
+    for (const char of sourceChars) {
+      const candidate = [...chars, char, '…']
+      if (measureChars(candidate) > arcLimit) break
+      chars.push(char)
+    }
+    if (chars.length < sourceChars.length) chars.push('…')
+    while (chars.length > 1 && measureChars(chars) > arcLimit) chars.pop()
+  }
+  if (!chars.length) return
+  const widths = chars.map((char) => ctx.measureText(char).width)
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0)
+  const span = Math.min(Math.PI * 0.84, totalWidth / textRadius)
+  let distance = 0
+  chars.forEach((char, index) => {
+    const angle = Math.PI / 2 + span / 2 - (distance + widths[index] / 2) / textRadius
+    const x = cx + Math.cos(angle) * textRadius
+    const y = cy + Math.sin(angle) * textRadius
+    ctx.save()
+    ctx.translate(x, y)
+    // Angle follows the lower arc from left to right; at the bottom center
+    // the glyphs remain upright instead of appearing upside down.
+    ctx.rotate(angle - Math.PI / 2)
+    ctx.strokeStyle = 'rgba(7, 18, 24, 0.82)'
+    ctx.lineWidth = 2.6 / zoomSafe(ctx)
+    ctx.lineJoin = 'round'
+    ctx.strokeText(char, 0, 0)
+    ctx.fillStyle = rgba(color, 0.94)
+    ctx.fillText(char, 0, 0)
+    ctx.restore()
+    distance += widths[index]
+  })
+  ctx.restore()
 }
 
 function drawDiamondPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -1501,6 +1576,36 @@ function drawSessionPath(ctx: CanvasRenderingContext2D, node: ClusterSession, r 
     return
   }
   drawCirclePath(ctx, node.x, node.y, r)
+}
+
+function drawCommunicationLinks(ctx: CanvasRenderingContext2D, nodes: ClusterSession[], links: Array<{ source: string; target: string }>, now: number, zoom: number) {
+  if (links.length === 0 || nodes.length < 2) return
+  const nodeById = new Map<string, ClusterSession>()
+  nodes.forEach((node) => nodeById.set(node.id, node))
+  ctx.lineCap = 'round'
+  links.forEach((link) => {
+    const a = nodeById.get(link.source)
+    const b = nodeById.get(link.target)
+    // 仅当两端 Agent 都在当前可见节点集内才画线
+    if (!a || !b) return
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < a.r + b.r + 6) return
+    const nx = dx / dist
+    const ny = dy / dist
+    ctx.beginPath()
+    ctx.moveTo(a.x + nx * (a.r + 2), a.y + ny * (a.r + 2))
+    ctx.lineTo(b.x - nx * (b.r + 2), b.y - ny * (b.r + 2))
+    ctx.strokeStyle = rgba(COMMUNICATION_LINK_COLOR, 0.75)
+    ctx.lineWidth = Math.max(1, 1.3 / zoom)
+    ctx.setLineDash([6, 5])
+    // lineDashOffset 随时间流动 → 动态虚线
+    ctx.lineDashOffset = -((now / 45) % 11)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.lineDashOffset = 0
+  })
 }
 
 function drawSessionNode(ctx: CanvasRenderingContext2D, node: ClusterSession, now: number, zoom: number) {
@@ -1635,7 +1740,7 @@ function InfoRow({ label, value }: { label: string; value: any }) {
   )
 }
 
-function DetailDrawer({ selection, userParam, onClose }: { selection: Selection | null; userParam: string; onClose: () => void }) {
+function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { selection: Selection | null; userParam: string; onClose: () => void; onShowConversation?: (session: ClusterSession) => void }) {
   const navigate = useNavigate()
   const path = getSelectionPath(userParam, selection)
   const color = selection && isClusterSelection(selection)
@@ -1713,18 +1818,13 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
                   <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>最近 Session / Agent</div>
                   <div className="space-y-1">
                     {recentSessions.map((session) => (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
-                      >
-                        <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span>
-                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span>
-                        </span>
-                      </button>
+                      <div key={session.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]">
+                        <button type="button" onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                          <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
+                          <span className="min-w-0 flex-1"><span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span><span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span></span>
+                        </button>
+                        {onShowConversation && <button type="button" title="显示对话浮窗" aria-label={`显示 ${session.title} 对话浮窗`} onClick={() => onShowConversation(session)} className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-active)] hover:text-[var(--accent-primary)]"><MessageSquare className="h-3.5 w-3.5" /></button>}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1732,6 +1832,11 @@ function DetailDrawer({ selection, userParam, onClose }: { selection: Selection 
             )}
           </div>
           <div className="border-t p-4" style={{ borderColor: 'var(--border-color)' }}>
+            {selection && isSessionSelection(selection) && onShowConversation && (
+              <button type="button" onClick={() => onShowConversation(selection.session)} className="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-md border text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: `${color}66`, color }}>
+                <MessageSquare className="h-3.5 w-3.5" />显示对话浮窗
+              </button>
+            )}
             <button
               type="button"
               disabled={!path}
@@ -1760,8 +1865,10 @@ export default function MobiusOverviewClusterPage() {
     setCurrentResearch,
     setCurrentSession,
     setCurrentTask,
+    setMobileNavOpen,
   } = useStore()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   // 全屏工具页的出口: 优先回到真正的"上一界面", 直接进入/刷新时兜底回用户主页。
   const goBack = useCallback(() => {
     if (window.history.length > 1) navigate(-1)
@@ -1777,17 +1884,39 @@ export default function MobiusOverviewClusterPage() {
   })
   const [timeRange, setTimeRange] = useState<TimeRangeKey>('24h')
   const [graphDataByProject, setGraphDataByProject] = useState<Record<string, ProjectGraphData>>({})
-  const [bridgeEdges, setBridgeEdges] = useState<BridgeEdge[]>([])
+  const graphDataByProjectRef = useRef<Record<string, ProjectGraphData>>({})
+  const missingSessionRefreshesRef = useRef<Map<string, number>>(new Map())
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
   const [hoverLabel, setHoverLabel] = useState<{ x: number; y: number; title: string; meta: string } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [paused, setPaused] = useState(false)
+  const [showCommunication, setShowCommunication] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:overview-cluster-comm') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mobius:ui:sidebar:overview-cluster:hidden') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [communicationLinks, setCommunicationLinks] = useState<Array<{ source: string; target: string }>>([])
+  const [showConversationWindows, setShowConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-windows') === '1' } catch { return false }
+  })
+  const [compactConversationWindows, setCompactConversationWindows] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
+  })
+  const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
-  const bridgeEdgesRef = useRef<BridgeEdge[]>([])
   const selectedRef = useRef<Selection | null>(null)
   const didInitialFitRef = useRef(false)
   const pendingAutoFitRef = useRef(true)
@@ -1795,9 +1924,12 @@ export default function MobiusOverviewClusterPage() {
   const userViewportInteractedRef = useRef(false)
   const alphaRef = useRef(0.85)
   const pausedRef = useRef(false)
+  const showCommunicationRef = useRef(showCommunication)
+  const communicationLinksRef = useRef(communicationLinks)
   const zoomRef = useRef(1)
   const offsetRef = useRef({ x: 0, y: 0 })
   const sizeRef = useRef({ width: 1, height: 1, dpr: 1 })
+  const overlayTransformRef = useRef({ offset: { x: 0, y: 0 }, zoom: 1, width: 1, height: 1 })
   const frameRef = useRef<number | null>(null)
   const viewportAnimationRef = useRef<null | { frame: number; startedAt: number; duration: number; fromZoom: number; toZoom: number; fromOffset: Point; toOffset: Point }>(null)
   const dragRef = useRef<null | {
@@ -1810,6 +1942,24 @@ export default function MobiusOverviewClusterPage() {
     moved: boolean
     hit?: HitTarget | null
   }>(null)
+
+  graphDataByProjectRef.current = graphDataByProject
+
+  const hideSidebar = useCallback(() => {
+    // 移动端由 TopNav 汉堡按钮控制抽屉显隐；桌面端才持久化「隐藏」状态。
+    if (isMobile) {
+      setMobileNavOpen(false)
+      return
+    }
+    setSidebarCollapsed(true)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '1') } catch {}
+  }, [isMobile, setMobileNavOpen])
+
+  const showSidebar = useCallback(() => {
+    setSidebarCollapsed(false)
+    try { localStorage.setItem('mobius:ui:sidebar:overview-cluster:hidden', '0') } catch {}
+    if (isMobile) setMobileNavOpen(true)
+  }, [isMobile, setMobileNavOpen])
 
   const selectedRange = useMemo(
     () => TIME_RANGE_OPTIONS.find((option) => option.key === timeRange) || TIME_RANGE_OPTIONS[0],
@@ -1844,17 +1994,6 @@ export default function MobiusOverviewClusterPage() {
       .then((arr: any[]) => setProjects(sortByRecent(arr || [])))
       .catch((e: any) => setError(e?.message || '项目加载失败'))
   }, [setProjects])
-
-  useEffect(() => {
-    return pollRecursive(async (signal) => {
-      try {
-        const result: any = await api('/api/agent-bridge/edges', { signal })
-        setBridgeEdges(Array.isArray(result?.edges) ? result.edges : [])
-      } catch (e: any) {
-        if (e?.name !== 'AbortError') setError(e?.message || '通信关系加载失败')
-      }
-    }, 10_000, 10_000)
-  }, [])
 
   const candidateProjects = useMemo(
     () => sortByRecent((projects || []).filter((project: any) => (
@@ -1902,6 +2041,93 @@ export default function MobiusOverviewClusterPage() {
       }))
   }, [graphDataByProject, loadingIds])
 
+  const mergeSessionBuckets = useCallback((
+    projectId: string,
+    scope: 'issue' | 'research',
+    previous: Record<string, any[]>,
+    incoming: Record<string, any[]>,
+  ) => {
+    const merged: Record<string, any[]> = {}
+    const parentIds = new Set([...Object.keys(previous || {}), ...Object.keys(incoming || {})])
+    parentIds.forEach((parentId) => {
+      const nextSessions = Array.isArray(incoming?.[parentId]) ? incoming[parentId] : []
+      const nextIds = new Set(nextSessions.map((session: any) => String(session?.session_id || session?.id || '')).filter(Boolean))
+      const preserved: any[] = []
+      nextSessions.forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (sessionId) missingSessionRefreshesRef.current.delete(`${projectId}:${scope}:${parentId}:${sessionId}`)
+      })
+      ;(previous?.[parentId] || []).forEach((session: any) => {
+        const sessionId = String(session?.session_id || session?.id || '')
+        if (!sessionId || nextIds.has(sessionId)) return
+        const key = `${projectId}:${scope}:${parentId}:${sessionId}`
+        const misses = (missingSessionRefreshesRef.current.get(key) || 0) + 1
+        if (misses < 3) {
+          missingSessionRefreshesRef.current.set(key, misses)
+          preserved.push(session)
+        } else {
+          missingSessionRefreshesRef.current.delete(key)
+        }
+      })
+      merged[parentId] = [...nextSessions, ...preserved]
+    })
+    return merged
+  }, [])
+
+  const refreshProjectGraph = useCallback(async (projectId: string, signal?: AbortSignal) => {
+    const data = graphDataByProjectRef.current[projectId]
+    if (!data) return null
+    try {
+      const issueIds = data.issues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean)
+      const researchIds = data.researches.map((research: any) => String(research?.id || '').trim()).filter(Boolean)
+      const qs = new URLSearchParams()
+      if (issueIds.length) qs.set('issue_ids', issueIds.join(','))
+      if (researchIds.length) qs.set('research_ids', researchIds.join(','))
+      qs.set('preview_limit', '500')
+      const sessionsOverview = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions-overview?${qs.toString()}`, signal ? { signal } : undefined)
+      if (signal?.aborted) return null
+      return {
+        projectId,
+        sessionsByIssue: sessionsOverview?.issues || {},
+        sessionsByResearch: sessionsOverview?.researches || {},
+      }
+    } catch (e: any) {
+      // Polling teardown/timeout aborts the request intentionally. Do not expose the
+      // browser's "signal is aborted without reason" text as a page error.
+      if (signal?.aborted || e?.name === 'AbortError' || /\babort(ed)?\b/i.test(String(e?.message || ''))) return
+      setError(e?.message || '会话状态刷新失败')
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    const stop = pollRecursive(async (signal) => {
+      const arr: any[] = await api('/api/projects?all=true', { signal })
+      if (signal.aborted) return
+      const projectIds = Object.keys(graphDataByProjectRef.current)
+      const updates = await Promise.all(projectIds.map((id) => refreshProjectGraph(id, signal)))
+      if (signal.aborted) return
+      setProjects(sortByRecent(arr || []))
+      const validUpdates = updates.filter((update): update is NonNullable<typeof update> => !!update)
+      if (validUpdates.length === 0) return
+      setGraphDataByProject((previous) => {
+        const next = { ...previous }
+        validUpdates.forEach((update) => {
+          const current = previous[update.projectId]
+          if (!current) return
+          next[update.projectId] = {
+            ...current,
+            sessionsByIssue: mergeSessionBuckets(update.projectId, 'issue', current.sessionsByIssue, update.sessionsByIssue),
+            sessionsByResearch: mergeSessionBuckets(update.projectId, 'research', current.sessionsByResearch, update.sessionsByResearch),
+          }
+        })
+        graphDataByProjectRef.current = next
+        return next
+      })
+    }, 10_000)
+    return stop
+  }, [mergeSessionBuckets, refreshProjectGraph, setProjects])
+
   useEffect(() => {
     let cancelled = false
     const ids = candidateProjects.map((project: any) => project.id).filter((id: string) => !graphDataByProject[id])
@@ -1917,6 +2143,16 @@ export default function MobiusOverviewClusterPage() {
   }, [candidateProjects, graphDataByProject, loadProjectGraph])
 
   const model = useMemo(() => buildClusterModel(candidateProjects, graphDataByProject, cutoffMs, clusterMode), [candidateProjects, graphDataByProject, cutoffMs, clusterMode])
+  const harnessStats = useMemo(() => {
+    const stats = { cc: 0, codex: 0 }
+    model.nodes.forEach((node) => {
+      const harness = sessionHarness(node.source)
+      if (harness === 'cc') stats.cc += 1
+      else if (harness === 'codex') stats.codex += 1
+    })
+    return stats
+  }, [model.nodes])
+  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -1995,6 +2231,9 @@ export default function MobiusOverviewClusterPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { width, height, dpr } = sizeRef.current
+    // Panning mutates refs without a React render. Publish that transform in the
+    // same animation frame as the canvas paint so overlay connectors stay attached.
+    overlayTransformRef.current = { offset: offsetRef.current, zoom: zoomRef.current, width, height }
     const { nodes, parentClusters: parents, projectClusters, creatorClusters, mode } = modelRef.current
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, width, height)
@@ -2032,31 +2271,6 @@ export default function MobiusOverviewClusterPage() {
       ctx.stroke()
     })
 
-    const nodeById = new Map(nodes.map((node) => [node.id, node]))
-    bridgeEdgesRef.current.forEach((edge) => {
-      const source = nodeById.get(edge.source_session_id)
-      const target = nodeById.get(edge.target_session_id)
-      if (!source || !target) return
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(source.x, source.y)
-      ctx.lineTo(target.x, target.y)
-      ctx.lineWidth = (edge.accepted ? 1.8 : 1.25) / zoomRef.current
-      ctx.strokeStyle = edge.accepted ? 'rgba(34,197,94,0.68)' : 'rgba(148,163,184,0.48)'
-      ctx.setLineDash(edge.accepted ? [] : [5 / zoomRef.current, 5 / zoomRef.current])
-      ctx.stroke()
-      if (edge.queued_count > 0) {
-        const midX = (source.x + target.x) / 2
-        const midY = (source.y + target.y) / 2
-        ctx.setLineDash([])
-        ctx.beginPath()
-        ctx.arc(midX, midY, 3.5 / zoomRef.current, 0, Math.PI * 2)
-        ctx.fillStyle = 'rgba(250,204,21,0.9)'
-        ctx.fill()
-      }
-      ctx.restore()
-    })
-
     if (zoomRef.current > 0.35) {
       if (mode === 'creator') {
         creatorClusters.forEach((cluster) => {
@@ -2073,11 +2287,12 @@ export default function MobiusOverviewClusterPage() {
       }
       projectClusters.forEach((cluster) => {
         if (cluster.radius < 64) return
-        drawClusterLabel(
+        drawCircularClusterLabel(
           ctx,
           cluster.title,
           cluster.cx,
-          cluster.cy - cluster.radius + 24,
+          cluster.cy,
+          cluster.radius,
           Math.max(70, cluster.radius * 1.25),
           cluster.color,
           '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2086,6 +2301,9 @@ export default function MobiusOverviewClusterPage() {
     }
 
     const now = performance.now()
+    if (showCommunicationRef.current) {
+      drawCommunicationLinks(ctx, nodes, communicationLinksRef.current, now, zoomRef.current)
+    }
     nodes.forEach((node) => drawSessionNode(ctx, node, now, zoomRef.current))
 
     if (zoomRef.current > 0.48) {
@@ -2127,11 +2345,6 @@ export default function MobiusOverviewClusterPage() {
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
-
-  useEffect(() => {
-    bridgeEdgesRef.current = bridgeEdges
-    draw()
-  }, [bridgeEdges, draw])
 
   useEffect(() => {
     const previous = modelRef.current
@@ -2250,6 +2463,42 @@ export default function MobiusOverviewClusterPage() {
   }, [paused])
 
   useEffect(() => {
+    showCommunicationRef.current = showCommunication
+  }, [showCommunication])
+
+  useEffect(() => {
+    overlayTransformRef.current = { offset: offsetRef.current, zoom: zoomRef.current, width: sizeRef.current.width, height: sizeRef.current.height }
+  })
+
+  useEffect(() => {
+    communicationLinksRef.current = communicationLinks
+  }, [communicationLinks])
+
+  // 通讯虚线数据源: 开启开关后自递归轮询当前用户有效的双向通讯链接 (48h 窗口内).
+  // 无现成轮询基建时的旧 edges 模式即 pollRecursive; 关闭开关即 stop 停止.
+  useEffect(() => {
+    if (!showCommunication) return undefined
+    const stop = pollRecursive((signal) => {
+      return api('/api/multiagent_communication_links', { signal })
+        .then((data: any) => {
+          const seen = new Set<string>()
+          const unique: Array<{ source: string; target: string }> = []
+          ;(data?.links || []).forEach((link: any) => {
+            const source = String(link?.source_session_id || '')
+            const target = String(link?.target_session_id || '')
+            if (!source || !target) return
+            const key = [source, target].sort().join('|')
+            if (seen.has(key)) return
+            seen.add(key)
+            unique.push({ source, target })
+          })
+          setCommunicationLinks(unique)
+        })
+    }, 10_000)
+    return stop
+  }, [showCommunication])
+
+  useEffect(() => {
     const step = () => {
       const currentModel = modelRef.current
       const gatherExcess = currentModel.mode === 'creator'
@@ -2334,6 +2583,30 @@ export default function MobiusOverviewClusterPage() {
     try { localStorage.setItem('mobius:overview-cluster-mode', value) } catch {}
   }
 
+  const handleShowCommunicationChange = () => {
+    setShowCommunication((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-cluster-comm', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
+  const handleConversationWindowsChange = () => {
+    setShowConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-windows', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
+  const handleCompactConversationWindowsChange = () => {
+    setCompactConversationWindows((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-conversation-compact', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
@@ -2376,9 +2649,18 @@ export default function MobiusOverviewClusterPage() {
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 3
       drag.moved = drag.moved || moved
       if (drag.mode === 'pan') {
-        offsetRef.current = {
+        const nextOffset = {
           x: drag.originX + event.clientX - drag.startX,
           y: drag.originY + event.clientY - drag.startY,
+        }
+        offsetRef.current = nextOffset
+        // Publish immediately as well as during draw(). The overlay RAF can run
+        // before the canvas RAF, so waiting for paint leaves connectors one frame behind.
+        overlayTransformRef.current = {
+          offset: nextOffset,
+          zoom: zoomRef.current,
+          width: sizeRef.current.width,
+          height: sizeRef.current.height,
         }
       }
       return
@@ -2442,13 +2724,35 @@ export default function MobiusOverviewClusterPage() {
     <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       <TopNav />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="flex w-[292px] flex-shrink-0 flex-col border-r" style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}>
+        {(!sidebarCollapsed || isMobile) && (
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:overview-cluster"
+          defaultWidth={292}
+          minWidth={220}
+          maxWidth={460}
+          side="left"
+          data-tour="overview-cluster-sidebar"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--sidebar-bg)' }}
+        >
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
               <div className="text-[13px] font-semibold">Cluster Overview</div>
-              <div className="ml-auto rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
-                {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+              <div className="ml-auto flex items-center gap-1">
+                <div className="rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+                  {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
+                </div>
+                <button
+                  type="button"
+                  onClick={hideSidebar}
+                  title={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  aria-label={isMobile ? '关闭侧栏' : '隐藏侧栏'}
+                  className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
             <div className="relative mt-3">
@@ -2537,28 +2841,40 @@ export default function MobiusOverviewClusterPage() {
               })
             )}
           </div>
-        </aside>
+        </ResizablePanel>
+        )}
 
         <main className="relative min-w-0 flex-1 overflow-hidden">
-          <div className="absolute inset-x-0 top-0 z-10 flex h-[58px] items-center gap-3 border-b px-5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+          <div className="absolute inset-x-0 top-0 z-10 flex h-[40px] items-center gap-2 border-b px-3.5" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-primary) 92%, transparent)' }}>
+            {sidebarCollapsed && !isMobile && (
+              <button
+                type="button"
+                onClick={showSidebar}
+                title="显示侧栏"
+                aria-label="显示侧栏"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
+              >
+                <PanelLeftOpen className="h-3 w-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={goBack}
               title="返回上一页 (Esc)"
               aria-label="返回上一页"
-              className="group flex h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border pl-2.5 pr-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              className="group flex h-6 flex-shrink-0 items-center gap-1 rounded-md border pl-1.5 pr-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
             >
-              <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
+              <ArrowLeft className="h-2.5 w-2.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
               返回
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
-              <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[10px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
+              <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
-                <span>{model.projectClusters.length} Projects</span>
-                <span>{model.parentClusters.length} Issues / Research</span>
-                <span>{model.nodes.length} Sessions / Agents</span>
+                <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
+                <span title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
                 {loadingCount > 0 && <span>{loadingCount} 个项目加载中</span>}
               </div>
             </div>
@@ -2570,7 +2886,7 @@ export default function MobiusOverviewClusterPage() {
                     key={option.key}
                     type="button"
                     onClick={() => handleTimeRangeChange(option.key)}
-                    className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
+                    className="h-5 rounded px-1.5 text-[8px] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -2582,29 +2898,47 @@ export default function MobiusOverviewClusterPage() {
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomOut className="h-3.5 w-3.5" />
+              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
+            </div>
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomOut className="h-2.5 w-2.5" />
               </button>
-              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-7 min-w-[58px] items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <LocateFixed className="h-3 w-3" />
+              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <LocateFixed className="h-2 w-2" />
                 {Math.round(zoom * 100)}%
               </button>
-              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomIn className="h-3.5 w-3.5" />
+              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomIn className="h-2.5 w-2.5" />
               </button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                {paused ? <Play className="h-2.5 w-2.5" /> : <Pause className="h-2.5 w-2.5" />}
               </button>
-              <button type="button" title="重新布局" onClick={reheat} className="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <RotateCcw className="h-3.5 w-3.5" />
+              <button type="button" title="重新布局" onClick={reheat} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <RotateCcw className="h-2.5 w-2.5" />
               </button>
             </div>
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <button
+                type="button"
+                title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
+                onClick={handleShowCommunicationChange}
+                className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors"
+                style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
+              >
+                <MessageSquare className="h-2.5 w-2.5" />
+                通讯
+              </button>
+            </div>
+            {error && <div className="max-w-[250px] truncate text-[8px] text-red-400">{error}</div>}
           </div>
 
-          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[58px] overflow-hidden">
+          <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[40px] overflow-hidden">
             <canvas
               ref={canvasRef}
               className="block h-full w-full cursor-crosshair"
@@ -2636,7 +2970,8 @@ export default function MobiusOverviewClusterPage() {
             )}
           </div>
 
-          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} />
+          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
         </main>
       </div>
     </div>

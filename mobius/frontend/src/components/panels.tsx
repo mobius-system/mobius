@@ -85,7 +85,7 @@ type AdminTmuxContext = {
   issue_id?: string | null
   research_id?: string | null
   research_role?: string | null
-  claude_session_id?: string | null
+  agent_session_id?: string | null
   created_at: string
   last_active: string
 }
@@ -1720,9 +1720,10 @@ function ModelPromptLimitsCard() {
     }
   }
 
-  const autoTitleEnabled = Boolean(payload?.auto_generate_session_title === true
+  // 默认开启: 后端 DEFAULTS.enabled=true; 显式 false / {enabled:false} 才视为关闭.
+  const autoTitleEnabled = !(payload?.auto_generate_session_title === false
     || (payload?.auto_generate_session_title && typeof payload.auto_generate_session_title === 'object'
-      && payload.auto_generate_session_title.enabled === true))
+      && payload.auto_generate_session_title.enabled === false))
 
   const toggleAutoGenerateSessionTitle = async (enabled: boolean) => {
     setSavingAutoTitle(true)
@@ -1822,7 +1823,7 @@ function ModelPromptLimitsCard() {
             <span>自动生成会话标题</span>
           </div>
           <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            后端收到 agent 明确产出的标题事件时自动改名；不扫描历史、不依赖前端打开页面、不走状态轮询。默认关闭。
+            后端收到 agent 明确产出的标题事件时自动改名；codex 等后端由系统周期兜底生成。默认开启。
           </div>
         </div>
         <ToggleSwitch
@@ -3275,6 +3276,8 @@ type BestApiManagedModel = {
   session_model: string
   endpoints: string[]
   capabilities: string[]
+  // 后端实时核对 model-access 后的标注: true=仍在系统配置, false=已被手动删除, null/undefined=未知
+  configured?: boolean | null
 }
 
 type BestApiConnection = {
@@ -3489,6 +3492,66 @@ function emptyHarnessForm(): HarnessModelForm {
   }
 }
 
+// BestAPI 已注入模型清单: 同步成功后明确展示「哪些模型进了系统配置、在会话模型
+// 选择器里叫什么、当前是否仍存在」, 避免"同步完成了但不知道能用什么、去哪找".
+const BESTAPI_BACKEND_BADGES: Record<BestApiManagedModel['backend'], { label: string; className: string }> = {
+  codex: { label: 'Codex', className: 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300' },
+  claude_code: { label: 'Claude Code', className: 'border-blue-500/25 bg-blue-500/5 text-blue-300' },
+  deepseek_harness: { label: 'DeepSeek Harness', className: 'border-violet-500/25 bg-violet-500/5 text-violet-300' },
+}
+const BESTAPI_BACKEND_ORDER: BestApiManagedModel['backend'][] = ['claude_code', 'codex', 'deepseek_harness']
+
+function BestApiInjectedModels({ models }: { models: BestApiManagedModel[] }) {
+  if (!models.length) return null
+  const sorted = [...models].sort((a, b) =>
+    BESTAPI_BACKEND_ORDER.indexOf(a.backend) - BESTAPI_BACKEND_ORDER.indexOf(b.backend)
+    || a.display_name.localeCompare(b.display_name))
+  const missingCount = models.filter((model) => model.configured === false).length
+  return (
+    <div className="border-t border-blue-500/15 px-3.5 pb-3.5 pt-2.5">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+          已注入系统配置的模型 · {models.length} 个
+        </span>
+        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          已持久写入模型配置，会话模型选择器中以「名称 · BestAPI」长期可用，选择即用
+        </span>
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded-md border border-[var(--border-color)]" style={{ background: 'var(--bg-card)' }}>
+        {sorted.map((model) => {
+          const badge = BESTAPI_BACKEND_BADGES[model.backend]
+          const harnessNote = (model.supported_harnesses || []).length > 1
+            ? `兼容 Harness: ${(model.supported_harnesses || []).join(' / ')}` : ''
+          return (
+            <div key={`${model.backend}:${model.key}`}
+              className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[11px] last:border-b-0">
+              <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${badge.className}`}>{badge.label}</span>
+              <span className="min-w-0 max-w-[240px] truncate font-medium" title={model.display_name}
+                style={{ color: 'var(--text-primary)' }}>{model.display_name}</span>
+              <span className="min-w-0 max-w-[220px] truncate font-mono text-[10px]" title={model.id}
+                style={{ color: 'var(--text-muted)' }}>{model.id}</span>
+              <span className="ml-auto flex-shrink-0 font-mono text-[10px]" title={`会话模型选择器标识: ${model.session_model}`}
+                style={{ color: 'var(--text-secondary)' }}>{model.session_model}</span>
+              {model.configured === false
+                ? <span className="flex-shrink-0 rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
+                    title="该模型不在当前系统配置中（可能被手动删除），点击「立即同步全部模型」可恢复">配置缺失</span>
+                : model.configured
+                  ? <span className="flex-shrink-0 rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300"
+                      title={harnessNote || '已在系统配置中，会话模型选择器可用'}>已注入</span>
+                  : null}
+            </div>
+          )
+        })}
+      </div>
+      {missingCount > 0 && (
+        <div className="mt-1.5 text-[10px] text-amber-300">
+          {missingCount} 个模型不在当前系统配置中（可能被手动删除），点击「立即同步全部模型」可恢复。
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
   const [connection, setConnection] = useState<BestApiConnection>({ connected: false })
   const [baseUrl, setBaseUrl] = useState('https://8.130.13.45:3333')
@@ -3603,7 +3666,8 @@ function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
       )}
 
       {connectedView ? (
-        <div className="grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <>
+        <div className={`grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${(connection.models || []).length ? 'pb-2' : ''}`}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
               {connection.account_username && <span style={{ color: 'var(--text-primary)' }}>
@@ -3659,6 +3723,8 @@ function BestApiSubscriptionPanel({ onSynced }: { onSynced: () => void }) {
             </button>
           </div>
         </div>
+        <BestApiInjectedModels models={connection.models || []} />
+        </>
       ) : (
         <div className="p-3.5">
           <div className="grid gap-2 md:grid-cols-[1.1fr_1.4fr_auto] md:items-end">
@@ -4602,7 +4668,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   )
 }
 
-type AdminModelsMode = 'wizard' | 'file'
+type AdminModelsMode = 'wizard' | 'file' | 'bestapi'
 
 function AdminModelsPanel() {
   const [mode, setMode] = useState<AdminModelsMode>('wizard')
@@ -4613,49 +4679,59 @@ function AdminModelsPanel() {
 
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-models">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            模型接入
-          </h3>
-          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {mode === 'wizard'
-              ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+      <div className="mb-3">
+        <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          模型接入
+        </h3>
+        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {mode === 'wizard'
+            ? '向导模式: 依次填写显示名称 / Harness / 模型真名 / 接入地址与秘钥, 自动生成配置文件'
+            : mode === 'bestapi'
+              ? 'BestAPI 订阅: 使用 API Key 读取全部可用模型与 Harness 契约, 并自动配置到 Mobius'
               : backend === 'claude-code'
                 ? '管理员导入的 Claude Code 模型走 --settings 直连, 不使用 proxychains'
                 : backend === 'codex'
                   ? '管理员导入的 Codex 模型走 --profile <渠道>, 网络代理统一在系统设置按模型配置'
                   : 'DeepSeek Harness 使用独立 Node 22 Runtime, 每个 Session 独立进程并保留原生会话'}
-          </div>
-        </div>
-        {/* 一级 Tab: 向导模式 | 文件配置 (原有三通道整体移入文件配置作为二级 sub-tab) */}
-        <div className="inline-flex rounded-md border border-[var(--border-color)] p-0.5 text-[12px]"
-          style={{ background: 'var(--input-bg)' }} data-tour="admin-models-mode-tabs">
-          {([
-            ['wizard', '向导模式'],
-            ['file', '文件配置'],
-          ] as Array<[AdminModelsMode, string]>).map(([k, label]) => {
-            const active = mode === k
-            return (
-              <button key={k} type="button" onClick={() => setMode(k)}
-                className="h-7 rounded px-3 transition-colors"
-                style={{
-                  background: active ? 'var(--bg-card)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                  fontWeight: active ? 600 : 400,
-                }}>
-                {label}
-              </button>
-            )
-          })}
         </div>
       </div>
 
-      <BestApiSubscriptionPanel onSynced={() => setBestApiRefreshNonce(n => n + 1)} />
+      {/* 一级 Tab: 向导模式(默认) | 文件配置 | BestAPI 订阅 —— 全宽卡片式, 三种接入方式一目了然
+          (原有三通道整体移入文件配置作为二级 sub-tab; BestAPI 订阅从常驻卡片移入第三 Tab) */}
+      <div className="mb-4 grid gap-2 sm:grid-cols-3" data-tour="admin-models-mode-tabs">
+        {([
+          { k: 'wizard', label: '向导模式', desc: '逐步填写，自动生成配置', Icon: WandSparkles },
+          { k: 'file', label: '文件配置', desc: '手动编辑三通道配置文件', Icon: FileText },
+          { k: 'bestapi', label: 'BestAPI 订阅', desc: 'API Key 一键导入全部模型', Icon: Sparkles },
+        ] as Array<{ k: AdminModelsMode; label: string; desc: string; Icon: typeof WandSparkles }>).map(({ k, label, desc, Icon }) => {
+          const active = mode === k
+          return (
+            <button key={k} type="button" onClick={() => setMode(k)}
+              className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                active
+                  ? 'border-blue-500/60 bg-blue-500/10'
+                  : 'border-[var(--border-color)] bg-[var(--input-bg)] hover:border-blue-500/30 hover:bg-blue-500/5'
+              }`}>
+              <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${active ? 'text-blue-400' : 'text-[var(--text-muted)]'}`} />
+              <span className="min-w-0">
+                <span className={`block text-[13px] font-semibold ${active ? 'text-blue-300' : ''}`}
+                  style={active ? undefined : { color: 'var(--text-primary)' }}>{label}</span>
+                <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{desc}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
 
-      {mode === 'wizard' ? (
+      {/* BestAPI 面板常挂载仅隐藏: 保留 30s 静默轮询/目录版本变化自动刷新文件配置列表的原有行为 */}
+      <div className={mode === 'bestapi' ? '' : 'hidden'}>
+        <BestApiSubscriptionPanel onSynced={() => setBestApiRefreshNonce(n => n + 1)} />
+      </div>
+
+      {mode === 'wizard' && (
         <ModelAccessWizard onCreated={() => setWizardRefreshNonce(n => n + 1)} />
-      ) : (
+      )}
+      {mode === 'file' && (
         <div>
           {/* 二级 sub-tab: Claude Code / Codex / DeepSeek Harness (原有文件配置模式原样保留) */}
           <div className="mb-3 flex justify-start">

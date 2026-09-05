@@ -490,111 +490,33 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_prompt_events_backend_created ON agent_prompt_events(backend_name, created_at);
 `);
 
-// ===== Agent @ 双向通讯通道 =====
-// 只读 @ 不创建通道；双向 @ 使用持久化通道承载后续 Agent↔Agent 消息。
-// JWT 只负责证明通道创建者，实际生命周期、幂等和消息审计落在 SQLite。
+// ===== 跨智能体双向通讯链接 (multiagent) =====
+// 用户在消息中双向 @ 时注册 (一次 @ 同时建 self→target 与 target→self 两行, 48h 有效);
+// /api/multiagent_communication 凭本表放行, 过期/未注册一律拒绝. 单向 @ 不经过本表.
 db.exec(`
-  CREATE TABLE IF NOT EXISTS agent_bridge_channels (
-    channel_id TEXT PRIMARY KEY,
+  CREATE TABLE IF NOT EXISTS multiagent_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_user_id TEXT NOT NULL,
     source_session_id TEXT NOT NULL,
     target_session_id TEXT NOT NULL,
-    batch_id TEXT,
-    thread_id TEXT,
-    mode TEXT NOT NULL DEFAULT 'bidirectional' CHECK(mode = 'bidirectional'),
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed','expired','exhausted')),
-    max_messages INTEGER NOT NULL DEFAULT 100,
-    message_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     last_active TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     expires_at TEXT NOT NULL,
+    message_count INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (source_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE,
     FOREIGN KEY (target_session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE
   );
-  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_owner
-    ON agent_bridge_channels(owner_user_id, status, last_active);
-  CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_pair
-    ON agent_bridge_channels(source_session_id, target_session_id, status);
-
-  CREATE TABLE IF NOT EXISTS agent_bridge_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id TEXT NOT NULL,
-    request_id TEXT NOT NULL,
-    from_session_id TEXT NOT NULL,
-    to_session_id TEXT NOT NULL,
-    batch_id TEXT,
-    thread_id TEXT,
-    in_reply_to_message_id INTEGER,
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed','rejected')),
-    -- delivery_state 描述消息是否已送入目标 Harness; status 保留兼容旧查询语义。
-    delivery_state TEXT NOT NULL DEFAULT 'queued' CHECK(delivery_state IN ('queued','delivered','failed','expired')),
-    -- decision 是目标 Agent 对外部消息的独立接收决策, 不等同于权限批准。
-    decision TEXT NOT NULL DEFAULT 'pending' CHECK(decision IN ('pending','accepted','held','refused','expired')),
-    wake_requested INTEGER NOT NULL DEFAULT 0,
-    error TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    delivered_at TEXT,
-    accepted_at TEXT,
-    decision_at TEXT,
-    expires_at TEXT,
-    FOREIGN KEY (channel_id) REFERENCES agent_bridge_channels(channel_id) ON DELETE CASCADE,
-    UNIQUE(channel_id, request_id)
-  );
-  CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_channel
-    ON agent_bridge_messages(channel_id, id);
+  CREATE INDEX IF NOT EXISTS idx_multiagent_links_pair
+    ON multiagent_links(source_session_id, target_session_id, expires_at);
 `);
 
-// agent_bridge_messages 扩展迁移: 旧库保留原 status 约束, 新字段承载 L5 投递/接收状态。
-(() => {
-  try {
-    const channelCols = db.prepare('PRAGMA table_info(agent_bridge_channels)').all().map((c: any) => c.name);
-    const channelMigrations: Array<[string, string]> = [
-      ['batch_id', 'ALTER TABLE agent_bridge_channels ADD COLUMN batch_id TEXT'],
-      ['thread_id', 'ALTER TABLE agent_bridge_channels ADD COLUMN thread_id TEXT'],
-    ];
-    for (const [name, sql] of channelMigrations) {
-      if (!channelCols.includes(name)) db.exec(sql);
-    }
-    const cols = db.prepare('PRAGMA table_info(agent_bridge_messages)').all().map((c: any) => c.name);
-    const migrations: Array<[string, string]> = [
-      ['delivery_state', "ALTER TABLE agent_bridge_messages ADD COLUMN delivery_state TEXT NOT NULL DEFAULT 'queued'"],
-      ['decision', "ALTER TABLE agent_bridge_messages ADD COLUMN decision TEXT NOT NULL DEFAULT 'pending'"],
-      ['wake_requested', "ALTER TABLE agent_bridge_messages ADD COLUMN wake_requested INTEGER NOT NULL DEFAULT 0"],
-      ['accepted_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN accepted_at TEXT'],
-      ['decision_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN decision_at TEXT'],
-      ['expires_at', 'ALTER TABLE agent_bridge_messages ADD COLUMN expires_at TEXT'],
-      ['batch_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN batch_id TEXT'],
-      ['thread_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN thread_id TEXT'],
-      ['in_reply_to_message_id', 'ALTER TABLE agent_bridge_messages ADD COLUMN in_reply_to_message_id INTEGER'],
-    ];
-    for (const [name, sql] of migrations) {
-      if (!cols.includes(name)) db.exec(sql);
-    }
-    db.exec(`
-      UPDATE agent_bridge_messages
-      SET delivery_state = CASE
-        WHEN status = 'delivered' THEN 'delivered'
-        WHEN status = 'failed' OR status = 'rejected' THEN 'failed'
-        ELSE 'queued'
-      END
-      WHERE delivery_state IS NULL OR delivery_state = ''
-         OR status IN ('delivered','failed','rejected');
-      UPDATE agent_bridge_messages
-      SET expires_at = datetime(created_at, '+1 day')
-      WHERE expires_at IS NULL;
-      CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_target_state
-        ON agent_bridge_messages(to_session_id, delivery_state, decision, id);
-      CREATE INDEX IF NOT EXISTS idx_agent_bridge_channels_batch
-        ON agent_bridge_channels(batch_id, thread_id, status);
-      CREATE INDEX IF NOT EXISTS idx_agent_bridge_messages_digest
-        ON agent_bridge_messages(to_session_id, batch_id, thread_id, delivery_state, id);
-    `);
-  } catch (e) {
-    console.warn('[mobius/db] ⚠️ agent_bridge_messages L5 状态迁移失败:', (e as Error).message);
-  }
-})();
+// 旧桥接机制 (agent_bridge_channels/messages) 已被 multiagent 直通式通讯取代:
+// 零兼容 — 启动时直接 DROP 旧表与关联索引, 历史数据不保留.
+db.exec(`
+  DROP TABLE IF EXISTS agent_bridge_messages;
+  DROP TABLE IF EXISTS agent_bridge_channels;
+`);
 
 // 自检: 生产栈表存在(只读), 不动它们.
 // 注意: skills/memories 在 v1.7 起改为文件系统存储 (protected_data/), 不再是 SQLite 表, 故不查.

@@ -84,7 +84,7 @@ const messagesRoutes = require('./backend/routes/messages');
 const projectsRoutes = require('./backend/routes/projects');
 const { router: issuesRoutes, projectScoped: issuesUnderProject } = require('./backend/routes/issues');
 const { router: sessionsRoutes, issueScoped: sessionsUnderIssue } = require('./backend/routes/sessions');
-const { router: agentBridgeRoutes, startAgentBridgeDeliveryScheduler } = require('./backend/routes/agent-bridge');
+const { router: multiagentCommunicationRoutes } = require('./backend/routes/multiagent-communication');
 const { router: researchesRoutes, projectScoped: researchesUnderProject, researchScoped: sessionsUnderResearch, blackboardRouter, graphRouter } = require('./backend/routes/researches');
 const { router: skillsRoutes, projectScoped: skillsUnderProject } = require('./backend/routes/skills');
 const { router: memoriesRoutes, projectScoped: memoriesUnderProject } = require('./backend/routes/memories');
@@ -122,7 +122,7 @@ app.use('/api/issues', issuesRoutes);
 app.use('/api/issues/:issueId/sessions', sessionsUnderIssue);
 app.use('/api/researches', researchesRoutes);
 app.use('/api/researches/:researchId/sessions', sessionsUnderResearch);
-app.use('/api/agent-bridge', agentBridgeRoutes);
+app.use('/api', multiagentCommunicationRoutes);
 app.use('/api/research-blackboard', blackboardRouter);
 app.use('/api/research-graph', graphRouter);
 app.use('/api/sessions', sessionsRoutes);
@@ -260,6 +260,12 @@ app.use('/desktop-builds', createDesktopBuildsRouter(DESKTOP_BUILDS_DIR));
 // build.py --build-mobile 从 momo-mobile 项目 (d78c6e39) 拷 arm64 / armeabi-v7a APK 到
 // mobius/mobile-builds/。同样用自建中间件 (未命中 404, 正确 Content-Type)。
 const MOBILE_BUILDS_DIR = path.join(__dirname, 'mobile-builds');
+
+// ===== 设计稿预览(不受 vite 构建清空影响) =====
+// mobius/design-mockups/ 下的设计效果图, 走 /design/ 同源静态(正确 image Content-Type)。
+const DESIGN_MOCKUPS_DIR = path.join(__dirname, 'design-mockups');
+const { createBuildsRouter: createDesignMockupsRouter } = require('./backend/middleware/builds-static');
+app.use('/design', createDesignMockupsRouter(DESIGN_MOCKUPS_DIR));
 const { createBuildsRouter: createMobileBuildsRouter } = require('./backend/middleware/builds-static');
 app.use('/mobile-builds', createMobileBuildsRouter(MOBILE_BUILDS_DIR));
 
@@ -399,8 +405,6 @@ server.listen(PORT, () => {
   // agent_status 单一真相源: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
   // 活跃态 session 的 agent_status 并写回; 终态(failed/stale)每小时扫一次.
   startAgentStatusSyncer();
-  // L5 跨 Session 收件箱: 目标工作中只入队; 空闲或挂起后由调度器通知并受控唤醒。
-  startAgentBridgeDeliveryScheduler();
   // 自动生成 Session 标题: 订阅 agent shared watcher 的 raw_entry 事件; 功能默认关闭,
   // 开启后仅在 agent 明确产出 type=ai-title 时更新, 不走前端/SSE 回灌/状态轮询.
   startSessionTitleSyncer();

@@ -303,7 +303,6 @@ export async function startIntroTour() {
   deactivateActiveDemoTour()
   destroyActiveTour(true)
   await waitForElement('[data-tour="user-projects-sidebar"]', 4200)
-  await waitForElement('[data-tour="top-guide-help"]', 1800)
   await waitForAnyElement([
     '[data-tour="user-project-card"]',
     '[data-tour="user-empty-create-project"]',
@@ -369,19 +368,6 @@ export async function startIntroTour() {
       },
     })
   }
-  addStepIfPresent(steps, '[data-tour="top-guide-help"]', {
-    popover: {
-      title: '随时回来学习',
-      description: guideParagraphs(
-        '忘了流程时，从这里重新打开引导中心。',
-        '你可以按当前目标选择不同路线。'
-      ),
-      nextBtnText: '看系统状态',
-      doneBtnText: '完成认识',
-      side: 'bottom',
-      align: 'end',
-    },
-  })
   addStepIfPresent(steps, '[data-tour="top-system-status"]', {
     popover: {
       title: '先看系统是否正常',

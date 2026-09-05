@@ -16,9 +16,10 @@ import { entryDisplayImages, entryReadImagePaths, entryUserAttachmentImages } fr
 import { buildHeaderSummary } from './header-summary'
 import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
+import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, resolvedMap }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, dense = false, resolvedMap, taskPlans }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
@@ -28,7 +29,10 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   // parentOrderedCollapse: forgotten-flag 收尾卡, 透传给 JsonEntryCard 默认折叠 (用户仍可手动展开).
   parentOrderedCollapse?: boolean
   showMeta?: boolean
+  dense?: boolean
   resolvedMap?: ResolvedCallMap | null
+  // 任务工具跨条目累积快照 (anchor uuid → PlanUpdate), 按卡片 uuid 取值透传给计划视图.
+  taskPlans?: TaskPlanByUuid | null
 }) {
   const displayImages = entryDisplayImages(entry)
   const readImages = entryReadImagePaths(entry)
@@ -40,9 +44,10 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
     attachmentImages.length > 0 ? '附件图片' : '',
   ].filter(Boolean)
   const sourceLabel = labels.join(' / ') || '图片'
+  const uuid = typeof entry?.uuid === 'string' ? entry.uuid : null
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} bashResults={bashResults} readResults={readResults} resolvedMap={resolvedMap} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
@@ -50,7 +55,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
 
 // 探索类工具聚合容器: 把连续的只读/搜索调用折叠成 "已探索 N 个工具" 一行 (Cursor 式).
 // 含失败调用时默认展开并标红, 摘要行带错误标记 (折叠也不能藏起错误); 展开后逐条渲染子卡片.
-export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap, collapseLineNos, focusLineNo }: {
+export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap, collapseLineNos, focusLineNo, taskPlans }: {
   items: RoundItem[]
   hasError: boolean
   showMeta?: boolean
@@ -58,6 +63,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
   collapseLineNos?: Set<number>
   // 搜索命中卡可能被聚合在“探索”组内；组本身也必须打开，子卡才有机会展开/滚到。
   focusLineNo?: number | null
+  taskPlans?: TaskPlanByUuid | null
 }) {
   const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
   const [open, setOpen] = useState(hasError || containsFocus)
@@ -89,6 +95,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
               resolvedMap={resolvedMap}
               forceOpen={item.lineNo === focusLineNo}
               parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
+              taskPlans={taskPlans}
             />
           ))}
         </div>
@@ -97,7 +104,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, resolvedMap
   )
 }
 
-export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, collapseLineNos, focusLineNo }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null }) {
+export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, resolvedMap, collapseLineNos, focusLineNo, taskPlans }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null; taskPlans?: TaskPlanByUuid | null }) {
   // 只有一组时强制展开, 禁止折叠; forceExpandAll (点 "加载全部") 时也展开; 其它场景保留原默认折叠行为
   const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
   const [open, setOpen] = useState(onlyGroup || forceExpandAll || containsFocus)
@@ -137,7 +144,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} forceOpen={lineNo === focusLineNo} parentOrderedCollapse={collapseLineNos?.has(lineNo)} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} resolvedMap={resolvedMap} forceOpen={lineNo === focusLineNo} parentOrderedCollapse={collapseLineNos?.has(lineNo)} taskPlans={taskPlans} />
               </div>
             </div>
           ))}
@@ -147,7 +154,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   )
 }
 
-export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo, headerPalette }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette }) {
+export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpandAll = false, forceOpen = false, showMeta = true, resolvedMap, cursorStyleTools = true, collapseLineNos, focusLineNo, headerPalette, taskPlans, detailLoaded, detailLoading, onNeedDetail }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; forceExpandAll?: boolean; forceOpen?: boolean; showMeta?: boolean; resolvedMap?: ResolvedCallMap | null; cursorStyleTools?: boolean; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null; detailLoaded?: boolean; detailLoading?: boolean; onNeedDetail?: () => void }) {
   // 追踪用户是否手动点击过折叠/展开. 一旦手动操作, 后续不再被 autoOpen/forceExpandAll 自动接管.
   // 实现"最新两轮自动展开, 除非人为折叠": 最新轮和上一轮默认展开, 更早的轮默认折叠;
   // 某轮升入最新两轮时自动展开, 跌出最新两轮时自动折叠; 用户手动操作过的轮尊重用户, 不再自动改.
@@ -167,7 +174,10 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
   const toggle = () => {
     userToggledRef.current = true
-    setOpen(o => !o)
+    const next = !open
+    // 骨架模式下用户展开 → 自动拉取该轮主轨明细 (只在"确认未加载"时触发一次)
+    if (next && detailLoaded === false && onNeedDetail) onNeedDetail()
+    setOpen(next)
   }
 
   const userItem = round.items[0]
@@ -218,13 +228,25 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
 
       {open && (
         <div className="mt-2 jsonl-thread">
+          {detailLoaded === false && onNeedDetail && (
+            <div className="mb-1 flex justify-center">
+              <button
+                type="button"
+                onClick={onNeedDetail}
+                disabled={!!detailLoading}
+                className="text-[10px] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+              >
+                {detailLoading ? '正在加载本轮明细…' : '加载本轮明细 (主轨条目未加载)'}
+              </button>
+            </div>
+          )}
           {renderSeq.map((ri, idx) => {
             if (ri.kind === 'explore') {
               return (
                 <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">
                   <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                   <div className="flex-1 min-w-0">
-                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} />
+                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} resolvedMap={resolvedMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} taskPlans={taskPlans} />
                   </div>
                 </div>
               )
@@ -249,6 +271,7 @@ export function RoundGroup({ round, isLast, isSecondLast, onlyGroup, forceExpand
                       resolvedMap={resolvedMap}
                       forceOpen={item.lineNo === focusLineNo}
                       parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
+                      taskPlans={taskPlans}
                     />
                   </div>
                 </div>

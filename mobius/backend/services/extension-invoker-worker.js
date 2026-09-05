@@ -19,6 +19,11 @@ const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 
+// handler (拓展后端脚本) 可能 require 仓库内的 .ts 模块 (agents 层已迁 TS). worker 不经
+// pm2 的 tsx --require 链启动, 这里自行挂 tsx 转译 hook; 装了就能 require .ts, 没装则维持
+// 纯 JS 行为 (拓展 handler 只要不引用 .ts 就不受影响).
+try { require('tsx/cjs'); } catch (_) { /* tsx 不可用 → handler 需自保证纯 JS */ }
+
 async function main() {
   const { handler_path, ext_data_dir, ctx } = workerData;
 

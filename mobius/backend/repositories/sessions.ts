@@ -13,6 +13,12 @@ import type { SessionRow } from '../types/rows';
   if (!cols.some(c => c.name === 'name_human_edited')) {
     db.exec("ALTER TABLE sessions_v2 ADD COLUMN name_human_edited INTEGER NOT NULL DEFAULT 0");
   }
+  // claude_session_id → agent_session_id: 该列存的是 agent 后端原生会话 ID (claude TUI 的
+  // UUID / codex thread ID / harness runtime 会话 ID), 三种后端共用, 旧名绑死 claude 已失准.
+  // 幂等 RENAME COLUMN (SQLite 3.25+); 与运行时层 listSessions() 的 agentSessionId 命名对齐.
+  if (cols.some(c => c.name === 'claude_session_id') && !cols.some(c => c.name === 'agent_session_id')) {
+    db.exec("ALTER TABLE sessions_v2 RENAME COLUMN claude_session_id TO agent_session_id");
+  }
 })();
 
 type SessionLanguage = 'zh' | 'en';
@@ -41,7 +47,7 @@ interface SessionListRow {
   name: string;
   description: string | null;
   session_key: string;
-  claude_session_id: string | null;
+  agent_session_id: string | null;
   model: string | null;
   use_proxy: number;
   language: SessionLanguage;
@@ -108,7 +114,7 @@ const SESSION_LIST_COLUMNS = `
       s.name,
       s.description,
       s.session_key,
-      s.claude_session_id,
+      s.agent_session_id,
       s.model,
       s.use_proxy,
       s.language,

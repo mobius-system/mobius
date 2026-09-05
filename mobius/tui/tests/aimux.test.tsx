@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION } from '../src/aimux.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 let pass = 0, fail = 0
@@ -175,7 +175,7 @@ function testBundleHealthCheck() {
   const win = bundleHealthCheckCode('win32')
   const linux = bundleHealthCheckCode('linux')
   ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
-  ok(win.includes("aimux.__version__ == '0.1.25'"), 'bundle probe rejects stale AIMUX versions')
+  ok(win.includes(`aimux.__version__ == '${AIMUX_VERSION}'`), 'bundle probe rejects stale AIMUX versions')
   ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
 }
 

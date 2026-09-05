@@ -60,6 +60,38 @@ const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
 
+// 按 uuid/id 去重合并两个 entries 数组 (骨架/切片与已加载内容可能重叠), 合并后按时间戳归位.
+function mergeJsonlEntriesByIdentity(prev: any[], incoming: any[]): any[] {
+  if (!incoming || incoming.length === 0) return prev
+  const seen = new Set<string>()
+  for (const e of prev) {
+    const k = e?.uuid || e?.id
+    if (k) seen.add(k)
+  }
+  const add = incoming.filter((e: any) => {
+    const k = e?.uuid || e?.id
+    if (!k) return true
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  if (add.length === 0) return prev
+  const merged = prev.concat(add)
+  // ts 候选位与后端 parseTimestampMs 对齐 (codex 条目在 payload.timestamp);
+  // 无 ts 的条目比较视为相等 (稳定排序保持原位), 绝不落到队首.
+  const ts = (e: any) => {
+    const ms = Date.parse(e?.timestamp || e?.created_at || e?.payload?.timestamp || e?.message?.created_at || '')
+    return Number.isFinite(ms) ? ms : NaN
+  }
+  merged.sort((a: any, b: any) => {
+    const ta = ts(a)
+    const tb = ts(b)
+    if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 0
+    return ta - tb
+  })
+  return merged
+}
+
 function clampChatInputRatio(value: number) {
   if (!Number.isFinite(value)) return CHAT_INPUT_DEFAULT_RATIO
   return Math.max(CHAT_INPUT_MIN_RATIO, Math.min(0.6, value))
@@ -228,6 +260,10 @@ function makeAttachmentId() {
 function attachmentKindOf(file: File): 'image' | 'file' {
   return file.type.startsWith('image/') ? 'image' : 'file'
 }
+
+// 粘贴的纯文本超过该字节数 (100KB) 时不再灌进 textarea (巨量字符卡顿且易超消息上限),
+// 参考截图粘贴的同一路径: 转成 .txt 附件走 /api/upload 上传.
+const PASTE_TEXT_AS_FILE_THRESHOLD = 100 * 1024
 
 function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
@@ -1571,6 +1607,14 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
   const modelLabel = sessionModelLabel(session.model, session.model_label)
   const proxyLabel = sessionProxyLabel(session.use_proxy, session.model)
   const nameMuted = isSessionNameMuted(session.agent_status)
+  const actionCount = [onEdit, onDelete, pinnedIds && onTogglePinned].filter(Boolean).length
+  const actionWidthClass = actionCount >= 3
+    ? 'group-hover:w-16 group-focus-within:w-16'
+    : actionCount === 2
+      ? 'group-hover:w-11 group-focus-within:w-11'
+      : actionCount === 1
+        ? 'group-hover:w-6 group-focus-within:w-6'
+        : ''
 
   return (
     <div onClick={() => onSelect(session)}
@@ -1583,21 +1627,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
-        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{session.message_count} 消息 · {timeAgo(session.last_active)}</div>
+        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{[`${session.message_count} 消息`, timeAgo(session.last_active), modelLabel].filter(Boolean).join(' · ')}</div>
       </div>
-      <div className="relative h-6 w-[88px] flex-shrink-0 overflow-hidden">
+      <div className={`relative h-6 w-0 flex-shrink-0 overflow-hidden transition-[width] duration-150 ${actionWidthClass}`}>
         <div className="absolute inset-0 flex items-center justify-end gap-1 overflow-hidden opacity-100 transition-opacity group-hover:opacity-0">
-          {modelLabel && (
-            <span className="min-w-0 max-w-[82px] truncate rounded px-1.5 py-[1px] text-[9px] leading-4 border"
-              title={`模型: ${modelLabel}`}
-              style={{
-                color: theme !== 'light' ? '#93c5fd' : '#1d4ed8',
-                background: theme !== 'light' ? 'rgba(59,130,246,0.10)' : 'rgba(59,130,246,0.07)',
-                borderColor: theme !== 'light' ? 'rgba(147,197,253,0.22)' : 'rgba(37,99,235,0.16)',
-              }}>
-              {modelLabel}
-            </span>
-          )}
           {session.research_role && (
             <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
               title={`研究角色: ${session.research_role}`}
@@ -1642,9 +1675,9 @@ type MentionFileSource = {
   remote_path?: string
 }
 
-type AgentMentionMode = 'read_only' | 'bidirectional'
+export type AgentMentionMode = 'read_only' | 'bidirectional'
 
-type MentionAgentSession = {
+export type MentionAgentSession = {
   session_id: string
   name: string
   description?: string
@@ -1681,7 +1714,7 @@ function getChatDesktopFileBridge(): ChatDesktopFileBridge | undefined {
   return (window as { mobiusDesktop?: ChatDesktopFileBridge }).mobiusDesktop
 }
 
-function RemoteFileMentionDrawer({
+export function RemoteFileMentionDrawer({
   projectId,
   issueId,
   researchId,
@@ -1802,11 +1835,15 @@ function RemoteFileMentionDrawer({
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
       if (pendingAgent) setPendingAgent(null)
       else onClose()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // Capture Escape before host pages (for example overview) process their own
+    // global Escape shortcut and navigate away while this drawer is open.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, onClose, pendingAgent])
 
   // 近期活跃会话（跨项目，登录用户自己的），与 IssuePage 侧栏「近期会话」同数据源。
@@ -2540,7 +2577,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       })
       if (voiceStopTimerRef.current !== null) window.clearTimeout(voiceStopTimerRef.current)
       if (voiceTickTimerRef.current !== null) window.clearInterval(voiceTickTimerRef.current)
-      if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
       const recorder = mediaRecorderRef.current
       try {
         if (recorder && recorder.state !== 'inactive') recorder.stop()
@@ -2603,8 +2639,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [bridgeQueueNotice, setBridgeQueueNotice] = useState<string | null>(null)
-  const bridgeQueueNoticeTimerRef = useRef<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -3174,6 +3208,18 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     if (files.length > 0) {
       e.preventDefault()
       enqueueFiles(files)
+      return
+    }
+    // 无文件时看纯文本: 超过阈值 (100KB) 的巨型粘贴同样转成 .txt 附件上传,
+    // 与截图粘贴共用 enqueueFiles → /api/upload 链路, 不再把几十万字塞进输入框.
+    let text = ''
+    try { text = cd.getData('text/plain') || '' } catch { text = '' }
+    if (text && new Blob([text]).size > PASTE_TEXT_AS_FILE_THRESHOLD) {
+      e.preventDefault()
+      const stamp = new Date()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const fname = `pasted-text-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.txt`
+      enqueueFiles([new File([text], fname, { type: 'text/plain' })])
     }
   }, [enqueueFiles])
 
@@ -3820,9 +3866,11 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
 
   useEffect(() => { loadHistoryRef.current = loadHistory }, [loadHistory])
 
-  // count-then-tail: "加载全部" 时, 用 REST 拉缺失的头部 entries 并 prepend.
-  // 服务端按 0..total 排好序; 当前 entries 已经是末尾 N 条, 我们拉 [0, total - entries.length)
-  // 然后 prepend 到本地 entries. 全部加载完后 hasRemoteMore 自动变 false (entries.length 追上 total).
+  // count-then-tail: "加载全部" = 只拉伴生轨全量骨架 (超长会话按需加载).
+  // 骨架 = 每轮一张用户输入卡, 主轨明细等用户展开该轮时再按时间戳切片取 (loadRoundJsonlDetail).
+  // 伴生轨为空的旧会话回退旧路径 (拉双轨 merge 头部窗口).
+  const [spineMode, setSpineMode] = useState(false)
+  const spineModeRef = useRef(false)
   const handleLoadAllJsonl = useCallback(async () => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
@@ -3831,16 +3879,29 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     if (jsonlTotal <= jsonlEntries.length) return
     setJsonlLoadingMore(true)
     try {
-      const missing = jsonlTotal - jsonlEntries.length
-      // 限制单次请求 ≤ 5000; 超过的会被后端 clip, 但我们就拿到能拿的部分.
-      const data = await api(`/api/sessions/${sid}/jsonl-history?from=0&limit=${Math.max(missing, 1)}`)
-      const head = Array.isArray(data?.entries) ? data.entries : []
-      if (!head.length) return
-      // 切换 session 防御: 加载期间用户切了 session, 丢弃结果.
+      const data = await api(`/api/sessions/${sid}/jsonl-history?track=mobius`)
+      const spine = Array.isArray(data?.entries) ? data.entries : []
       const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
       if (sid !== activeSid) return
-      setJsonlEntries(prev => head.concat(prev))
-      if (Number.isFinite(Number(data?.total))) setJsonlTotal(Number(data.total))
+      if (spine.length > 0) {
+        // 必须函数式更新: 此刻可能有刚 flush 的 SSE 批次还在 setState 队列里,
+        // 用过期闭包整体覆盖会把它们抹掉 (表现为卡片消失). updater 内记录增量供 effect 判定.
+        spineAddedRef.current = null
+        setJsonlEntries(prev => {
+          const merged = mergeJsonlEntriesByIdentity(prev, spine)
+          spineAddedRef.current = merged.length - prev.length
+          return merged
+        })
+        spineEvalPendingRef.current = true
+      } else {
+        // 回退: 无伴生轨的旧会话走旧 merge 窗口
+        const missing = jsonlTotal - jsonlEntries.length
+        const legacy = await api(`/api/sessions/${sid}/jsonl-history?from=0&limit=${Math.max(missing, 1)}`)
+        const head = Array.isArray(legacy?.entries) ? legacy.entries : []
+        if (!head.length) return
+        setJsonlEntries(prev => head.concat(prev))
+        if (Number.isFinite(Number(legacy?.total))) setJsonlTotal(Number(legacy.total))
+      }
     } catch (e) {
       console.warn('[jsonl] load all failed:', e)
     } finally {
@@ -3848,10 +3909,81 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     }
   }, [currentSession?.session_id, currentTask?.task_id, flushPendingJsonlEntries, jsonlLoadingMore, jsonlTotal, jsonlEntries.length])
 
+  // 按轮加载主轨明细: [openerTs, nextOpenerTs) 时间戳切片, 游标自动续页; 已加载轮去重.
+  const roundDetailLoadedRef = useRef<Set<string>>(new Set())
+  const [roundDetailTick, setRoundDetailTick] = useState(0)
+  const [loadingRoundUuid, setLoadingRoundUuid] = useState<string | null>(null)
+  const loadRoundJsonlDetail = useCallback(async (openerUuid: string, fromTs: string, toTs: string | null) => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid || !fromTs) return
+    if (roundDetailLoadedRef.current.has(openerUuid)) return
+    setLoadingRoundUuid(openerUuid)
+    try {
+      const collected: any[] = []
+      let fromByte: number | null = null
+      for (let page = 0; page < 10; page++) {
+        const q = new URLSearchParams({ track: 'primary', from_ts: fromTs, limit: '4000' })
+        if (toTs) q.set('to_ts', toTs)
+        if (fromByte != null) q.set('from_byte', String(fromByte))
+        const data = await api(`/api/sessions/${sid}/jsonl-history?${q.toString()}`)
+        const part = Array.isArray(data?.entries) ? data.entries : []
+        collected.push(...part)
+        if (!data?.has_more || !data?.next_from_byte) break
+        fromByte = Number(data.next_from_byte)
+      }
+      const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+      if (sid !== activeSid) return
+      if (collected.length > 0) {
+        setJsonlEntries(prev => mergeJsonlEntriesByIdentity(prev, collected))
+      }
+      roundDetailLoadedRef.current.add(openerUuid)
+      setRoundDetailTick(t => t + 1)
+    } catch (e) {
+      console.warn('[jsonl] load round detail failed:', e)
+    } finally {
+      setLoadingRoundUuid(null)
+    }
+  }, [currentSession?.session_id, currentTask?.task_id])
+
+  // 骨架合并结果判定: updater 在 commit 时执行, 模式/total 决策放到 jsonlEntries 变化后的 effect 里做.
+  const spineAddedRef = useRef<number | null>(null)
+  const spineEvalPendingRef = useRef(false)
+  useEffect(() => {
+    if (!spineEvalPendingRef.current) return
+    spineEvalPendingRef.current = false
+    // total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
+    setJsonlTotal(jsonlEntries.length)
+    // 只有骨架真的带来了本地没有的条目才进入骨架模式;
+    // 新会话/骨架与本地重合时保持普通模式, 避免"加载明细"误报.
+    if ((spineAddedRef.current ?? 0) > 0) {
+      spineModeRef.current = true
+      setSpineMode(true)
+    }
+    spineAddedRef.current = null
+  }, [jsonlEntries])
+
+  // 骨架自动加载: 首包历史到位后, 若远端还有头部未加载 (total > entries), 后台自动拉伴生轨骨架.
+  // 骨架极小; 拉完后旧轮次立即以"仅问题卡"形态出现, 展开时按需取明细, 无需先点"加载全部".
+  const spineAutoLoadedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    const sid = currentSession?.session_id || currentTask?.task_id
+    if (!sid || jsonlInitialLoading) return
+    if (spineAutoLoadedForRef.current === sid) return
+    if (spineModeRef.current) { spineAutoLoadedForRef.current = sid; return }
+    if (jsonlLoadingMore) return   // 正在加载 (如用户手点): 等结束后本 effect 重跑再试, 不标记
+    if (!(jsonlTotal > jsonlEntries.length)) return
+    spineAutoLoadedForRef.current = sid
+    handleLoadAllJsonl()
+  }, [currentSession?.session_id, currentTask?.task_id, jsonlInitialLoading, jsonlLoadingMore, jsonlTotal, jsonlEntries.length, handleLoadAllJsonl])
+
   useEffect(() => {
     const sid = currentSession?.session_id || currentTask?.task_id
     if (!sid) return
     clearPendingJsonlEntries()
+    spineModeRef.current = false
+    setSpineMode(false)
+    roundDetailLoadedRef.current = new Set()
+    setLoadingRoundUuid(null)
     freshHistoryReceivedRef.current = false
     setStreamContent('')
     setTyping(false)
@@ -4025,21 +4157,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     // 要等后端 POST /messages 返回才清空, 体感是"字过了一会儿才消失".
     clearSessionInputDraft(sentSessionId, sentInput)
     postSessionMessage({ content, inputText: text, requestId, urgent, mentions: mentionPayload })
-      .then((resp) => {
-        const queued = Array.isArray(resp?.external_messages_queued)
-          ? resp.external_messages_queued.filter((item: any) => item?.delivery === 'queued')
-          : []
-        if (queued.length > 0) {
-          const queuedIds = new Set(queued.map((item: any) => String(item.target_session_id || '')))
-          const queuedNames = selectedAgentMentions.filter((item) => queuedIds.has(item.sessionId)).map((item) => item.name)
-          const targetLabel = queuedNames.length <= 2 ? queuedNames.join('、') : `${queuedNames.slice(0, 2).join('、')} 等 ${queuedNames.length} 个 Session`
-          setBridgeQueueNotice(`已通知 ${targetLabel || `${queued.length} 个 Session`}，等待目标空闲后投递`)
-          if (bridgeQueueNoticeTimerRef.current !== null) window.clearTimeout(bridgeQueueNoticeTimerRef.current)
-          bridgeQueueNoticeTimerRef.current = window.setTimeout(() => {
-            setBridgeQueueNotice(null)
-            bridgeQueueNoticeTimerRef.current = null
-          }, 5000)
-        }
+      .then(() => {
         setEditingMsg(null)
         clearAttachments()
         setSelectedAgentMentions([])
@@ -4603,15 +4721,6 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
         </div>
       )}
 
-      {bridgeQueueNotice && (
-        <div className="pointer-events-none fixed right-4 top-16 z-[80] max-w-[min(360px,calc(100vw-2rem))]">
-          <div className="flex items-center gap-2 rounded-lg border border-blue-400/30 bg-[var(--bg-card)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-xl">
-            <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
-            <span className="min-w-0 break-words">{bridgeQueueNotice}</span>
-          </div>
-        </div>
-      )}
-
       {lastSendError && (
         <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4676,6 +4785,11 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           lastTimestamp={jsonlEntries[jsonlEntries.length - 1]?.timestamp}
           hasNewMessages={hasNewMessages}
           onLoadAllJsonl={handleLoadAllJsonl}
+          onLoadRoundDetail={loadRoundJsonlDetail}
+          roundDetailLoaded={roundDetailLoadedRef.current}
+          spineMode={spineMode}
+          roundDetailVersion={roundDetailTick}
+          loadingRoundUuid={loadingRoundUuid}
           onScrollPositionChange={handleJsonlScrollPositionChange}
           onJumpToBottom={jumpToJsonlBottom}
           scrollToEntryUuid={matchUuid}

@@ -17,11 +17,19 @@ const AGENT_TMUX_DEFAULT_TERM = 'tmux-256color'
 let warned = false
 let serverReady = false
 
-function singleQuote(value) {
+// tmux 调用选项: input = 写入 stdin 的文本; redactEnvironmentKeys = 日志脱敏的 env 前缀;
+// 其余字段原样透传给 spawnSync.
+interface TmuxCallOpts {
+  input?: string
+  redactEnvironmentKeys?: string[]
+  [key: string]: unknown
+}
+
+function singleQuote(value: unknown): string {
   return `'${String(value).replace(/'/g, `'\\''`)}'`
 }
 
-function bashAnsiQuote(value) {
+function bashAnsiQuote(value: unknown): string {
   const escaped = String(value)
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
@@ -31,33 +39,33 @@ function bashAnsiQuote(value) {
     .replace(/\f/g, '\\f')
     .replace(/\v/g, '\\v')
     .replace(/\x1b/g, '\\e')
-    .replace(/[\x00-\x08\x0e-\x1a\x1c-\x1f\x7f]/g, (ch) => {
+    .replace(/[\x00-\x08\x0e-\x1a\x1c-\x1f\x7f]/g, (ch: string) => {
       return `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`
     })
   return `$'${escaped}'`
 }
 
-function shellQuote(value) {
+function shellQuote(value: unknown): string {
   const s = String(value)
   if (s.length > 0 && /^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s
   if (/[\x00-\x1f\x7f]/.test(s)) return bashAnsiQuote(s)
   return singleQuote(s)
 }
 
-function tmuxCommandString(args, opts = {}) {
+function tmuxCommandString(args: string[], opts: TmuxCallOpts = {}) {
   const command = ['tmux', ...args].map(shellQuote).join(' ')
   if (!Object.prototype.hasOwnProperty.call(opts, 'input')) return command
   return `printf %s ${bashAnsiQuote(opts.input ?? '')} | ${command}`
 }
 
-function redactEnvironmentArgs(args, keys = []) {
+function redactEnvironmentArgs(args: string[], keys: string[] = []): string[] {
   const prefixes = new Set(
     (Array.isArray(keys) ? keys : [])
-      .filter((key) => typeof key === 'string' && key)
-      .map((key) => `${key}=`),
+      .filter((key: unknown) => typeof key === 'string' && key)
+      .map((key: string) => `${key}=`),
   )
   if (prefixes.size === 0) return args
-  return args.map((arg) => {
+  return args.map((arg: string) => {
     const value = String(arg)
     for (const prefix of prefixes) {
       if (value.startsWith(prefix)) return `${prefix}***`
@@ -86,7 +94,7 @@ function normalizeExistingSessionsTerminal() {
   // this up.
   const list = spawnSync('tmux', ['-L', AGENT_TMUX_SOCKET, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' })
   if (list.status !== 0) return
-  const sessions = (list.stdout || '').split('\n').map(s => s.trim()).filter(Boolean)
+  const sessions = (list.stdout || '').split('\n').map((s: string) => s.trim()).filter(Boolean)
   for (const name of sessions) {
     const r = spawnSync('tmux', ['-L', AGENT_TMUX_SOCKET, 'set-option', '-t', name, 'default-terminal', AGENT_TMUX_DEFAULT_TERM], { encoding: 'utf8' })
     if (r.status !== 0 && !warned) {
@@ -122,14 +130,14 @@ function ensureAgentTmuxServer() {
   log(`[tmux-agent-server] ready (socket=${AGENT_TMUX_SOCKET}, ${existed ? 'reused existing' : 'created new'} server, default-terminal=${AGENT_TMUX_DEFAULT_TERM})`)
 }
 
-function shouldRecordTmuxCommand(args) {
+function shouldRecordTmuxCommand(args: string[]) {
   const commandArgs = args[0] === '-L' ? args.slice(2) : args
   if (commandArgs[0] === 'capture-pane') return false
   if (commandArgs[0] === 'list-windows' && commandArgs.includes('-t')) return false
   return true
 }
 
-function recordTmuxCommand(args, opts = {}) {
+function recordTmuxCommand(args: string[], opts: TmuxCallOpts = {}) {
   if (!shouldRecordTmuxCommand(args)) return
 
   try {
@@ -144,7 +152,7 @@ function recordTmuxCommand(args, opts = {}) {
   }
 }
 
-function tmux(args, opts = {}) {
+function tmux(args: string[], opts: TmuxCallOpts = {}) {
   ensureAgentTmuxServer()
   const effectiveArgs = ['-L', AGENT_TMUX_SOCKET, ...args]
   recordTmuxCommand(effectiveArgs, opts)
@@ -161,7 +169,7 @@ function tmux(args, opts = {}) {
   return result
 }
 
-function log(...args) {
+function log(...args: unknown[]) {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
     fs.appendFileSync(LOG_FILE, `${util.format(...args)}\n`)
@@ -188,3 +196,6 @@ module.exports = {
   tmux,
   tmuxCommandString,
 }
+
+// marker: make this file a module (top-level declarations file-private) for tsc
+export {}

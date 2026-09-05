@@ -79,6 +79,7 @@ plugins:
             "Mark a Key Project (Favorite)": 标记重点项目
             "Package & Download Project Files": 项目文件打包下载
             "Web Terminal": 网页终端
+            "Upload Page Images / Videos to CDN": 上传页面图片 / 视频到 CDN
             "VI. Deep Research": VI-深度研究
             "Enable Research & Create a Task": 创建研究任务（启用 Research 系统）
             "Build an Agent Team": 组建智能体研究团队
@@ -122,6 +123,7 @@ nav:
       - Mark a Key Project (Favorite): tutorial/17_favorite_project.md
       - Package & Download Project Files: tutorial/18_package_download_project.md
       - Web Terminal: tutorial/26_web_terminal.md
+      - Upload Page Images / Videos to CDN: upload-page-media-to-cdn.md
   - 'VI. Deep Research':
       - Enable Research & Create a Task: tutorial/19_enable_research_and_create.md
       - Build an Agent Team: tutorial/20_research_agent_team.md

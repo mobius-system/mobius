@@ -28,6 +28,7 @@ import {
   findSessionOperable,
   sessionJsonlPath,
   terminateBackgroundSession,
+  inspectBackgroundSession,
   type AnySession,
 } from './sessions';
 // @ts-ignore — service 仍是 .js
@@ -1023,12 +1024,16 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
     } catch (e) {
       console.warn(`[researches] save transfer marker failed (${sessionId}): ${(e as Error).message}`);
     }
-    const closed = await terminateBackgroundSession(sourceSession, sourceSession.session_id);
-    try {
-      const project = Projects.findById(research.project_id) as any;
-      if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
-    } catch {}
-    try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
+    // 不终止原 agent: 探测其状态供审计/提示, 活着就让它继续跑.
+    const closed = inspectBackgroundSession(sourceSession, sourceSession.session_id);
+    if (!closed.wasAlive) {
+      // 原 agent 本来就不在: 才清理 flag 并落 idle 痕迹 (与旧行为一致).
+      try {
+        const project = Projects.findById(research.project_id) as any;
+        if (project?.bind_path) safeRemoveRunningFlag(path.resolve(project.bind_path), sourceSession.session_id, 'session-transfer');
+      } catch {}
+      try { Sessions.setIdle(sourceSession.session_id, sourceSession.user_id || user.id); } catch {}
+    }
     try {
       Messages.insertSystem(
         sourceSession.session_id,

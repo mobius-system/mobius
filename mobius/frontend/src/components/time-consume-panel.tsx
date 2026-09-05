@@ -289,7 +289,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
       ) : (
         <>
           <div className="flex items-center justify-between gap-2">
-            <div className="inline-flex h-7 rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.025)' }}>
+            <div className="inline-flex rounded-md p-0.5" style={{ background: 'var(--bg-secondary)' }}>
               {([
                 { key: 'waterfall' as const, label: '瀑布', icon: BarChart3 },
                 { key: 'pie' as const, label: '占比', icon: PieChart },
@@ -302,10 +302,11 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     type="button"
                     onClick={() => setView(item.key)}
                     aria-pressed={active}
-                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 text-[10.5px] transition-colors"
+                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
                     style={{
                       color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                      background: active ? 'rgba(56,189,248,0.14)' : 'transparent',
+                      background: active ? 'var(--bg-active)' : 'transparent',
+                      boxShadow: active ? '0 1px 2px rgba(0,0,0,0.14)' : undefined,
                     }}
                   >
                     <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -315,8 +316,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
               })}
             </div>
             <div className="text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              <div>总计 {formatDuration(totalMs)}</div>
-              <div>{segments.length} 段 · {data?.line_count || 0} 行</div>
+              <div>总计 {segments.length} 段</div>
             </div>
           </div>
 
@@ -334,11 +334,11 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
               <div className="mt-1.5 flex items-center gap-3 text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.model }} />
-                  模型推理 · 上轨
+                  模型推理
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.tool }} />
-                  工具调用 · 下轨
+                  工具调用
                 </span>
               </div>
               <div className="relative h-28 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)', background: 'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))' }}>
