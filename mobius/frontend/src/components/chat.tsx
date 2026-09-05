@@ -3879,10 +3879,14 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       if (spine.length > 0) {
         const merged = mergeJsonlEntriesByIdentity(jsonlEntries, spine)
         setJsonlEntries(merged)
-        spineModeRef.current = true
-        setSpineMode(true)
-        // 骨架已全量在手: total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
+        // total 对齐本地条数, "加载全部" 按钮消失; 主轨明细改按轮加载.
         setJsonlTotal(merged.length)
+        // 只有骨架真的带来了本地没有的更早条目才进入骨架模式;
+        // 新会话/骨架与本地重合时保持普通模式, 避免"加载明细"误报.
+        if (merged.length > jsonlEntries.length) {
+          spineModeRef.current = true
+          setSpineMode(true)
+        }
       } else {
         // 回退: 无伴生轨的旧会话走旧 merge 窗口
         const missing = jsonlTotal - jsonlEntries.length

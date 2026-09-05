@@ -377,7 +377,9 @@ export function JsonlView({
         isSecondLast={block.index === rounds.length - 2}
         onlyGroup={onlyGroup}
         detailLoaded={(() => {
-          if (!roundDetailLoaded || !openerUuid) return undefined
+          // 仅骨架模式启用按需明细: 未进骨架模式 (新会话/短会话/未加载) 一律不显示提示,
+          // 否则新会话第一轮 (mobius 卡恒早于原生 wrapped 卡 ~10s) 必然误报.
+          if (!spineMode || !roundDetailLoaded || !openerUuid) return undefined
           // 轮内已有非开篇条目 = 已加载; opener 不早于已加载主轨最早 ts = 本地已齐, 也视为已加载
           // (否则空轮/纯噪声轮会被误报"有未加载明细"). 只有更早的骨架轮才可能真的缺主轨.
           if (block.round.items.some((it: any) => it.relIdx > 0)) return true
