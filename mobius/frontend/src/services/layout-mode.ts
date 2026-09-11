@@ -1,7 +1,19 @@
 import { useSyncExternalStore } from 'react'
+import { useLocation } from 'react-router-dom'
 
-export const LAYOUT_MODE_STORAGE_KEY = 'layout_mode'
-export const LAYOUT_MODE_CHANGE_EVENT = 'mobius:layout-mode-change'
+// 界面模式完全由当前路由决定: /easy_mode 路由即极简模式, 其余路由即常规模式.
+// 不再把模式写入 localStorage: 全局持久化的偏好曾让"一处切换, 所有页面/标签页都
+// 跟着变", 也会在回到 /easy_mode 时触发弹回重定向, 造成导航循环与输入草稿丢失.
+// 模式切换 = LayoutModeSwitch / TopNav 开关发起的一次显式路由跳转, 页面间互不影响.
+export function layoutModeForPath(pathname: string): LayoutMode {
+  return pathname === '/easy_mode' || pathname.endsWith('/easy_mode') ? 'easy_mode' : 'normal_mode'
+}
+
+export function useLayoutMode(): LayoutMode {
+  const location = useLocation()
+  return layoutModeForPath(location.pathname)
+}
+
 // 会话内呈现密度 (极简/专业) 的独立存储: 与全局 layout_mode 解耦.
 // 全局 mode 决定"落在哪个页面" (easy_mode 页 vs Issue/Research 页);
 // 呈现密度决定"会话区怎么画" (ChatArea layout=easy vs default), 在原地切换时使用,
@@ -11,21 +23,6 @@ export const SESSION_DENSITY_CHANGE_EVENT = 'mobius:session-density-change'
 
 export type LayoutMode = 'easy_mode' | 'normal_mode'
 export type SessionDensity = 'easy' | 'professional'
-
-export function readLayoutMode(): LayoutMode | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const value = window.localStorage.getItem(LAYOUT_MODE_STORAGE_KEY)
-    return value === 'easy_mode' || value === 'normal_mode' ? value : null
-  } catch {
-    return null
-  }
-}
-
-export function setLayoutMode(mode: LayoutMode) {
-  window.localStorage.setItem(LAYOUT_MODE_STORAGE_KEY, mode)
-  window.dispatchEvent(new CustomEvent(LAYOUT_MODE_CHANGE_EVENT, { detail: mode }))
-}
 
 // 从简易模式切回正常模式时, 根据当前选中的会话构造应回到的目标 URL.
 // 优先回到该会话在正常模式下的 Issue/Research 页 (保留 session 参数, 命中后 IssuePage
@@ -71,7 +68,7 @@ function subscribeSessionDensity(listener: () => void) {
   }
 }
 
-// 初始未显式选择时, 跟随全局 layout_mode (easy_mode 用户天然拿到极简呈现).
+// 初始未显式选择时, 跟随路由推导的模式 (/easy_mode 用户天然拿到极简呈现).
 export function readSessionDensity(): SessionDensity | null {
   if (typeof window === 'undefined') return null
   try {
@@ -91,25 +88,9 @@ function useSessionDensityBase(): SessionDensity | null {
   return useSyncExternalStore(subscribeSessionDensity, readSessionDensity, () => null)
 }
 
-// 会话内呈现密度 hook: 未显式设置时回落到全局模式推导的默认值.
+// 会话内呈现密度 hook: 未显式设置时回落到路由模式推导的默认值.
 export function useSessionDensity(): SessionDensity {
   const density = useSessionDensityBase()
   const layoutMode = useLayoutMode()
   return density || (layoutMode === 'easy_mode' ? 'easy' : 'professional')
-}
-
-function subscribeLayoutMode(listener: () => void) {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === LAYOUT_MODE_STORAGE_KEY) listener()
-  }
-  window.addEventListener('storage', onStorage)
-  window.addEventListener(LAYOUT_MODE_CHANGE_EVENT, listener)
-  return () => {
-    window.removeEventListener('storage', onStorage)
-    window.removeEventListener(LAYOUT_MODE_CHANGE_EVENT, listener)
-  }
-}
-
-export function useLayoutMode() {
-  return useSyncExternalStore(subscribeLayoutMode, readLayoutMode, () => null)
 }

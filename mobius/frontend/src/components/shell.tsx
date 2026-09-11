@@ -19,8 +19,7 @@ import { useDesktopWindowDrag, WindowControls } from './window-controls'
 import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 import { RecentSessionGroupList } from './recent-session-group-list'
-import { setLayoutMode, useLayoutMode, setSessionDensity, useSessionDensity } from '../services/layout-mode'
-import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
+import { layoutModeForPath, setSessionDensity, useSessionDensity } from '../services/layout-mode'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
@@ -795,15 +794,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const params = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const layoutMode = useLayoutMode()
   const sessionDensity = useSessionDensity()
-  const easyModeEnabled = layoutMode === 'easy_mode'
+  // 简易模式由当前路由决定 (/easy_mode), 不再读取全局存储偏好.
+  const easyModeEnabled = layoutModeForPath(location.pathname) === 'easy_mode'
   // 会话页内 (Issue/Research 且选中了会话) 的开关切换的是"呈现密度":
   // 原地换 ChatArea 的 layout, 不导航不卸载 → 代码对话编辑器等工作区状态全保留.
-  // 非会话区域 (用户主页/项目页/easy_mode 页本身) 仍走全局 layout_mode 切换页面.
+  // 非会话区域 (用户主页/项目页/easy_mode 页本身) 仍走路由模式判定.
   const inSessionContext = !!(params.issue || params.research) && !!currentSession
   const sessionEasyEnabled = inSessionContext ? sessionDensity === 'easy' : easyModeEnabled
-  // 极简界面态: 会话页内看呈现密度, 其余页面看全局模式。驱动顶栏右上角的精简渲染。
+  // 极简界面态: 会话页内看呈现密度, 其余页面看路由模式。驱动顶栏右上角的精简渲染。
   const easyUI = sessionEasyEnabled
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
@@ -1400,21 +1399,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                       return
                     }
                     const nextEnabled = !easyModeEnabled
-                    setLayoutMode(nextEnabled ? 'easy_mode' : 'normal_mode')
                     if (nextEnabled) {
-                      // 标准页切到简易模式时携带当前会话, 让 EasyModePage 直接选中同一会话;
-                      // research 会话跳 research 区带 agent — 由统一 builder 构造。
-                      navigate(buildEasyModeUrlFromContext({
-                        user: userParam || '',
-                        sessionId: currentSession?.session_id,
-                        researchId: (currentSession as any)?.research_id,
-                        scopeType: (currentSession as any)?.scope_type,
-                      }))
+                      // 标准页切到简易模式时携带当前会话的 ?session=, 让 EasyModePage 直接
+                      // 选中同一会话, 而不是丢回简易主页从最近会话里重新挑一条.
+                      const sid = currentSession?.session_id
+                      navigate(sid ? `/u/${userParam}/easy_mode?session=${encodeURIComponent(sid)}` : `/u/${userParam}/easy_mode`)
+                    } else {
+                      // 模式由路由表达: 关闭简易 = 显式跳回当前用户的常规主页.
+                      navigate(`/u/${userParam}`)
                     }
-                    // 关闭简易模式(简易→标准)时不在此导航: EasyModePage 的 layoutMode 同步 effect
-                    // 持有完整上下文(currentSession + 已加载 sessions + URL ?session), 由它构造目标
-                    // Issue/Research 页. 本 TopNav 闭包里的 currentSession 在会话刚进入未就绪时为 null,
-                    // 在这里直接构造 URL 会粗暴回到用户首页.
                   }}
                   className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}

@@ -98,6 +98,23 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   res.json(withSessionProxyState(Sessions.findById(id)));
 });
 
+// 每用户会话星标 (与 issue star 同款): 只要有操作权限即可 star/unstar.
+router.patch('/:id/star', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const id = String(req.params.id);
+  const session = findSessionOperable(id, user);
+  if (!session) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+  if (typeof req.body?.starred !== 'boolean') {
+    res.status(400).json({ error: '星标状态格式错误' });
+    return;
+  }
+  Sessions.setStarred(id, user.id, req.body.starred);
+  res.json({ ok: true, session_id: id, starred: req.body.starred });
+});
+
 router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   const id = String(req.params.id);

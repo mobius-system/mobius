@@ -1506,6 +1506,22 @@ router.get('/model-access/claude-code', adminAuth, (_req: express.Request, res: 
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));
 });
 
+// ── 一键扫描本机 Harness (欢迎页模型面板入口) ──
+// 无 body (或 body 无 import 数组) → 扫描并返回发现清单;
+// body {import: [{harness, file}]} → 服务端读取扫描到的文件内容逐个 upsert 接入。
+router.post('/model-access/scan-harnesses', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const importItems = Array.isArray((req.body || {}).import) ? (req.body || {}).import : null
+    if (importItems) {
+      res.json(modelAccess.importScannedHarnessConfigs(importItems))
+    } else {
+      res.json(modelAccess.scanLocalHarnessConfigs())
+    }
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || String(e) });
+  }
+});
+
 router.post('/model-access/claude-code', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     res.json(modelAccess.upsertClaudeCodeModel(req.body || {}));

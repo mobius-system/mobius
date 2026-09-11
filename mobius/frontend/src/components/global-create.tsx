@@ -58,7 +58,7 @@ const ISSUE_VISIBILITY_OPTIONS: { value: IssueVisibility; label: string; desc: s
 ]
 
 // 项目类型预设: 顶栏单页新建项目, 用下拉选择类型, 选定后下方字段联动
-type ProjectKind = 'default' | 'research' | 'extension'
+export type ProjectKind = 'default' | 'research' | 'extension'
 const PROJECT_KIND_PRESETS: Array<{
   kind: ProjectKind
   label: string
@@ -220,7 +220,7 @@ type DropdownOption = {
   disabled?: boolean
   badge?: { text: string; color: string; bg: string }
 }
-function DropdownSelect({
+export function DropdownSelect({
   value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch, panelAction,
 }: {
   value: string
@@ -720,16 +720,19 @@ function Footer({ loading, submitText, onClose, onSubmit, disabled }: { loading:
 // =====================================================================
 // 表单 1: 创建 Project (单页 + 项目类型下拉，含 ZIP 导入入口)
 // =====================================================================
-export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void }) {
+export function CreateProjectForm({ onClose, onDone, defaultKind }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; defaultKind?: ProjectKind }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const canCreateExtension = user?.role === 'admin' || user?.role === 'developer'
   const DRAFT_KEY = 'gc:new-project'
   const d = draftLoad<any>(DRAFT_KEY) || {}
+  // 入口指定的默认类型优先于草稿 (如「我的创作 +」直达拓展项目), 但 extension 权限不足时回落。
+  const allowedDefault = defaultKind === 'extension' && !canCreateExtension ? 'default' : defaultKind
   const initialKind: ProjectKind = (
-    d.projectKind === 'research'
+    allowedDefault
+    || d.projectKind === 'research'
     || (d.projectKind === 'extension' && canCreateExtension)
-  ) ? d.projectKind : 'default'
+  ) ? (allowedDefault || d.projectKind) : 'default'
   const [projectKind, setProjectKind] = useState<ProjectKind>(initialKind)
   const [name, setName] = useState(d.name || '')
   const [desc, setDesc] = useState(d.desc || '')
@@ -1987,7 +1990,7 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
 // 传统「新建 Session · 第 1 步 / 共 2 步」菜单 (modals.tsx) 走自己的 onCreated/goToSession, 不受此处影响.
 export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSuccessMode = 'dialog', onSessionCreated, onEntityCreated, entitySuccessMode = 'dialog' }: {
   kind: CreateKind | null
-  ctx: { projectId?: string; issueId?: string; researchId?: string }
+  ctx: { projectId?: string; issueId?: string; researchId?: string; projectKind?: ProjectKind }
   onClose: () => void
   onNavigate?: (path: string) => void
   sessionSuccessMode?: 'dialog' | 'toast'
@@ -2020,7 +2023,7 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, sessionSucces
     setSuccess({ entity, detailUrl, name: entity?.name || entity?.title || '' })
   }
 
-  if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
+  if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} defaultKind={ctx.projectKind} />
   if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
   if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} onNavigate={onNavigate} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} successMode={sessionSuccessMode === 'toast' ? 'external' : 'dialog'} />
   if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />

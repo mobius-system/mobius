@@ -84,6 +84,7 @@ import {
 import {
   readJobFlagState,
   safeRemoveRunningFlag,
+  safeWriteFailedFlag,
   safeWriteRunningFlag,
 } from '../utils/session-flags';
 // @ts-ignore — service 仍是 .js
@@ -380,6 +381,69 @@ function watch1v1ReplyForPush(opts: { backend: any; sessionId: string; user: any
   }
   // 兜底: 最长挂 5 分钟自动退订, 防 worker 泄漏.
   timer = setTimeout(finish, 5 * 60 * 1000);
+}
+
+type InitialSessionMessage = {
+  content: string;
+  inputText: string;
+  hasInputText: boolean;
+  requestId: string | null;
+  attachments: any[];
+  mentions: any[];
+};
+
+function queueInitialSessionMessage({
+  user,
+  session,
+  projectId,
+  message,
+}: {
+  user: AnyUser;
+  session: AnySession;
+  projectId: string;
+  message: InitialSessionMessage;
+}): void {
+  let flagRoot: string | null = null;
+  try {
+    const project = Projects.findById(projectId) as any;
+    flagRoot = project?.bind_path ? path.resolve(project.bind_path) : null;
+  } catch {}
+  if (flagRoot) {
+    try { safeWriteRunningFlag(flagRoot, session.session_id, { backend: 'initial-message' }, 'sessions/create'); } catch {}
+  }
+
+  // Yield before any context assembly or agent startup work. This lets the create
+  // response reach the browser as soon as the session row has been persisted.
+  setImmediate(() => {
+    void runSessionMessage({
+      user,
+      sessionId: session.session_id,
+      content: message.content,
+      inputText: message.inputText,
+      hasInputText: message.hasInputText,
+      requestId: message.requestId,
+      attachments: message.attachments,
+      mentions: message.mentions,
+      source: 'http.session.initial_message',
+      logger: console,
+    } as any).then(() => {
+      if (message.mentions.length > 0) SessionPendingMentions.clear(session.session_id);
+      auditSessionAccess(user, 'send_session_message', session);
+      watch1v1ReplyForPush({
+        backend: backendForSession(session),
+        sessionId: session.session_id,
+        user,
+        sessionName: session.name,
+      });
+    }).catch((error) => {
+      const reason = (error as Error)?.message || '后台启动失败';
+      console.warn(`[sessions] initial message start failed (${session.session_id}): ${reason}`);
+      if (flagRoot) {
+        try { safeRemoveRunningFlag(flagRoot, session.session_id, 'sessions/create-cleanup'); } catch {}
+        try { safeWriteFailedFlag(flagRoot, session.session_id, { reason }, 'sessions/create'); } catch {}
+      }
+    });
+  });
 }
 
 function shapeSessionForStream(s: AnySession): Record<string, any> {
@@ -1872,6 +1936,30 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   const nameHumanEdited = req.body?.name_touched === true ? 1 : 0;
   if (!name) { res.status(400).json({ error: '请填写会话名称' }); return; }
 
+  const initialMessageBody = req.body?.initial_message;
+  let initialMessage: InitialSessionMessage | null = null;
+  if (initialMessageBody !== undefined) {
+    if (!initialMessageBody || typeof initialMessageBody !== 'object' || Array.isArray(initialMessageBody)) {
+      res.status(400).json({ error: 'initial_message 必须是对象' });
+      return;
+    }
+    const content = typeof initialMessageBody.content === 'string' ? initialMessageBody.content : '';
+    const attachments = Array.isArray(initialMessageBody.attachments) ? initialMessageBody.attachments : [];
+    if (!content.trim() && attachments.length === 0) {
+      res.status(400).json({ error: 'initial_message.content 不能为空' });
+      return;
+    }
+    const hasInputText = Object.prototype.hasOwnProperty.call(initialMessageBody, 'input_text');
+    initialMessage = {
+      content,
+      inputText: hasInputText ? String(initialMessageBody.input_text || '') : '',
+      hasInputText,
+      requestId: typeof initialMessageBody.request_id === 'string' ? initialMessageBody.request_id : null,
+      attachments,
+      mentions: Array.isArray(initialMessageBody.mentions) ? initialMessageBody.mentions : [],
+    };
+  }
+
   // 前端传内置短键或管理员导入模型 key; 非法/缺省回退默认模型.
   // 导入模型仍来自管理员白名单, 不直接把用户串塞进 --model.
   const resolvedModel = modelRegistry.resolveSessionModelForCreate(model);
@@ -1906,6 +1994,10 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   const continueFromSessionId = typeof req.body?.continue_from_session_id === 'string'
     ? req.body.continue_from_session_id.trim()
     : '';
+  if (continueFromSessionId && initialMessage) {
+    res.status(400).json({ error: 'initial_message 不能与 continue_from_session_id 同时使用' });
+    return;
+  }
   let sourceSession: AnySession | null = null;
   let transferResult: any = null;
   if (continueFromSessionId) {
@@ -2052,8 +2144,18 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   }
   recordAdminAuditIfCrossUser(user, 'create_session', 'issue', issue.id, issue.created_by);
   Issues.touchActiveAndIncrement(issueId);
+  const createdSession = Sessions.findById(sessionId) as AnySession;
+  if (initialMessage) {
+    queueInitialSessionMessage({
+      user,
+      session: createdSession,
+      projectId: String(issue.project_id),
+      message: initialMessage,
+    });
+  }
   res.json({
-    ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
+    ...(withSessionProxyState(createdSession) as any),
+    initial_message_status: initialMessage ? 'queued' : null,
     continue_from_session_id: sourceSession?.session_id || null,
     transfer_path: transferResult?.paths?.full || null,
     transfer_paths: transferResult?.paths || null,

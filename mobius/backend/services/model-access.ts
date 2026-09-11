@@ -910,6 +910,157 @@ function deleteHarnessModel(keyOrSessionModel: any): boolean {
 // Codex 模型不再自动 seed: picker 里的 Codex 默认项由 ``listSessionModelOptions``
 // 中的内置 ``codex`` 兜底; 管理员自定义 Codex 模型走管理中心的 Codex tab.
 
+// ── 一键扫描本机 Harness (欢迎页模型面板入口) ─────────────────────────────
+// 只发现、不自动写入: 扫描 ~/.claude/settings*.json 与 ~/.codex/*.config.toml,
+// 标注哪些已被导入; 真正接入由 importScannedHarnessConfigs 按勾选项逐个 upsert。
+// DeepSeek Harness 无本机凭据文件可扫 (API key 由管理员录入), 仅回报 runtime 与已配置清单。
+
+// 从 settings 文件名派生 CC 模型 key: settings-xxx.json / settings.xxx.json → xxx; settings.json → local。
+function claudeKeyFromSettingsFile(filename: string): string {
+  const base = filename.replace(/\.json$/i, '')
+  const m = base.match(/^settings[-._]?(.*)$/i)
+  const raw = (m ? m[1] : base).replace(/^[._-]+|[._-]+$/g, '')
+  return raw || 'local'
+}
+
+function safeReadText(file: string): string | null {
+  try { return fs.readFileSync(file, 'utf8') } catch { return null }
+}
+
+function scanClaudeSettingsDir(): any[] {
+  const items: any[] = []
+  let entries: fs.Dirent[] = []
+  try { entries = fs.readdirSync(CLAUDE_DIR, { withFileTypes: true }) } catch { return items }
+  const importedKeys = new Set(loadData().claudeCodeModels.map((m) => m.key))
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^settings.*\.json$/i.test(entry.name)) continue
+    if (entry.name === BUILTIN_CLAUDE_SETTINGS_FILENAME) continue
+    const key = claudeKeyFromSettingsFile(entry.name)
+    let modelHint = ''
+    let baseUrlHint = ''
+    const text = safeReadText(path.join(CLAUDE_DIR, entry.name))
+    if (text) {
+      try {
+        const parsed = JSON.parse(text)
+        modelHint = String(parsed?.env?.ANTHROPIC_MODEL || parsed?.model || '').trim()
+        baseUrlHint = String(parsed?.env?.ANTHROPIC_BASE_URL || '').trim()
+      } catch { /* 损坏 JSON 仍可列出, 导入时再报错 */ }
+    }
+    items.push({
+      file: entry.name,
+      key,
+      label_hint: modelHint || key,
+      model_hint: modelHint,
+      base_url_hint: baseUrlHint,
+      imported: importedKeys.has(key),
+      // 无模型名的 settings (如原生订阅配置) 无法作为独立模型入口, 扫描阶段即标不可接入。
+      importable: !!modelHint,
+      reason: modelHint ? '' : 'settings 中未配置 env.ANTHROPIC_MODEL, 无法作为独立模型接入',
+    })
+  }
+  items.sort((a, b) => Number(a.imported) - Number(b.imported) || a.key.localeCompare(b.key))
+  return items
+}
+
+function scanCodexConfigsDir(): any[] {
+  const items: any[] = []
+  let entries: fs.Dirent[] = []
+  try { entries = fs.readdirSync(CODEX_DIR, { withFileTypes: true }) } catch { return items }
+  const importedChannels = new Set(loadData().codexModels.map((m) => m.key))
+  const seen = new Set<string>()
+  const pushItem = (filename: string, channel: string) => {
+    if (seen.has(filename)) return
+    seen.add(filename)
+    const toml = safeReadText(path.join(CODEX_DIR, filename)) || ''
+    const importable = CODEX_CHANNEL_RE.test(channel) && !!toml.trim()
+    items.push({
+      file: filename,
+      channel,
+      label_hint: channel,
+      model_hint: modelFromCodexToml(toml),
+      env_key_hint: envKeyFromConfigToml(toml),
+      has_api_key: !!apiKeyFromConfigToml(toml),
+      imported: importedChannels.has(channel),
+      importable,
+      reason: importable ? '' : (!CODEX_CHANNEL_RE.test(channel) ? '渠道名仅支持英文字母, 请先重命名文件' : '文件为空'),
+    })
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+    if (/\.config\.toml$/i.test(entry.name)) {
+      pushItem(entry.name, entry.name.replace(/\.config\.toml$/i, ''))
+    }
+  }
+  // 原生 config.toml (codex 默认加载的那份) 单列为 local 渠道候选。
+  if (fs.existsSync(path.join(CODEX_DIR, 'config.toml'))) {
+    pushItem('config.toml', 'local')
+  }
+  items.sort((a, b) => Number(a.imported) - Number(b.imported) || a.channel.localeCompare(b.channel))
+  return items
+}
+
+function harnessRuntimeDir(): string {
+  const candidates = [
+    path.join(process.cwd(), 'deepseek-harness-runtime'),
+    path.join(__dirname, '..', '..', 'deepseek-harness-runtime'),
+  ]
+  return candidates.find((dir) => fs.existsSync(dir)) || candidates[0]
+}
+
+function scanLocalHarnessConfigs(): any {
+  const harnessRows = listHarnessModels().map((m: any) => ({
+    key: m.key, label: m.label, model: m.model, enabled: m.enabled !== false,
+  }))
+  return {
+    scanned_at: nowIso(),
+    claude_code: { dir: `~/.claude`, items: scanClaudeSettingsDir() },
+    codex: { dir: `~/.codex`, items: scanCodexConfigsDir() },
+    deepseek_harness: {
+      runtime_available: fs.existsSync(harnessRuntimeDir()),
+      runtime_version: HARNESS_RUNTIME_VERSION,
+      configured: harnessRows,
+    },
+  }
+}
+
+// 按勾选项接入: file 仅接受 basename (在对应目录内拼路径), 服务端自行读取内容 upsert,
+// 避免 client 传文件内容/绝对路径。
+function importScannedHarnessConfigs(items: any): any {
+  const results: any[] = []
+  for (const item of Array.isArray(items) ? items : []) {
+    const harness = String(item?.harness || '')
+    const file = path.basename(String(item?.file || ''))
+    try {
+      if (!file) throw new Error('缺少文件名')
+      if (harness === 'claude-code') {
+        if (!/^settings.*\.json$/i.test(file)) throw new Error('仅支持扫描到的 settings*.json')
+        const source = path.join(CLAUDE_DIR, file)
+        const settingsJson = safeReadText(source)
+        if (!settingsJson) throw new Error(`文件不存在: ${file}`)
+        const key = claudeKeyFromSettingsFile(file)
+        JSON.parse(settingsJson) // 预检: 内容必须是合法 JSON
+        const row = upsertClaudeCodeModel({ key, label: item?.label || key, settings_json: settingsJson, enabled: true })
+        results.push({ harness, file, ok: true, key: row?.key || key, label: row?.label || key })
+      } else if (harness === 'codex') {
+        const isNative = file === 'config.toml'
+        if (!isNative && !/\.config\.toml$/i.test(file)) throw new Error('仅支持扫描到的 *.config.toml')
+        const channel = isNative ? 'local' : file.replace(/\.config\.toml$/i, '')
+        if (!CODEX_CHANNEL_RE.test(channel)) throw new Error('渠道名仅支持英文字母')
+        const configToml = safeReadText(path.join(CODEX_DIR, file))
+        if (!configToml || !configToml.trim()) throw new Error(`文件为空: ${file}`)
+        const row = upsertCodexModel({ channel, config_toml: configToml, enabled: true })
+        results.push({ harness, file, ok: true, key: row?.key || channel, label: row?.label || channel })
+      } else {
+        throw new Error('未知的 harness 类型')
+      }
+    } catch (e) {
+      results.push({ harness, file, ok: false, error: (e as Error).message || String(e) })
+    }
+  }
+  return { results }
+}
+
+
 export {
   SESSION_MODEL_PREFIX,
   SESSION_MODEL_PREFIX_CODEX,
@@ -939,6 +1090,8 @@ export {
   findHarnessModel,
   upsertHarnessModel,
   deleteHarnessModel,
+  scanLocalHarnessConfigs,
+  importScannedHarnessConfigs,
   sessionModelForHarnessKey,
   keyFromHarnessSessionModel,
 }

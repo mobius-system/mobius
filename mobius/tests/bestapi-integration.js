@@ -139,9 +139,29 @@ async function main() {
     assert.equal(synced.counts.codex, 1)
     assert.equal(synced.counts.claude_code, 1)
 
-    const syncedAtBeforeNoChange = synced.synced_at
-    const unchanged = await integration.runBestApiAutoSyncOnce()
+    // Simulate a connection created before generated config v2. Its Claude
+    // base included /v1 and would make Claude Code request /v1/v1/messages.
+    const legacyConnection = JSON.parse(fs.readFileSync(process.env.BESTAPI_CONNECTION_PATH, 'utf8'))
+    delete legacyConnection.generated_config_version
+    fs.writeFileSync(process.env.BESTAPI_CONNECTION_PATH, JSON.stringify(legacyConnection, null, 2))
+    const legacyClaudePlan = integration.planBestApiModel({
+      id: 'glm-test', endpoints: ['messages'], mobius: mobiusContract('claude-code'),
+    })
+    const legacyClaude = modelAccess.findClaudeCodeModel(legacyClaudePlan.key, { includeSettings: true })
+    const legacySettings = JSON.parse(legacyClaude.settings_json)
+    legacySettings.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${address.port}/v1`
+    fs.writeFileSync(legacyClaude.settings_path, JSON.stringify(legacySettings, null, 2))
+
+    const migrated = await integration.runBestApiAutoSyncOnce()
     assert.equal(catalogRequests, 3)
+    assert.equal(migrated.catalog_changed, false)
+    assert.equal(migrated.configuration_changed, true)
+    const repairedClaude = modelAccess.findClaudeCodeModel(legacyClaudePlan.key, { includeSettings: true })
+    assert.equal(JSON.parse(repairedClaude.settings_json).env.ANTHROPIC_BASE_URL, `http://127.0.0.1:${address.port}`)
+
+    const syncedAtBeforeNoChange = migrated.synced_at
+    const unchanged = await integration.runBestApiAutoSyncOnce()
+    assert.equal(catalogRequests, 4)
     assert.equal(unchanged.catalog_changed, false)
     assert.equal(unchanged.synced_at, syncedAtBeforeNoChange)
     assert.equal(unchanged.auto_sync.last_error, null)
@@ -176,6 +196,7 @@ async function main() {
     const codex = modelAccess.findCodexModel(codexPlan.key, { includeConfig: true, includeSecret: true })
     assert.equal(codex.secret_value, 'sk-integration-secret')
     assert.equal(codex.config_toml.includes('api_key = "<API_KEY>"'), true)
+    assert.match(codex.config_toml, /\[features\]\s+apps = false/)
     const { resolveSecretCandidate } = require('../backend/utils/secret-placeholder')
     assert.equal(resolveSecretCandidate('<API_KEY>', codex.secret_value), 'sk-integration-secret')
     assert.equal(fs.statSync(codex.config_path).mode & 0o777, 0o600)
@@ -196,7 +217,11 @@ async function main() {
     })
     assert.equal(claudePlan.backend, 'claude_code')
     const claude = modelAccess.findClaudeCodeModel(claudePlan.key, { includeSettings: true })
-    assert.equal(JSON.parse(claude.settings_json).env.ANTHROPIC_AUTH_TOKEN, 'sk-integration-secret')
+    const claudeEnv = JSON.parse(claude.settings_json).env
+    assert.equal(claudeEnv.ANTHROPIC_AUTH_TOKEN, 'sk-integration-secret')
+    assert.equal(claudeEnv.ANTHROPIC_BASE_URL, `http://127.0.0.1:${address.port}`)
+    assert.equal(`${claudeEnv.ANTHROPIC_BASE_URL}/v1/messages`, `http://127.0.0.1:${address.port}/v1/messages`)
+    assert.equal(`${claudeEnv.ANTHROPIC_BASE_URL}/v1/messages`.includes('/v1/v1/'), false)
     assert.ok(claude.label.length <= 80)
     assert.equal(fs.statSync(claude.settings_path).mode & 0o777, 0o600)
 
