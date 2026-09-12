@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f7f7f5">
   <title>极简模式前端 · Codex 工作台</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260912-3">
 </head>
 <body>
   <div class="app-shell">
@@ -36,7 +36,7 @@
       <header class="topbar">
         <button class="icon-button mobile-only" id="openSidebar" type="button" aria-label="打开侧栏">☰</button>
         <div class="breadcrumb"><span class="project-dot"></span><span id="projectName">Mobius 前端</span><span class="slash">/</span><strong id="threadTitle">重构三栏工作台</strong></div>
-        <div class="top-actions"><button class="quiet-button" id="shareButton" type="button">↗ <span>分享</span></button><button class="icon-button" id="centerMore" type="button" aria-label="更多">•••</button></div>
+        <div class="top-actions"><span class="demo-label">前端演示</span><button class="icon-button" id="toggleInspector" type="button" aria-label="切换右侧面板" title="切换右侧面板">◫</button><button class="quiet-button" id="shareButton" type="button">↗ <span>导出</span></button><button class="icon-button" id="centerMore" type="button" aria-label="更多">•••</button></div>
       </header>
       <section class="thread-view" id="threadView">
         <div class="thread-content" id="threadContent">
@@ -66,6 +66,7 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
   <input id="fileInput" type="file" multiple hidden>
-  <script type="module" src="./main.js"></script>
+  <dialog id="dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭对话框">×</button></form><div id="dialogContent"></div></dialog>
+  <script type="module" src="./main.js?v=20260912-3"></script>
 </body>
 </html>
