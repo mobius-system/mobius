@@ -414,6 +414,9 @@ const Sessions = {
   updateRiskLevel: (id: string, risk: string) => db.prepare('UPDATE sessions_v2 SET risk_level = ? WHERE session_id = ?').run(risk, id),
   // 原地更换会话模型 (需求: 模型被管理员删除后会话进入只读, 点"更换模型并继续"用此).
   updateModel: (id: string, model: string) => db.prepare('UPDATE sessions_v2 SET model = ? WHERE session_id = ?').run(model, id),
+  // 切换会话绑定的 aimux 设备: 覆盖 pc_client_metadata 里的 aimux_id (其余字段保留),
+  // 供前端 RemoteAimuxMcpIndicator 点击切换协作设备用. pcMeta 为 null 时清空该列.
+  updatePcClientMetadata: (id: string, pcMeta: object | null) => db.prepare('UPDATE sessions_v2 SET pc_client_metadata = ? WHERE session_id = ?').run(pcMeta ? JSON.stringify(pcMeta) : null, id),
   // session 级 skill / memory 排除集. 空数组写 null 跟初始一致.
   updateExcludedSkills: (id: string, ids: string[] | null): void => {
     const v = Array.isArray(ids) && ids.length > 0 ? JSON.stringify(ids) : null;

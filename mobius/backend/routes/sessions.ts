@@ -14,6 +14,8 @@ import { SessionPendingMentions } from '../repositories/session-pending-mentions
 import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
 import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSelectionSnapshot } from '../services/session-context';
+// @ts-ignore — service 仍是 .js
+import { parsePcClientMetadata } from '../services/pc-client-context';
 // @ts-ignore — repository 仍是 .js
 import { audit } from '../repositories/audit';
 // @ts-ignore — service 仍是 .js
@@ -476,6 +478,24 @@ router.patch('/:id/model', auth, async (req: express.Request, res: express.Respo
   Sessions.updateModel(id, resolved.sessionModelValue);
   auditSessionAccess(user, 'change_session_model', Sessions.findById(id) as any);
   res.json({ ok: true, model: resolved.sessionModelValue, label: resolved.label || resolved.sessionModelValue });
+});
+
+// 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击切换).
+// 覆盖 pc_client_metadata.aimux_id, 保留 work_mode/is_tui/add_remote_aimux_mcp/local_path 等其余字段.
+// 权限同 PATCH /:id (findSessionOperable = owner/admin/project-owner); 前端只从 /aimux_bridge/api/remotes
+// 的 live 列表里挑可选项, 故这里只做非空校验, 不再重复查 bridge.
+router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到或无权修改' }); return; }
+  const newAimuxId = String(req.body?.aimux_id || '').trim();
+  if (!newAimuxId) { res.status(400).json({ error: 'aimux_id 不能为空' }); return; }
+  const meta = parsePcClientMetadata(session.pc_client_metadata) ?? {};
+  const updated = { ...meta, aimux_id: newAimuxId };
+  Sessions.updatePcClientMetadata(id, updated);
+  auditSessionAccess(user, 'switch_session_aimux_device', session);
+  res.json({ ok: true, pc_client_metadata: updated });
 });
 
 interface BackgroundCloseResult {

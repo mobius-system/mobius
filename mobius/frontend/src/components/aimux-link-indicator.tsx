@@ -125,9 +125,31 @@ export function RemoteAimuxMcpIcon({ className, ...props }: SVGProps<SVGSVGEleme
   )
 }
 
-function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
+interface RemoteDevice {
+  name: string
+  status: string
+  platform?: string
+  default_profile?: string
+  last_seen?: string
+}
+
+function RemoteAimuxMcpIndicatorInner({
+  session,
+  sessionId,
+  onSwitched,
+}: {
+  session: unknown
+  sessionId?: string
+  onSwitched?: (updated: { pc_client_metadata: Record<string, unknown> }) => void
+}) {
   const aimuxId = remoteAimuxMcpId(session)
   const [connected, setConnected] = useState(false)
+  const [remotes, setRemotes] = useState<RemoteDevice[]>([])
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+
+  const canSwitch = !!sessionId
 
   useEffect(() => {
     if (!aimuxId) {
@@ -149,22 +171,129 @@ function RemoteAimuxMcpIndicatorInner({ session }: { session: unknown }) {
     }
   }, [aimuxId])
 
+  // 切换 session 时收起菜单
+  useEffect(() => { setMenuOpen(false) }, [sessionId])
+
+  // 点外部 / Esc 关菜单
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
+
+  const toggleMenu = () => {
+    if (!canSwitch) return
+    setMenuOpen((v) => {
+      const next = !v
+      if (next) {
+        api('/aimux_bridge/api/remotes')
+          .then((data: any) => setRemotes(Array.isArray(data?.remotes) ? data.remotes : []))
+          .catch(() => setRemotes([]))
+      }
+      return next
+    })
+  }
+
+  const chooseDevice = async (name: string) => {
+    setMenuOpen(false)
+    if (!sessionId || name === aimuxId) return
+    setSwitching(true)
+    try {
+      const updated = await api(`/api/sessions/${sessionId}/aimux-device`, {
+        method: 'PATCH',
+        body: JSON.stringify({ aimux_id: name }),
+      })
+      onSwitched?.(updated)
+    } catch (e) {
+      console.warn('[RemoteAimuxMcpIndicator] 切换设备失败:', (e as Error)?.message)
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   if (!aimuxId) return null
 
   const status = connected ? '正常' : '断开'
   const disconnectedMessage = '虽然现在与目标机器连接断开，但依然可依托中枢继续执行任务。'
   const label = `当前会话与设备${aimuxId}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。${connected ? '' : disconnectedMessage}`
+  const title = canSwitch ? `${label}（点击切换协作设备）` : label
 
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      data-testid="remote-aimux-mcp-indicator"
-      data-connection-status={connected ? 'connected' : 'disconnected'}
-      className={`group inline-flex min-h-5 flex-shrink-0 items-center gap-1 transition-colors ${connected ? 'text-green-400' : 'text-red-400'}`}
-    >
-      <RemoteAimuxMcpIcon className="h-4 w-4 flex-shrink-0" />
+    <span className="group relative inline-flex" ref={wrapRef}>
+      <span
+        role={canSwitch ? 'button' : 'img'}
+        tabIndex={canSwitch ? 0 : undefined}
+        aria-label={label}
+        aria-haspopup={canSwitch ? 'menu' : undefined}
+        aria-expanded={canSwitch ? menuOpen : undefined}
+        title={title}
+        data-testid="remote-aimux-mcp-indicator"
+        data-connection-status={connected ? 'connected' : 'disconnected'}
+        onClick={toggleMenu}
+        onKeyDown={(e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggleMenu()
+          }
+        }}
+        className={`inline-flex min-h-5 flex-shrink-0 items-center gap-1 transition-colors ${connected ? 'text-green-400' : 'text-red-400'} ${canSwitch ? 'cursor-pointer' : ''}`}
+      >
+        <RemoteAimuxMcpIcon className="h-4 w-4 flex-shrink-0" />
+      </span>
+
+      {canSwitch && menuOpen && (
+        <div
+          role="menu"
+          aria-label="切换 aimux 协作设备"
+          className="aimux-mode-menu absolute right-0 top-full z-50 mt-1.5 min-w-[264px] origin-top-right"
+        >
+          <div className="aimux-mode-menu__header">
+            <span className={`aimux-mode-menu__dot aimux-mode-menu__dot--${connected ? 'green' : 'red'}`} />
+            <span className="truncate">切换 aimux 协作设备</span>
+          </div>
+          <div className="aimux-mode-menu__list">
+            {remotes.length === 0 ? (
+              <div className="px-2 py-2 text-[11px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                {switching ? '切换中…' : '暂无可用的 aimux 设备'}
+              </div>
+            ) : (
+              remotes.map((r) => {
+                const active = r.name === aimuxId
+                const isConnected = r.status === 'connected'
+                return (
+                  <button
+                    key={r.name}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    onClick={() => chooseDevice(r.name)}
+                    className={`aimux-mode-menu__item ${active ? 'aimux-mode-menu__item--active' : ''}`}
+                  >
+                    <span className="aimux-mode-menu__icon">
+                      <Laptop className="w-3.5 h-3.5" strokeWidth={1.75} />
+                    </span>
+                    <span className="aimux-mode-menu__text">
+                      <span className="aimux-mode-menu__label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{r.name}</span>
+                      <span className="aimux-mode-menu__desc">
+                        {isConnected ? '已连接' : r.status || '断开'} · {r.platform || '未知平台'}
+                      </span>
+                    </span>
+                    {active && <Check className="aimux-mode-menu__check w-3.5 h-3.5" strokeWidth={2} />}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
     </span>
   )
 }

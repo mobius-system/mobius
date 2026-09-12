@@ -4679,7 +4679,19 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
               done={backendJobDone === true && !backendAlive}
             />
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
-            <RemoteAimuxMcpIndicator session={currentSession ?? currentTask} />
+            <RemoteAimuxMcpIndicator
+              session={currentSession ?? currentTask}
+              sessionId={sessionId}
+              onSwitched={(updated: any) => {
+                const meta = updated?.pc_client_metadata
+                if (!meta) return
+                if (currentSession) {
+                  setCurrentSession({ ...currentSession, pc_client_metadata: meta })
+                } else if (currentTask) {
+                  setCurrentTask({ ...currentTask, pc_client_metadata: meta } as any)
+                }
+              }}
+            />
             {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
