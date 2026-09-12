@@ -1169,6 +1169,27 @@ function migrateIssueUserStars() {
   }
 }
 migrateIssueUserStars();
+
+// ===== 每用户的 session 星标 =====
+// 与 project/issue 星标同款: 用户个人的排序偏好, 不改变会话本身元数据.
+function migrateSessionUserStars() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_user_stars (
+        session_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (session_id, user_id),
+        FOREIGN KEY (session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_user_stars_user ON session_user_stars(user_id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  session user stars 迁移失败:', e.message);
+  }
+}
+migrateSessionUserStars();
 // ===== 每项目、每用户的用户级 Skill/Memory 与内置 Skill 白名单 =====
 // 行不存在 = 两类白名单都不存在, 创建 Session 时沿用原行为展示全部用户级条目.
 // 某列为 NULL = 该类白名单不存在; 某列为 JSON 数组 = 该类白名单已启用.

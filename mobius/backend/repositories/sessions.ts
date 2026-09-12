@@ -65,6 +65,8 @@ interface SessionListRow {
   completed_at: string | null;
   user_display_name?: string;
   raw_entry_count?: number;
+  /** LEFT JOIN 注入: 当前用户是否星标了该会话 */
+  starred?: number | boolean;
 }
 
 interface ReusableSelectionRow {
@@ -148,21 +150,25 @@ const Sessions = {
   `).get(id) as SessionWithJoinsRow | undefined,
 
   listForUser: (userId: string): SessionWithJoinsRow[] => db.prepare(`
-    SELECT s.*, i.title as issue_title, r.title as research_title, p.name as project_name
+    SELECT s.*, i.title as issue_title, r.title as research_title, p.name as project_name,
+      CASE WHEN sus.session_id IS NULL THEN 0 ELSE 1 END AS starred
     FROM sessions_v2 s
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id
     LEFT JOIN projects p ON s.project_id = p.id
+    LEFT JOIN session_user_stars sus ON sus.session_id = s.session_id AND sus.user_id = ?
     WHERE s.user_id = ?
     ORDER BY s.last_active DESC
-  `).all(userId) as SessionWithJoinsRow[],
+  `).all(userId, userId) as SessionWithJoinsRow[],
 
   listRecentForUser: (userId: string, limit: number): SessionWithJoinsRow[] => db.prepare(`
-    SELECT ${SESSION_LIST_COLUMNS}, i.title as issue_title, r.title as research_title, p.name as project_name
+    SELECT ${SESSION_LIST_COLUMNS}, i.title as issue_title, r.title as research_title, p.name as project_name,
+      CASE WHEN sus.session_id IS NULL THEN 0 ELSE 1 END AS starred
     FROM sessions_v2 s
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id
     LEFT JOIN projects p ON s.project_id = p.id
+    LEFT JOIN session_user_stars sus ON sus.session_id = s.session_id AND sus.user_id = ?
     WHERE s.user_id = ?
       AND s.status != 'archived'
       AND s.deleted_at IS NULL
@@ -170,7 +176,7 @@ const Sessions = {
       AND NOT (i.title = '小莫对话' AND p.name LIKE '%小莫助理')
     ORDER BY s.last_active DESC
     LIMIT ?
-  `).all(userId, limit) as SessionWithJoinsRow[],
+  `).all(userId, userId, limit) as SessionWithJoinsRow[],
 
   // raw_entry_count: 该 session 在 messages_v2 里的原始数据条目数 (每条 SDK
   // 事件/消息落库为一行). 替代一直显示 0 的 turn_count —— turn_count 列从未被
@@ -409,6 +415,27 @@ const Sessions = {
   // 用户手动重命名: 同时置 name_human_edited=1, 标记此名由人类钦定, AI 标题生成器不再覆盖.
   // (AI 生成器仍用上面的 updateName —— 不动标记; 但被标记的会话会在 syncer/generator 里提前跳过, 根本不会调到.)
   updateNameByUser: (id: string, name: string) => db.prepare('UPDATE sessions_v2 SET name = ?, name_human_edited = 1 WHERE session_id = ?').run(name, id),
+  // 每用户会话星标 (与 project/issue 星标同款): 只影响当前用户的列表排序/标记.
+  setStarred: (id: string, userId: string, starred: boolean): boolean => {
+    const uid = String(userId || '').trim();
+    if (!uid) return false;
+    if (starred) {
+      db.prepare(`
+        INSERT INTO session_user_stars (session_id, user_id)
+        VALUES (?, ?)
+        ON CONFLICT(session_id, user_id) DO NOTHING
+      `).run(id, uid);
+    } else {
+      db.prepare(`
+        DELETE FROM session_user_stars
+        WHERE session_id = ? AND user_id = ?
+      `).run(id, uid);
+    }
+    return true;
+  },
+  isStarredByUser: (id: string, userId: string): boolean => !!db.prepare(
+    'SELECT 1 FROM session_user_stars WHERE session_id = ? AND user_id = ?',
+  ).get(id, userId),
   updateStatus: (id: string, status: SessionStatus) => db.prepare('UPDATE sessions_v2 SET status = ? WHERE session_id = ?').run(status, id),
   updateDescription: (id: string, description: string) => db.prepare('UPDATE sessions_v2 SET description = ? WHERE session_id = ?').run(description, id),
   updateRiskLevel: (id: string, risk: string) => db.prepare('UPDATE sessions_v2 SET risk_level = ? WHERE session_id = ?').run(risk, id),

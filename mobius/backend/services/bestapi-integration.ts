@@ -17,6 +17,9 @@ const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 const MODEL_ID_RE = /^[A-Za-z0-9._:/-]{1,128}$/
 const API_BASE_PATH_RE = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/
 const BESTAPI_LABEL_SUFFIX = ' · BestAPI'
+// Increment when generated harness configuration semantics change so that
+// already-connected installations are repaired by the next automatic sync.
+const GENERATED_CONFIG_VERSION = 3
 const AUTO_SYNC_ENABLED = !/^(0|false|no)$/i.test(process.env.BESTAPI_AUTO_SYNC_ENABLED || '')
 const AUTO_SYNC_INTERVAL_MS = durationFromEnv('BESTAPI_AUTO_SYNC_INTERVAL_MS', 60_000, 30_000)
 const AUTO_SYNC_INITIAL_DELAY_MS = durationFromEnv('BESTAPI_AUTO_SYNC_INITIAL_DELAY_MS', 10_000, 1_000)
@@ -122,6 +125,7 @@ type StoredConnection = {
   key_prefix: string
   catalog_version: string | null
   integration_schema_version?: number | null
+  generated_config_version?: number
   connected_at: string
   synced_at: string
   models: ManagedModel[]
@@ -460,13 +464,20 @@ function codexToml(channel: string, model: string, apiBaseUrl: string, envKey: s
     `env_key = "${envKey}"`,
     `api_key = "<API_KEY>"`,
     '',
+    // Codex Apps 使用 ChatGPT Apps 凭据，与 BestAPI API-key 渠道无关。
+    // 禁用内置 Apps，但保留 enable_mcp_apps 供 Mobius 按需加载 aimux MCP。
+    `[features]`,
+    `apps = false`,
+    '',
   ].join('\n')
 }
 
-function claudeSettings(model: string, apiBaseUrl: string, apiKey: string): any {
+function claudeSettings(model: string, serverBaseUrl: string, apiKey: string): any {
   return {
     env: {
-      ANTHROPIC_BASE_URL: apiBaseUrl,
+      // Claude Code 会自行追加 /v1/messages，因此这里必须使用服务根地址，
+      // 否则带 /v1 的 API Base 会产生 /v1/v1/messages。
+      ANTHROPIC_BASE_URL: serverBaseUrl,
       ANTHROPIC_AUTH_TOKEN: apiKey,
       API_TIMEOUT_MS: '3000000',
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
@@ -551,7 +562,7 @@ function applyCatalog(params: {
         key: item.key,
         label: bestApiLabel(item.display_name),
         claude_model: item.id,
-        settings_json: claudeSettings(item.id, params.apiBaseUrl, params.apiKey),
+        settings_json: claudeSettings(item.id, params.baseUrl, params.apiKey),
         enabled: true,
       }, modelAccess.findClaudeCodeModel(item.key) ? { existingKey: item.key } : {})
     } else if (item.config_profile === 'deepseek_harness_openai_v1') {
@@ -594,6 +605,7 @@ function applyCatalog(params: {
     key_prefix: params.keyPrefix,
     catalog_version: params.catalogVersion,
     integration_schema_version: params.integrationSchemaVersion,
+    generated_config_version: GENERATED_CONFIG_VERSION,
     connected_at: params.existing?.connected_at || now,
     synced_at: now,
     models: managed,
@@ -655,6 +667,7 @@ async function syncBestApiInternal(onlyIfCatalogChanged = false): Promise<any> {
   const configurationChanged = catalogChanged
     || baseUrl !== existing.base_url
     || apiBaseUrl !== existing.api_base_url
+    || existing.generated_config_version !== GENERATED_CONFIG_VERSION
   if (onlyIfCatalogChanged && !configurationChanged) {
     recordSyncSuccess(false)
     return { ...publicConnection(existing), catalog_changed: false, configuration_changed: false }

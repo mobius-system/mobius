@@ -131,6 +131,10 @@ const CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE =
 // "⚠ MCP startup interrupted. The following servers were not initialized: ..." (tui/src/
 // chatwidget/mcp_startup.rs). Treat them as ignorable, same as the fallback metadata banner.
 const CODEX_MCP_STARTUP_NOTICE_RE = /^⚠\s*MCP startup (?:incomplete|interrupted)\b/i
+// codex_apps 是 Codex 自带的 OpenAI Apps 服务，不是 Mobius 注入的 aimux MCP。
+// BestAPI/API-key 会话没有 ChatGPT Apps 凭据时它可能超时，但不影响模型和远程工具。
+const CODEX_OPTIONAL_APPS_MCP_NOTICE_RE =
+  /^⚠\s*(?:MCP startup incomplete \(failed:\s*codex_apps\)|MCP client for `?codex_apps`? timed out)/i
 
 function findCodexRecentErrorInPane(paneText: string) {
   const ANSI_RE = /\x1b\[[0-9;]*m/g
@@ -144,6 +148,7 @@ function findCodexRecentErrorInPane(paneText: string) {
     if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
     if (CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE.test(cleaned)) return null
     if (CODEX_MCP_STARTUP_NOTICE_RE.test(cleaned)) return null
+    if (CODEX_OPTIONAL_APPS_MCP_NOTICE_RE.test(cleaned)) return null
     return {
       message: cleaned.trim(),
       rawLine: line,

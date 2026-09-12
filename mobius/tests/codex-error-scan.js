@@ -26,6 +26,16 @@ assert.strictEqual(
   'fallback model metadata is a normal upstream warning, not an agent failure',
 )
 assert.strictEqual(
+  findCodexRecentErrorInPane('⚠ MCP client for `codex_apps` timed out after 30 seconds.'),
+  null,
+  'the optional built-in Codex Apps MCP must not fail an API-key session',
+)
+assert.strictEqual(
+  findCodexRecentErrorInPane('■ API request failed with status 403\n⚠ MCP startup incomplete (failed: codex_apps)'),
+  null,
+  'a newer optional Codex Apps warning must not expose an older stale error',
+)
+assert.strictEqual(
   findCodexRecentErrorInPane(`■ API request failed with status 403\n⚠ Model metadata for \`GLM-5.3\` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.`),
   null,
   'a newer fallback metadata warning must not expose an older stale error',
