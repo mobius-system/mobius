@@ -3452,7 +3452,7 @@ const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
   { title: '模型显示名称', hint: '该名称会展示给你和你的同事 (列表/选择器), 不一定是模型真名' },
   { title: '选择 Harness', hint: '向导暂不支持 DeepSeek Harness, 需要时请用文件配置模式' },
   { title: '配置代理网络', hint: 'Codex 订阅需要访问 OpenAI 网络; 按需编辑模型代理配置, 完成后点下一步' },
-  { title: '选择模型', hint: '选择 ChatGPT 订阅内的 GPT-5.6 家族模型' },
+  { title: '选择模型', hint: '选择 ChatGPT 订阅内的 GPT-6 或 GPT-5.6 家族模型' },
   { title: '选择认证方式', hint: '设备码在线登录, 或直接上传本地已登录的 Codex 认证文件' },
   { title: '登录认证', hint: '在下方终端完成 ChatGPT 设备码登录, 成功后点击"我已登录"' },
   { title: '注册', hint: '把订阅渠道注册进 mobius 模型列表' },
@@ -3460,8 +3460,8 @@ const WIZARD_STEP_META_SUBSCRIPTION: { title: string; hint: string }[] = [
 
 // 订阅路径认证方式: 设备码在线登录 | 上传本地 ~/.codex/auth.json.
 type SubAuthMethod = 'device-code' | 'upload-auth'
-// 订阅渠道可选的 Codex 订阅模型 (ChatGPT 付费计划内的 GPT-5.6 家族).
-const CODEX_SUBSCRIPTION_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const
+// 订阅渠道可选的 Codex 订阅模型 (ChatGPT 付费计划内的 GPT-6 / GPT-5.6 家族).
+const CODEX_SUBSCRIPTION_MODELS = ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const
 
 const WIZARD_TOTAL_STEPS = 5
 const WIZARD_TOTAL_STEPS_SUBSCRIPTION = 7
@@ -4023,9 +4023,10 @@ function SubscriptionAuthMethodStep({
 }
 
 // ── 订阅路径第4步: 选择订阅模型 ─────────────────────────────────────────
-// GPT-5.6 家族三选一; 注册后仍可在文件配置 Tab 改 codex_model.
+// GPT-6 / GPT-5.6 家族四选一; 注册后仍可在文件配置 Tab 改 codex_model.
 function SubscriptionModelStep({ model, onModelChange }: { model: string; onModelChange: (m: string) => void }) {
   const descs: Record<string, string> = {
+    'gpt-6-astra': '最强型 · 复杂任务与高难度编码',
     'gpt-5.6-sol': '均衡型 · 日常编码首选',
     'gpt-5.6-terra': '强力型 · 复杂任务推理',
     'gpt-5.6-luna': '轻快型 · 低延迟会话',
@@ -4033,7 +4034,7 @@ function SubscriptionModelStep({ model, onModelChange }: { model: string; onMode
   return (
     <div className="space-y-3">
       <div className="mb-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>选择订阅模型</div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {CODEX_SUBSCRIPTION_MODELS.map(m => {
           const active = model === m
           return (
@@ -4053,7 +4054,7 @@ function SubscriptionModelStep({ model, onModelChange }: { model: string; onMode
         })}
       </div>
       <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        ChatGPT 付费订阅内的 GPT-5.6 家族模型; 注册后可在"文件配置"Tab 修改 codex_model.
+        ChatGPT 付费订阅内的 GPT-6 / GPT-5.6 家族模型; 注册后可在"文件配置"Tab 修改 codex_model.
       </div>
     </div>
   )
@@ -4443,7 +4444,7 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
         )
       case 4:
         if (sub) {
-          // 订阅路径第4步: 选择订阅模型 (GPT-5.6 家族三选一).
+          // 订阅路径第4步: 选择订阅模型 (GPT-6 / GPT-5.6 家族四选一).
           return <SubscriptionModelStep model={wizard.subModel} onModelChange={m => patch({ subModel: m })} />
         }
         return (
