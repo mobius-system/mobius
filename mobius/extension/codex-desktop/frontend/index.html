@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>Codex</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <button class="brand-button" id="brandButton" type="button" aria-label="Open workspace menu">
+          <span class="brand-mark">C</span><span class="brand-name">Codex</span><span class="chevron">⌄</span>
+        </button>
+        <button class="icon-button sidebar-close" id="closeSidebar" type="button" title="Close sidebar" aria-label="Close sidebar">×</button>
+      </div>
+      <button class="new-chat-button" id="newChat" type="button"><span class="plus">＋</span><span>New chat</span><span class="shortcut">⌘ K</span></button>
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <button class="nav-item active" data-view="chats" type="button"><span class="nav-icon">⌂</span><span>Chats</span></button>
+        <button class="nav-item" data-view="projects" type="button"><span class="nav-icon">▧</span><span>Projects</span></button>
+        <button class="nav-item" data-view="skills" type="button"><span class="nav-icon">✦</span><span>Skills</span></button>
+      </nav>
+      <div class="recents-heading"><span>Recent</span><button class="tiny-button" id="searchChats" type="button" title="Search chats">⌕</button></div>
+      <div class="recent-list" id="recentList"></div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-bottom">
+        <button class="bottom-item" id="settingsButton" type="button"><span class="nav-icon">⚙</span><span>Settings</span></button>
+        <button class="profile-button" id="profileButton" type="button"><span class="avatar">A</span><span class="profile-copy"><strong>Alex</strong><small>Personal workspace</small></span><span class="more">•••</span></button>
+      </div>
+    </aside>
+
+    <main class="main-panel" id="mainPanel">
+      <header class="topbar">
+        <button class="icon-button menu-toggle" id="openSidebar" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
+        <div class="topbar-context"><span id="contextTitle">New chat</span><span class="context-dot">·</span><span class="context-model">gpt-5</span></div>
+        <div class="topbar-actions"><button class="topbar-button" id="shareButton" type="button">↗ <span>Share</span></button><button class="icon-button" id="moreButton" type="button" aria-label="More options">•••</button></div>
+      </header>
+
+      <section class="workspace" id="workspace">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark">C</div>
+          <h1>How can I help you today?</h1>
+          <p>Ask Codex to write, review, or explain anything.</p>
+        </div>
+        <div class="message-thread" id="messageThread" hidden></div>
+        <div class="composer-wrap">
+          <form class="composer" id="composer">
+            <textarea id="messageInput" rows="1" placeholder="Message Codex" aria-label="Message Codex"></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-left"><button class="round-tool" id="attachButton" type="button" title="Add files" aria-label="Add files">＋</button><button class="tool-select" id="modeButton" type="button">⌁ <span>Ask</span> <span class="small-chevron">⌄</span></button></div>
+              <div class="composer-right"><span class="composer-hint">↵ to send</span><button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message">↑</button></div>
+            </div>
+          </form>
+          <p class="composer-note">Codex can make mistakes. Check important info.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <input id="fileInput" type="file" hidden multiple>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
