@@ -1,0 +1,6 @@
+{
+  "name": "easy-ui-ultra",
+  "display_name": "极简模式前端",
+  "description": "Codex 风格三栏工作台的纯前端复刻，包含线程、对话和 Review 面板。",
+  "version": "0.2.0"
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>极简模式前端 · Codex 工作台</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="left-sidebar" id="leftSidebar">
+      <div class="sidebar-header">
+        <button class="workspace-switcher" id="workspaceButton" type="button">
+          <span class="brand-glyph">✦</span><span class="workspace-name">个人工作区</span><span class="chevron">⌄</span>
+        </button>
+        <button class="icon-button mobile-only" id="closeSidebar" type="button" aria-label="关闭侧栏">×</button>
+      </div>
+      <button class="new-thread" id="newThread" type="button"><span class="compose-icon">＋</span><span>新建线程</span><kbd>⌘ K</kbd></button>
+      <nav class="main-nav" aria-label="主导航">
+        <button class="nav-row active" data-section="threads" type="button"><span class="nav-symbol">◌</span><span>线程</span><span class="nav-count">12</span></button>
+        <button class="nav-row" data-section="projects" type="button"><span class="nav-symbol">▱</span><span>项目</span></button>
+        <button class="nav-row" data-section="automations" type="button"><span class="nav-symbol">↗</span><span>自动化</span></button>
+      </nav>
+      <div class="sidebar-section-head"><span>最近线程</span><button class="tiny-icon" id="searchThreads" type="button" aria-label="搜索线程">⌕</button></div>
+      <div class="thread-list" id="threadList"></div>
+      <div class="sidebar-spacer"></div>
+      <div class="usage-card"><div class="usage-top"><span>本周用量</span><span>68%</span></div><div class="usage-bar"><i></i></div><small>重置于周一 · 还有 4 天</small></div>
+      <div class="sidebar-footer">
+        <button class="nav-row" id="settingsButton" type="button"><span class="nav-symbol">⚙</span><span>设置</span></button>
+        <button class="account-row" id="accountButton" type="button"><span class="avatar">A</span><span><strong>Alex Chen</strong><small>Pro 方案</small></span><span class="more">•••</span></button>
+      </div>
+    </aside>
+
+    <main class="center-pane">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="openSidebar" type="button" aria-label="打开侧栏">☰</button>
+        <div class="breadcrumb"><span class="project-dot"></span><span id="projectName">Mobius 前端</span><span class="slash">/</span><strong id="threadTitle">重构三栏工作台</strong></div>
+        <div class="top-actions"><button class="quiet-button" id="shareButton" type="button">↗ <span>分享</span></button><button class="icon-button" id="centerMore" type="button" aria-label="更多">•••</button></div>
+      </header>
+      <section class="thread-view" id="threadView">
+        <div class="thread-content" id="threadContent">
+          <div class="thread-meta"><span class="status-dot"></span><span>已完成</span><span class="meta-divider">·</span><span>今天 14:32</span></div>
+          <article class="message user-message"><div class="message-avatar user-avatar">A</div><div class="message-copy"><div class="message-label">你</div><p>帮我把这个前端工作台改成更简洁的三栏布局，左边管理线程，中间专注对话，右边查看变更。</p><div class="attachment-pill"><span class="file-chip">▧</span><span>frontend-layout.md</span><span class="attachment-muted">已添加</span></div></div></article>
+          <article class="message agent-message"><div class="message-avatar agent-avatar">✦</div><div class="message-copy"><div class="message-label">Codex <span class="model-tag">GPT-5</span></div><p>我会先梳理工作区的层级，再把三栏做成可以独立操作的界面。右侧面板会保留 Review、文件和运行状态，方便你随时检查进度。</p><div class="work-card"><div class="work-card-head"><span class="sparkle">✦</span><strong>正在处理工作区</strong><span class="running">已完成</span></div><div class="work-step done"><span>✓</span><span>分析现有页面结构</span><em>2.4s</em></div><div class="work-step done"><span>✓</span><span>建立响应式三栏布局</span><em>3.1s</em></div><div class="work-step current"><span class="mini-spinner"></span><span>整理右侧 Review 面板</span><em>进行中</em></div></div></div></article>
+          <article class="message agent-message followup"><div class="message-avatar agent-avatar">✦</div><div class="message-copy"><div class="message-label">Codex</div><p>基础布局已经完成。你可以从右侧查看改动文件，点击任意文件会打开对应的 diff 预览。</p><div class="code-preview"><div class="code-line"><span class="line-number">1</span><span><b>.workspace-shell</b> {</span></div><div class="code-line added"><span class="line-number">2</span><span>  grid-template-columns: <i>248px minmax(420px, 1fr) 312px</i>;</span></div><div class="code-line"><span class="line-number">3</span><span>}</span></div></div></div></article>
+        </div>
+        <div class="composer-wrap">
+          <div class="suggestion-row"><button class="suggestion" data-prompt="继续检查剩余的响应式问题">继续检查响应式</button><button class="suggestion" data-prompt="为这个工作区写一份简短说明">写一份说明</button><button class="suggestion" data-prompt="运行一次界面验证">运行界面验证</button></div>
+          <form class="composer" id="composer"><textarea id="messageInput" rows="1" placeholder="给 Codex 发消息…" aria-label="消息输入"></textarea><div class="composer-tools"><div class="composer-left"><button class="round-tool" id="attachButton" type="button" aria-label="添加文件">＋</button><button class="tool-button" id="modeButton" type="button">◒ <span>执行</span><span class="down">⌄</span></button><button class="tool-button muted-tool" id="environmentButton" type="button">⌂ <span>本地环境</span></button></div><div class="composer-right"><span class="enter-hint">Enter 发送</span><button class="send-button" id="sendButton" type="submit" aria-label="发送">↑</button></div></div></form><p class="composer-note">Codex 可能会犯错，请检查重要信息。</p>
+        </div>
+      </section>
+    </main>
+
+    <aside class="right-sidebar" id="rightSidebar">
+      <div class="inspector-header"><div class="inspector-tabs"><button class="inspector-tab active" data-tab="review" type="button">Review <span class="tab-badge">3</span></button><button class="inspector-tab" data-tab="files" type="button">文件</button><button class="inspector-tab" data-tab="details" type="button">详情</button></div><button class="icon-button" id="closeInspector" type="button" aria-label="关闭右栏">×</button></div>
+      <div class="inspector-body" id="inspectorBody">
+        <div class="review-summary"><div><strong>3 个文件已修改</strong><span>工作区变更</span></div><button class="review-action" id="reviewAction" type="button">查看全部</button></div>
+        <div class="diff-stat"><span class="diff-add">+ 128</span><span class="diff-remove">− 24</span><span class="diff-track"><i></i></span></div>
+        <div class="file-group-title"><span>已修改</span><span>3</span></div>
+        <div class="file-tree" id="fileTree"><button class="file-row selected" data-file="frontend/index.html" type="button"><span class="file-icon html">⌘</span><span class="file-name">index.html</span><span class="file-change">+42</span></button><button class="file-row" data-file="frontend/main.js" type="button"><span class="file-icon js">JS</span><span class="file-name">main.js</span><span class="file-change">+58</span></button><button class="file-row" data-file="frontend/styles.css" type="button"><span class="file-icon css">#</span><span class="file-name">styles.css</span><span class="file-change">+28</span></button></div>
+        <div class="selected-file" id="selectedFile"><div class="selected-file-head"><span class="file-icon html">⌘</span><strong>index.html</strong><button class="tiny-icon" type="button">•••</button></div><div class="mini-diff"><div class="mini-line"><span>18</span><b>&lt;aside class="left-sidebar"&gt;</b></div><div class="mini-line add"><span>19</span><b>+ &lt;main class="center-pane"&gt;</b></div><div class="mini-line add"><span>20</span><b>+ &lt;aside class="right-sidebar"&gt;</b></div><div class="mini-line"><span>21</span><b>&lt;/div&gt;</b></div></div></div>
+        <div class="right-bottom"><div class="detail-row"><span class="detail-icon">◉</span><span>本地环境</span><strong>已连接</strong><i class="online-dot"></i></div><div class="detail-row"><span class="detail-icon">⌘</span><span>分支</span><strong>main</strong></div><div class="detail-row"><span class="detail-icon">◷</span><span>耗时</span><strong>01:42</strong></div></div>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <input id="fileInput" type="file" multiple hidden>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
