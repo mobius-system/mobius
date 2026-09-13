@@ -311,7 +311,7 @@ function RemoteAimuxMcpIndicatorInner({
           style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.25)' }}
           title="智能体已切换到新的 aimux 协作设备"
         >
-          注意：智能体已离开此设备前往新设备（{aimuxId}）
+          注意：智能体已经离开此设备前往新设备（{aimuxId}）
         </span>
       )}
 
