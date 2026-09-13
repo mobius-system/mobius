@@ -257,7 +257,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
   useEffect(() => { register(session.id, panelRef.current, lineRef.current); return () => register(session.id, null, null) }, [register, session.id])
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      // 历史存储: 协商 (常态 304) + 已加载组刷新后摊平取尾部. 无 SSE 的悬浮窗靠轮询驱动.
+      // 历史存储: 协商 (常态 304) + 已加载组刷新后摊平取尾部. SSE 已接管实时增量, 轮询仅作兜底对账.
       const store = getHistoryStore(session.id)
       await store.negotiate()
       if (signal?.aborted) return
@@ -284,6 +284,55 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
     const stop = pollRecursive((signal) => load(signal), 10_000)
     return () => { stop() }
   }, [load, session.id])
+  // SSE 实时增量: 悬浮窗不再只靠 10s 轮询驱动, 而是订阅该会话的 /events 事件流.
+  // group_created / entries / pending_opener 到货即写入 history store, 由 store 订阅
+  // 立即刷新可见条目 (轮询仍保留作断线/兜底对账). 事件早于协商到达时 store 内部先缓冲,
+  // 协商完成后按水位线对账并 emit, 订阅同样会触发刷新.
+  useEffect(() => {
+    const store = getHistoryStore(session.id)
+    const refreshVisible = () => {
+      const raw = store.flattenEntries().slice(-80)
+      setStateRef.current((prev) => ({ ...prev, entries: visibleOverlayEntries(raw) }))
+    }
+    const unsubscribe = store.subscribe(refreshVisible)
+
+    const token = localStorage.getItem('cc-token')
+    if (!token) return unsubscribe
+
+    let source: EventSource | null = null
+    let closed = false
+    const connect = () => {
+      if (closed) return
+      if (source) { try { source.close() } catch {} }
+      source = new EventSource(`/api/sessions/${encodeURIComponent(session.id)}/events?token=${encodeURIComponent(token)}`)
+      source.onopen = () => {
+        // 重连 = stateless 对账: 常态 304, 断线差额由水位线整组重拉补齐.
+        void store.negotiate()
+      }
+      const handle = (e: MessageEvent) => {
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.session_id && msg.session_id !== session.id) return
+          if (msg.event === 'group_created' || msg.event === 'entries' || msg.event === 'pending_opener') {
+            store.applySseEvent(msg)
+          }
+        } catch {}
+      }
+      ;['group_created', 'entries', 'pending_opener'].forEach((ev) => source?.addEventListener(ev, handle))
+    }
+    connect()
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!source || source.readyState === EventSource.CLOSED) connect()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      closed = true
+      unsubscribe()
+      document.removeEventListener('visibilitychange', onVisibility)
+      try { source?.close() } catch {}
+    }
+  }, [session.id])
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
       const element = messagesRef.current
