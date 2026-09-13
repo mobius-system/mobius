@@ -66,6 +66,8 @@ const envKeys = [
   'MOBIUS_TOKEN_PROXY_PORT',
   'MOBIUS_GULING_MCP_URL',
   'MOBIUS_GULING_MCP_TOKEN',
+  'MOBIUS_MOBILE_SYNC_REPO',
+  'GITHUB_TOKEN_DESKTOP',
 ];
 
 const inheritedEnv = {};

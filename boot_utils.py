@@ -101,6 +101,8 @@ RUNTIME_SETTINGS = ordered_unique(
         "MOBIUS_LOG_DIR",
         "MOBIUS_TOKEN_PROXY_HOST",
         "MOBIUS_TOKEN_PROXY_PORT",
+        "MOBIUS_MOBILE_SYNC_REPO",
+        "GITHUB_TOKEN_DESKTOP",
     ]
 )
 

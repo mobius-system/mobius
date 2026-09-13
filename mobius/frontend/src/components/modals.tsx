@@ -3920,40 +3920,23 @@ function manifestToRows(manifest: DesktopManifest): DesktopDownloadRow[] {
 }
 
 // 移动端构建清单 — 镜像桌面 DESKTOP_BUILDS。
-// Android APK 走公网 CDN (serve.nutshellai.cn, 源站 gptac-zs nginx 静态目录
-// /home/mobius/publish/auto/mobius-mobile/), 任何人无需登录 Mobius 服务器即可下载;
-// 同源 /mobile-builds/ 仍保留兜底。size / sha256 由 build.py --build-mobile 回填。
-const MOBILE_VERSION = '0.1.19'
-// 公网 CDN 前缀; 上传脚本: python3 /tmp/upload_mobile_cdn.py mobius-mobile <apk...> (参考 Issue 999efcd9)
-const MOBILE_CDN_BASE = 'https://serve.nutshellai.cn/publish/auto/mobius-mobile'
-// iOS 走 TestFlight 公开邀请链接: build 上传后在 App Store Connect → TestFlight 开启"公开链接",
-// 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE。
+// Android APK 运行时从同源 /mobile-builds/manifest.json 读取, 版本号/size/sha256 都不再硬编码;
+// 单一可信源是 mobius/backend/services/sync-desktop-builds.js#syncMobileBuilds 落盘的 manifest.json。
+// iOS 走 TestFlight 公开邀请链接, 仍是独立分发渠道, 保留硬编码占位: build 上传后在 App Store Connect → TestFlight
+// 开启"公开链接", 把 https://testflight.apple.com/join/<CODE> 里的 <CODE> 填到下面 IOS_TESTFLIGHT_CODE;
 // 仍是占位时, iOS 行显示"未上线"; 填入真实 code 后自动变成 TestFlight 下载按钮。
 const IOS_TESTFLIGHT_CODE = 'EgamfnR7'
-const MOBILE_BUILDS: Array<{ label: string; sub: string; file: string; size: number; sha256: string; url?: string }> = [
-  {
-    label: 'Android',
-    sub: 'arm64-v8a · 大多数现代手机',
-    file: `mobius-mobile-${MOBILE_VERSION}-android-arm64.apk`,
-    size: 4992156,
-    sha256: 'fc0cfae8b5260877fce3cadfa9f6cfc8bedb14218701719f6bb7435821bdf055',
-  },
-  {
-    label: 'Android',
-    sub: 'armeabi-v7a · 老旧手机',
-    file: `mobius-mobile-${MOBILE_VERSION}-android-armeabi-v7a.apk`,
-    size: 5000124,
-    sha256: '409002c6f507f0dc1b0faabc7c6f314b1af5824de415f55dd95ae5f228ff6a43',
-  },
-  {
-    label: 'iOS',
-    sub: 'TestFlight 内测 · iPhone/iPad',
-    file: '',
-    size: 0,
-    sha256: '',
-    url: `https://testflight.apple.com/join/${IOS_TESTFLIGHT_CODE}`,
-  },
-]
+
+interface MobileManifestBuild { platform: string; arch: string; format: string; file: string; size: number; sha256: string }
+interface MobileManifest { version: string; generatedAt?: string; builds: MobileManifestBuild[] }
+
+// 与 DESKTOP_ROW_LABELS 对齐: 给 manifest 里的 Android build 一个展示文案, arch 决定 sub 描述。
+const MOBILE_ROW_LABELS: Record<string, { label: string; sub: string }> = {
+  'android-arm64': { label: 'Android', sub: 'arm64-v8a · 大多数现代手机' },
+  'android-armeabi-v7a': { label: 'Android', sub: 'armeabi-v7a · 老旧手机' },
+  'android-x86_64': { label: 'Android', sub: 'x86_64 · 模拟器 / Chromebook' },
+  'android-x86': { label: 'Android', sub: 'x86 · 老旧模拟器' },
+}
 
 // 把字节数格式化为人类可读体积 (供移动端下载菜单显示包大小)。
 function formatBytes(n: number): string {
@@ -4217,6 +4200,42 @@ export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
 
 export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
+  const [manifest, setManifest] = useState<MobileManifest | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const requestedRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { abortRef.current?.abort() }, [])
+  useEffect(() => {
+    if (requestedRef.current) return
+    requestedRef.current = true
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    fetch('/mobile-builds/manifest.json', { signal: ctrl.signal, cache: 'no-cache' })
+      .then(async r => {
+        if (r.status === 404) throw new Error('manifest 不存在 (尚未发布任何移动端版本)')
+        if (!r.ok) throw new Error(`服务器返回 ${r.status}`)
+        return r.json() as Promise<MobileManifest>
+      })
+      .then(m => {
+        if (!m || typeof m.version !== 'string' || !Array.isArray(m.builds) || !m.builds.length) {
+          throw new Error('manifest 格式不完整')
+        }
+        setManifest(m)
+      })
+      .catch(e => setError(e?.name === 'AbortError' ? '获取版本信息超时，请稍后再试' : (e?.message || '无法获取版本信息')))
+      .finally(() => clearTimeout(timer))
+  }, [])
+
+  const androidBuilds = (manifest?.builds || []).filter(b => b.platform === 'android')
+  const iosLink = IOS_TESTFLIGHT_CODE
+    ? `https://testflight.apple.com/join/${IOS_TESTFLIGHT_CODE}`
+    : null
+  const muted = theme !== 'light' ? '#6b7280' : '#94a3b8'
+  const subMuted = theme !== 'light' ? '#94a3b8' : '#64748b'
+  const subtitle = manifest
+    ? `Mobius Mobile v${manifest.version} · 连接 Mobius 服务器，移动端使用小莫助理`
+    : (error ? '移动端 App 暂不可用' : '正在获取本服务器版本信息…')
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -4226,66 +4245,81 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载移动端 App</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
-              Mobius Mobile v{MOBILE_VERSION} · 连接 Mobius 服务器，移动端使用小莫助理
-            </div>
+            <div className="text-[11px] mt-0.5" style={{ color: muted }}>{subtitle}</div>
           </div>
           <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         <div className="space-y-2 mt-4">
-          {MOBILE_BUILDS.map(b => (b.url && !b.url.includes('REPLACE_WITH_TESTFLIGHT_CODE')) ? (
-            <a key={b.label} href={b.url} target="_blank" rel="noopener noreferrer"
-              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
-              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                </svg>
-                <div>
-                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
-                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
-                </div>
-              </div>
-              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>TestFlight</span>
-            </a>
-          ) : b.file ? (
-            <a key={b.file} href={`${MOBILE_CDN_BASE}/${b.file}`} download
-              title={b.sha256 ? `SHA256: ${b.sha256}` : undefined}
-              className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
-              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                </svg>
-                <div>
-                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
-                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>
-                    {b.sub}{formatBytes(b.size) ? ` · ${formatBytes(b.size)}` : ''}
-                  </div>
-                </div>
-              </div>
-              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
-            </a>
-          ) : (
-            <div key={b.label}
-              className="flex items-center justify-between px-4 py-3 rounded-xl opacity-50"
-              style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{b.label}</div>
-                  <div className="text-[11px]" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{b.sub}</div>
-                </div>
-              </div>
-              <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
+          {error ? (
+            <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>移动端 App 暂不可用</div>
+              <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
+              <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /mobile-builds/manifest.json</div>
             </div>
-          ))}
+          ) : androidBuilds.length === 0 && !iosLink ? (
+            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+          ) : (
+            <>
+              {androidBuilds.map(b => {
+                const key = `${b.platform}-${b.arch}`
+                const meta = MOBILE_ROW_LABELS[key] || { label: 'Android', sub: b.arch }
+                return (
+                  <a key={b.file} href={`/mobile-builds/${b.file}`} download
+                    title={b.sha256 ? `SHA256: ${b.sha256}` : undefined}
+                    className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+                    style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{meta.label}</div>
+                        <div className="text-[11px] truncate" style={{ color: subMuted }}>
+                          {meta.sub}{formatBytes(b.size) ? ` · ${formatBytes(b.size)}` : ''}{b.sha256 ? ` · SHA256 ${b.sha256.slice(0, 8)}…` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
+                  </a>
+                )
+              })}
+              {iosLink ? (
+                <a key="ios-testflight" href={iosLink} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl transition-colors hover:opacity-90"
+                  style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
+                      <div className="text-[11px] truncate" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
+                    </div>
+                  </div>
+                  <span className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>TestFlight</span>
+                </a>
+              ) : manifest ? (
+                <div key="ios-placeholder"
+                  className="flex items-center justify-between px-4 py-3 rounded-xl opacity-50"
+                  style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
+                  <div className="flex items-center gap-3">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
+                      <div className="text-[11px]" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
+                    </div>
+                  </div>
+                  <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
 
-        <div className="text-[11px] mt-4 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+        <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次安装需允许"未知来源应用"（设置 → 安全 → 允许此来源）</div>
           <div>· 登录后移动端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>mobile-&lt;设备名&gt;</code> 注册到设备列表</div>
           <div>· 服务器地址可在 App 设置页修改；推荐使用 HTTPS</div>

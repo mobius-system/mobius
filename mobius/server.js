@@ -334,10 +334,15 @@ function startDesktopBuildsSyncer() {
       if (r.downloaded > 0) {
         console.log(`[mobius/desktop-sync] ${r.tag}: ${r.downloaded} downloaded, ${r.skipped} cached → ${r.dest}`);
       }
-      // 移动端 APK 与桌面端同源同构, 一并同步 (无 mobile Release 时内部静默跳过)
-      const m = await syncMobileBuilds({
-        log: (...args) => console.log('[mobius/mobile-sync]', ...args),
-      });
+      // 移动端 APK 与桌面端同源同构, 一并同步 (无 mobile Release 时内部静默跳过)。
+      // MOBILE_SYNC_ENABLED=0 可单独关闭(本机构建机直接部署 mobile-builds/, 避免同步器
+      // 用 GitHub Release 的旧版本覆盖本地新部署并清理非 Release APK)。
+      let m = null;
+      if (!/^(0|false|no)$/i.test(process.env.MOBILE_SYNC_ENABLED || '')) {
+        m = await syncMobileBuilds({
+          log: (...args) => console.log('[mobius/mobile-sync]', ...args),
+        });
+      }
       if (m && m.downloaded > 0) {
         console.log(`[mobius/mobile-sync] ${m.tag}: ${m.downloaded} downloaded, ${m.skipped} cached → ${m.dest}`);
       }

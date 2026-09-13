@@ -19,11 +19,14 @@ const DESKTOP_BUILDS_DIR = path.join(__dirname, "..", "..", "desktop-builds");
 const MOBILE_BUILDS_DIR = path.join(__dirname, "..", "..", "mobile-builds");
 const GITHUB_API = "https://api.github.com";
 const REPO = "mobius-system/mobius";
+// 移动端 Release 源仓库可配(默认与桌面端同仓; App 仓库独立时设
+// MOBIUS_MOBILE_SYNC_REPO=owner/repo, 例如 Louis-ZhangLe/momo-mobile):
+const MOBILE_REPO = process.env.MOBIUS_MOBILE_SYNC_REPO || REPO;
 
 /**
  * 下载单个文件 (支持自动跟随重定向, 幂等: size 一致跳过).
  */
-function downloadFile(url, destPath, expectedSize) {
+function downloadFile(url, destPath, expectedSize, token) {
   return new Promise((resolve, reject) => {
     // 幂等检查
     try {
@@ -40,7 +43,13 @@ function downloadFile(url, destPath, expectedSize) {
       reject(new Error("Download timeout"));
     }, 180000);
 
-    https.get(url, { headers: { "User-Agent": "Mobius-Desktop-Sync/1.0" } }, (res) => {
+    const headers = { "User-Agent": "Mobius-Desktop-Sync/1.0" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      // api.github.com 资产端点需 octet-stream 才返回文件本体(否则返回资产元数据 JSON)
+      if (url.startsWith("https://api.github.com/")) headers["Accept"] = "application/octet-stream";
+    }
+    https.get(url, { headers }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
         clearTimeout(timeout);
@@ -122,7 +131,9 @@ async function syncDesktopBuilds(options = {}) {
   for (const asset of assets) {
     const destPath = path.join(DESKTOP_BUILDS_DIR, asset.name);
     try {
-      const r = await downloadFile(asset.browser_download_url, destPath, asset.size);
+      // 私有仓库: browser_download_url(CDN通道)对 PAT 常404, 用 asset.url(api端点+octet-stream)稳定
+      const assetUrl = ghToken ? (asset.url || asset.browser_download_url) : asset.browser_download_url;
+      const r = await downloadFile(assetUrl, destPath, asset.size, ghToken);
       results.push({ ...r });
       if (!r.skipped) {
         log(`[desktop-sync]   ↓ ${r.file} (${(r.size / 1024 / 1024).toFixed(1)} MB)`);
@@ -204,12 +215,13 @@ async function syncDesktopBuilds(options = {}) {
  * 按 tag 前缀查最新 Release (releases/latest 只返回全局最新, mobile 与 desktop 各自独立发版).
  * 列出全部 releases (per_page=20), 取 tag_name 以 prefix 开头且非 draft/prerelease 的第一个 (列表按创建时间倒序).
  */
-function fetchLatestReleaseByTagPrefix(prefix, token) {
+function fetchLatestReleaseByTagPrefix(prefix, token, repoOverride) {
   return new Promise((resolve, reject) => {
     const headers = { "User-Agent": "Mobius-Desktop-Sync/1.0", "Accept": "application/vnd.github+json" };
     if (token) headers["Authorization"] = `token ${token}`;
 
-    const url = `${GITHUB_API}/repos/${REPO}/releases?per_page=20`;
+    const repo = repoOverride || REPO;
+    const url = `${GITHUB_API}/repos/${repo}/releases?per_page=20`;
     https.get(url, { headers }, (res) => {
       if (res.statusCode !== 200) {
         let body = "";
@@ -247,7 +259,7 @@ async function syncMobileBuilds(options = {}) {
   const startTime = Date.now();
   let release;
   try {
-    release = await fetchLatestReleaseByTagPrefix("mobile-v", ghToken);
+    release = await fetchLatestReleaseByTagPrefix("mobile-v", ghToken, MOBILE_REPO);
   } catch (e) {
     log(`[mobile-sync] skip: ${e.message}`);
     return { ok: true, skipped: true, reason: e.message };
@@ -265,7 +277,9 @@ async function syncMobileBuilds(options = {}) {
   for (const asset of apkAssets) {
     const destPath = path.join(MOBILE_BUILDS_DIR, asset.name);
     try {
-      const r = await downloadFile(asset.browser_download_url, destPath, asset.size);
+      // 私有仓库: browser_download_url(CDN通道)对 PAT 常404, 用 asset.url(api端点+octet-stream)稳定
+      const assetUrl = ghToken ? (asset.url || asset.browser_download_url) : asset.browser_download_url;
+      const r = await downloadFile(assetUrl, destPath, asset.size, ghToken);
       results.push({ ...r });
       if (!r.skipped) log(`[mobile-sync]   ↓ ${r.file} (${(r.size / 1024 / 1024).toFixed(1)} MB)`);
     } catch (err) {
@@ -284,6 +298,44 @@ async function syncMobileBuilds(options = {}) {
       }
     }
   } catch (_) { /* 清理失败不影响 */ }
+
+  // 若 Release 未包含 manifest.json (旧 CI 或独立 APK 仓库), 则从本地 APK 重新生成。
+  // 镜像桌面 syncDesktopBuilds 165-197 行的 hasManifest 分支, 供 MobileDownloadModal 运行时读取。
+  const hasMobileManifest = apkAssets.some((a) => a.name === "manifest.json");
+  if (!hasMobileManifest) {
+    try {
+      const version = (release.tag_name || "").replace("mobile-v", "");
+      const builds = [];
+      const currentApkOnly = new Set(apkAssets.map((a) => a.name).filter((n) => n.endsWith(".apk")));
+      for (const name of currentApkOnly) {
+        const filePath = path.join(MOBILE_BUILDS_DIR, name);
+        try {
+          const st = fs.statSync(filePath);
+          const sha256 = require("crypto").createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+          // 从文件名解析: mobius-mobile-<version>-android-<arch>.apk
+          //   mobius-mobile-0.1.26-android-arm64.apk          -> rest = "android-arm64"
+          //   mobius-mobile-0.1.26-android-armeabi-v7a.apk    -> rest = "android-armeabi-v7a"
+          // 用 firstIndexOf("-") 而非 lastIndexOf: armeabi-v7a 这种多段 arch 需要保留整体。
+          const rest = name.replace(/^mobius-mobile-[^-]+-/, "").replace(".apk", "");
+          const sep = rest.indexOf("-");
+          const platform = sep > 0 ? rest.slice(0, sep) : rest;
+          const arch = sep > 0 ? rest.slice(sep + 1) : "arm64";
+          builds.push({ platform, arch, format: "apk", file: name, size: st.size, sha256 });
+        } catch (_) { /* skip */ }
+      }
+      if (builds.length > 0) {
+        const manifest = {
+          version,
+          generatedAt: new Date().toISOString(),
+          builds: builds.sort((a, b) => `${a.platform}-${a.arch}`.localeCompare(`${b.platform}-${b.arch}`)),
+        };
+        fs.writeFileSync(path.join(MOBILE_BUILDS_DIR, "manifest.json"), JSON.stringify(manifest, null, 2));
+        log(`[mobile-sync]   ✓ generated manifest.json (${builds.length} builds, from local apk)`);
+      }
+    } catch (e) {
+      log(`[mobile-sync]   ⚠ manifest.json generation failed: ${e.message}`);
+    }
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const downloaded = results.filter((r) => !r.error && !r.skipped).length;

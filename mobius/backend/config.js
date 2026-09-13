@@ -199,6 +199,10 @@ module.exports = {
   EXT_PUSH_ENABLED: process.env.MOBIUS_EXT_PUSH_ENABLED !== '0',
   // 负责推送的扩展 name (其 handler 实现 notify_user). 默认 momo-mobile.
   EXT_PUSH_EXTENSION_NAME: process.env.MOBIUS_EXT_PUSH_EXTENSION_NAME || 'momo-mobile',
+  // 桌面端/移动端 Release 同步器: 从该 GitHub 仓库拉取最新 Release 资产并落到 /mobile-builds/.
+  // 三道闸: boot_utils.RUNTIME_SETTINGS + ecosystem.config.js envKeys + 这里.
+  MOBIUS_MOBILE_SYNC_REPO: String(process.env.MOBIUS_MOBILE_SYNC_REPO || '').trim(),
+  GITHUB_TOKEN_DESKTOP: String(process.env.GITHUB_TOKEN_DESKTOP || '').trim(),
 
   // forgotten-flag-scanner 检测到 "agent 停工但 running.flag 未删" 时, 自动发给
   // 该 session 的默认提醒文案 (单一真相源). 项目可在设置里用 forgotten_flag_message
