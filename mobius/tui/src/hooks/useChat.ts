@@ -36,6 +36,8 @@ export interface ChatController {
   sending: boolean
   error: string | null
   sessionId: string | null
+  /** 智能体已离开本 TUI 设备、前往的新设备 ID; null = 未离开 (仍绑定本设备或非本设备会话). */
+  switchedAway: string | null
   send: (text: string) => Promise<void>
   stop: () => Promise<void>
   pauseToDequeue: () => Promise<void>
@@ -116,6 +118,7 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
   const [typing, setTyping] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [switchedAway, setSwitchedAway] = useState<string | null>(null)
   const sseRef = useRef<SseConnection | null>(null)
   // agent-history mini group store (协议 ①②③ 的 TUI 侧消费形态).
   const groupSlotsRef = useRef<Map<string, GroupSlot>>(new Map())
@@ -407,6 +410,14 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
         if (stopped || epoch !== statusEpochRef.current) return
         aliveRef.current = !!status.alive
 
+        // 设备切换检测: 本会话最初绑定本 TUI 设备 (initial_aimux_id == myId) 但当前已指向
+        // 别处 (aimux_id != myId) → 智能体"已离开本设备前往新设备". 用于渲染显眼提示 (仅 TUI 端).
+        const myId = tuiAimuxIdentifier()
+        const left = status.initial_aimux_id === myId && status.aimux_id && status.aimux_id !== myId
+          ? status.aimux_id
+          : null
+        setSwitchedAway(left)
+
         if (status.alive && status.working) {
           workingHintUntilRef.current = 0
           updateTyping(true)
@@ -552,5 +563,5 @@ export function useChat({ client, ready, resumeSessionId }: ChatApi): ChatContro
     pollNowRef.current?.()
   }, [sessionId, client])
 
-  return { entries, pendingUser, pending, typing, sending, error, sessionId, send, stop, pauseToDequeue }
+  return { entries, pendingUser, pending, typing, sending, error, sessionId, switchedAway, send, stop, pauseToDequeue }
 }

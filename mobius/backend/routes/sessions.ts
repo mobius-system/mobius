@@ -1460,6 +1460,12 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     }
   }
 
+  // aimux 设备绑定 (TUI 客户端据此判断"智能体是否已离开本设备"): 从 pc_client_metadata
+  // 解析出当前 aimux_id 与初始 initial_aimux_id, 供 /status 轮询消费.
+  const pcMeta = parsePcClientMetadata(session.pc_client_metadata);
+  const aimuxId = typeof pcMeta?.aimux_id === 'string' ? pcMeta.aimux_id.trim() : null;
+  const initialAimuxId = typeof pcMeta?.initial_aimux_id === 'string' ? pcMeta.initial_aimux_id.trim() : null;
+
   res.json({
     session_id: id,
     alive,
@@ -1474,6 +1480,8 @@ router.get('/:id/status', auth, (req: express.Request, res: express.Response) =>
     agent_session_id: session.agent_session_id || null,
     worktree_ignored: worktreeIgnored,
     real_time_info: realTimeInfo,
+    aimux_id: aimuxId,
+    initial_aimux_id: initialAimuxId,
     // 会话当前 model 是否仍可用 (管理员可能已删除该模型配置).
     // false 时前端进入只读状态, 显示"更换模型并继续"入口, 禁止发送.
     model_available: !!modelRegistry.resolveSessionModel(session.model),

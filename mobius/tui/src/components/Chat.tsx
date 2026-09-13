@@ -389,6 +389,12 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
+        {chat.switchedAway ? (
+          <Box flexShrink={0} borderStyle="round" borderColor="yellow" paddingX={1}>
+            <Text color="yellow" bold>注意：智能体已经离开此设备前往新设备（{chat.switchedAway}）</Text>
+          </Box>
+        ) : null}
+
         {!showWelcome
           ? <Box width="100%" flexShrink={0}><Text dimColor wrap="truncate-end">  {navigationPosition}{viewport.hasNewer ? <Text color="yellowBright">↓ 有新内容</Text> : null}{navigationDetail}</Text></Box>
           : null}

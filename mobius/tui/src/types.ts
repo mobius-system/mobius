@@ -84,6 +84,7 @@ export interface Issue {
 export interface PcClientMetadata {
   work_mode: 'hub' | 'pc' | 'dual'
   aimux_id: string
+  initial_aimux_id?: string
   local_path?: string
   is_tui: boolean
   add_remote_aimux_mcp?: boolean
@@ -137,6 +138,8 @@ export interface SessionRuntimeStatus {
   agent_backend?: string
   real_time_info?: string
   model_available?: boolean
+  aimux_id?: string | null
+  initial_aimux_id?: string | null
 }
 
 // ── Preferences lookups ──────────────────────────────────────────────────────
