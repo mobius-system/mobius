@@ -1856,6 +1856,7 @@ function ModelPromptLimitsCard() {
           const savingCompactToken = savingCompactTokenKey === row.key
           const savingOrder = savingOrderKey === row.key
           const isClaudeCode = row.backend === 'tmux-claude-code'
+          const isCodex = row.backend === 'tmux-codex'
           // DSH (deepseek-harness) 无视代理配置, 不给选择器.
           const isDsh = row.backend === 'deepseek-harness'
           return (
@@ -1945,7 +1946,7 @@ function ModelPromptLimitsCard() {
                 </select>
               </div>
               )}
-              {isClaudeCode && (
+              {(isClaudeCode || isCodex) && (
                 <ToggleSwitch
                   checked={capture}
                   disabled={savingCapture || loading}

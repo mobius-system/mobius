@@ -48,16 +48,8 @@ function modelProxyMode(key: any): any {
   return adminSettings.getModelNetworkProxy(key, 'direct')
 }
 
-// 黑客帝国数字雨 · 若该模型开启了"捕获实时输出"且 .withproxy.json 已生成 (保存开关时落盘),
-// 启动 cc 时改用 withproxy 变体 → 请求经 token-proxy 中转并被抓取流式 token.
-// 找不到 withproxy 文件 (例如尚未保存) 就安全回落原 settings, 不阻断启动.
-function effectiveClaudeSettingsPath(resolved: any): any {
-  const base = resolved?.settingsPath
-  if (!base) return base
-  if (!adminSettings.getModelCaptureStream(resolved.key)) return base
-  const withProxy = modelAccess.withProxyPathFor(base)
-  return fileExists(withProxy) ? withProxy : base
-}
+// 数字雨 · captureStream 标记: 启动链路 (tmux-claude-code) 据此 per-session 生成 withproxy,
+// token 编入 sessionId/agent, token-proxy 按 session 分桶缓存. 解析阶段不再换 withproxy.
 
 function codexHome(): string {
   return process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
@@ -393,6 +385,7 @@ function modelLaunchOptionsFor(session: any): any {
       codexConfigPath: resolved.codexConfigPath,      // 物化的 .config.toml
       codexSecretEnvKey: resolved.codexSecretEnvKey,
       codexSecretValue: resolved.codexSecretValue,
+      captureStream: adminSettings.getModelCaptureStream(resolved.key) === true,
       useProxy: resolved.useProxy,                    // 每模型独立, 不再读 admin-settings
       proxyMode: resolved.proxyMode || 'direct',
       forceNoProxy: false,
@@ -405,7 +398,8 @@ function modelLaunchOptionsFor(session: any): any {
     return {
       backend: resolved.backend,
       model: resolved.claudeModel,
-      settingsPath: effectiveClaudeSettingsPath(resolved),
+      settingsPath: resolved.settingsPath,
+      captureStream: adminSettings.getModelCaptureStream(resolved.key) === true,
       useProxy: resolved.useProxy,
       proxyMode: resolved.proxyMode || 'direct',
       forceNoProxy: false,
@@ -417,7 +411,8 @@ function modelLaunchOptionsFor(session: any): any {
   return {
     backend: resolved.backend,
     model: resolved.model,
-    settingsPath: effectiveClaudeSettingsPath(resolved) || undefined,
+    settingsPath: resolved.settingsPath || undefined,
+    captureStream: adminSettings.getModelCaptureStream(resolved.key) === true,
     useProxy: resolved.useProxy,
     proxyMode: resolved.proxyMode || 'direct',
     codexProfileKey: resolved.codexProfileKey || undefined,

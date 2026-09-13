@@ -508,6 +508,49 @@ function enforceWithProxyInvariant(settingsPath: string, captureOn: boolean): vo
   }
 }
 
+// ── per-session withproxy 生成 (数字雨: token 编入 sessionId/agent) ─────────
+// 与 per-model withproxy 的区别: 每个 session 一份, token 带 session/agent,
+// token-proxy 据此按 session 分桶缓存. 文件名 settings-<key>.withproxy.<sessionId>.json.
+function sessionWithProxyPathFor(settingsPath: string, sessionId: string): string {
+  const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')
+  return String(settingsPath || '').replace(/\.json$/, `.withproxy.${safe}.json`)
+}
+
+function ensureSessionWithProxy(settingsPath: string, opts: { sessionId: string; agent?: string | null }): string {
+  const src = String(settingsPath || '').trim()
+  if (!src) throw new Error('settings 路径为空, 无法生成 per-session withproxy')
+  let original: any = { env: {} }
+  if (fs.existsSync(src)) {
+    try { original = JSON.parse(fs.readFileSync(src, 'utf8')) || { env: {} } } catch { original = { env: {} } }
+  }
+  const env = (original && typeof original === 'object' ? original.env : null) || {}
+  const baseUrl = String(env.ANTHROPIC_BASE_URL || '').trim().replace(/\/+$/, '') || 'https://api.anthropic.com'
+  const authToken = String(env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '').trim()
+  const model = String(original?.model || env.ANTHROPIC_MODEL || '').trim()
+  // token 载荷采用标准结构 (encoding.ts resolveUpstream 直接解), 编入真实上游 + session/agent.
+  const upstream = { wire: 'anthropic', baseUrl, authToken, model, sessionId: opts.sessionId, agent: opts.agent ?? null }
+
+  let cloned: any = JSON.parse(JSON.stringify(original))
+  if (!cloned || typeof cloned !== 'object') cloned = {}
+  if (!cloned.env || typeof cloned.env !== 'object') cloned.env = {}
+  cloned.env.ANTHROPIC_BASE_URL = TOKEN_PROXY_BASE_URL
+  cloned.env.ANTHROPIC_AUTH_TOKEN = encodeProxyToken(upstream)
+  delete cloned.env.ANTHROPIC_API_KEY
+  const out = sessionWithProxyPathFor(src, opts.sessionId)
+  writeJsonPrivate(out, cloned)
+  return out
+}
+
+function removeSessionWithProxy(settingsPath: string, sessionId: string): boolean {
+  const out = sessionWithProxyPathFor(String(settingsPath || ''), sessionId)
+  try {
+    if (fs.existsSync(out)) { fs.unlinkSync(out); return true }
+  } catch (e: any) {
+    console.warn(`[model-access] 删除 per-session withproxy 失败 (${out}): ${e.message}`)
+  }
+  return false
+}
+
 // ── 手动上下文限制 · 注入 settings.json / codex toml ─────────────────────────
 // 管理员在"系统设置 → 模型创建限制"为每个模型配置触发自动压缩的 token 阈值.
 //   claude code → settings-<key>.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW (字符串值)
@@ -925,6 +968,9 @@ export {
   ensureWithProxyForSettingsPath,
   removeWithProxyForSettingsPath,
   enforceWithProxyInvariant,
+  sessionWithProxyPathFor,
+  ensureSessionWithProxy,
+  removeSessionWithProxy,
   applyAutoCompactToClaudeSettings,
   applyAutoCompactToCodexConfig,
   listCodexModels,

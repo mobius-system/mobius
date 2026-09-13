@@ -49,6 +49,7 @@ const {
 const { MOBIUS_DATA_PATH } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
+const { ensureSessionWithProxy } = require('../services/model-access')
 
 // ── 常量 ────────────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -387,7 +388,7 @@ function assertProxyAvailable(mode = 'env_proxychains') {
 // (见 session-context 注入的提示). isJobGoalAccomplished 据"文件是否还在"判断任务是否结束.
 // dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
 // 本后端在此解包出自己需要的字段 (model/settingsPath/代理挡位), 旧扁平字段作兼容兜底.
-function unpackLaunch(opts: ClaudeDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; forceNoProxy: boolean } {
+function unpackLaunch(opts: ClaudeDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; forceNoProxy: boolean; captureStream: boolean } {
   const launch = (opts?.modelLaunchOptions || {}) as Record<string, any>
   return {
     model: launch.model || opts.model || null,
@@ -395,6 +396,7 @@ function unpackLaunch(opts: ClaudeDispatchOpts): { model: string | null; setting
     useProxy: launch.forceNoProxy ? false : (launch.useProxy === true || opts.useProxy === true),
     proxyMode: launch.forceNoProxy ? 'direct' : (launch.proxyMode || opts.proxyMode || 'direct'),
     forceNoProxy: launch.forceNoProxy === true || opts.forceNoProxy === true,
+    captureStream: launch.captureStream === true,
   }
 }
 
@@ -538,6 +540,8 @@ interface ClaudeRuntimeEntry {
   useProxy: boolean
   proxyMode?: string
   settingsPath: string | null
+  withProxyPath?: string | null
+  captureStream?: boolean
   forceNoProxy: boolean
   displayName: string | null
   jsonlPath: string
@@ -926,7 +930,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // ── 内部实现 ──────────────────────────────────────────
   async _createImpl(opts: ClaudeDispatchOpts) {
     const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, enableGulingMcp = false } = opts
-    const { model, useProxy, proxyMode, settingsPath, forceNoProxy } = unpackLaunch(opts)
+    const { model, useProxy, proxyMode, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -934,7 +938,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 模式特点: window 可跨后端重启存活. 已有活窗口 → 复用 (跟原 hub.startSession
     // idempotent 一致). 这跟 stream-json 那版"严格新建"语义不同, 是有意为之.
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp })
+      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, enableGulingMcp })
     } else {
       // 窗口在但 runtime entry 可能不在 (后端首次 reload) — 兜底建一个
       if (!this.runtime.has(sessionId) && agentSessionId) {
@@ -969,7 +973,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
   async _queueImpl(opts: ClaudeDispatchOpts) {
     const { sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false } = opts
-    let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy } = unpackLaunch(opts)
+    let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -994,6 +998,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         useProxy: proxyMode.useProxy,
         proxyMode: proxyMode.proxyMode,
         settingsPath: finalSettingsPath,
+        captureStream: captureStream || (persisted?.captureStream ?? false),
         forceNoProxy: proxyMode.forceNoProxy,
         displayName: displayName ?? (persisted?.displayName ?? undefined),
         agentSessionId: finalAgentSid ?? undefined,
@@ -1075,6 +1080,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     const wasWorking = wasAlive && this.isWorking(sessionId)
     const entry = this.runtime.get(sessionId)
     if (entry?.watch?.stop) { try { entry.watch.stop() } catch {} }
+    // 清理 per-session withproxy (数字雨 token 文件).
+    if (entry?.withProxyPath) { try { fs.unlinkSync(entry.withProxyPath) } catch {} }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1091,7 +1098,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }: ClaudeDispatchOpts) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }: ClaudeDispatchOpts) {
     // dispatch 层字段可空: 这里归一成非空工作值 (persisted 兜底在调用方完成).
     if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
     const finalDisplayName = displayName || null
@@ -1103,7 +1110,18 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     const effFlagRoot = finalFlagRoot
     // 新启动用调用方传入的 session 实际值；没有历史 runtime 时默认不走代理。
     // settingsPath 传入时转成绝对路径，避免后续 bash 命令受当前目录影响。
-    const finalSettingsPath = settingsPath ? path.resolve(settingsPath) : null
+    let finalSettingsPath = settingsPath ? path.resolve(settingsPath) : null
+    // 数字雨 captureStream: 启动时 per-session 生成带 sessionId/agent 的 withproxy.
+    let withProxyPath: string | null = null
+    if (captureStream && finalSettingsPath) {
+      try {
+        withProxyPath = ensureSessionWithProxy(finalSettingsPath, { sessionId, agent: finalDisplayName })
+        finalSettingsPath = withProxyPath
+      } catch (e: any) {
+        console.warn(`[tmux-claude-code] per-session withproxy 生成失败, 回落原 settings (${sessionId}): ${e?.message || e}`)
+        withProxyPath = null
+      }
+    }
     // 如果指定了 settings 文件，就在启动前确认文件真实存在。
     if (finalSettingsPath && !fs.existsSync(finalSettingsPath)) {
       // settings 文件缺失时直接失败，避免 Claude 用默认配置悄悄启动。
@@ -1293,8 +1311,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       agentSessionId: claudeSessionId,
       // 工作目录、运行标记根目录、模型和代理设置。
       cwd, flagRoot: effFlagRoot, model: model || null, useProxy: finalUseProxy, proxyMode: finalProxyMode,
-      // settings、强制不走代理、展示名等启动参数。
-      settingsPath: finalSettingsPath, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
+      // settings、per-session withproxy、强制不走代理、展示名等启动参数。
+      settingsPath: finalSettingsPath, withProxyPath, captureStream: !!captureStream, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
       // jsonl 路径、启动时间和 watcher 占位。
       jsonlPath: jp, startedAt: Date.now(), watch: null,
     })
@@ -1304,7 +1322,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       agentSessionId: claudeSessionId, cwd, flagRoot: effFlagRoot,
       // 持久化模型、代理、settings 和展示名。
       model: model || null, useProxy: finalUseProxy,
-      settingsPath: finalSettingsPath, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
+      settingsPath: finalSettingsPath, withProxyPath, captureStream: !!captureStream, forceNoProxy: finalForceNoProxy, displayName: displayName || null,
       // 持久化 jsonl 路径和启动时间。
       jsonlPath: jp, startedAt: Date.now(),
     })

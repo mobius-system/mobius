@@ -948,22 +948,12 @@ router.put('/settings/model-prompt-limits', adminAuth, (req: express.Request, re
       const mode = proxyMode ?? proxy_mode ?? ((useProxy ?? use_proxy) === true);
       adminSettings.setModelNetworkProxy(modelKey, mode);
     }
-    // 黑客帝国数字雨 · 捕获实时输出 (仅 claude code). 开启=生成 .withproxy.json,
-    // 关闭=删除. 持久化到 admin-settings.modelCaptureStream, 启动时由 model-registry 选用.
+    // 黑客帝国数字雨 · 捕获实时输出 (claude code / codex). 持久化到 admin-settings.modelCaptureStream.
+    // withproxy 由启动链路 per-session 生成 (tmux-claude-code / tmux-codex), 保存开关不再 per-model 落盘.
     if (Object.prototype.hasOwnProperty.call(req.body || {}, 'captureStream')
       || Object.prototype.hasOwnProperty.call(req.body || {}, 'capture_stream')) {
       const captureOn = (captureStream ?? capture_stream) === true;
       adminSettings.setModelCaptureStream(modelKey, captureOn);
-      try {
-        const resolved = modelRegistry.resolveSessionModel(modelKey);
-        const settingsPath = resolved?.backend === 'tmux-claude-code' ? (resolved.settingsPath || null) : null;
-        // 走统一不变量: capture 开 → 从最新 settings 克隆 (带上 auto-compact 等字段); 关 → 删.
-        // 与编辑/删除模型路径同一函数, 保证两者同时开启时压缩阈值也同步进克隆.
-        if (settingsPath) modelAccess.enforceWithProxyInvariant(settingsPath, captureOn);
-      } catch (e) {
-        // 仅 claude-code 模型可生成 withproxy; 解析不到配置就跳过, 不阻断开关保存.
-        console.warn(`[admin] captureStream withproxy 生成跳过 (${modelKey}): ${(e as Error).message}`);
-      }
     }
     // 手动上下文限制 · 每模型触发自动压缩的 token 阈值.
     //   claude code → 注入 settings.json 的 env.CLAUDE_CODE_AUTO_COMPACT_WINDOW

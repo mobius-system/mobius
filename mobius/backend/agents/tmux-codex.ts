@@ -49,9 +49,10 @@ const {
   safeRemoveRunningFlag,
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
-const { MOBIUS_DATA_PATH } = require('../config')
+const { MOBIUS_DATA_PATH, TOKEN_PROXY_BASE_URL } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
+const { encodeProxyToken } = require('../token-proxy/encoding')
 
 let Database: any = null
 try { Database = require('better-sqlite3') } catch {}
@@ -243,7 +244,7 @@ function shellQuote(s: string) {
 
 // dispatch 契约: 调用方传 modelLaunchOptions (model-registry.modelLaunchOptionsFor 的整包输出).
 // 本后端在此解包出自己需要的字段 (model/settingsPath/codex*/代理挡位), 旧扁平字段作兼容兜底.
-function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; codexProfileKey: string | null; codexChannel: string | null; codexConfigPath: string | null; codexSecretEnvKey: string | null; codexSecretValue: string | null } {
+function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settingsPath: string | null; useProxy: boolean; proxyMode: string; codexProfileKey: string | null; codexChannel: string | null; codexConfigPath: string | null; codexSecretEnvKey: string | null; codexSecretValue: string | null; captureStream: boolean } {
   const launch = (opts?.modelLaunchOptions || {}) as Record<string, any>
   return {
     model: launch.model || opts.model,
@@ -255,7 +256,35 @@ function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settings
     codexConfigPath: launch.codexConfigPath || opts.codexConfigPath || null,
     codexSecretEnvKey: launch.codexSecretEnvKey || opts.codexSecretEnvKey || null,
     codexSecretValue: launch.codexSecretValue || opts.codexSecretValue || null,
+    captureStream: launch.captureStream === true,
   }
+}
+
+// 数字雨 · codex per-session withproxy: base_url→token-proxy, api_key→mpx1 token (wire=openai).
+function codexWithProxyPathFor(profileKey: string, sessionId: string): string {
+  const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')
+  return path.join(CODEX_HOME, `${profileKey}.withproxy.${safe}.config.toml`)
+}
+
+function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: string, upstream: any): string {
+  const raw = fs.readFileSync(srcPath, 'utf8')
+  const proxyToken = encodeProxyToken(upstream)
+  const outPath = codexWithProxyPathFor(profileKey, sessionId)
+  const lines = raw.split(/\r?\n/)
+  let baseUrlHit = false
+  let apiKeyHit = false
+  const outLines = lines.map((line: string) => {
+    if (/^\s*base_url\s*=/.test(line)) { baseUrlHit = true; return `base_url = "${TOKEN_PROXY_BASE_URL}"` }
+    if (/^\s*api_key\s*=/.test(line)) { apiKeyHit = true; return `api_key = "${proxyToken}"` }
+    return line
+  })
+  if (!baseUrlHit || !apiKeyHit) {
+    throw new Error(`codex config 缺 base_url/api_key (base_url=${baseUrlHit}, api_key=${apiKeyHit})`)
+  }
+  let next = outLines.join('\n')
+  if (!next.endsWith('\n')) next += '\n'
+  fs.writeFileSync(outPath, next, { mode: 0o600 })
+  return outPath
 }
 
 function normalizeCodexChannel(value: unknown) {
@@ -561,6 +590,8 @@ interface CodexRuntimeEntry {
   codexProfileKey: string | null
   codexConfigPath: string | null
   codexSecretEnvKey: string | null
+  withProxyPath?: string | null
+  captureStream?: boolean
   useProxy: boolean
   proxyMode: string
   displayName: string | null
@@ -1171,6 +1202,8 @@ class TmuxCodexBackend extends AgentBackend {
     const wasWorking = wasAlive && this.isWorking(sessionId)
     const entry = this.runtime.get(sessionId)
     if (entry?.watch?.stop) { try { entry.watch.stop() } catch {} }
+    // 清理 per-session withproxy (数字雨 token 文件).
+    if (entry?.withProxyPath) { try { fs.unlinkSync(entry.withProxyPath) } catch {} }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1308,7 +1341,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // 启动一个新的 Codex tmux 窗口，并返回用于后续绑定 rollout 的启动信息。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName }: CodexDispatchOpts) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName }: CodexDispatchOpts) {
     if (!sessionId || !cwd) throw new Error('_spawnWindow requires sessionId + cwd')
     // 确保承载 agent 窗口的 tmux hub session 已经存在。
     ensureHub()
@@ -1341,6 +1374,22 @@ class TmuxCodexBackend extends AgentBackend {
       ? resolveSecretValue(secretEnvKey, resolveCodexConfigSecretValue(configText, codexSecretValue))
       // 没有 env_key 时不导出秘钥。
       : ''
+    // 数字雨 captureStream: per-session 生成 codex withproxy toml (base_url→token-proxy, api_key→mpx1 token).
+    let finalProfileKey = profileKey
+    let withProxyPath: string | null = null
+    if (captureStream) {
+      try {
+        const baseUrl = tomlStringValue(configText, 'base_url')
+        const authToken = secretValue || resolveCodexConfigSecretValue(configText, codexSecretValue)
+        if (!baseUrl || !authToken) throw new Error(`codex 缺 base_url/api_key (base_url=${!!baseUrl}, authToken=${!!authToken})`)
+        const upstream = { wire: 'openai', baseUrl, authToken, model: finalModel, sessionId, agent: displayName || null }
+        withProxyPath = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream)
+        finalProfileKey = `${profileKey}.withproxy.${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
+      } catch (e: any) {
+        console.warn(`[tmux-codex] per-session withproxy 生成失败, 回落原 profile (${sessionId}): ${e?.message || e}`)
+        withProxyPath = null
+      }
+    }
     // useProxy 与 profile 完全解耦: 只决定网络层挡位.
     // 四挡: direct | env | proxychains | env_proxychains (兼容旧 boolean).
     const finalProxyMode = normalizeProxyMode4(proxyMode, normalizeUseProxy(useProxy, false) ? 'env_proxychains' : 'direct')
@@ -1388,7 +1437,7 @@ class TmuxCodexBackend extends AgentBackend {
     // 对每个 Codex 参数做 shell 转义后拼成命令行字符串。
     const argStr = codexArgs.filter((a: unknown): a is string => typeof a === 'string').map(shellQuote).join(' ')
     // profile 参数固定指向归一化后的 channel/profile。
-    const profileArg = `--profile ${shellQuote(profileKey)}`
+    const profileArg = `--profile ${shellQuote(finalProfileKey)}`
 
     // 逐行构造 bash -lc 命令，最后用 && 串起来。
     const cmdLines = [
@@ -1520,9 +1569,11 @@ class TmuxCodexBackend extends AgentBackend {
         // 实际使用的模型。
         model: finalModel,
         // 实际使用的 Codex profile。
-        codexProfileKey: profileKey,
+        codexProfileKey: finalProfileKey,
         // 实际使用的 Codex 配置路径。
         codexConfigPath: codexConfigPath || expectedConfigPath,
+        withProxyPath,
+        captureStream: !!captureStream,
         // 注入给 Codex 的秘钥环境变量名。
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
@@ -1549,8 +1600,10 @@ class TmuxCodexBackend extends AgentBackend {
         flagRoot: effFlagRoot,
         // 模型、profile、配置路径和秘钥环境变量名。
         model: finalModel,
-        codexProfileKey: profileKey,
+        codexProfileKey: finalProfileKey,
         codexConfigPath: codexConfigPath || expectedConfigPath,
+        withProxyPath,
+        captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // 代理开关、展示名和启动时间。
         useProxy: finalUseProxy,
@@ -1571,9 +1624,11 @@ class TmuxCodexBackend extends AgentBackend {
         // 实际使用的模型。
         model: finalModel,
         // 实际使用的 Codex profile。
-        codexProfileKey: profileKey,
+        codexProfileKey: finalProfileKey,
         // 实际使用的 Codex 配置路径。
         codexConfigPath: codexConfigPath || expectedConfigPath,
+        withProxyPath,
+        captureStream: !!captureStream,
         // 注入给 Codex 的秘钥环境变量名。
         codexSecretEnvKey: secretEnvKey,
         // 实际使用的代理开关。
@@ -1602,8 +1657,10 @@ class TmuxCodexBackend extends AgentBackend {
         flagRoot: effFlagRoot,
         // 模型、profile、配置路径和秘钥环境变量名。
         model: finalModel,
-        codexProfileKey: profileKey,
+        codexProfileKey: finalProfileKey,
         codexConfigPath: codexConfigPath || expectedConfigPath,
+        withProxyPath,
+        captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // 代理开关、展示名和 rollout 路径。
         useProxy: finalUseProxy,

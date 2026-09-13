@@ -118,9 +118,15 @@ function connectFeed() {
     es.addEventListener('snapshot', (e) => {
       try {
         const data = JSON.parse(e.data);
-        const toks = Array.isArray(data.tokens) ? data.tokens : [];
-        // 把近期快照里的 token 字符均匀铺开喂入各列, 连上当前流.
-        for (let k = 0; k < toks.length; k++) feedToken(toks[k].text || '');
+        // 新结构: 按 session 分桶, 每桶最多 16 个完整请求 (req.cat_content 正文 / cat_reason 推理).
+        const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+        for (const b of buckets) {
+          const reqs = Array.isArray(b.reqs) ? b.reqs : [];
+          for (const r of reqs) {
+            feedToken(r.cat_content || '');
+            feedToken(r.cat_reason || '');
+          }
+        }
       } catch {}
     });
     es.addEventListener('token', (e) => {
