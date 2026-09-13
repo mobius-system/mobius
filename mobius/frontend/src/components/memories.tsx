@@ -431,6 +431,12 @@ function statusStyle(status: string) {
   return { color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)', borderColor: 'rgba(148,163,184,0.25)' }
 }
 
+// 可浏览的远端: SSH 探测通过的 `reachable`，或经 aimux bridge 反连且已上线的 `connected`。
+// bridge remote 的 file list/stat/read 走 BridgeControlClient，不等价于 SSH `reachable`。
+function canBrowseRemote(r: AimuxRemote) {
+  return !r.cached && (r.status === 'reachable' || r.status === 'connected')
+}
+
 function inlineCode(value: any) {
   return String(value ?? '').replace(/`/g, "'")
 }
@@ -968,8 +974,8 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
               <button type="button"
                 onClick={() => setPathPicker({ remote: r, path: remotePaths[r.name] || '~' })}
-                disabled={saving || r.cached || r.status !== 'reachable'}
-                title={r.cached ? '等待本轮扫描确认后浏览' : (r.status === 'reachable' ? '浏览远端真实路径' : 'remote 状态不是 reachable, 无法浏览')}
+                disabled={saving || !canBrowseRemote(r)}
+                title={r.cached ? '等待本轮扫描确认后浏览' : (canBrowseRemote(r) ? '浏览远端真实路径' : 'remote 状态不可达, 无法浏览')}
                 className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 <FolderOpen className="w-3 h-3" strokeWidth={1.8} />
