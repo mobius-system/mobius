@@ -482,6 +482,7 @@ router.patch('/:id/model', auth, async (req: express.Request, res: express.Respo
 
 // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击切换).
 // 覆盖 pc_client_metadata.aimux_id, 保留 work_mode/is_tui/add_remote_aimux_mcp/local_path 等其余字段.
+// 首次切换时把"切换前"的设备惰性记为 initial_aimux_id, 之后保持不变 (可撤回的锚点).
 // 权限同 PATCH /:id (findSessionOperable = owner/admin/project-owner); 前端只从 /aimux_bridge/api/remotes
 // 的 live 列表里挑可选项, 故这里只做非空校验, 不再重复查 bridge.
 router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Response) => {
@@ -492,10 +493,15 @@ router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Resp
   const newAimuxId = String(req.body?.aimux_id || '').trim();
   if (!newAimuxId) { res.status(400).json({ error: 'aimux_id 不能为空' }); return; }
   const meta = parsePcClientMetadata(session.pc_client_metadata) ?? {};
-  const updated = { ...meta, aimux_id: newAimuxId };
+  const previousAimuxId = typeof meta.aimux_id === 'string' ? meta.aimux_id.trim() : '';
+  // 已有 initial 锚点则保持不变; 否则用"切换前"的设备做锚点 (第一次切换).
+  const initialAimuxId = (typeof meta.initial_aimux_id === 'string' && meta.initial_aimux_id.trim())
+    ? meta.initial_aimux_id.trim()
+    : previousAimuxId;
+  const updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId };
   Sessions.updatePcClientMetadata(id, updated);
   auditSessionAccess(user, 'switch_session_aimux_device', session);
-  res.json({ ok: true, pc_client_metadata: updated });
+  res.json({ ok: true, pc_client_metadata: updated, previous_aimux_id: previousAimuxId, initial_aimux_id: initialAimuxId });
 });
 
 interface BackgroundCloseResult {

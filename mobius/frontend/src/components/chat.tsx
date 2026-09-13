@@ -4296,6 +4296,44 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       .finally(() => setMessageSubmitting(false))
   }, [sessionId, messageSubmitting, addMessage, setTyping, postSessionMessage])
 
+  // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发).
+  // 顺序: ① 更新 DB 绑定 → ② 同步本地 currentSession 元数据 → ③ 终止当前 agent(等待确认)
+  // → ④ 走"唤醒文字"路径发一条消息, 让新设备上重新 spawn 的 agent 先去 hostname 确认新环境.
+  const handleSwitchAimuxDevice = useCallback(async (newId: string, oldId: string) => {
+    if (!sessionId) throw new Error('当前没有可切换的会话')
+    // ① 更新绑定 (后端首次切换会把 oldId 记为 initial_aimux_id 锚点)
+    const updated = await api(`/api/sessions/${sessionId}/aimux-device`, {
+      method: 'PATCH',
+      body: JSON.stringify({ aimux_id: newId }),
+    })
+    // ② 同步本地会话元数据, 让图标立即指向新设备
+    const meta = updated?.pc_client_metadata
+    const store = useStore.getState()
+    const sel = store.currentSession
+    if (sel?.session_id === sessionId && meta) {
+      store.setCurrentSession({ ...sel, pc_client_metadata: meta })
+    }
+    const tsk = store.currentTask as any
+    if (tsk?.task_id === sessionId && meta) {
+      store.setCurrentTask({ ...tsk, pc_client_metadata: meta })
+    }
+    // ③ 终止当前 agent (await 确认终止完成)
+    await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
+    // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
+    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。】`
+    const requestId = makeSendRequestId()
+    setLastSendError('')
+    addMessage({ role: 'user', content })
+    pendingUrgentRef.current = false
+    setPendingSendAt(Date.now())
+    setMessageSubmitting(true)
+    setTyping(true)
+    postSessionMessage({ content, inputText: content, requestId })
+      .then(() => setTimeout(() => loadHistoryRef.current(), 500))
+      .catch(() => {})
+      .finally(() => setMessageSubmitting(false))
+  }, [sessionId, addMessage, setTyping, postSessionMessage])
+
   const sendRunProjectPortPrompt = useCallback((mainProjectPortPath: string) => {
     if (!sessionId) {
       setLastSendError('当前没有可发送指令的会话')
@@ -4682,15 +4720,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
             <RemoteAimuxMcpIndicator
               session={currentSession ?? currentTask}
               sessionId={sessionId}
-              onSwitched={(updated: any) => {
-                const meta = updated?.pc_client_metadata
-                if (!meta) return
-                if (currentSession) {
-                  setCurrentSession({ ...currentSession, pc_client_metadata: meta })
-                } else if (currentTask) {
-                  setCurrentTask({ ...currentTask, pc_client_metadata: meta } as any)
-                }
-              }}
+              onSwitchDevice={handleSwitchAimuxDevice}
             />
             {/* {currentModelLabel && (
               <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"

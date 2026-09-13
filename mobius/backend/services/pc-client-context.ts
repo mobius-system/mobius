@@ -4,6 +4,12 @@ export type ContextLanguage = 'zh' | 'en';
 export interface PcClientMetadata {
   work_mode?: PcWorkMode;
   aimux_id?: string;
+  /**
+   * 首次切换设备时记录的"初始设备"锚点 (会话创建时绑定的那台)。仅由
+   * PATCH /:id/aimux-device 在第一次切换时惰性写入, 之后保持不变, 供前端
+   * 展示"当前/初始"两种设备、支持随时撤回、并据此把图标染黄。
+   */
+  initial_aimux_id?: string;
   local_path?: string;
   /**
    * Client-type marker, only present on PC task-mode sessions.
