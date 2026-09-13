@@ -29,7 +29,13 @@ const groups = {
 };
 let route = { group: 'projects', kind: 'welcome' };
 let historyStack = [], historyPosition = -1;
-const expanded = new Set(content.issues.concat(content.research).map(x => x.id));
+const expanded = new Set();
+const RECENT_PAGE_SIZE = 10;
+const SESSION_PAGE_SIZE = 5;
+let recentLimit = RECENT_PAGE_SIZE;
+let recentFilter = 'all';
+const sessionLimits = new Map();
+let revealRecent = false;
 const main = $('.main');
 const topbar = document.createElement('div'); topbar.className = 'page-top'; main.prepend(topbar);
 const workspace = document.createElement('section'); workspace.className = 'workspace-view'; workspace.hidden = true; main.append(workspace);
@@ -50,26 +56,102 @@ function pill(text, online = false) { const el = node('span', 'pill'); if (onlin
 function getRecord() { return ({ projects: content.issues, professional: content.research, works: content.works, world: content.worlds }[route.group] || []).find(x => x.id === route.id); }
 function go(next, replace = false) {
   route = { ...next };
+  const opened = getRecord();
+  if (opened && ['projects', 'professional'].includes(route.group)) {
+    opened.lastOpenedAt = Date.now();
+    if (recentFilter !== 'all' && recentFilter !== route.group) recentFilter = 'all';
+    if (route.session) {
+      expanded.clear(); expanded.add(opened.id);
+      const session = opened.sessions.find(s => s.id === route.session);
+      if (session) session.lastOpenedAt = Date.now();
+    }
+    revealRecent = true;
+    persist();
+  }
   if (!replace) { historyStack = historyStack.slice(0, historyPosition + 1); historyStack.push({ ...route }); historyPosition++; }
   location.hash = new URLSearchParams(Object.entries(route).filter(([, v]) => v !== undefined)).toString();
   render();
 }
-function renderSidebar() {
-  sidebarBody.replaceChildren();
-  function treeSection(label, records, group, create) {
-    const section = node('section', 'tree-section'); const heading = node('div', 'section-label', label); const add = button('', create, '', 'plus'); add.setAttribute('aria-label', '新建' + label); heading.append(add); section.append(heading);
-    records.forEach(record => {
-      const row = node('div', 'tree-row' + (expanded.has(record.id) ? '' : ' closed') + (route.id === record.id && !route.session ? ' current' : ''));
-      const toggle = button('', () => { expanded.has(record.id) ? expanded.delete(record.id) : expanded.add(record.id); renderSidebar(); }, 'toggle', 'chevron'); toggle.setAttribute('aria-label', '展开或折叠 ' + record.title); toggle.setAttribute('aria-expanded', String(expanded.has(record.id))); row.append(toggle);
-      const open = button(record.title, () => go({ group, kind: 'detail', id: record.id }), ''); open.firstElementChild.className = 'tree-label'; open.title = record.title; row.append(open); section.append(row);
-      if (expanded.has(record.id)) { const children = node('div', 'tree-sessions'); record.sessions.forEach(session => { const b = button(session.title, () => go({ group, kind: 'session', id: record.id, session: session.id }), 'tree-session' + (route.session === session.id ? ' current' : '')); b.prepend(node('i', 'dot')); children.append(b); }); if (group === 'projects') children.append(button('新对话', () => newSessionDialog(record.id), 'tree-session', 'plus')); section.append(children); }
-    });
-    sidebarBody.append(section);
-  }
-  treeSection('项目', content.issues, 'projects', () => createProject());
-  treeSection('专业项目', content.research, 'professional', () => createProfessional());
-  $('nav').querySelectorAll('[data-group]').forEach(b => b.classList.toggle('selected', b.dataset.group === route.group));
+function recentRecords() {
+  return [
+    ...content.issues.map(record => ({ record, group: 'projects' })),
+    ...content.research.map(record => ({ record, group: 'professional' }))
+  ].sort((a, b) => (b.record.lastOpenedAt || 0) - (a.record.lastOpenedAt || 0));
 }
+function renderSidebar() {
+  const scrollTop = sidebarBody.scrollTop;
+  const focusKey = sidebarBody.contains(document.activeElement) ? document.activeElement.dataset.sidebarKey : null;
+  sidebarBody.replaceChildren();
+  const heading = node('div', 'recent-heading');
+  const filterNames = { all: '最近', projects: '项目', professional: '专业项目' };
+  const filter = button(filterNames[recentFilter], () => {
+    const existing = heading.querySelector('.recent-filter-menu');
+    if (existing) { existing.remove(); filter.setAttribute('aria-expanded', 'false'); return; }
+    const menu = node('div', 'recent-filter-menu'); menu.setAttribute('role', 'menu');
+    for (const [key, title] of [['all', '全部'], ['projects', '项目'], ['professional', '专业项目']]) {
+      const option = button(title, () => { recentFilter = key; recentLimit = RECENT_PAGE_SIZE; sidebarBody.scrollTop = 0; renderSidebar(); }, '');
+      option.setAttribute('role', 'menuitemradio'); option.setAttribute('aria-checked', String(key === recentFilter));
+      menu.append(option);
+    }
+    menu.onkeydown = event => {
+      const options = [...menu.querySelectorAll('button')]; const i = options.indexOf(document.activeElement);
+      if (event.key === 'Escape') { event.stopPropagation(); menu.remove(); filter.setAttribute('aria-expanded', 'false'); filter.focus(); }
+      if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); options[(i + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length].focus(); }
+    };
+    menu.addEventListener('focusout', event => {
+      if (!heading.contains(event.relatedTarget)) { menu.remove(); filter.setAttribute('aria-expanded', 'false'); }
+    });
+    heading.append(menu); filter.setAttribute('aria-expanded', 'true'); menu.querySelector('button').focus();
+  }, 'recent-filter');
+  filter.append(node('span', '')); filter.lastChild.innerHTML = svg('chevron');
+  filter.setAttribute('aria-label', '筛选最近项目'); filter.setAttribute('aria-haspopup', 'menu'); filter.setAttribute('aria-expanded', 'false'); filter.dataset.sidebarKey = 'filter';
+  heading.append(filter); sidebarBody.append(heading);
+  const list = node('div', 'recent-list'); list.setAttribute('aria-label', '最近的项目');
+  const records = recentRecords().filter(item => recentFilter === 'all' || item.group === recentFilter);
+  for (const { record, group } of records.slice(0, recentLimit)) {
+    const row = node('div', 'recent-row' + (route.id === record.id ? ' current' : ''));
+    const open = button(record.title, () => go({ group, kind: 'detail', id: record.id }), 'recent-title');
+    open.title = record.title + ' · ' + groups[group].label; open.dataset.sidebarKey = record.id;
+    if (route.id === record.id && !route.session) open.setAttribute('aria-current', 'page');
+    row.append(open);
+    if (record.sessions.length) {
+      const toggle = button('', () => {
+        const closing = expanded.has(record.id); expanded.clear();
+        if (!closing) expanded.add(record.id);
+        renderSidebar();
+      }, 'recent-disclosure', 'chevron');
+      toggle.setAttribute('aria-label', '展开或折叠 ' + record.title); toggle.setAttribute('aria-expanded', String(expanded.has(record.id))); toggle.dataset.sidebarKey = 'toggle-' + record.id;
+      row.append(toggle);
+    }
+    list.append(row);
+    if (expanded.has(record.id) && record.sessions.length) {
+      const children = node('div', 'recent-sessions'); children.setAttribute('aria-label', record.title + '的对话');
+      const sessions = [...record.sessions].sort((a, b) => (b.id === route.session ? 1 : 0) - (a.id === route.session ? 1 : 0) || (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0));
+      const limit = sessionLimits.get(record.id) || SESSION_PAGE_SIZE;
+      sessions.slice(0, limit).forEach(session => {
+        const child = button(session.title, () => go({ group, kind: 'session', id: record.id, session: session.id }), 'recent-session' + (route.session === session.id ? ' current' : ''));
+        child.title = session.title; child.dataset.sidebarKey = session.id;
+        if (route.session === session.id) child.setAttribute('aria-current', 'page');
+        children.append(child);
+      });
+      if (sessions.length > limit) {
+        const more = button('显示更多对话', () => { sessionLimits.set(record.id, limit + SESSION_PAGE_SIZE); renderSidebar(); }, 'recent-more');
+        more.dataset.sidebarKey = 'sessions-more-' + record.id; children.append(more);
+      }
+      list.append(children);
+    }
+  }
+  sidebarBody.append(list);
+  if (!records.length) sidebarBody.append(node('p', 'recent-empty', '暂无项目'));
+  if (records.length > recentLimit) {
+    const more = button('显示更多', () => { recentLimit += RECENT_PAGE_SIZE; renderSidebar(); }, 'recent-more');
+    more.dataset.sidebarKey = 'more'; sidebarBody.append(more);
+  }
+  $('nav').querySelectorAll('[data-group]').forEach(b => b.classList.toggle('selected', b.dataset.group === route.group));
+  sidebarBody.scrollTop = revealRecent ? 0 : scrollTop; revealRecent = false;
+  if (focusKey) [...sidebarBody.querySelectorAll('[data-sidebar-key]')].find(el => el.dataset.sidebarKey === focusKey)?.focus({ preventScroll: true });
+}
+
 function renderTop() {
   topbar.replaceChildren(); const crumbs = node('div', 'breadcrumbs'); crumbs.append(button(groups[route.group].label, () => go({ group: route.group, kind: 'welcome' }), ''));
   const record = getRecord(); if (record) { crumbs.append(node('span', '', '/')); const b = button(record.title, () => go({ group: route.group, kind: 'detail', id: record.id }), 'crumb-title'); crumbs.append(b); }
@@ -177,16 +259,39 @@ function renderContext() {
 function form(title, fields, submit, submitText='创建') {
   modal(title, root=>{const el=node('form');const inputs={};fields.forEach(f=>{const label=node('label','form-field');label.append(node('span','',f.label));const input=node(f.type==='textarea'?'textarea':f.options?'select':'input');input.name=f.key;input.setAttribute('aria-label',f.label);if(f.options)f.options.forEach(v=>{const opt=node('option','',v);opt.value=v;input.append(opt);});input.value=f.value||'';input.required=f.required!==false;label.append(input);inputs[f.key]=input;el.append(label);});const err=node('p','form-error');const footer=node('div','actions');const send=button(submitText,()=>el.requestSubmit(),'quiet-button primary');footer.append(send,button('取消',()=>$('#dialog').close(),'quiet-button'));el.append(err,footer);el.onsubmit=e=>{e.preventDefault();err.textContent='';const values=Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.value.trim()]));if(fields.some(f=>f.required!==false&&!values[f.key])){err.textContent='请填写必填内容';return;}try{submit(values);$('#dialog').close();}catch(error){err.textContent=error.message;}};root.append(el);note(root,'仅保存前端演示数据，不会创建真实任务或连接设备。');});
 }
-function createProject(title='', goal='') { form('新建项目',[{key:'title',label:'项目名称',value:title},{key:'description',label:'想做什么？',type:'textarea',value:goal}],v=>{const record={id:uid('issue'),...v,sessions:[]};content.issues.unshift(record);expanded.add(record.id);persist();go({group:'projects',kind:'detail',id:record.id});}); }
-function newSessionDialog(id) { const target=content.issues.find(r=>r.id===id) || (route.group==='projects'?getRecord():null); if(!target){modal('在哪里开始新对话？',root=>{content.issues.forEach(r=>choice(root,r.title,()=>newSessionDialog(r.id)));choice(root,'＋ 新建项目',()=>createProject());});return;} form('新对话',[{key:'title',label:'对话名称',value:'新的想法'}],v=>{const s={id:uid('session'),title:v.title,messages:[]};target.sessions.push(s);expanded.add(target.id);persist();go({group:'projects',kind:'session',id:target.id,session:s.id});},'开始对话'); }
-function createProfessional(title='',goal='') { form('启动专业项目',[{key:'title',label:'项目名称',value:title},{key:'description',label:'交给 Chief 的目标',type:'textarea',value:goal},{key:'chief',label:'Chief 名称',value:'Chief'},{key:'model',label:'Chief 模型',value:'GPT-6 高',options:['GPT-6 高','5.6 Sol 高','5.6 Sol 中']}],v=>{const r={id:uid('research'),...v,planned:false,sessions:[{id:uid('chief'),title:v.chief,role:'chief',messages:[]}]};content.research.unshift(r);expanded.add(r.id);persist();go({group:'professional',kind:'detail',id:r.id});},'交给 Chief'); }
+function createProject(title='', goal='') { form('新建项目',[{key:'title',label:'项目名称',value:title},{key:'description',label:'想做什么？',type:'textarea',value:goal}],v=>{const record={id:uid('issue'),...v,sessions:[]};content.issues.unshift(record);persist();go({group:'projects',kind:'detail',id:record.id});}); }
+function newSessionDialog(id) { const target=content.issues.find(r=>r.id===id) || (route.group==='projects'?getRecord():null); if(!target){chooseProject('在哪里开始新对话？', record => newSessionDialog(record.id));return;} form('新对话',[{key:'title',label:'对话名称',value:'新的想法'}],v=>{const s={id:uid('session'),title:v.title,messages:[]};target.sessions.push(s);expanded.add(target.id);persist();go({group:'projects',kind:'session',id:target.id,session:s.id});},'开始对话'); }
+function createProfessional(title='',goal='') { form('启动专业项目',[{key:'title',label:'项目名称',value:title},{key:'description',label:'交给 Chief 的目标',type:'textarea',value:goal},{key:'chief',label:'Chief 名称',value:'Chief'},{key:'model',label:'Chief 模型',value:'GPT-6 高',options:['GPT-6 高','5.6 Sol 高','5.6 Sol 中']}],v=>{const r={id:uid('research'),...v,planned:false,sessions:[{id:uid('chief'),title:v.chief,role:'chief',messages:[]}]};content.research.unshift(r);persist();go({group:'professional',kind:'detail',id:r.id});},'交给 Chief'); }
 function createWork(kind='todo',goal='') { form('创造新作品',[{key:'title',label:'作品名称',value:kind==='notes'?'新的灵感便签':'我的小工具'},{key:'description',label:'作品介绍',type:'textarea',value:goal},{key:'template',label:'起点',value:kind==='notes'?'灵感便签':'每日清单',options:['每日清单','灵感便签']}],v=>{const r={id:uid('work'),title:v.title,description:v.description,kind:v.template==='灵感便签'?'notes':'todo',items:[],notes:'',version:'0.1.0'};content.works.unshift(r);persist();go({group:'works',kind:'detail',id:r.id});},'创建作品'); }
 function connectWorld(kind='本地设备') { form('连接你的世界',[{key:'title',label:'设备名称',value:kind==='本地设备'?'我的新设备':'远程工作站'},{key:'kind',label:'连接方式',value:kind,options:['本地设备','SSH','反向连接']},{key:'address',label:'设备地址',value:kind==='本地设备'?'localhost':'workspace.example.com'},{key:'folder',label:'工作目录',value:'/workspace'}],v=>{const r={id:uid('world'),...v,status:'connected',ports:[]};content.worlds.unshift(r);persist();go({group:'world',kind:'detail',id:r.id});},'预览连接'); }
 actions.new=()=>newSessionDialog();
-actions.project=()=>{if(route.group==='projects')modal('选择项目',root=>{content.issues.forEach(r=>choice(root,r.title,()=>{$('#dialog').close();go({group:'projects',kind:'detail',id:r.id});}));choice(root,'＋ 新建项目',()=>createProject());});else if(route.group==='professional')createProfessional();else if(route.group==='works')createWork();else connectWorld();};
+actions.project=()=>{if(route.group==='projects')chooseProject('选择项目', record => { $('#dialog').close(); go({group:'projects',kind:'detail',id:record.id}); });else if(route.group==='professional')createProfessional();else if(route.group==='works')createWork();else connectWorld();};
 actions.back=()=>{if(historyPosition>0){historyPosition--;go(historyStack[historyPosition],true);}};
 actions.forward=()=>{if(historyPosition<historyStack.length-1){historyPosition++;go(historyStack[historyPosition],true);}};
-actions.search=()=>modal('搜索你的空间',root=>{const input=node('input');input.placeholder='项目、对话、作品或设备';input.setAttribute('aria-label','搜索你的空间');input.style.width='100%';const results=node('div');root.append(input,results);const entries=[];for(const [group,records] of [['projects',content.issues],['professional',content.research],['works',content.works],['world',content.worlds]])records.forEach(r=>{entries.push({title:r.title,group,kind:'detail',id:r.id});r.sessions?.forEach(s=>entries.push({title:r.title+' / '+s.title,group,kind:'session',id:r.id,session:s.id}));});const update=()=>{results.replaceChildren();entries.filter(x=>x.title.toLowerCase().includes(input.value.toLowerCase())).forEach(x=>choice(results,x.title,()=>{$('#dialog').close();go(x);}));if(!results.children.length)note(results,'没有匹配的内容');};input.oninput=update;update();});
+actions.search = () => modal('搜索你的空间', root => {
+  const input = node('input'); input.placeholder = '项目、对话、作品或设备'; input.setAttribute('aria-label', '搜索你的空间'); input.style.width = '100%';
+  const results = node('div', 'space-search-results'); root.append(input, results);
+  const entries = [];
+  for (const [group, records] of [['projects', content.issues], ['professional', content.research], ['works', content.works], ['world', content.worlds]]) {
+    records.forEach(r => {
+      entries.push({ title: r.title, group, kind: 'detail', id: r.id });
+      r.sessions?.forEach(session => entries.push({ title: r.title + ' / ' + session.title, group, kind: 'session', id: r.id, session: session.id }));
+    });
+  }
+  let limit = 30;
+  const update = () => {
+    results.replaceChildren();
+    const query = input.value.normalize('NFKC').toLowerCase().trim();
+    const matches = entries.filter(x => x.title.normalize('NFKC').toLowerCase().includes(query));
+    matches.slice(0, limit).forEach(x => {
+      const result = choice(results, x.title, () => { $('#dialog').close(); go({ group: x.group, kind: x.kind, id: x.id, ...(x.session ? { session: x.session } : {}) }); });
+      result.title = x.title + ' · ' + groups[x.group].label;
+    });
+    if (matches.length > limit) choice(results, '显示更多结果', () => { limit += 30; update(); });
+    if (!matches.length) note(results, '没有匹配的内容');
+  };
+  input.oninput = () => { limit = 30; update(); }; update(); input.focus();
+});
 $('#composer').onsubmit=e=>{e.preventDefault();const text=$('#prompt').value.trim();if(text)sendMessage(text);else toast('写下你的想法，从这里开始');};
 renderRecent = () => renderSidebar();
 renderProjects = () => {};
@@ -194,7 +299,7 @@ const originalSettings=actions.settings;
 actions.settings=()=>{originalSettings();const irrelevant=[...$('#dialog-body').querySelectorAll('button')].find(b=>b.textContent==='编辑最近对话');irrelevant?.remove();const originalReset=[...$('#dialog-body').querySelectorAll('button')].find(b=>b.textContent==='恢复参考布局');if(originalReset){const reset=originalReset.onclick;originalReset.onclick=()=>{reset();render();};}const extra=node('div','actions');extra.append(button('恢复演示内容',()=>{content=structuredClone(seed);persist();$('#dialog').close();go({group:'projects',kind:'welcome'});toast('已恢复演示内容');}));$('#dialog-body').append(extra);};
 actions.profile=actions.settings;
 settings=actions.settings;
-window.addEventListener('hashchange',()=>{const next=Object.fromEntries(new URLSearchParams(location.hash.slice(1)));if(JSON.stringify(next)!==JSON.stringify(route)&&groups[next.group]){route=next;render();}});
+window.addEventListener('hashchange',()=>{const next=Object.fromEntries(new URLSearchParams(location.hash.slice(1)));if(JSON.stringify(next)!==JSON.stringify(route)&&groups[next.group]){go(next,true);}});
 const initialRoute=Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
 go(groups[initialRoute.group]?initialRoute:{group:'projects',kind:'welcome'});
 
@@ -207,4 +312,22 @@ function renderCollection() {
   records.forEach(r => detailRow(list, r.title, r.description || r.kind + ' · ' + r.address, () => go({group,kind:'detail',id:r.id}), groups[group].icon, pill(r.sessions ? r.sessions.length + (group === 'professional' ? ' 位智能体' : ' 段对话') : group === 'works' ? 'v' + r.version : r.status === 'connected' ? '已连接 · 演示' : '未连接')));
   workspace.append(list);
   if (!records.length) workspace.append(node('p', 'empty-state', '这里还没有内容，开始创建你的第一个空间。'));
+}
+
+function chooseProject(title, onChoose) {
+  modal(title, root => {
+    const input = node('input'); input.placeholder = '搜索项目'; input.setAttribute('aria-label', '搜索项目'); input.style.width = '100%';
+    const results = node('div', 'space-search-results'); root.append(input, results);
+    let limit = 30;
+    const update = () => {
+      results.replaceChildren();
+      const query = input.value.trim().toLowerCase();
+      const records = content.issues.filter(r => r.title.toLowerCase().includes(query));
+      records.slice(0, limit).forEach(r => { const item = choice(results, r.title, () => onChoose(r)); item.title = r.title; });
+      if (records.length > limit) choice(results, '显示更多结果', () => { limit += 30; update(); });
+      if (!records.length) note(results, '没有匹配的项目');
+    };
+    input.oninput = () => { limit = 30; update(); }; update();
+    choice(root, '＋ 新建项目', () => createProject()); input.focus();
+  });
 }

@@ -17,7 +17,7 @@ The UI's “project” is intentionally an Issue, not a replacement for the back
 
 ## Flows
 
-- **项目:** welcome → create an Issue-shaped demo project → create/open its Sessions → independent local conversations, goal editing, nested sidebar, global search.
+- **项目:** welcome → create an Issue-shaped demo project → create/open its Sessions → independent local conversations, goal editing, flat recent sidebar with on-demand conversation disclosure, global search.
 - **专业项目:** welcome → specify title, objective and Chief → overview → Chief conversation → explicit Chief planning preview → team and progress. New projects always start with exactly one Chief Session, without assistant selection.
 - **我的作品:** welcome → create a todo/notes demo extension → interactive preview → about/version → edit metadata.
 - **我的世界:** welcome → local/SSH/reverse connection form → simulated connected/offline states → files, terminal and ports. No credentials are collected. Terminal input is never executed and ports never establish tunnels.
@@ -31,3 +31,9 @@ The UI's “project” is intentionally an Issue, not a replacement for the back
 - “恢复参考布局” resets visual settings; “恢复演示内容” resets demo content only.
 
 The registry-required backend handler is an inert placeholder. All visible connections, assistant messages, team plans, files and tools are explicitly demonstration states. Font license is included under `frontend/fonts/LICENSE.txt`.
+
+## Recent sidebar
+
+The lower sidebar is one flat, text-only Recent list shared by Issues and Research. It starts with ten rows; “显示更多” appends ten. The heading menu filters by type. Only one conversation branch expands at a time, initially showing five sessions; more can be revealed without drawing every session in the DOM. No connector lines, dots, type badges or per-project “new conversation” rows are rendered.
+
+Opening an item updates its local recent timestamp. A directly opened session is kept visible at the top of its branch. Sidebar scrolling is independent of the fixed navigation and account footer; disclosure and loading preserve scroll/focus. Global search covers all data with thirty results per batch. Demo-only stress fixtures belong in external browser tests, never in shipped seed content.
