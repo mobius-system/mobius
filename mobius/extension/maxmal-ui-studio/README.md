@@ -37,3 +37,19 @@ The registry-required backend handler is an inert placeholder. All visible conne
 The lower sidebar is one flat, text-only Recent list shared by Issues and Research. It starts with ten rows; “显示更多” appends ten. The heading menu filters by type. Only one conversation branch expands at a time, initially showing five sessions; more can be revealed without drawing every session in the DOM. No connector lines, dots, type badges or per-project “new conversation” rows are rendered.
 
 Opening an item updates its local recent timestamp. A directly opened session is kept visible at the top of its branch. Sidebar scrolling is independent of the fixed navigation and account footer; disclosure and loading preserve scroll/focus. Global search covers all data with thirty results per batch. Demo-only stress fixtures belong in external browser tests, never in shipped seed content.
+
+## Hand-drawn layout adaptation
+
+`sketch.js` / `sketch.css` adapt the existing shell to the supplied September sketch. All new behavior remains frontend-only.
+
+- Mobius brand menu switches ordinary Issues / Research; only matching projects and sessions appear in the left list. Three navigation items remain: new conversation, extensions, devices.
+- Cluster-Overview sits outside the scrolling list and is global. Area, edge, and multi-agent visibility controls update a local SVG map; clicking a node opens its space. A representative subset is drawn for readability, not a live topology.
+- Extensions open an associated editor Session in the center and a real, local `app-preview.html?work=<id>` iframe URL on the right. The preview and editor use the extension's own localStorage key. Only this authored same-origin preview allows forms and shared storage. Browser previews accept HTTP(S) URLs and may be blocked by the destination's embedding policy.
+- Device configuration uses the existing demo device views. No physical connection, remote command, or port forwarding is performed.
+- Self-iteration filters Issues marked as belonging to the demo self-evolution backing Project. Versions and evolution suggestions are simulated. Real Mobius uses `is_self_develop` and its authenticated `/:id/deploy-version` route; the prototype does not invoke it.
+- Skill/Memory catalogs live in settings; selections and follow-up emphasis belong to each Session. Message snapshots retain the chosen labels. Existing backend session selection uses skill/memory IDs and exclusion/whitelist rules; no real context injection is performed here.
+- Quick operations include pin, rename, model/Harness selection, editable knowledge extraction, local usage estimates, suspend/resume and delete. Message controls reveal time, copy and details on hover or keyboard focus.
+- Right views cover local file editing, a VS Code-shaped editor, application/browser frames and a generic document editing surface. Office/PDF choices are visual demonstrations, not real file parsers.
+- The pet sits at the lower right of the right panel, moving to the center pane when that panel is hidden, including responsive breakpoints.
+
+Design controls still use Ctrl/Cmd+Alt+E. Footer settings → “通用与外观” opens them. The inherited font assets, palette and primary layout measurements remain unchanged.

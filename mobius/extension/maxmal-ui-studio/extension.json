@@ -1,8 +1,8 @@
 {
   "name": "maxmal-ui-studio",
   "display_name": "Mobius · 极简工作台",
-  "description": "项目、Chief 主导的专业项目、作品与 AIMUX 世界的可调整纯前端设计原型",
-  "version": "0.2.0",
+  "description": "按设计手稿联动项目、研究、拓展预览、设备、上下文与自迭代的极简前端工作台",
+  "version": "0.3.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true
