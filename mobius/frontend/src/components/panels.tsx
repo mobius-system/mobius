@@ -7977,12 +7977,12 @@ export type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'as
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
   { key: 'runtime', label: '运行监控', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
-  { key: 'redaction', label: '文字替换隐藏', icon: <EyeOff className="h-3.5 w-3.5" /> },
   { key: 'settings', label: '系统设置', icon: <Settings className="h-3.5 w-3.5" /> },
-  { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
   { key: 'models', label: '模型接入', icon: <Terminal className="h-3.5 w-3.5" /> },
   { key: 'extensions', label: '拓展管理', icon: <Puzzle className="h-3.5 w-3.5" /> },
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
+  { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
+  { key: 'redaction', label: '文字替换隐藏', icon: <EyeOff className="h-3.5 w-3.5" /> },
 ]
 
 export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {

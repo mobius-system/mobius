@@ -114,12 +114,6 @@ function initialAimuxMcpId(session: unknown): string {
   return typeof meta.aimux_id === 'string' ? meta.aimux_id.trim() : ''
 }
 
-/** TUI 会话标记 (meta.is_tui === true)。 */
-function isTuiSession(session: unknown): boolean {
-  const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
-  return meta?.is_tui === true
-}
-
 /** AIMUX 协作链路标志，同时用于状态提示和声明可合作计算机入口。 */
 export function RemoteAimuxMcpIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
   return (
@@ -164,7 +158,6 @@ function RemoteAimuxMcpIndicatorInner({
 }) {
   const aimuxId = remoteAimuxMcpId(session)
   const initialId = initialAimuxMcpId(session)
-  const isTui = isTuiSession(session)
   // 当前设备与初始设备不一致 = 已经切换过 (锚点保留原设备).
   const switched = !!aimuxId && !!initialId && initialId !== aimuxId
 
@@ -304,16 +297,6 @@ function RemoteAimuxMcpIndicatorInner({
           </span>
         )}
       </span>
-
-      {switched && isTui && (
-        <span
-          className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-tight text-amber-400"
-          style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.25)' }}
-          title="智能体已切换到新的 aimux 协作设备"
-        >
-          注意：智能体已经离开此设备前往新设备（{aimuxId}）
-        </span>
-      )}
 
       {canSwitch && menuOpen && (
         <div
