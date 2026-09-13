@@ -21,7 +21,7 @@ The UI's “project” is intentionally an Issue, not a replacement for the back
 - **专业项目:** welcome → specify title, objective and Chief → overview → Chief conversation → explicit Chief planning preview → team and progress. New projects always start with exactly one Chief Session, without assistant selection.
 - **我的作品:** welcome → create a todo/notes demo extension → interactive preview → about/version → edit metadata.
 - **我的世界:** welcome → local/SSH/reverse connection form → simulated connected/offline states → files, terminal and ports. No credentials are collected. Terminal input is never executed and ports never establish tunnels.
-- Brand/help or Ctrl/Cmd+Shift+E opens inherited design controls. Column resizing, editable welcome/navigation copy, colors, font size, module visibility, export and reset remain available.
+- Brand/help or Ctrl/Cmd+Alt+E opens inherited design controls. Column resizing, editable welcome/navigation copy, colors, font size, module visibility, export and reset remain available.
 
 ## Local data
 
