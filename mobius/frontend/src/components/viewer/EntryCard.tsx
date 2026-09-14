@@ -417,7 +417,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
             aria-label={theme === AIMUX_COMMAND_THEME ? '协作执行' : '代码模式'}
           >
             {theme === AIMUX_COMMAND_THEME
-              ? <RemoteAimuxMcpIcon className="h-3 w-3" aria-hidden="true" />
+              ? <RemoteAimuxMcpIcon className="h-[13.2px] w-[13.2px]" aria-hidden="true" />
               : <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />}
           </span>
         )}
