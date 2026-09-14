@@ -145,9 +145,20 @@ function findCodexRecentErrorInPane(paneText: string) {
     if (CODEX_USER_INTERRUPT_NOTICE_RE.test(cleaned)) return null
     if (CODEX_FALLBACK_MODEL_METADATA_NOTICE_RE.test(cleaned)) return null
     if (CODEX_MCP_STARTUP_NOTICE_RE.test(cleaned)) return null
+    // The same error text can legitimately occur in separate turns. Use the
+    // nearest non-empty line before the notice as its stable occurrence
+    // fingerprint, stripping terminal styling that changes between captures.
+    let contextFingerprint = ''
+    for (let j = i - 1; j >= 0; j--) {
+      const preceding = lines[j].replace(ANSI_RE, '').trim()
+      if (!preceding) continue
+      contextFingerprint = preceding
+      break
+    }
     return {
       message: cleaned.trim(),
       rawLine: line,
+      contextFingerprint,
     }
   }
   return null

@@ -255,6 +255,7 @@ function buildMobiusErrorEntry({
       session_id: sessionId || null,
       agent_session_id: agentSessionId || null,
       raw_line: error?.rawLine || null,
+      context_fingerprint: error?.contextFingerprint || null,
       captured_at: ts,
     },
   };
@@ -693,7 +694,9 @@ function writeMobiusErrorEntry(args: {
   // same stale screen error look new on the next poll. Deduplicate by the
   // stable error payload across a bounded recent window instead.
   const message = String(args.error?.message || '').slice(0, 4000);
-  const rawLine = args.error?.rawLine ? String(args.error.rawLine) : null;
+  const contextFingerprint = args.error?.contextFingerprint
+    ? String(args.error.contextFingerprint)
+    : null;
   const recentRows = openStore().prepare(
     'SELECT json FROM entries WHERE session_id = ? ORDER BY seq DESC LIMIT 100'
   ).all(sessionId) as any[];
@@ -701,8 +704,13 @@ function writeMobiusErrorEntry(args: {
     const previous = safeParseJson(row?.json);
     if (previous?.type !== 'error') continue;
     const previousMessage = String(previous?.message?.content || '').slice(0, 4000);
-    const previousRawLine = previous?.mobius?.raw_line ? String(previous.mobius.raw_line) : null;
-    if (previousMessage === message && previousRawLine === rawLine) return false;
+    const previousContextFingerprint = previous?.mobius?.context_fingerprint
+      ? String(previous.mobius.context_fingerprint)
+      : null;
+    if (
+      previousMessage === message
+      && previousContextFingerprint === contextFingerprint
+    ) return false;
   }
   const entry = buildMobiusErrorEntry(args);
   const json = JSON.stringify(entry);

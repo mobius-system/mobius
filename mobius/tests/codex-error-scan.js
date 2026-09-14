@@ -35,21 +35,25 @@ assert.deepStrictEqual(
   {
     message: '■ API request failed with status 403',
     rawLine: '■ API request failed with status 403',
+    contextFingerprint: '⚠ Model metadata for `GLM-5.3` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.',
   },
 )
 assert.deepStrictEqual(findCodexRecentErrorInPane('\x1b[31m■ API request failed with status 403\x1b[0m'), {
   message: '■ API request failed with status 403',
   rawLine: '\x1b[31m■ API request failed with status 403\x1b[0m',
+  contextFingerprint: '',
 })
 assert.deepStrictEqual(findCodexRecentErrorInPane('  ⚠ Selected model is at capacity'), {
   message: '⚠ Selected model is at capacity',
   rawLine: '  ⚠ Selected model is at capacity',
+  contextFingerprint: '',
 })
 assert.deepStrictEqual(
   findCodexRecentErrorInPane(`Conversation text mentioning Conversation interrupted\n■ Latest real failure`),
   {
     message: '■ Latest real failure',
     rawLine: '■ Latest real failure',
+    contextFingerprint: 'Conversation text mentioning Conversation interrupted',
   },
 )
 assert.strictEqual(
@@ -72,6 +76,7 @@ assert.deepStrictEqual(
   {
     message: '■ API request failed with status 403',
     rawLine: '■ API request failed with status 403',
+    contextFingerprint: '⚠ MCP startup incomplete (failed: alpha)',
   },
 )
 assert.strictEqual(findCodexRecentErrorInPane('normal output only'), null)

@@ -83,6 +83,7 @@ import { extractInitialContext } from './initial-context'
 import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
+import { RemoteAimuxMcpIcon } from '../aimux-link-indicator'
 import type { AnyEntry, CardMode, BashToolResult, PlanUpdate } from './types'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
@@ -412,10 +413,12 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
         {canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
-            title="代码模式 — 点击展开查看 diff / 文件 / 命令 / 读取结果"
-            aria-label="代码模式"
+            title={theme === AIMUX_COMMAND_THEME ? '协作执行 — 点击展开查看远程协作设备上的命令与读取结果' : '代码模式 — 点击展开查看 diff / 文件 / 命令 / 读取结果'}
+            aria-label={theme === AIMUX_COMMAND_THEME ? '协作执行' : '代码模式'}
           >
-            <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />
+            {theme === AIMUX_COMMAND_THEME
+              ? <RemoteAimuxMcpIcon className="h-3 w-3" aria-hidden="true" />
+              : <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />}
           </span>
         )}
         {canPlan && (
