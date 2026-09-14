@@ -1,5 +1,5 @@
 /**
- * 顶栏极简/专家切换入口合并到「外观」菜单后的极简态精简 验证.
+ * 顶栏在简易/普通模式下保持一致的验证.
  *
  * 合并改动 (2026-09-02):
  *   - 顶栏独立切换按钮 [data-testid="layout-mode-toggle"] 已删除;
@@ -7,9 +7,9 @@
  *   - 顶栏独立帮助按钮 [data-tour="top-guide-help"] 已删除, 入口并入用户菜单「帮助与引导」。
  *
  * 断言:
- *   专家态: 顶栏外观按钮可见, 打开菜单 → 内含简易模式开关, 显示当前密度「已关闭」。
- *   点开关 → 会话内原地变极简呈现; 顶栏只剩: 搜索 / 存储指示(如可见) / 管理入口 + 用户名消失。
- *   极简态外观按钮已隐藏, 通过 localStorage 复位密度 + reload 验证 URL 保活。
+ *   普通态: 顶栏外观按钮可见, 打开菜单 → 内含简易模式开关。
+ *   点开关 → 会话内原地变为简易呈现，但顶栏的完整操作集不变。
+ *   简易态仍可从同一「外观」菜单切回普通呈现，URL 和会话保活。
  */
 import assert from 'node:assert/strict'
 import { chromium } from '/app/mobius/frontend/node_modules/playwright/index.mjs'
@@ -97,36 +97,28 @@ try {
   assert.equal(page.url(), urlBefore, 'URL 不变')
   record('点击菜单内开关 → 原地切极简, URL 不变', true)
 
-  // 极简态右上角: 搜索还在
+  // 简易态的顶栏与普通态保持同一操作集。
   const searchKept = await page.locator('[data-tour="top-search"]').isVisible()
-  record('极简态: 搜索保留', searchKept)
+  const appearanceKept = await page.locator('[data-tour="top-theme-toggle"]').isVisible()
+  const userMenuKept = await page.locator('[data-tour="top-user-menu"]').isVisible()
+  const githubKept = await page.locator('.mobius-topnav-github').isVisible()
+  const createKept = await page.locator('[data-tour="top-create"]').isVisible()
+  const overviewKept = await page.locator('[data-tour="top-overview-cluster"]').isVisible()
+  record('简易态: 搜索保留', searchKept)
+  record('简易态: 外观/用户菜单/GitHub 保留', appearanceKept && userMenuKept && githubKept)
+  record('简易态: 新建/系统可视化保留', createKept && overviewKept)
+  assert.equal(await page.locator('[data-testid="easy-admin-entry"]').count(), 0, '不再渲染简易模式专用管理入口')
+  record('简易态: 不再渲染专用顶栏入口', true)
 
-  // 极简态: 这些应该没了
-  const appearanceGone = (await page.locator('[data-tour="top-theme-toggle"]').count()) === 0
-  const userMenuGone = (await page.locator('[data-tour="top-user-menu"]').count()) === 0
-  const githubGone = (await page.locator('.mobius-topnav-github').count()) === 0
-  record('极简态: 外观按钮已隐藏', appearanceGone)
-  record('极简态: 用户菜单已隐藏', userMenuGone)
-  record('极简态: GitHub 已隐藏', githubGone)
-
-  // 管理入口 (admin 用户应可见)
-  const adminEntry = await page.locator('[data-testid="easy-admin-entry"]').isVisible()
-  record('极简态: 管理中心直达入口可见 (admin)', adminEntry)
-
-  // 存储指示: 达到阈值才显示, 不强制; 只验证存在性逻辑不报错
-  record('极简态: 存储指示按阈值条件渲染 (未报错)', true)
-
-  // 切回专家: 合并后极简态外观按钮被隐藏, 通过 localStorage 复位密度 + reload 验证保活
-  await page.evaluate(() => {
-    window.localStorage.setItem('mobius:ui:session-density', 'professional')
-  })
-  await page.reload()
+  // 从同一外观菜单切回普通呈现，不重载会话。
+  await page.click('[data-tour="top-theme-toggle"] > button')
+  await page.locator('[data-testid="easy-mode-switch"]').click()
   await page.waitForSelector('[data-tour="session-chat-header"]', { state: 'attached' })
   assert.equal(page.url(), urlBefore)
-  record('密度复位 → 原地切回专家, URL 不变', true)
+  record('菜单开关 → 原地切回普通呈现, URL 不变', true)
   const allBack = await page.locator('[data-tour="top-theme-toggle"]').isVisible()
     && await page.locator('[data-tour="top-user-menu"]').isVisible()
-  record('专家态功能全部恢复', allBack)
+  record('普通态顶栏仍完整', allBack)
 } catch (err) {
   record('执行中断', false, String(err).slice(0, 300))
 }

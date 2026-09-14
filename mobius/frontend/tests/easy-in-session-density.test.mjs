@@ -104,13 +104,9 @@ try {
   await page.waitForSelector('[data-testid="easy-session-context"]', { state: 'attached' })
   record('刷新后保持极简呈现', true)
 
-  // --- 切回专业: 合并后极简态下顶栏外观按钮被隐藏, 简易模式开关随之不可见,
-  // 旧独立切换按钮已删除, 此步骤改为「通过 localStorage 直接复位密度 + reload」,
-  // URL 不变 + 密度落回 professional 仍可被断言。 ---
-  await page.evaluate(() => {
-    window.localStorage.setItem('mobius:ui:session-density', 'professional')
-  })
-  await page.reload()
+  // --- 切回专业: 简易态保留完整顶栏，直接从同一外观菜单原地切回。 ---
+  await page.click('[data-tour="top-theme-toggle"] > button')
+  await page.locator('[data-testid="easy-mode-switch"]').click()
   await page.waitForSelector('[data-tour="session-chat-header"]', { state: 'attached' })
   const urlAfterOff = page.url()
   assert.ok(urlAfterOff.includes(`/i/${target.issue}`) && urlAfterOff.includes(`session=${target.session}`))

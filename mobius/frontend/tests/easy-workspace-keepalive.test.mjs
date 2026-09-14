@@ -79,13 +79,9 @@ try {
     assert.ok(iframeAfterEasy >= iframeCount, 'iframe 不应减少')
     record('编辑器 iframe 保活 (数量不减)', true, `${iframeCount} → ${iframeAfterEasy}`)
 
-    // 切回专业: 合并后极简态下顶栏外观按钮被隐藏, 简易模式开关随之不可见,
-    // 旧独立切换按钮已删除, 此步骤改为「通过 localStorage 直接复位 + reload」保活 iframe 断言。
-    await page.evaluate(() => {
-      window.localStorage.setItem('mobius:ui:session-density', 'professional')
-      window.localStorage.setItem('layout_mode', 'normal_mode')
-    })
-    await page.reload()
+    // 切回专业: 简易态保留完整顶栏，直接用外观菜单原地切回。
+    await page.click('[data-tour="top-theme-toggle"] > button')
+    await page.locator('[data-testid="easy-mode-switch"]').click()
     await page.waitForSelector('[data-tour="session-chat-header"]')
     await page.waitForTimeout(2000)
     assert.equal(page.url(), urlBefore)

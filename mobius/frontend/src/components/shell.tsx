@@ -803,8 +803,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   // 非会话区域 (用户主页/项目页/easy_mode 页本身) 仍走全局 layout_mode 切换页面.
   const inSessionContext = !!(params.issue || params.research) && !!currentSession
   const sessionEasyEnabled = inSessionContext ? sessionDensity === 'easy' : easyModeEnabled
-  // 极简界面态: 会话页内看呈现密度, 其余页面看全局模式。驱动顶栏右上角的精简渲染。
-  const easyUI = sessionEasyEnabled
   const [showChangePw, setShowChangePw] = useState(false)
   const [showAimuxGuide, setShowAimuxGuide] = useState(false)
   const [showDesktopDownload, setShowDesktopDownload] = useState(false)
@@ -1183,27 +1181,23 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 中间弹性填充 spacer (整条顶栏已统一挂拖拽, 此处仅占位; 不再单独挂 DesktopDragHandle 以免重复触发)。 */}
         <div className="mobius-topnav-spacer flex-1 self-stretch" aria-hidden style={{ cursor: topnavDrag.enabled ? 'grab' : undefined }} />
 
-        {/* 右侧操作。
-            极简界面态 (easyUI) 下精简为: 搜索 / 存储使用 / 极简⇄专家切换 / 管理中心入口 (+必要窗口控制);
-            专家界面保持完整功能。easyUI 判定: 会话页内看呈现密度, 其余页面看全局模式。 */}
+        {/* 右侧操作在简易与普通模式下保持一致；模式只改变顶栏下方的工作区呈现。 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink-0 items-center gap-1.5 xl:gap-2">
-          {!easyUI && rightExtra}
+          {rightExtra}
           {/* 桌面端 aimux 反向连接状态徽标 — 仅 Electron 检测到时渲染（搜索按钮左侧） */}
-          {!easyUI && <AimuxStatusBadge />}
+          <AimuxStatusBadge />
           {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
           <ProjectPathBindGate projectId={projectParam} />
           {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
-          {!easyUI && (
-            <GlobalCreateMenu
-              open={showNewMenu}
-              onOpenChange={setShowNewMenu}
-              onPick={setCreateKind}
-              inProject={inProject}
-              currentProject={currentProject}
-            />
-          )}
+          <GlobalCreateMenu
+            open={showNewMenu}
+            onOpenChange={setShowNewMenu}
+            onPick={setCreateKind}
+            inProject={inProject}
+            currentProject={currentProject}
+          />
           {/* 工作区布局切换 (会话 ↔ 代码对话) — 仅 Issue/Research 路由渲染, 桌面端可见 */}
-          {!easyUI && <WorkspaceLayoutToggle />}
+          <WorkspaceLayoutToggle />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <TopNavActionElement
             type="button"
@@ -1215,70 +1209,36 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </TopNavActionElement>
-          {easyUI && (
-            <TopNavActionElement
-              type="button"
-              onClick={() => {
-                setLayoutMode('normal_mode')
-              }}
-              title="切换回正常模式"
-              aria-label="切换回正常模式"
-              data-testid="normal-mode-trigger"
-            >
-              <LayoutPanelTop className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            </TopNavActionElement>
-          )}
           {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
-          {!easyUI && (
-            <TopNavActionElement
-              type="button"
-              onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
-              title="系统可视化"
-              aria-label="前往系统可视化"
-              data-tour="top-overview-cluster"
-            >
-              <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            </TopNavActionElement>
-          )}
+          <TopNavActionElement
+            type="button"
+            onClick={() => navigate(`/u/${userParam}/mobius_overview_cluster`)}
+            title="系统可视化"
+            aria-label="前往系统可视化"
+            data-tour="top-overview-cluster"
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+          </TopNavActionElement>
           {/* 帮助与引导入口已并入用户菜单 (top-user-menu) 内的「帮助与引导」菜单项 */}
-          {!easyUI && (
-            <TopNavActionElement
-              as="a"
-              href="https://github.com/mobius-system/mobius.git"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="GitHub"
-              aria-label="GitHub"
-              className="mobius-topnav-github"
-            >
-              <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            </TopNavActionElement>
-          )}
+          <TopNavActionElement
+            as="a"
+            href="https://github.com/mobius-system/mobius.git"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub"
+            aria-label="GitHub"
+            className="mobius-topnav-github"
+          >
+            <GithubIcon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+          </TopNavActionElement>
           {!IS_DESKTOP && (
             <div data-tour="top-system-status" className="mobius-topnav-status flex shrink-0 items-center gap-2">
-              {/* 存储使用: 极简态保留 (磁盘告警对所有人都重要); 内存/版本仅专家态。 */}
               <DiskIndicator />
-              {!easyUI && <MemoryIndicator />}
-              {!easyUI && <VersionIndicator />}
+              <MemoryIndicator />
+              <VersionIndicator />
             </div>
           )}
-          {/* 极简 ⇄ 专家 切换入口已合并到「外观」菜单内的简易模式开关 (shell.tsx 中 easy-mode-switch),
-              顶栏不再保留独立按钮。 */}
-          {/* 极简态的管理中心直达入口 (仅管理员可见; 专家态藏在用户菜单里) */}
-          {easyUI && user?.role === 'admin' && (
-            <TopNavActionElement
-              type="button"
-              onClick={() => window.openAdminOverlay?.()}
-              title="管理中心"
-              aria-label="管理中心"
-              data-testid="easy-admin-entry"
-            >
-              <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-              <span className="text-[12px] font-medium whitespace-nowrap">管理</span>
-            </TopNavActionElement>
-          )}
-          {/* 外观按钮 — 极简态隐藏 (主题/调色盘属专家功能) */}
-          {!easyUI && (
+          {/* 简易模式开关在「外观」菜单内，两种模式的入口和退出路径保持一致。 */}
           <div className="relative shrink-0" data-tour="top-theme-toggle">
             <TopNavActionElement
               type="button"
@@ -1513,10 +1473,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
-          )}
 
-          {/* 用户菜单 — 极简态隐藏 (改名/下载/改密等均属专家功能; 管理员另有直达入口) */}
-          {!easyUI && (
+          {/* 用户菜单与普通模式一致，管理、帮助、下载和退出入口始终可用。 */}
           <div className="relative" data-tour="top-user-menu">
             <TopNavActionElement
               type="button"
@@ -1594,7 +1552,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </div>
             )}
           </div>
-          )}
           {/* 桌面端自绘窗口控制按钮 (三平台统一自绘; macOS 已改 frame:false 无原生交通灯) */}
           {IS_DESKTOP && <WindowControls />}
         </div>
