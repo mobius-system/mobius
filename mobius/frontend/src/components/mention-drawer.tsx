@@ -96,11 +96,13 @@ export function RemoteFileMentionDrawer({
   currentSessionId?: string
   open: boolean
   onClose: () => void
-  onPickPath: (path: string) => void
+  /** 不传时隐藏「文件」Tab (例如创建表单场景只选智能体)。 */
+  onPickPath?: (path: string) => void
   onPickAgent?: (agent: MentionAgentSession, mode: AgentMentionMode) => void
   /** 打开时优先停留的 Tab; 缺省按场景推断 (有会话/任务范围 → 智能体)。 */
   initialTab?: 'files' | 'agents'
 }) {
+  const showFilesTab = !!onPickPath
   const [activeTab, setActiveTab] = useState<'files' | 'agents'>(issueId || researchId ? 'agents' : 'files')
   const [sources, setSources] = useState<RemoteFileSource[]>([])
   const [selectedSourceKey, setSelectedSourceKey] = useState('hub')
@@ -174,8 +176,9 @@ export function RemoteFileMentionDrawer({
     if (!open) return
     if (initialTab) setActiveTab(initialTab)
     else setActiveTab(currentSessionId || issueId || researchId ? 'agents' : 'files')
+    if (!showFilesTab) setActiveTab('agents')
     setPendingAgent(null)
-  }, [currentSessionId, initialTab, issueId, open, researchId])
+  }, [currentSessionId, initialTab, issueId, open, researchId, showFilesTab])
 
   const loadAgentSessions = useCallback(async () => {
     if (!agentScopeUrl) {
@@ -197,9 +200,9 @@ export function RemoteFileMentionDrawer({
   }, [agentScopeUrl, currentSessionId])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !showFilesTab) return
     void loadSources()
-  }, [open, loadSources])
+  }, [open, loadSources, showFilesTab])
 
   useEffect(() => {
     if (!open || activeTab !== 'agents') return
@@ -279,7 +282,7 @@ export function RemoteFileMentionDrawer({
   }, [dirs, loadDir])
 
   const pickFile = useCallback((entry: Entry) => {
-    if (entry.abs_path) onPickPath(entry.abs_path)
+    if (entry.abs_path) onPickPath?.(entry.abs_path)
   }, [onPickPath])
 
   const copyPath = useCallback((entry: Entry) => {
@@ -387,23 +390,25 @@ export function RemoteFileMentionDrawer({
           style={{ borderColor: 'var(--border-color)' }}
         >
           <div className="mb-2 flex flex-shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('files')}
-              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
-              style={{
-                borderColor: activeTab === 'files' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
-                background: activeTab === 'files' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
-                color: activeTab === 'files' ? 'var(--text-primary)' : 'var(--text-muted)',
-              }}
-            >
-              <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
-              文件
-            </button>
+            {showFilesTab && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('files')}
+                className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
+                style={{
+                  borderColor: activeTab === 'files' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
+                  background: activeTab === 'files' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
+                  color: activeTab === 'files' ? 'var(--text-primary)' : 'var(--text-muted)',
+                }}
+              >
+                <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+                文件
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab('agents')}
-              className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors ${showFilesTab ? 'flex-1' : 'w-full'}`}
               style={{
                 borderColor: activeTab === 'agents' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
                 background: activeTab === 'agents' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',

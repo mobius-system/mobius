@@ -14,10 +14,11 @@ export type SessionMentionSelection = {
   contextAt?: string | null
 }
 
+// 与 ChatArea 的 @ 触发同一语义: 仅当文本以 @ 结尾(刚键入)时弹抽屉,
+// 继续输入任何字符即收起, 再键入下一个 @ 才重新打开。
 function trailingMention(value: string): { start: number } | null {
-  const match = /(^|\s)@([^\s@]{0,100})$/.exec(String(value || ''))
-  if (!match) return null
-  return { start: match.index + match[1].length }
+  if (!/(^|\s)@$/.test(String(value || ''))) return null
+  return { start: String(value).length - 1 }
 }
 
 export function sessionMentionPayload(items: SessionMentionSelection[]) {
@@ -68,7 +69,12 @@ export function SessionMentionPicker({
       return
     }
     const mention = trailingMention(value)
-    if (!mention) return
+    if (!mention) {
+      // 输入偏离 @ 触发态 (继续打了字 / 删掉 @): 收起抽屉, 与 ChatArea 行为一致。
+      typedMentionRef.current = null
+      setOpen(false)
+      return
+    }
     typedMentionRef.current = mention
     setOpen(true)
   }, [disabled, hasScope, value])
@@ -139,7 +145,6 @@ export function SessionMentionPicker({
           open={open}
           onClose={() => { typedMentionRef.current = null; setOpen(false) }}
           initialTab="agents"
-          onPickPath={() => {}}
           onPickAgent={pickAgent}
         />
       )}
