@@ -15,7 +15,7 @@ import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
 import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSelectionSnapshot } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
-import { parsePcClientMetadata } from '../services/pc-client-context';
+import { parsePcClientMetadata, pcClientMetadataForContinuation } from '../services/pc-client-context';
 // @ts-ignore — repository 仍是 .js
 import { audit } from '../repositories/audit';
 // @ts-ignore — service 仍是 .js
@@ -1933,10 +1933,7 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   const sanitizeIds = (arr: any): string[] => Array.isArray(arr) ? arr.filter((x: any) => typeof x === 'string' && x.length > 0) : [];
   const excludedSkillIds = sanitizeIds(excluded_skill_ids);
   const excludedMemoryIds = sanitizeIds(excluded_memory_ids);
-  const pcClientMetadata = req.body?.pc_client_metadata;
-  const selectionSnapshot = buildSessionSelectionSnapshot(user, issueId, excludedSkillIds, excludedMemoryIds, {
-    pc_client_metadata: pcClientMetadata,
-  });
+  let pcClientMetadata = req.body?.pc_client_metadata;
   const continueFromSessionId = typeof req.body?.continue_from_session_id === 'string'
     ? req.body.continue_from_session_id.trim()
     : '';
@@ -1966,7 +1963,13 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
       res.status(500).json({ error: (e as Error).message || '创建 Session 转接文档失败' });
       return;
     }
+    // 继承旧会话当前的 AIMUX 连接，但不继承它的设备切换历史。
+    pcClientMetadata = pcClientMetadataForContinuation(sourceSession.pc_client_metadata);
   }
+
+  const selectionSnapshot = buildSessionSelectionSnapshot(user, issueId, excludedSkillIds, excludedMemoryIds, {
+    pc_client_metadata: pcClientMetadata,
+  });
 
   Sessions.insert({
     session_id: sessionId,

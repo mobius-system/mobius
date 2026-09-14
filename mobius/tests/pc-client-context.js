@@ -5,6 +5,7 @@ const {
   pcClientRequiresAimuxSkill,
   pcTaskModePrompt,
   aimuxRemoteNameFromMeta,
+  pcClientMetadataForContinuation,
 } = require('../backend/services/pc-client-context');
 
 const device = 'tui-workstation';
@@ -15,6 +16,24 @@ assert.deepStrictEqual(
   { work_mode: 'dual', aimux_id: device, is_tui: true },
   'JSON metadata should retain is_tui',
 );
+
+const continuedMetadata = pcClientMetadataForContinuation({
+  work_mode: 'pc',
+  aimux_id: 'currently-selected-device',
+  initial_aimux_id: 'previously-selected-device',
+  local_path: localPath,
+  is_tui: true,
+  add_remote_aimux_mcp: true,
+});
+assert.deepStrictEqual(continuedMetadata, {
+  work_mode: 'pc',
+  aimux_id: 'currently-selected-device',
+  local_path: localPath,
+  is_tui: true,
+  add_remote_aimux_mcp: true,
+}, 'continued sessions should inherit the current binding without the source switch-history anchor');
+assert.strictEqual(pcClientMetadataForContinuation(null), null,
+  'continued web sessions should remain without PC metadata');
 
 assert.strictEqual(pcClientRequiresAimuxSkill({ work_mode: 'hub', aimux_id: device, is_tui: true }), true,
   'TUI must include mobius-aimux even in hub mode');

@@ -41,6 +41,20 @@ export function parsePcClientMetadata(raw: unknown): PcClientMetadata | null {
 }
 
 /**
+ * A continued session inherits the source session's current PC/aimux binding,
+ * but starts a fresh device-switch history. The inherited current aimux_id is
+ * therefore the new session's implicit initial device; the first later switch
+ * persists it as initial_aimux_id through PATCH /:id/aimux-device.
+ */
+export function pcClientMetadataForContinuation(raw: unknown): PcClientMetadata | null {
+  const source = parsePcClientMetadata(raw);
+  if (!source) return null;
+  const inherited = { ...source };
+  delete inherited.initial_aimux_id;
+  return inherited;
+}
+
+/**
  * For client sessions that explicitly opted into the aimux remote_* MCP
  * toolset (add_remote_aimux_mcp === true) and are bound to an aimux remote,
  * return that remote name (aimux_id); otherwise undefined.  TUI and Electron

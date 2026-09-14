@@ -40,6 +40,7 @@ import {
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { appendBlackboardRecord, normalizeWriteInput, readBlackboard } from '../services/research-blackboard';
+import { pcClientMetadataForContinuation } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
 import { readGraph, resolveGraphImage } from '../services/research-graph';
 // @ts-ignore — service 仍是 .js
@@ -916,14 +917,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
   const sessionKey = `web:${user.id}:${sessionId}`;
   const excludedSkillIds = sanitizeIds(excluded_skill_ids);
   const excludedMemoryIds = sanitizeIds(excluded_memory_ids);
-  const pcClientMetadata = req.body?.pc_client_metadata;
-  const selectionSnapshot = buildResearchSessionSelectionSnapshot(
-    user,
-    String(req.params.researchId),
-    excludedSkillIds,
-    excludedMemoryIds,
-    { pc_client_metadata: pcClientMetadata },
-  );
+  let pcClientMetadata = req.body?.pc_client_metadata;
 
   let sourceSession: AnySession | null = null;
   let transferResult: any = null;
@@ -954,7 +948,17 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
       res.status(500).json({ error: (e as Error).message || '创建 Session 转接文档失败' });
       return;
     }
+    // 继承旧会话当前的 AIMUX 连接，但不继承它的设备切换历史。
+    pcClientMetadata = pcClientMetadataForContinuation(sourceSession.pc_client_metadata);
   }
+
+  const selectionSnapshot = buildResearchSessionSelectionSnapshot(
+    user,
+    String(req.params.researchId),
+    excludedSkillIds,
+    excludedMemoryIds,
+    { pc_client_metadata: pcClientMetadata },
+  );
 
   try {
     Sessions.insert({
