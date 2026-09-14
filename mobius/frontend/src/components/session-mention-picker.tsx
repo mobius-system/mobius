@@ -14,10 +14,10 @@ export type SessionMentionSelection = {
   contextAt?: string | null
 }
 
-// 与 ChatArea 的 @ 触发同一语义: 仅当文本以 @ 结尾(刚键入)时弹抽屉,
+// 与 ChatArea 的 @ 触发同一语义: 光标前刚键入 @ (不限前面是空白还是中文/字母)即弹抽屉,
 // 继续输入任何字符即收起, 再键入下一个 @ 才重新打开。
 function trailingMention(value: string): { start: number } | null {
-  if (!/(^|\s)@$/.test(String(value || ''))) return null
+  if (!String(value || '').endsWith('@')) return null
   return { start: String(value).length - 1 }
 }
 
