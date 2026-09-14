@@ -918,8 +918,9 @@ body::after {
 }
 
 .mobius-status-marquee {
+  /* 禁止写 color: transparent: 渐变基底走 currentColor, color 一透明文字就整段隐形,
+     只剩扫光高光可见。透明填充由下面的 -webkit-text-fill-color 单独负责。 */
   --mobius-status-color: currentColor;
-  color: transparent;
   background-image: linear-gradient(
     105deg,
     var(--mobius-status-color) 0%,
