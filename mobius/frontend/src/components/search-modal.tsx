@@ -236,22 +236,23 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
       if (first.timestamp) parts.push(`ts=${encodeURIComponent(first.timestamp)}`)
       return parts.length ? '&' + parts.join('&') : ''
     })()
+    let targetUrl: string
     if (layoutMode === 'easy_mode') {
-      onNavigate(
-        `${buildEasyModeUrlFromContext({
+      targetUrl = `${buildEasyModeUrlFromContext({
           user: user?.id || '',
           projectId: r.project_id,
           sessionId: r.session_id,
           researchId: r.research_id,
           scopeType: r.scope_type,
-        })}${extra}`,
-      )
-      onClose()
-      return
+        })}${extra}`
+    } else {
+      const base = `/u/${user?.id}/p/${r.project_id}`
+      const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
+      targetUrl = `${base}${mid}?session=${r.session_id}${extra}`
     }
-    const base = `/u/${user?.id}/p/${r.project_id}`
-    const mid = r.scope_type === 'research' ? `/r/${r.research_id}` : `/i/${r.issue_id}`
-    onNavigate(`${base}${mid}?session=${r.session_id}${extra}`)
+    const isDesktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
+    if (isDesktop) onNavigate(targetUrl)
+    else window.open(targetUrl, '_blank', 'noopener,noreferrer')
     onClose()
   }
 
