@@ -704,10 +704,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         // `working` because the compact bookkeeping itself is encoded as user
         // events and has no assistant stop_reason.
         if (isCompactCompletionUserEvent(e)) return false
-        // System-generated reminders are also encoded as user events, but do
-        // not represent a new human turn. Only human-originated input may
-        // move an idle session back to working.
-        return e.origin?.kind === 'human' || e.attachment?.origin?.kind === 'human'
+        return true
       }
       if (e.type === 'system') {
         const sub = e.subtype
