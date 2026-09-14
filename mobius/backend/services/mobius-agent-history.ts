@@ -688,10 +688,21 @@ function writeMobiusErrorEntry(args: {
     if (!args.primaryPath) return false;
     st.insertState.run(sessionId, args.primaryPath);
   }
-  const last = st.lastEntry.get(sessionId) as any;
-  if (last) {
-    const lastEntry = safeParseJson(last.json);
-    if (lastEntry?.type === 'error') return false;
+  // TUI captures remain unchanged across status polls. Checking only the last
+  // entry is insufficient: any normal event appended after an error makes the
+  // same stale screen error look new on the next poll. Deduplicate by the
+  // stable error payload across a bounded recent window instead.
+  const message = String(args.error?.message || '').slice(0, 4000);
+  const rawLine = args.error?.rawLine ? String(args.error.rawLine) : null;
+  const recentRows = openStore().prepare(
+    'SELECT json FROM entries WHERE session_id = ? ORDER BY seq DESC LIMIT 100'
+  ).all(sessionId) as any[];
+  for (const row of recentRows) {
+    const previous = safeParseJson(row?.json);
+    if (previous?.type !== 'error') continue;
+    const previousMessage = String(previous?.message?.content || '').slice(0, 4000);
+    const previousRawLine = previous?.mobius?.raw_line ? String(previous.mobius.raw_line) : null;
+    if (previousMessage === message && previousRawLine === rawLine) return false;
   }
   const entry = buildMobiusErrorEntry(args);
   const json = JSON.stringify(entry);
