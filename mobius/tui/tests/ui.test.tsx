@@ -139,6 +139,7 @@ async function testChat() {
     prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
   }
   let runtimeWorking = false
+  let runtimeAimuxId: string | null = null
   let createdSessionBody: any = null
   installMock((url, init) => {
     if (url.includes('/events')) {
@@ -157,7 +158,12 @@ async function testChat() {
       return jsonResponse({ ok: true, session_id: 's1', turn_number: 1 })
     }
     if (url.endsWith('/api/sessions/s1/status')) {
-      return jsonResponse({ session_id: 's1', alive: true, working: runtimeWorking })
+      const initialAimuxId = createdSessionBody?.pc_client_metadata?.aimux_id
+      return jsonResponse({
+        session_id: 's1', alive: true, working: runtimeWorking,
+        initial_aimux_id: initialAimuxId,
+        aimux_id: runtimeAimuxId || initialAimuxId,
+      })
     }
     if (url.includes('/sessions') && init?.method === 'POST') {
       createdSessionBody = JSON.parse(String(init.body || '{}'))
@@ -186,6 +192,10 @@ async function testChat() {
     emit('typing', { active: false })
     await delay(100)
     const frame = lastFrame() ?? ''
+    runtimeAimuxId = 'remote-device-2'
+    emit('typing', { active: false })
+    await delay(120)
+    const switchedFrame = lastFrame() ?? ''
     unmount()
     ok(frame.includes('你好'), 'transcript shows the user message')
     ok(frame.includes('成功'), `assistant reply streamed in (frame has "成功")`)
@@ -198,6 +208,7 @@ async function testChat() {
     ok(createdSessionBody?.pc_client_metadata?.work_mode === 'pc', 'TUI sessions always default to pc work mode')
     ok(/^tui-/.test(createdSessionBody?.pc_client_metadata?.aimux_id || ''), 'session metadata uses the TUI AIMUX identifier')
     ok(createdSessionBody?.pc_client_metadata?.local_path === process.cwd(), 'session metadata includes the TUI current directory')
+    ok(switchedFrame.includes('智能体已经离开此设备前往新设备（remote-device-2）'), 'device switch renders the device-left warning')
   } finally { restoreFetch() }
 }
 

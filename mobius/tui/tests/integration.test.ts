@@ -6,7 +6,10 @@
  *
  * Run:  npm run test:integration
  * Target: a local Mobius backend by default; set MOBIUS_TUI_SERVER /
- * MOBIUS_TUI_USER to point at a specific server.
+ * MOBIUS_TUI_USER to point at a specific server. Set
+ * MOBIUS_TUI_PASSWORD when that server requires password login, or provide an
+ * existing bearer token through MOBIUS_TUI_TOKEN. MOBIUS_TUI_MODEL can select
+ * a specific available model for the live reply check.
  */
 import { login, getMe, MobiusClient, ApiError } from '../src/api.js'
 import { SseConnection } from '../src/sse.js'
@@ -15,6 +18,9 @@ import type { AnyEntry } from '../src/types.js'
 
 const SERVER = process.env.MOBIUS_TUI_SERVER || 'http://127.0.0.1:45616'
 const USERNAME = process.env.MOBIUS_TUI_USER || 'admin'
+const PASSWORD = process.env.MOBIUS_TUI_PASSWORD || undefined
+const TOKEN = process.env.MOBIUS_TUI_TOKEN || undefined
+const MODEL = process.env.MOBIUS_TUI_MODEL || undefined
 const WAIT_MS = Number(process.env.MOBIUS_TUI_WAIT_MS || 90000)
 
 let pass = 0, fail = 0
@@ -24,14 +30,16 @@ function ok(cond: boolean, msg: string) {
 }
 
 async function main() {
-  console.log(`\n[1/7] login → ${SERVER} as ${USERNAME}`)
-  const lr = await login(SERVER, USERNAME)
+  console.log(`\n[1/7] authenticate → ${SERVER} as ${USERNAME}`)
+  const lr = TOKEN
+    ? { token: TOKEN, user: await getMe(SERVER, TOKEN) }
+    : await login(SERVER, USERNAME, PASSWORD)
   ok(!!lr.token && lr.token.length > 20, `got token (len ${lr.token.length})`)
-  ok(lr.user.id === USERNAME, `user.id = ${lr.user.id} (${lr.user.display_name})`)
+  ok(!!lr.user.id && (TOKEN ? true : lr.user.id === USERNAME), `user.id = ${lr.user.id} (${lr.user.display_name})`)
 
   console.log('\n[2/7] getMe validates token')
   const me = await getMe(SERVER, lr.token)
-  ok(me.id === USERNAME, `getMe ok, role=${me.role}, work_dir=${me.work_dir}`)
+  ok(me.id === lr.user.id, `getMe ok, role=${me.role}, work_dir=${me.work_dir}`)
 
   const client = new MobiusClient(SERVER, lr.token)
 
@@ -41,7 +49,8 @@ async function main() {
   ok(models.length > 0, `${models.length} models available`)
   ok(keys.includes('codex') || models.some(m => /codex|claude|deepseek/i.test(m.key)),
     `a usable model present (sample: ${keys.slice(0, 5).join(', ')})`)
-  const modelKey = keys.includes('codex') ? 'codex' : models[0].key
+  if (MODEL && !keys.includes(MODEL)) throw new Error(`requested model is unavailable: ${MODEL}`)
+  const modelKey = MODEL || (keys.includes('codex') ? 'codex' : models[0].key)
 
   console.log('\n[4/7] create test project + issue')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
