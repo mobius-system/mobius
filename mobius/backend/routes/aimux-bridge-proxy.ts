@@ -125,6 +125,10 @@ function proxyRequest(req: express.Request, res: express.Response): void {
   const upstreamPath = buildUpstreamPath(req);
   const isSSE = req.method === 'GET' && upstreamPath.startsWith('/client/events');
   const isForward = pathWithoutQuery(upstreamPath) === '/api/forward';
+  // Streaming file transfer data channel: GET (remote pulls raw bytes) must
+  // stream the response with buffering disabled; POST (remote uploads raw
+  // bytes) must pipe the request body through untouched — never JSON-buffered.
+  const isData = pathWithoutQuery(upstreamPath) === '/client/data';
 
   const headers: http.OutgoingHttpHeaders = { ...req.headers };
   for (const h of Object.keys(headers)) {
@@ -135,7 +139,7 @@ function proxyRequest(req: express.Request, res: express.Response): void {
   headers['x-forwarded-for'] = req.ip || '';
   headers['x-forwarded-proto'] = req.protocol || 'http';
 
-  if (isSSE || isForward) {
+  if (isSSE || isForward || isData) {
     logBridgeProxy(req, 'sse open');
     const upstreamReq = http.request({
       hostname: target.hostname,
@@ -174,7 +178,7 @@ function proxyRequest(req: express.Request, res: express.Response): void {
     res.on('close', () => {
       if (!res.writableEnded) upstreamReq.destroy();
     });
-    if (isForward) req.pipe(upstreamReq);
+    if (isForward || (isData && req.method === 'POST')) req.pipe(upstreamReq);
     else upstreamReq.end();
     return;
   }
