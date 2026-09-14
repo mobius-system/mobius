@@ -47,6 +47,8 @@ type CodeConversationPaneProps = {
   projectId: string
   bindPath: string
   vscodeWebUrl?: string
+  // 当前会话 id: 用于后端把该会话绑定的 aimux bridge 设备 (元素1) 注入远程文件源 (元素2)。
+  sessionId?: string
 }
 
 type FileSource = 'hub' | 'local' | 'remote'
@@ -57,6 +59,8 @@ type ProjectRemoteFileSource = {
   remote_path: string
   hostname?: string
   hardware?: string
+  // 会话绑定的 aimux bridge 设备 (元素1 注入, 后端标 bridge:true), 第一优先。
+  bridge?: boolean
 }
 
 type DesktopBridge = {
@@ -103,6 +107,12 @@ function loadRemoteMachine(projectId: string): string {
   catch { return '' }
 }
 
+// 远程文件源 API 统一附加 ?session= (或 &session=), 让后端把当前会话绑定的
+// aimux bridge 设备解析成合法远程文件源 (元素1 → 元素2 自动挂载)。
+function sessionQuery(sessionId?: string): string {
+  return sessionId ? `session=${encodeURIComponent(sessionId)}` : ''
+}
+
 type FileContent = {
   path: string
   name: string
@@ -134,7 +144,7 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: CodeConversationPaneProps) {
+export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId }: CodeConversationPaneProps) {
   const desktop = getDesktopBridge()
   const isDesktop = !!desktop?.isDesktop
   const [source, setSourceState] = useState<FileSource>(() => loadFileSource(projectId))
@@ -217,16 +227,22 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     let cancelled = false
     setRemoteSourcesLoaded(false)
     setRemoteSourcesError('')
-    api(`/api/projects/${projectId}/remote-file-sources`)
+    const q = sessionQuery(sessionId)
+    api(`/api/projects/${projectId}/remote-file-sources${q ? `?${q}` : ''}`)
       .then((data: any) => {
         if (cancelled) return
         const rows = Array.isArray(data?.remotes) ? data.remotes.filter((row: any) => row?.name) : []
         setRemoteSources(rows)
         setRemoteName(current => {
           const stored = loadRemoteMachine(projectId)
-          const next = rows.some((row: ProjectRemoteFileSource) => row.name === current)
-            ? current
-            : (rows.some((row: ProjectRemoteFileSource) => row.name === stored) ? stored : (rows[0]?.name || ''))
+          // 会话绑定的 bridge 设备恒在列表首位 (后端标 bridge:true), 自动挂载且第一优先,
+          // 覆盖本地记忆/旧选择。
+          const bridgeName = rows[0]?.bridge === true ? rows[0].name : ''
+          const next = bridgeName
+            ? bridgeName
+            : rows.some((row: ProjectRemoteFileSource) => row.name === current)
+              ? current
+              : (rows.some((row: ProjectRemoteFileSource) => row.name === stored) ? stored : (rows[0]?.name || ''))
           try {
             if (next) localStorage.setItem(remoteMachineStorageKey(projectId), next)
             else localStorage.removeItem(remoteMachineStorageKey(projectId))
@@ -242,7 +258,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         setRemoteSourcesLoaded(true)
       })
     return () => { cancelled = true }
-  }, [projectId, remoteSourcesVersion])
+  }, [projectId, remoteSourcesVersion, sessionId])
 
   const loadDir = useCallback(async (relPath: string) => {
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
@@ -250,7 +266,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       const data = source === 'local'
         ? await desktop?.listProjectLocalFiles?.(projectId, relPath)
         : source === 'remote'
-          ? await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(relPath)}`)
+          ? await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(relPath)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`)
           : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本地文件失败')
       if (relPath === '/') {
@@ -275,7 +291,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
       if (relPath === '/') { setRootLoaded(true); setRootError(e?.message || '加载失败') }
     }
-  }, [desktop, projectId, remoteName, source])
+  }, [desktop, projectId, remoteName, source, sessionId])
 
   useEffect(() => {
     let cancelled = false
@@ -390,7 +406,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
       const data = source === 'local'
         ? await desktop?.readProjectLocalFile?.(projectId, rel)
         : source === 'remote'
-          ? await api(`/api/projects/${projectId}/remote-file?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(rel)}`)
+          ? await api(`/api/projects/${projectId}/remote-file?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(rel)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`)
           : await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本地文件失败')
       setFileData(data as FileContent)
@@ -400,7 +416,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setFileLoading(false)
     }
-  }, [desktop, projectId, bindPath, localBindPath, remoteName, source, dirty, selected])
+  }, [desktop, projectId, bindPath, localBindPath, remoteName, source, dirty, selected, sessionId])
 
   // 保存: 写回磁盘, 复位 dirty. 返回是否保存成功 (供重命名前确认使用)。
   const save = useCallback(async (): Promise<boolean> => {
@@ -415,7 +431,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
         const result = await desktop?.writeProjectLocalFile?.(projectId, rel, doc)
         if (!result?.ok) throw new Error(result?.error || '保存本地文件失败')
       } else if (source === 'remote') {
-        await api(`/api/projects/${projectId}/remote-file`, {
+        await api(`/api/projects/${projectId}/remote-file${sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''}`, {
           method: 'POST',
           body: JSON.stringify({ remote: remoteName, path: rel, content: doc }),
         })
@@ -436,7 +452,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl }: Code
     } finally {
       setSaving(false)
     }
-  }, [desktop, selected, fileData, dirty, saving, projectId, bindPath, localBindPath, remoteName, source, doc])
+  }, [desktop, selected, fileData, dirty, saving, projectId, bindPath, localBindPath, remoteName, source, doc, sessionId])
 
   // Ctrl/Cmd+S 拦截: 触发保存, 阻止浏览器默认另存对话框.
   useEffect(() => {

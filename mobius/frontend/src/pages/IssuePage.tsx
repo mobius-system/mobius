@@ -642,6 +642,7 @@ export default function IssuePage() {
                 projectId={projectId}
                 bindPath={editorBindPath}
                 vscodeWebUrl={editorVscodeUrl}
+                sessionId={currentSession?.session_id}
               />
             </Suspense>
           </div>

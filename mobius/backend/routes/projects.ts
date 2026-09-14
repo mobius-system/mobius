@@ -41,6 +41,7 @@ import {
 } from '../services/project-file-ops';
 import { resolveProjectPath } from '../services/project-path';
 import * as aimuxRemote from '../services/aimux-remote';
+import { aimuxRemoteNameFromMeta, parsePcClientMetadata } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
 import {
   canReadProject,
@@ -3196,34 +3197,63 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
   }
 });
 
-function projectRemoteFileSource(project: any, rawName: unknown): any | null {
+// 当前会话绑定的 aimux bridge 设备 (与前端元素1 RemoteAimuxMcpIndicator 同一判定口径:
+// pc_client_metadata.add_remote_aimux_mcp === true 且 aimux_id 非空)。用户须能读该会话,
+// 否则不暴露。返回 { aimuxId, localPath } 或 null。localPath 优先取 pc_client_metadata.local_path,
+// 缺失时回落 '.' (aimux 登录目录)。
+function sessionAimuxBridgeDevice(req: express.Request, sessionId: unknown): { aimuxId: string; localPath: string } | null {
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  const session = Sessions.findById(sessionId);
+  if (!session || !canReadSession(userOf(req), session)) return null;
+  const aimuxId = aimuxRemoteNameFromMeta(session.pc_client_metadata);
+  if (!aimuxId) return null;
+  const meta = parsePcClientMetadata(session.pc_client_metadata);
+  const localPath = typeof meta?.local_path === 'string' ? meta.local_path.trim() : '';
+  return { aimuxId, localPath: localPath || '.' };
+}
+
+function projectRemoteFileSource(project: any, rawName: unknown, bridge: { aimuxId: string; localPath: string } | null): any | null {
   const name = typeof rawName === 'string' ? rawName.trim() : '';
   if (!name) return null;
+  // 会话绑定的 bridge 设备优先: 即使不在项目清单里也可作为远程文件源 (第一优先顺序)。
+  if (bridge && name === bridge.aimuxId) {
+    return { name: bridge.aimuxId, status: 'connected', remote_path: bridge.localPath };
+  }
   const inventory = Array.isArray(project?.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
   return inventory.find((entry: any) => entry?.name === name) || null;
 }
 
 // 当前 Project 已注册的远程算力文件源。只暴露项目清单内的机器，不返回全局 aimux remote。
+// 若带 ?session=<id> 且该会话绑定了 aimux bridge 设备, 则该设备作为第一优先的远程文件源注入列表。
 router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
+  const bridge = sessionAimuxBridgeDevice(req, req.query.session);
   const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
-  res.json({
-    remotes: inventory.map((entry: any) => ({
-      name: String(entry.name || ''),
-      status: String(entry.status || ''),
-      remote_path: String(entry.remote_path || ''),
-      hostname: String(entry.hostname || ''),
-      hardware: String(entry.hardware || ''),
-    })).filter((entry: any) => entry.name),
-  });
+  const inventoryRemotes = inventory.map((entry: any) => ({
+    name: String(entry.name || ''),
+    status: String(entry.status || ''),
+    remote_path: String(entry.remote_path || ''),
+    hostname: String(entry.hostname || ''),
+    hardware: String(entry.hardware || ''),
+  })).filter((entry: any) => entry.name);
+  const bridgeRemotes = bridge ? [{
+    name: bridge.aimuxId,
+    status: 'connected',
+    remote_path: bridge.localPath,
+    hostname: '',
+    hardware: '',
+    bridge: true,
+  }] : [];
+  res.json({ remotes: [...bridgeRemotes, ...inventoryRemotes] });
 });
 
 // 远程文件统一走 aimux file：普通 SSH remote 与 reverse bridge remote 自动分派。
 router.get('/:id/remote-files', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
-  const remote = projectRemoteFileSource(project, req.query.remote);
+  const bridge = sessionAimuxBridgeDevice(req, req.query.session);
+  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
     res.json(await aimuxRemote.listRemoteFiles(remote.name, remote.remote_path, req.query.path || '/'));
@@ -3235,7 +3265,8 @@ router.get('/:id/remote-files', auth, async (req: express.Request, res: express.
 router.get('/:id/remote-file', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
-  const remote = projectRemoteFileSource(project, req.query.remote);
+  const bridge = sessionAimuxBridgeDevice(req, req.query.session);
+  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
     res.json(await aimuxRemote.readRemoteFile(remote.name, remote.remote_path, req.query.path || '/'));
@@ -3247,7 +3278,8 @@ router.get('/:id/remote-file', auth, async (req: express.Request, res: express.R
 router.post('/:id/remote-file', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
-  const remote = projectRemoteFileSource(project, req.body?.remote);
+  const bridge = sessionAimuxBridgeDevice(req, req.query.session);
+  const remote = projectRemoteFileSource(project, req.body?.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
     res.json(await aimuxRemote.writeRemoteFile(remote.name, remote.remote_path, req.body?.path || '/', req.body?.content));
