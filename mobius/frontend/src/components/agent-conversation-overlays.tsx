@@ -9,7 +9,7 @@ import { pollRecursive } from '../services/polling'
 import { clampOverlayToBounds, resolveOverlayCollisions, type OverlayCollisionItem } from '../services/overlay-collision'
 import { getHistoryStore } from '../services/agent-history-store'
 import { preloadSessionInputCache, prependSessionInputCache, readSessionInputCache, refreshSessionInputCache, type SessionInputEntry } from '../services/session-input-cache'
-import { RemoteFileMentionDrawer, type AgentMentionMode, type MentionAgentSession } from './chat'
+import { RemoteFileMentionDrawer, type AgentMentionMode, type MentionAgentSession } from './mention-drawer'
 import type { AnyEntry } from './viewer/types'
 
 type OverlaySession = { id: string; title: string; projectId: string; projectName: string; creatorId?: string; parentId: string; parentKind: 'issue' | 'research'; color: string; x: number; y: number; active: boolean }

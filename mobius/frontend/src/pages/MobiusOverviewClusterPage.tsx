@@ -1914,6 +1914,9 @@ export default function MobiusOverviewClusterPage() {
     try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
   })
   const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
+  // 用户手动关闭过的浮窗 (含活跃会话): 记录在案避免轮询刷新 status 后又自动弹出。
+  // 从 DetailDrawer 重新点「显示对话浮窗」时清除, 恢复弹出。
+  const [dismissedOverlayIds, setDismissedOverlayIds] = useState<Set<string>>(() => new Set())
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const modelRef = useRef<ClusterModel>({ mode: clusterMode, nodes: [], parentClusters: [], projectClusters: [], creatorClusters: [] })
@@ -2152,7 +2155,7 @@ export default function MobiusOverviewClusterPage() {
     })
     return stats
   }, [model.nodes])
-  const overlaySessions = useMemo(() => model.nodes.map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds])
+  const overlaySessions = useMemo(() => model.nodes.filter((node) => !dismissedOverlayIds.has(node.id)).map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds, dismissedOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -2970,8 +2973,8 @@ export default function MobiusOverviewClusterPage() {
             )}
           </div>
 
-          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
-          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next })} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; navigate(`${base}?session=${encodeURIComponent(session.id)}`) }} />
+          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); setDismissedOverlayIds((current) => { const next = new Set(current); next.delete(session.id); return next }); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
+          <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => { setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next }); setDismissedOverlayIds((current) => { const next = new Set(current); next.add(sessionId); return next }) }} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; const target = `${base}?session=${encodeURIComponent(session.id)}`; const desktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop; if (desktop) navigate(target); else window.open(target, '_blank', 'noopener,noreferrer') }} />
         </main>
       </div>
     </div>
