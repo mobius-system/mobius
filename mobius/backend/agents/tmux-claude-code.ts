@@ -721,11 +721,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // 出队事件检测: Claude Code 的「人类输入真正到达 agent」= 条目带 origin.kind=='human'.
   // 两种落盘形态都算: 顶层 origin (type:user 手打) / attachment 里 origin (queued_command 注入).
-  // 其余 (system/assistant/tool 等) 都不是出队信号.
+  // /compact 的完成回执 (<local-command-stdout>Compacted) 也是出队信号: 它的 opener(kind=compact)
+  // 等这个合成 user 卡出现才开轮. 其余 (system/assistant/tool 等) 都不是.
   containDequeueEvent(entry: any): boolean {
     if (!entry || typeof entry !== 'object') return false
     if (entry.origin?.kind === 'human') return true
     if (entry.attachment?.origin?.kind === 'human') return true
+    if (isCompactCompletionUserEvent(entry)) return true
     return false
   }
 
