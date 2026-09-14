@@ -1215,6 +1215,19 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </TopNavActionElement>
+          {easyUI && (
+            <TopNavActionElement
+              type="button"
+              onClick={() => {
+                setLayoutMode('normal_mode')
+              }}
+              title="切换回正常模式"
+              aria-label="切换回正常模式"
+              data-testid="normal-mode-trigger"
+            >
+              <LayoutPanelTop className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            </TopNavActionElement>
+          )}
           {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
           {!easyUI && (
             <TopNavActionElement
