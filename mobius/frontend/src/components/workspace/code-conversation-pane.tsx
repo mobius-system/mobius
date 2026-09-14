@@ -233,11 +233,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         if (cancelled) return
         const rows = Array.isArray(data?.remotes) ? data.remotes.filter((row: any) => row?.name) : []
         setRemoteSources(rows)
+        // 会话绑定的 bridge 设备恒在列表首位 (后端标 bridge:true), 自动挂载且第一优先。
+        const bridgeName = rows[0]?.bridge === true ? rows[0].name : ''
         setRemoteName(current => {
           const stored = loadRemoteMachine(projectId)
-          // 会话绑定的 bridge 设备恒在列表首位 (后端标 bridge:true), 自动挂载且第一优先,
-          // 覆盖本地记忆/旧选择。
-          const bridgeName = rows[0]?.bridge === true ? rows[0].name : ''
           const next = bridgeName
             ? bridgeName
             : rows.some((row: ProjectRemoteFileSource) => row.name === current)
@@ -249,6 +248,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           } catch { /* 静默 */ }
           return next
         })
+        // 会话绑定 bridge 设备时, 文件源 (中枢/本地/远程) 默认落到「远程」; 仅在用户从未
+        // 显式选择过文件源时生效 (不覆盖已有手动选择)。
+        if (bridgeName) {
+          let explicitSource = false
+          try { explicitSource = localStorage.getItem(fileSourceStorageKey(projectId)) !== null } catch { /* 静默 */ }
+          if (!explicitSource) {
+            setSourceState('remote')
+            try { localStorage.setItem(fileSourceStorageKey(projectId), 'remote') } catch { /* 静默 */ }
+          }
+        }
         setRemoteSourcesLoaded(true)
       })
       .catch((e: any) => {
