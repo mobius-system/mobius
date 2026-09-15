@@ -13,11 +13,12 @@ set -euo pipefail
 
 TAG=20241002
 PYVER=3.12.7
-BUNDLE_VER=3
-AIMUX_VERSION=0.1.29
+BUNDLE_VER=4
+AIMUX_VERSION=0.1.31
 PYPI_INDEX=https://pypi.org/simple
 WORK="${WORK:-/home/tianyi/python-bundles}"
 DIST="${DIST:-$WORK/dist}"
+AIMUX_WHEEL="${AIMUX_WHEEL:-}"
 mkdir -p "$WORK" "$DIST"
 
 base="https://github.com/astral-sh/python-build-standalone/releases/download/$TAG"
@@ -72,8 +73,12 @@ done
 
 LINUX_PY="$WORK/linux-x64/python/bin/python3"
 echo "== 2) linux-x64: 原生 pip install aimux =="
-USE_PROXY=1 uv_install_python --quiet "aimux==$AIMUX_VERSION" colorama || \
-  uv_install_python "aimux==$AIMUX_VERSION" colorama
+if [[ -n "$AIMUX_WHEEL" ]]; then
+  uv_install_python --quiet "$AIMUX_WHEEL" colorama || uv_install_python "$AIMUX_WHEEL" colorama
+else
+  USE_PROXY=1 uv_install_python --quiet "aimux==$AIMUX_VERSION" colorama || \
+    uv_install_python "aimux==$AIMUX_VERSION" colorama
+fi
 echo "  验证: $($LINUX_PY -c 'import aimux, click, loguru, typer, rich; print("linux import ok", aimux.__name__)')"
 
 echo "== 3) win-x64 / mac-x64: 跨装纯 python aimux 到各自 site-packages =="
@@ -82,8 +87,13 @@ install_target() { # arch site_packages_dir [extra...]
   local arch=$1 sp=$2; shift 2
   echo "  [$arch] pip install --target $sp aimux $*"
   rm -rf "$sp"/* 2>/dev/null || true   # 重复构建时清旧
-  USE_PROXY=1 uv pip install --quiet --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@" || \
-    uv pip install --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@"
+  if [[ -n "$AIMUX_WHEEL" ]]; then
+    USE_PROXY=1 uv pip install --quiet --target "$sp" "$AIMUX_WHEEL" "$@" || \
+      uv pip install --target "$sp" "$AIMUX_WHEEL" "$@"
+  else
+    USE_PROXY=1 uv pip install --quiet --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@" || \
+      uv pip install --index-url "$PYPI_INDEX" --target "$sp" "aimux==$AIMUX_VERSION" "$@"
+  fi
   echo "  [$arch] site-packages:"; ls "$sp" | head -20
 }
 install_target win-x64  "$WORK/win-x64/python/Lib/site-packages"            colorama win32-setctime

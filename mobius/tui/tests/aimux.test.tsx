@@ -78,11 +78,11 @@ async function testBundleArchAndUrl() {
   const arch = bundleArch()
   ok(arch === 'linux-x64' || arch === 'win-x64' || arch === 'mac-x64', `bundleArch returns a supported arch on this host (${arch})`)
   const before = bundleUrl('linux-x64')
-  ok(before.includes('mobius-python-linux-x64-v3') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
+  ok(before.includes('mobius-python-linux-x64-v4') && before.endsWith('.zip'), 'bundleUrl follows the fixed filename pattern')
   const saved = process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL
   process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = 'https://example.test/cdn/'
   try {
-    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v3.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
+    ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v4.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
   } finally { if (saved === undefined) delete process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL; else process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = saved }
 }
 
