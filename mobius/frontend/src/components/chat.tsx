@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
-import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, Search, Clock, Sparkles } from 'lucide-react'
+import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, Search, Clock, Sparkles, Download } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
@@ -226,6 +226,59 @@ function EasyLoadAllControls({ store, loading, onLoadAll, expandAllSignal }: {
   )
 }
 
+// 原始 JSONL 弹窗的「复制全部 / 下载」共用的取数: 把所有未加载组按 ② 逐组补齐后摊平成
+// JSONL 文本 (用户显式动作, 不截断). 渲染层有预算限制, 但导出走全量.
+async function collectRawJsonlText(store: SessionHistoryStore | null): Promise<string> {
+  if (!store) return ''
+  for (const group of store.groups) {
+    await store.ensureGroupEntries(group.id)
+  }
+  return (store.flattenEntries() as any[]).map(e => JSON.stringify(e)).join('\n')
+}
+
+// 下载文件名: 优先沿用磁盘上的 jsonl 文件名 (与后端 watch 的同一份), 缺失时用会话 id 兜底.
+function rawJsonlFileName(jsonlPath: string | null, sessionId?: string | null): string {
+  const base = (jsonlPath || '').split('/').pop() || ''
+  if (base.endsWith('.jsonl')) return base
+  return `${sessionId || 'session'}.jsonl`
+}
+
+// 原始 JSONL 弹窗正文的渲染预算.
+// 全量 JSON.stringify(entry, null, 2) 的 DOM 节点数/字符数随会话线性增长, 会话一长
+// 就会把前端拖死 (用户反馈: jsonl 太长页面卡死). 超预算的条目不再进 DOM, 只渲染
+// 前若干条, 完整内容引导用户点右上角「下载 JSONL」拿文件.
+const RAW_JSONL_RENDER_MAX_ENTRIES = 200
+const RAW_JSONL_RENDER_MAX_CHARS = 200_000
+
+type RawJsonlRenderWindow = {
+  text: string
+  shownCount: number
+  totalCount: number
+  truncated: boolean
+}
+
+// 逐条累加, 超出条数或字符预算即停; 最后一条允许按字符截断 (保留恰好用满预算的部分).
+function buildRawJsonlRenderWindow(entries: any[]): RawJsonlRenderWindow {
+  const blocks: string[] = []
+  let used = 0
+  let shownCount = 0
+  let truncated = false
+  for (let i = 0; i < entries.length; i++) {
+    if (shownCount >= RAW_JSONL_RENDER_MAX_ENTRIES) { truncated = true; break }
+    const block = `// #${i + 1}\n${JSON.stringify(entries[i], null, 2)}`
+    const remain = RAW_JSONL_RENDER_MAX_CHARS - used
+    if (block.length > remain) {
+      if (remain > 0) { blocks.push(block.slice(0, remain)); shownCount++ }
+      truncated = true
+      break
+    }
+    blocks.push(block)
+    used += block.length
+    shownCount++
+  }
+  return { text: blocks.join('\n\n'), shownCount, totalCount: entries.length, truncated }
+}
+
 // 原始 JSONL 弹窗的正文 (条目列表): 自订阅快照, 打开弹窗才随数据更新.
 function RawJsonlList({ store }: { store: SessionHistoryStore | null }) {
   const snapshot = useHistorySnapshotOf(store)
@@ -234,13 +287,24 @@ function RawJsonlList({ store }: { store: SessionHistoryStore | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [store, snapshot.rev],
   )
+  const renderWindow = useMemo(() => buildRawJsonlRenderWindow(entries), [entries])
   if (entries.length === 0) {
     return <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
   }
   return (
-    <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text" style={{ color: 'var(--text-secondary)' }}>
-      {entries.map((e: any, i: number) => `// #${i + 1}\n${JSON.stringify(e, null, 2)}`).join('\n\n')}
-    </pre>
+    <>
+      <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text" style={{ color: 'var(--text-secondary)' }}>
+        {renderWindow.text}
+      </pre>
+      {renderWindow.truncated && (
+        <div
+          className="sticky bottom-0 px-5 py-2 text-[11px] border-t"
+          style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+        >
+          内容过长, 仅显示前 {renderWindow.shownCount} / {renderWindow.totalCount} 条 — 完整内容请点右上角「下载 JSONL」。
+        </div>
+      )}
+    </>
   )
 }
 
@@ -2079,6 +2143,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const [easyLoadingAll, setEasyLoadingAll] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
+  const [rawJsonlDownloading, setRawJsonlDownloading] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
   const [fileChangesOpen, setFileChangesOpen] = useState(false)
   const [bashCommandsOpen, setBashCommandsOpen] = useState(false)
@@ -4869,19 +4934,43 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 onClick={async () => {
                   // 复制全部 = 把所有未加载组的条目按 ② 逐组补齐后摊平 (用户显式动作, 不截断).
                   try {
-                    const store = historyStoreRef.current
-                    if (store) {
-                      for (const group of store.groups) {
-                        await store.ensureGroupEntries(group.id)
-                      }
-                    }
-                    const entriesToCopy = historyStoreRef.current?.flattenEntries() ?? []
-                    await navigator.clipboard.writeText(entriesToCopy.map(e => JSON.stringify(e)).join('\n'))
+                    const text = await collectRawJsonlText(historyStoreRef.current)
+                    await navigator.clipboard.writeText(text)
                     setRawJsonlCopied(true)
                     setTimeout(() => setRawJsonlCopied(false), 1000)
                   } catch {}
                 }}
               />
+              {/* 弹窗正文只渲染前若干条 (见 RAW_JSONL_RENDER_MAX_*), 完整内容从这里落盘下载. */}
+              <button
+                type="button"
+                className="jsonl-icon-button"
+                title="下载 JSONL 文件"
+                aria-label="下载 JSONL 文件"
+                disabled={rawJsonlDownloading}
+                onClick={async () => {
+                  if (rawJsonlDownloading) return
+                  setRawJsonlDownloading(true)
+                  let url = ''
+                  try {
+                    const text = await collectRawJsonlText(historyStoreRef.current)
+                    if (!text) return
+                    url = URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' }))
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = rawJsonlFileName(jsonlPath, sessionId)
+                    document.body.appendChild(a)
+                    a.click()
+                    a.remove()
+                  } catch {} finally {
+                    setRawJsonlDownloading(false)
+                    if (url) setTimeout(() => URL.revokeObjectURL(url), 1000)
+                  }
+                }}>
+                {rawJsonlDownloading
+                  ? <Loader2 className="h-2.5 w-2.5 animate-spin" strokeWidth={1.9} aria-hidden="true" />
+                  : <Download className="h-2.5 w-2.5" strokeWidth={1.9} aria-hidden="true" />}
+              </button>
               <button onClick={() => setShowRaw(false)}
                 className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 style={{ color: 'var(--text-secondary)' }}>关闭</button>
