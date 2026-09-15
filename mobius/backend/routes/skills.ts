@@ -523,6 +523,28 @@ router.post('/import-file', auth, (req: express.Request, res: express.Response) 
   handleSkillFileImport(req, res);
 });
 
+// 编辑用户级 Skill 的 SKILL.md 正文 (主 Markdown).
+router.patch('/:id/body', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const sk = Skills.findById(req.params.id);
+  if (!sk || sk.scope !== 'user' || !canManageContextItem(user, 'skill', sk)) {
+    res.status(403).json({ error: '无权编辑此 Skill' });
+    return;
+  }
+  const body = (req.body || {}) as { body?: string; content?: string };
+  const content = typeof body.body === 'string' ? body.body : body.content;
+  if (typeof content !== 'string') {
+    res.status(400).json({ error: '缺少正文内容' });
+    return;
+  }
+  const result = Skills.updateBody(sk.id, content);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(shapeSkill(result.skill, user));
+});
+
 router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   const sk = Skills.findById(req.params.id);
@@ -742,6 +764,34 @@ projectScoped.post('/copy', auth, (req: express.Request, res: express.Response) 
   const result = Skills.copyToScope({
     sourceId, targetUserId: user.id, targetProjectId: req.params.projectId,
   });
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(shapeSkill(result.skill, user));
+});
+
+// 编辑项目级 Skill 的 SKILL.md 正文 (主 Markdown).
+projectScoped.patch('/:id/body', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  const acc = ensureProjectAccess(req, res);
+  if (!acc) return;
+  const sk = Skills.findById(req.params.id);
+  if (!sk || sk.scope !== 'project' || sk.owner_id !== req.params.projectId) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+  if (!canManageContextItem(user, 'skill', sk)) {
+    res.status(403).json({ error: '无权编辑此项目级 Skill' });
+    return;
+  }
+  const body = (req.body || {}) as { body?: string; content?: string };
+  const content = typeof body.body === 'string' ? body.body : body.content;
+  if (typeof content !== 'string') {
+    res.status(400).json({ error: '缺少正文内容' });
+    return;
+  }
+  const result = Skills.updateBody(sk.id, content);
   if (!result.ok) {
     res.status(400).json({ error: result.error });
     return;

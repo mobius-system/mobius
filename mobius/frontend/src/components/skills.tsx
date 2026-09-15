@@ -488,7 +488,7 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
         </div>
       )}
 
-      {viewing && <SkillBodyViewer baseUrl={baseUrl} skillId={viewing.id} title={viewing.name} onClose={() => setViewing(null)} />}
+      {viewing && <SkillBodyViewer baseUrl={baseUrl} skillId={viewing.id} title={viewing.name} canEdit={!!viewing.can_manage} onClose={() => setViewing(null)} />}
 
       {accessing && (
         <ContextAccessModal
@@ -530,16 +530,36 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
   )
 }
 
-// 单条 skill 详情查看 (带 body)
-function SkillBodyViewer({ baseUrl, skillId, title, onClose }: { baseUrl: string; skillId: string; title: string; onClose: () => void }) {
+// 单条 skill 详情查看 / 编辑 (带 body)
+function SkillBodyViewer({ baseUrl, skillId, title, onClose, canEdit }: { baseUrl: string; skillId: string; title: string; onClose: () => void; canEdit?: boolean }) {
   const [body, setBody] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
   useEffect(() => {
     api(`${baseUrl}/${skillId}`)
       .then((d: any) => { setBody(d?.body || ''); setLoading(false) })
       .catch(e => { setErr(e?.message || '加载失败'); setLoading(false) })
   }, [baseUrl, skillId])
+
+  const startEdit = () => { setDraft(body); setSaveErr(''); setEditing(true) }
+  const cancelEdit = () => { setEditing(false); setSaveErr('') }
+  const saveEdit = async () => {
+    setSaving(true); setSaveErr('')
+    try {
+      const d: any = await api(`${baseUrl}/${skillId}/body`, { method: 'PATCH', body: JSON.stringify({ body: draft }) })
+      setBody(d?.body ?? draft)
+      setEditing(false)
+    } catch (e: any) {
+      setSaveErr(e?.message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -548,13 +568,40 @@ function SkillBodyViewer({ baseUrl, skillId, title, onClose }: { baseUrl: string
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title} · SKILL.md</span>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" style={{ color: 'var(--text-muted)' }}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {canEdit && !editing && !loading && !err && (
+              <button onClick={startEdit}
+                className="h-7 px-3 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ color: 'var(--text-primary)', borderColor: 'var(--input-border)' }}>
+                编辑
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" style={{ color: 'var(--text-muted)' }}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-auto p-5">
           {loading ? <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
             : err ? <div className="text-[12px] text-red-400">{err}</div>
+            : editing ? (
+              <>
+                <textarea autoFocus value={draft} onChange={e => { setDraft(e.target.value); setSaveErr('') }} disabled={saving}
+                  rows={22}
+                  className="w-full px-3 py-2 rounded-xl border text-[12px] leading-relaxed font-mono focus:outline-none focus:border-blue-500/30 resize-y"
+                  style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }} />
+                {saveErr && <div className="text-[11px] text-red-400 mt-2 whitespace-pre-wrap break-all">{saveErr}</div>}
+                <div className="flex gap-2 mt-3">
+                  <button onClick={saveEdit} disabled={saving}
+                    className="h-7 px-3 text-[11px] rounded btn-primary transition-colors disabled:opacity-40">
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                  <button onClick={cancelEdit} disabled={saving}
+                    className="h-7 px-3 text-[11px] rounded border disabled:opacity-40"
+                    style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
+                </div>
+              </>
+            )
             : <pre className="text-[12px] leading-relaxed whitespace-pre-wrap font-mono p-4 rounded-xl border"
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>{body}</pre>}
         </div>

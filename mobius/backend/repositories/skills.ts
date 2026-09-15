@@ -13,6 +13,7 @@ const Skills = {
   findById: skillsFs.findById,
   delete: skillsFs.deleteById,
   deleteForProject: skillsFs.deleteForProject,
+  updateBody: skillsFs.updateBody,
   install: skillsFs.install,
   importLocal: skillsFs.importFromLocalPath,
   copyToScope: skillsFs.copyToScope,
