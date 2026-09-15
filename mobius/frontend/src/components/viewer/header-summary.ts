@@ -249,7 +249,13 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
         return { short: clipped.short, shortTail: clipped.short, full: ic.raw, truncated: true, canCompact: true }
       }
       const body = contentBlocksText(payload?.content)
-      return clip(`${payload?.role || 'message'}${body ? ` · ${body}` : ''}`, HEADER_SHORT_LIMIT)
+      // The message body is also fed to the compact Markdown renderer.  Do not
+      // prepend the protocol role (for example "assistant · ") here: when the
+      // body starts with a line-sensitive construct such as a GFM table, that
+      // prefix changes the Markdown grammar and turns the table into a
+      // paragraph.  The card header already exposes the entry type/label, so
+      // the role prefix adds no information that belongs in `full`.
+      return clip(body, HEADER_SHORT_LIMIT)
     }
     if (isFunctionCallPayload(payload)) {
       if (payload?.name === 'update_plan') {
