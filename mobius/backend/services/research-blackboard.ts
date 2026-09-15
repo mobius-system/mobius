@@ -6,22 +6,20 @@ import { db } from '../../db';
 import { Researches } from '../repositories/researches';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
-import { BACKEND_WORKER_LOG_DIR, PORT, HIDDEN_FOLDER_NAME } from '../config';
+import { BACKEND_WORKER_LOG_DIR, HIDDEN_FOLDER_NAME } from '../config';
 import modelRegistry from './model-registry';
 import { resolveSessionWorkspace } from './workspace';
 import agents from '../agents';
 
-const DEFAULT_PORT = PORT;
 const MAX_AUTHOR_LEN = 300;
 const MAX_CONTENT_LEN = 50000;
+const LIMITED_RECEIVER_OPEN = '<limited_receiver>';
+const LIMITED_RECEIVER_CLOSE = '</limited_receiver>';
+const SAFE_SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const DELIVERY_SCAN_INTERVAL_MS = 3000;
 const DELIVERY_FIRST_RUN_DELAY_MS = 1000;
 const DELIVERY_LOG_DIR = BACKEND_WORKER_LOG_DIR;
 const DELIVERY_LOG_FILE = path.join(DELIVERY_LOG_DIR, 'scan_research_blackboard_delivery.log');
-
-function blackboardUrl(researchId: string): string {
-  return `http://localhost:${DEFAULT_PORT}/api/research-blackboard/${researchId}`;
-}
 
 function resolveBlackboardFile(researchId: string): any {
   const research = Researches.findByIdWithProject(researchId);
@@ -41,12 +39,80 @@ function ensureParentDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
+function parseLimitedReceiverContent(rawContent: any): any {
+  const content = typeof rawContent === 'string' ? rawContent : '';
+  if (!content.startsWith(LIMITED_RECEIVER_OPEN)) {
+    return { limited: false, malformed: false, receiverSessionId: null, content };
+  }
+  const closeAt = content.indexOf(LIMITED_RECEIVER_CLOSE, LIMITED_RECEIVER_OPEN.length);
+  if (closeAt < 0) {
+    return { limited: true, malformed: true, receiverSessionId: null, content: '' };
+  }
+  const receiverSessionId = content.slice(LIMITED_RECEIVER_OPEN.length, closeAt).trim();
+  let visibleContent = content.slice(closeAt + LIMITED_RECEIVER_CLOSE.length);
+  if (visibleContent.startsWith('\r\n')) visibleContent = visibleContent.slice(2);
+  else if (visibleContent.startsWith('\n')) visibleContent = visibleContent.slice(1);
+  return {
+    limited: true,
+    malformed: !SAFE_SESSION_ID_RE.test(receiverSessionId),
+    receiverSessionId: SAFE_SESSION_ID_RE.test(receiverSessionId) ? receiverSessionId : null,
+    content: visibleContent,
+  };
+}
+
+function prefixLimitedReceiverContent(receiverSessionId: string, content: string): string {
+  if (!SAFE_SESSION_ID_RE.test(String(receiverSessionId || ''))) throw new Error('receiver Session ID 非法');
+  return `${LIMITED_RECEIVER_OPEN}${receiverSessionId}${LIMITED_RECEIVER_CLOSE}\n${content}`;
+}
+
+function sanitizedRecord(record: any): any {
+  const parsed = parseLimitedReceiverContent(record?.content);
+  return parsed.limited ? { ...record, content: parsed.content } : record;
+}
+
+function serializeVisibleEntries(entries: any[], predicate: (record: any, parsed: any) => boolean, includeMalformedLines = false): string {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (!entry?.record || entry.error) {
+      if (includeMalformedLines && entry?.rawLine) lines.push(entry.rawLine);
+      continue;
+    }
+    const parsed = parseLimitedReceiverContent(entry.record.content);
+    if (!predicate(entry.record, parsed)) continue;
+    lines.push(JSON.stringify(parsed.limited ? { ...entry.record, content: parsed.content } : entry.record));
+  }
+  return lines.length ? `${lines.join('\n')}\n` : '';
+}
+
 function readBlackboard(researchId: string): any {
   const resolved = resolveBlackboardFile(researchId);
   if (resolved.error) return resolved;
   try {
     if (!fs.existsSync(resolved.file)) return { content: '', file: resolved.file, research: resolved.research };
-    return { content: fs.readFileSync(resolved.file, 'utf8'), file: resolved.file, research: resolved.research };
+    const entries = parseBlackboardEntries(fs.readFileSync(resolved.file, 'utf8'));
+    return {
+      content: serializeVisibleEntries(entries, () => true, true),
+      file: resolved.file,
+      research: resolved.research,
+    };
+  } catch (e) {
+    return { error: `读取 Blackboard 失败: ${e.message}` };
+  }
+}
+
+function readBlackboardForSession(researchId: string, sessionId: string): any {
+  const resolved = resolveBlackboardFile(researchId);
+  if (resolved.error) return resolved;
+  try {
+    if (!fs.existsSync(resolved.file)) return { content: '', file: resolved.file, research: resolved.research };
+    const entries = parseBlackboardEntries(fs.readFileSync(resolved.file, 'utf8'));
+    const content = serializeVisibleEntries(entries, (record, parsed) => {
+      if (!parsed.limited) return true;
+      const authorSessionId = extractAuthorSessionId(record);
+      if (authorSessionId === sessionId) return true;
+      return !parsed.malformed && parsed.receiverSessionId === sessionId;
+    });
+    return { content, file: resolved.file, research: resolved.research };
   } catch (e) {
     return { error: `读取 Blackboard 失败: ${e.message}` };
   }
@@ -97,6 +163,9 @@ function normalizeWriteInput(input: any = {}): any {
     : (rawContent == null ? '' : JSON.stringify(rawContent));
   if (!content.trim()) return { error: 'content 不能为空' };
   if (content.length > MAX_CONTENT_LEN) return { error: `content 过长 (上限 ${MAX_CONTENT_LEN} 字符)` };
+  if (content.startsWith(LIMITED_RECEIVER_OPEN)) {
+    return { error: `${LIMITED_RECEIVER_OPEN} 是 Mobius 内部保留前缀，不能作为普通内容开头` };
+  }
   const metadata = input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
     ? { ...input.metadata }
     : {};
@@ -165,8 +234,10 @@ function appendBlackboardRecord({ researchId, author, content, metadata }: any):
   if (resolved.error) return resolved;
   const safeAuthor = String(author || 'anonymous').slice(0, MAX_AUTHOR_LEN);
   const safeContent = typeof content === 'string' ? content : '';
-  if (!safeContent.trim()) return { error: 'content 不能为空' };
-  if (safeContent.length > MAX_CONTENT_LEN) return { error: `content 过长 (上限 ${MAX_CONTENT_LEN} 字符)` };
+  const parsedContent = parseLimitedReceiverContent(safeContent);
+  if (parsedContent.limited && parsedContent.malformed) return { error: '定向接收前缀非法' };
+  if (!parsedContent.content.trim()) return { error: 'content 不能为空' };
+  if (parsedContent.content.length > MAX_CONTENT_LEN) return { error: `content 过长 (上限 ${MAX_CONTENT_LEN} 字符)` };
   const record: any = {
     id: uuid().slice(0, 12),
     research_id: researchId,
@@ -201,10 +272,9 @@ function authorMentionsSession(author: any, sessionId: any): boolean {
   return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(String(author));
 }
 
-function buildNotifyPrompt(records: any): string {
+function buildNotifyPrompt(records: any, targetSessionId?: string): string {
   const rows = Array.isArray(records) ? records : [records];
   const first = rows[0];
-  const url = blackboardUrl(first.research_id);
   const parts = [
     '[Research Blackboard 更新提醒]',
     `research_id: ${first.research_id}`,
@@ -217,14 +287,14 @@ function buildNotifyPrompt(records: any): string {
     parts.push(`写入者: ${record.author}`);
     parts.push(`时间: ${record.created_at}`);
     parts.push('内容:');
-    parts.push(record.content);
+    parts.push(parseLimitedReceiverContent(record.content).content);
     if (record.metadata && Object.keys(record.metadata).length > 0) {
       parts.push(`metadata: ${JSON.stringify(record.metadata)}`);
     }
     parts.push('');
   });
   parts.push('你可以读取完整 Research Blackboard:');
-  parts.push(`curl ${url}`);
+  parts.push(`research_blackboard_read --from=${targetSessionId || '<self_id>'} --research=${first.research_id}`);
   return parts.join('\n').trimEnd();
 }
 
@@ -254,7 +324,7 @@ function resolveDeliveryWorkspace(session: any, researchId: string): any {
 async function deliverBlackboardBatchToSession({ researchId, session, records }: any): Promise<void> {
   const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
   const backend = agents.get(modelLaunchOptions.backend);
-  const prompt = buildNotifyPrompt(records);
+  const prompt = buildNotifyPrompt(records, session.session_id);
   const { cwd, flagRoot } = resolveDeliveryWorkspace(session, researchId);
 
   await backend.noPauseCurrentAndQueueQueryAtSession({
@@ -285,12 +355,17 @@ function markRecordPendingTargets(record: any, activeSessions: any): any {
   const normalized = normalizeDeliveryState(record);
   if (normalized.delivery.target_session_ids.length > 0 || normalized.delivered) return { ...record, ...normalized };
   const authorSessionId = extractAuthorSessionId(record);
-  const targetSessionIds = (Array.isArray(activeSessions) ? activeSessions : [])
-    .filter((session: any) => session
-      && session.session_id
-      && session.session_id !== authorSessionId
-      && !authorMentionsSession(record.author, session.session_id))
-    .map((session: any) => session.session_id);
+  const limited = parseLimitedReceiverContent(record.content);
+  const targetSessionIds = limited.limited
+    ? (limited.malformed ? [] : (Array.isArray(activeSessions) ? activeSessions : [])
+      .filter((session: any) => session?.session_id === limited.receiverSessionId && session.session_id !== authorSessionId)
+      .map((session: any) => session.session_id))
+    : (Array.isArray(activeSessions) ? activeSessions : [])
+      .filter((session: any) => session
+        && session.session_id
+        && session.session_id !== authorSessionId
+        && !authorMentionsSession(record.author, session.session_id))
+      .map((session: any) => session.session_id);
   const completed = targetSessionIds.length === 0;
   return {
     ...record,
@@ -477,9 +552,9 @@ function startResearchBlackboardDeliveryScanner(): NodeJS.Timeout | null {
 }
 
 export {
-  blackboardUrl,
   resolveBlackboardFile,
   readBlackboard,
+  readBlackboardForSession,
   readBlackboardEntries,
   appendBlackboardRecord,
   requestBlackboardDeliveryScan,
@@ -487,4 +562,8 @@ export {
   scanBlackboardDeliveryOnce,
   buildNotifyPrompt,
   normalizeWriteInput,
+  parseLimitedReceiverContent,
+  prefixLimitedReceiverContent,
+  sanitizedRecord,
+  markRecordPendingTargets,
 };

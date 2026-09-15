@@ -11,7 +11,6 @@ import agents from '../agents';
 const MAX_RESEARCH_ASSISTANTS = 12;
 const DEFAULT_RESEARCH_ASSISTANT_LIMIT = 3;
 const TEAM_TOKEN_HEADER = 'x-mobius-research-team-token';
-const RESEARCH_SESSION_TOKEN_HEADER = 'x-mobius-research-session-token';
 const ACTIVE_MUTATION_STATES = ['reserved', 'starting', 'removing'];
 const RECREATE_GUARD_MS = 30 * 60 * 1000;
 
@@ -58,30 +57,6 @@ function verifyChiefTeamToken(token: any, expectedResearchId: string): { researc
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if (payload?.v !== 1 || payload?.scope !== 'team' || payload?.research_id !== expectedResearchId || !payload?.chief_session_id) return null;
     return { researchId: payload.research_id, chiefSessionId: payload.chief_session_id };
-  } catch {
-    return null;
-  }
-}
-
-function createResearchSessionToken(researchId: string, sessionId: string): string {
-  const encoded = encodeTeamTokenPayload({ v: 1, scope: 'blackboard', research_id: researchId, session_id: sessionId });
-  return `${encoded}.${signTeamTokenPayload(encoded)}`;
-}
-
-function verifyResearchSessionToken(token: any, expectedResearchId: string): { researchId: string; sessionId: string } | null {
-  const raw = String(token || '').trim();
-  const dot = raw.lastIndexOf('.');
-  if (dot <= 0) return null;
-  const encoded = raw.slice(0, dot);
-  const signature = raw.slice(dot + 1);
-  const expected = signTeamTokenPayload(encoded);
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    if (payload?.v !== 1 || payload?.scope !== 'blackboard' || payload?.research_id !== expectedResearchId || !payload?.session_id) return null;
-    return { researchId: payload.research_id, sessionId: payload.session_id };
   } catch {
     return null;
   }
@@ -335,10 +310,8 @@ export {
   MAX_RESEARCH_ASSISTANTS,
   RECREATE_GUARD_MS,
   TEAM_TOKEN_HEADER,
-  RESEARCH_SESSION_TOKEN_HEADER,
   activeAssistantCount,
   createChiefTeamToken,
-  createResearchSessionToken,
   findActionByRequest,
   listTeamActions,
   normalizeAssistantLimit,
@@ -351,5 +324,4 @@ export {
   teamState,
   updateTeamAction,
   verifyChiefTeamToken,
-  verifyResearchSessionToken,
 };

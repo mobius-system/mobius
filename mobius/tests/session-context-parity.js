@@ -18,8 +18,6 @@ const stubDeps = {
   HIDDEN_FOLDER_NAME: '.imac',
   SKILLS_SUBDIR: 'skills-sub',
   createChiefTeamToken: (r, s) => `CHIEF-TOK<${r}|${s}>`,
-  createResearchSessionToken: (r, s) => `SESS-TOK<${r}|${s}>`,
-  RESEARCH_SESSION_TOKEN_HEADER: 'x-test-session-token',
   TEAM_TOKEN_HEADER: 'x-test-team-token',
   isGitRepoRoot: (root) => String(root || '').startsWith('/repo'),
   isAssistantSession: (session) => !!session && typeof session.session_key === 'string' && session.session_key.startsWith('assistant-question:'),
@@ -30,14 +28,12 @@ const stubDeps = {
 }
 
 const newFormatDeps = {
-  createResearchSessionToken: stubDeps.createResearchSessionToken,
   createChiefTeamToken: stubDeps.createChiefTeamToken,
   isGitRepoRoot: stubDeps.isGitRepoRoot,
   isAssistantSession: stubDeps.isAssistantSession,
   pcTaskModePrompt: stubDeps.pcTaskModePrompt,
   builtinMemories: stubDeps.BUILTIN_MEMORIES,
   env: { port: stubDeps.PORT, hiddenFolderName: stubDeps.HIDDEN_FOLDER_NAME, skillsSubdir: stubDeps.SKILLS_SUBDIR },
-  blackboardTokenHeader: stubDeps.RESEARCH_SESSION_TOKEN_HEADER,
   teamTokenHeader: stubDeps.TEAM_TOKEN_HEADER,
 }
 
@@ -154,6 +150,31 @@ for (const [name, sources] of CASES_NO_BUILTIN) {
   }
 }
 
+const researchPrompt = formatBody(CASES.find(([name]) => name === 'zh-research-chief')[1], newFormatDeps)
+const blackboardStart = researchPrompt.indexOf('## Research Blackboard')
+const blackboardEnd = researchPrompt.indexOf('\n## ', blackboardStart + 3)
+const blackboardPrompt = researchPrompt.slice(blackboardStart, blackboardEnd < 0 ? undefined : blackboardEnd)
+const forbiddenBlackboardPromptFragments = [
+  'x-mobius-research-session-token',
+  '/api/research-blackboard/',
+  'curl ',
+  'localhost:',
+  'blackboard.jsonl',
+]
+for (const fragment of forbiddenBlackboardPromptFragments) {
+  if (blackboardPrompt.includes(fragment)) {
+    failures += 1
+    console.log(`  FAIL research prompt still exposes legacy Blackboard detail: ${fragment}`)
+  }
+}
+if (!blackboardPrompt.includes('research_blackboard_read --from=c1524307 --research=3b782686')
+  || !blackboardPrompt.includes('research_blackboard_write --from=c1524307 --research=3b782686')) {
+  failures += 1
+  console.log('  FAIL research prompt does not contain both short Blackboard CLI commands')
+} else {
+  console.log('  ok   research prompt uses short Blackboard CLI commands without legacy HTTP credentials')
+}
+
 // ── 自洽性: 每个块的 build 输出首行必须命中自身 pattern ──────────────────────
 const { SESSION_SECTIONS } = require('../backend/services/session-context-sections')
 let selfCheckFailures = 0
@@ -161,8 +182,6 @@ const probeCtx = {
   ...CASES[2][1],
   env: newFormatDeps.env,
   builtin_memories: newFormatDeps.builtinMemories,
-  blackboard_session_token: 'SESS-TOK<x>',
-  blackboard_token_header: newFormatDeps.blackboardTokenHeader,
   chief_team_token: 'CHIEF-TOK<x>',
   team_token_header: newFormatDeps.teamTokenHeader,
   worktree_is_repo_root: false,

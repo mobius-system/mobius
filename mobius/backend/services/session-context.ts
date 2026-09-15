@@ -23,8 +23,6 @@ import { BUILTIN_MEMORIES } from './builtin-memories';
 import { pcClientRequiresAimuxSkill, pcTaskModePrompt } from './pc-client-context';
 import {
   createChiefTeamToken,
-  createResearchSessionToken,
-  RESEARCH_SESSION_TOKEN_HEADER,
   TEAM_TOKEN_HEADER,
 } from './research-team';
 import { SESSION_SECTIONS, QuestionTitle, type SectionCtx } from './session-context-sections';
@@ -40,26 +38,22 @@ function normalizeLanguage(value: any): 'zh' | 'en' {
 }
 
 interface FormatDeps {
-  createResearchSessionToken: (researchId: string, sessionId: string) => string;
   createChiefTeamToken: (researchId: string, chiefSessionId: string) => string;
   isGitRepoRoot: (root: string) => boolean;
   isAssistantSession: (session: any) => boolean;
   pcTaskModePrompt: (raw: unknown, language: 'zh' | 'en') => string;
   builtinMemories: any[];
   env: { port: any; hiddenFolderName: string; skillsSubdir: string };
-  blackboardTokenHeader: string;
   teamTokenHeader: string;
 }
 
 const REAL_FORMAT_DEPS: FormatDeps = {
-  createResearchSessionToken,
   createChiefTeamToken,
   isGitRepoRoot,
   isAssistantSession,
   pcTaskModePrompt,
   builtinMemories: BUILTIN_MEMORIES,
   env: { port: PORT, hiddenFolderName: HIDDEN_FOLDER_NAME, skillsSubdir: SKILLS_SUBDIR },
-  blackboardTokenHeader: RESEARCH_SESSION_TOKEN_HEADER,
   teamTokenHeader: TEAM_TOKEN_HEADER,
 };
 
@@ -74,8 +68,6 @@ function buildSectionCtx(sources: any, D: FormatDeps): SectionCtx {
     ...sources,
     env: D.env,
     builtin_memories: D.builtinMemories,
-    blackboard_session_token: (research && research.id && realSessionId) ? D.createResearchSessionToken(research.id, realSessionId) : '',
-    blackboard_token_header: D.blackboardTokenHeader,
     chief_team_token: (research && research.id && session?.session_id) ? D.createChiefTeamToken(research.id, session.session_id) : '',
     team_token_header: D.teamTokenHeader,
     worktree_is_repo_root: wtApplies ? D.isGitRepoRoot(sources.project.bind_path) : false,

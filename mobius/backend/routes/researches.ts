@@ -9,7 +9,7 @@ import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
-import { PORT } from '../config';
+import { JWT_SECRET, PORT } from '../config';
 import { SessionPendingMentions } from '../repositories/session-pending-mentions';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from '../services/model-registry';
@@ -39,7 +39,14 @@ import {
   stripContextItemBodies,
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
-import { appendBlackboardRecord, normalizeWriteInput, readBlackboard } from '../services/research-blackboard';
+import {
+  appendBlackboardRecord,
+  normalizeWriteInput,
+  prefixLimitedReceiverContent,
+  readBlackboard,
+  readBlackboardForSession,
+  sanitizedRecord,
+} from '../services/research-blackboard';
 import { pcClientMetadataForContinuation } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
 import { readGraph, resolveGraphImage } from '../services/research-graph';
@@ -63,7 +70,6 @@ import {
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 import {
-  RESEARCH_SESSION_TOKEN_HEADER,
   TEAM_TOKEN_HEADER,
   createChiefTeamToken,
   findActionByRequest,
@@ -77,8 +83,12 @@ import {
   teamState,
   updateTeamAction,
   verifyChiefTeamToken,
-  verifyResearchSessionToken,
 } from '../services/research-team';
+// @ts-ignore — util 仍是 .js
+import {
+  RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER,
+  verifyResearchBlackboardCliToken,
+} from '../utils/research-blackboard-capability';
 
 const router = express.Router();
 const projectScoped = express.Router({ mergeParams: true });
@@ -229,19 +239,107 @@ function requireChiefCapability(req: express.Request, researchId: string): any {
   return chief;
 }
 
-function researchBlackboardAccess(req: express.Request, res: express.Response, next: express.NextFunction): void {
-  const researchId = String(req.params.researchId);
-  const token = req.header(RESEARCH_SESSION_TOKEN_HEADER);
-  const verified = token ? verifyResearchSessionToken(token, researchId) : null;
-  if (verified) {
-    const session = Sessions.findById(verified.sessionId) as any;
-    if (session && session.scope_type === 'research' && session.research_id === researchId) {
-      (req as any).researchSession = session;
-      next();
+function resolveSessionReference(rawRef: any): { session?: any; error?: string; status?: number } {
+  const ref = String(rawRef || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(ref)) {
+    return { error: 'Session/Agent ID 格式非法', status: 400 };
+  }
+  const exact = Sessions.findById(ref) as any;
+  if (exact) return { session: exact };
+  const matches = db.prepare('SELECT * FROM sessions_v2 WHERE agent_session_id = ? LIMIT 2').all(ref) as any[];
+  if (matches.length > 1) return { error: `Agent ID ${ref} 对应多个 Session，请改用 Mobius Session ID`, status: 400 };
+  if (matches.length === 0) return { error: `未找到 Session/Agent：${ref}`, status: 404 };
+  return { session: matches[0] };
+}
+
+function researchBlackboardCliAccess(action: 'read' | 'write') {
+  return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+    const researchId = String(req.params.researchId || '').trim();
+    const token = req.header(RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER);
+    const verified = verifyResearchBlackboardCliToken(token, JWT_SECRET, { action, researchId });
+    if (!verified) {
+      res.status(401).json({ error: 'Research Blackboard CLI capability 无效或已过期' });
       return;
     }
-  }
-  auth(req, res, next);
+    const research = Researches.findById(researchId) as any;
+    if (!research) {
+      res.status(404).json({ error: `Research 不存在：${researchId}` });
+      return;
+    }
+    const senderResolved = resolveSessionReference(verified.sessionRef);
+    if (!senderResolved.session) {
+      res.status(senderResolved.status || 404).json({ error: senderResolved.error });
+      return;
+    }
+    const sender = senderResolved.session;
+    if (sender.deleted_at) {
+      res.status(403).json({ error: `发送人/读取人 Session ${sender.session_id} 已被删除` });
+      return;
+    }
+    if (sender.scope_type !== 'research') {
+      res.status(403).json({ error: `发送人/读取人 ${sender.session_id} 不是 Research Session` });
+      return;
+    }
+    if (sender.research_id !== researchId) {
+      res.status(403).json({ error: `发送人/读取人 ${sender.session_id} 不在 Research ${researchId} 中` });
+      return;
+    }
+    if (action === 'write' && sender.status !== 'active') {
+      res.status(403).json({ error: `发送人 Session ${sender.session_id} 当前状态为 ${sender.status || '未知'}，只有 active Session 可以写入` });
+      return;
+    }
+
+    let receiver: any = null;
+    if (verified.limitedReceiver) {
+      if (!verified.receiverRef) {
+        res.status(400).json({ error: '--limit-receiver 必须且只能指定一个 receiver' });
+        return;
+      }
+      const receiverResolved = resolveSessionReference(verified.receiverRef);
+      if (!receiverResolved.session) {
+        res.status(receiverResolved.status || 404).json({ error: `接收者无效：${receiverResolved.error}` });
+        return;
+      }
+      receiver = receiverResolved.session;
+      if (receiver.session_id === sender.session_id) {
+        res.status(400).json({ error: '发送人和接收者不能是同一个 Session' });
+        return;
+      }
+      if (receiver.deleted_at) {
+        res.status(403).json({ error: `接收者 Session ${receiver.session_id} 已被删除` });
+        return;
+      }
+      if (receiver.scope_type !== 'research') {
+        res.status(403).json({ error: `接收者 ${receiver.session_id} 不是 Research Session` });
+        return;
+      }
+      if (receiver.research_id !== researchId || receiver.research_id !== sender.research_id) {
+        res.status(403).json({ error: `发送人 ${sender.session_id} 和接收者 ${receiver.session_id} 不在同一个 Research ${researchId} 中` });
+        return;
+      }
+      if (receiver.status !== 'active') {
+        res.status(403).json({ error: `接收者 Session ${receiver.session_id} 当前状态为 ${receiver.status || '未知'}，无法接收定向消息` });
+        return;
+      }
+    } else if (verified.receiverRef) {
+      res.status(400).json({ error: '指定 receiver 时必须同时使用 --limit-receiver' });
+      return;
+    }
+    (req as any).researchBlackboardCli = { sender, receiver, research, capability: verified };
+    next();
+  };
+}
+
+function researchBlackboardUserAccess(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  auth(req, res, () => {
+    const research = Researches.findByIdWithProject(String(req.params.researchId));
+    if (!research || !canReadResearch((req as any).user, research)) {
+      res.status(404).json({ error: '未找到' });
+      return;
+    }
+    (req as any).research = research;
+    next();
+  });
 }
 
 function toIdList(v: unknown): string[] {
@@ -1168,13 +1266,37 @@ router.post('/:id/complete', auth, (req: express.Request, res: express.Response)
   res.json(shapeResearchForUser(Researches.findById(String(req.params.id)), user));
 });
 
-blackboardRouter.get('/:researchId', researchBlackboardAccess, (req: express.Request, res: express.Response) => {
+blackboardRouter.get('/cli/:researchId', researchBlackboardCliAccess('read'), (req: express.Request, res: express.Response) => {
+  const sender = (req as any).researchBlackboardCli.sender;
+  const result: any = readBlackboardForSession(String(req.params.researchId), sender.session_id);
+  if (result.error) { res.status(404).json({ error: result.error }); return; }
+  res.type('application/x-ndjson; charset=utf-8').send(result.content || '');
+});
+
+blackboardRouter.post('/cli/:researchId', researchBlackboardCliAccess('write'), (req: express.Request, res: express.Response) => {
+  const cli = (req as any).researchBlackboardCli;
+  const normalized: any = normalizeWriteInput({ content: req.body?.content });
+  if (normalized.error) { res.status(400).json({ error: normalized.error }); return; }
+  const content = cli.capability.limitedReceiver
+    ? prefixLimitedReceiverContent(cli.receiver.session_id, normalized.content)
+    : normalized.content;
+  const result: any = appendBlackboardRecord({
+    researchId: String(req.params.researchId),
+    author: `${cli.sender.research_role || 'research_assistant'} (${cli.sender.session_id})`,
+    content,
+    metadata: { session_id: cli.sender.session_id },
+  });
+  if (result.error) { res.status(400).json({ error: result.error }); return; }
+  res.json({ ok: true, record: sanitizedRecord(result.record) });
+});
+
+blackboardRouter.get('/:researchId', researchBlackboardUserAccess, (req: express.Request, res: express.Response) => {
   const result: any = readBlackboard(String(req.params.researchId));
   if (result.error) { res.status(404).type('text/plain').send(result.error); return; }
   res.type('application/x-ndjson; charset=utf-8').send(result.content || '');
 });
 
-blackboardRouter.post('/:researchId', researchBlackboardAccess, async (req: express.Request, res: express.Response) => {
+blackboardRouter.post('/:researchId', researchBlackboardUserAccess, (req: express.Request, res: express.Response) => {
   const normalized: any = normalizeWriteInput(req.body || {});
   if (normalized.error) { res.status(400).json({ error: normalized.error }); return; }
   const result: any = appendBlackboardRecord({

@@ -77,8 +77,6 @@ export interface SectionCtx {
   language?: 'zh' | 'en';
   env?: SectionEnv;
   builtin_memories?: any[];
-  blackboard_session_token?: string;
-  blackboard_token_header?: string;
   chief_team_token?: string;
   team_token_header?: string;
   worktree_is_repo_root?: boolean;
@@ -206,68 +204,30 @@ export const ResearchSection = defineSection({
   },
 });
 
-function researchBlackboardUrl(c: SectionCtx): string {
-  return `http://localhost:${c.env?.port}/api/research-blackboard/${c.research.id}`;
-}
-
 export const BlackboardSection = defineSection({
   key: 'blackboard',
   title: { zh: '## Research Blackboard', en: '## Research Blackboard' },
   build: {
     zh: (c, t) => {
       if (!(c.research && c.research.id)) return null;
-      const url = researchBlackboardUrl(c);
       const sessionId = c.session?.session_id && c.session.session_id !== '(待创建)' ? c.session.session_id : '';
-      const sessionToken = c.blackboard_session_token || '';
-      const author = c.session?.research_role || 'research_assistant';
       return md`
         ${t.zh}
-        当前研究的 Blackboard 只能通过 Mobius HTTP API 读写。不要直接编辑 \`${c.env?.hiddenFolderName}/blackboard/${c.research.id}/blackboard.jsonl\` 文件。
-
-        读取完整 Blackboard:
-
-        \`\`\`bash
-        ${`curl${sessionToken ? ` -H '${c.blackboard_token_header}: ${sessionToken}'` : ''} ${url}`}
-        \`\`\`
-
-        写入 Blackboard:
-
-        \`\`\`bash
-        ${`curl -X POST ${url} \\`}
-        ${`  -H 'Content-Type: application/json' \\`}
-        ${sessionToken ? `  -H '${c.blackboard_token_header}: ${sessionToken}' \\` : ''}
-        ${`  -d '{"author":"${author}${sessionId ? ` (${sessionId})` : ''}","session_id":"${sessionId}","content":"这里写入你的研究进展、发现或需要同步给团队的信息"}'`}
-        \`\`\`
-
-        Blackboard 内容只记录写入者和内容，不指定接收者。任意写入都会在后台投递给本 Research 中其他已创建 session。
+        仅通过 CLI 操作，禁止直接编辑底层文件：
+        - 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\`
+        - 写入：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} "研究进展或需要同步的信息"\`
+        普通写入会投递给本 Research 的其他 Session。仅在用户强烈要求定向投递时，追加 \`--limit-receiver --receiver=<receiver_id>\`。
       `;
     },
     en: (c, t) => {
       if (!(c.research && c.research.id)) return null;
-      const url = researchBlackboardUrl(c);
       const sessionId = c.session?.session_id && c.session.session_id !== '(待创建)' ? c.session.session_id : '';
-      const sessionToken = c.blackboard_session_token || '';
-      const author = c.session?.research_role || 'research_assistant';
       return md`
         ${t.en}
-        This research's Blackboard can only be read and written through the Mobius HTTP API. Do not directly edit the \`${c.env?.hiddenFolderName}/blackboard/${c.research.id}/blackboard.jsonl\` file.
-
-        Read the full Blackboard:
-
-        \`\`\`bash
-        ${`curl${sessionToken ? ` -H '${c.blackboard_token_header}: ${sessionToken}'` : ''} ${url}`}
-        \`\`\`
-
-        Write to the Blackboard:
-
-        \`\`\`bash
-        ${`curl -X POST ${url} \\`}
-        ${`  -H 'Content-Type: application/json' \\`}
-        ${sessionToken ? `  -H '${c.blackboard_token_header}: ${sessionToken}' \\` : ''}
-        ${`  -d '{"author":"${author}${sessionId ? ` (${sessionId})` : ''}","session_id":"${sessionId}","content":"Write your research progress, findings, or anything to sync with the team here"}'`}
-        \`\`\`
-
-        A Blackboard entry records only its author and content, with no designated recipient. Any write is delivered in the background to the other sessions already created in this Research.
+        Use only the CLI; never edit the backing file directly:
+        - Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\`
+        - Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} "progress or findings to share"\`
+        Normal writes are delivered to the other Sessions in this Research. Append \`--limit-receiver --receiver=<receiver_id>\` only when the user strongly requires targeted delivery.
       `;
     },
   },
@@ -541,7 +501,7 @@ export const CompletionFlagSection = defineSection({
       if (c.session_is_assistant) return null;
       return md`
         ${t.zh}
-        当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${c.session.session_id}\` 删除 flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。
+        当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${c.session.session_id}\` 删除 running.flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。
       `;
     },
     en: (c, t) => {
@@ -549,7 +509,7 @@ export const CompletionFlagSection = defineSection({
       if (c.session_is_assistant) return null;
       return md`
         ${t.en}
-        When the task ultimately succeeds or fails, you must run \`declare_job_done ${c.session.session_id}\` to delete the flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.
+        When the task ultimately succeeds or fails, you must run \`declare_job_done ${c.session.session_id}\` to delete the running.flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.
       `;
     },
   },

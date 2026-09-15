@@ -15,6 +15,7 @@ const binDir = path.join(tempRoot, 'bin');
 const fakeMobius = path.join(appDir, 'mobius');
 fs.mkdirSync(fakeMobius, { recursive: true });
 fs.symlinkSync(path.join(mobiusRoot, 'node_modules'), path.join(fakeMobius, 'node_modules'), 'dir');
+fs.symlinkSync(path.join(mobiusRoot, 'backend'), path.join(fakeMobius, 'backend'), 'dir');
 
 function run(command, args = [], options = {}) {
   return spawnSync(command, args, {
@@ -48,8 +49,15 @@ async function main() {
   assert.strictEqual(install.status, 0, install.stderr);
   assert.strictEqual(fs.readFileSync(path.join(binDir, '.mobius-cli-app-dir'), 'utf8').trim(), path.resolve(mobiusRoot, '..'));
   fs.writeFileSync(path.join(binDir, '.mobius-cli-app-dir'), `${appDir}\n`);
-  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done']) {
+  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done', 'research_blackboard_read', 'research_blackboard_write', '.research_blackboard_cli']) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755);
+  }
+
+  for (const name of ['research_blackboard_read', 'research_blackboard_write']) {
+    const helpResult = run(path.join(binDir, name), ['--help']);
+    assert.strictEqual(helpResult.status, 0, helpResult.stderr);
+    assert.match(helpResult.stdout, /--from=<self_id>/);
+    assert.match(helpResult.stdout, /--research=<research_id>/);
   }
 
   const doneHelp = run(path.join(binDir, 'declare_job_done'), ['--help']);
@@ -299,6 +307,141 @@ async function main() {
   });
   assert.strictEqual(invalidPort.status, 3);
   assert.match(invalidPort.stderr, /valid VITE_PORT or MOBIUS_PORT/);
+
+  const codec = require(path.join(mobiusRoot, 'backend', 'utils', 'research-blackboard-capability'));
+  const blackboardRequests = [];
+  const blackboardServer = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const action = req.method === 'GET' ? 'read' : 'write';
+      const token = req.headers[codec.RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER];
+      const claims = codec.verifyResearchBlackboardCliToken(token, 'blackboard-secret', { action, researchId: 'r1' });
+      blackboardRequests.push({ method: req.method, url: req.url, claims, body: Buffer.concat(chunks).toString('utf8') });
+      const forcedStatus = claims?.sessionRef === 'force-401' ? 401
+        : claims?.sessionRef === 'force-403' ? 403
+          : claims?.sessionRef === 'force-404' ? 404
+            : 0;
+      if (forcedStatus) {
+        res.statusCode = forcedStatus;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: `forced HTTP ${forcedStatus}` }));
+        return;
+      }
+      if (!claims) {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'invalid capability' }));
+        return;
+      }
+      if (action === 'read') {
+        res.setHeader('Content-Type', 'application/x-ndjson');
+        res.end('{"id":"record-1","content":"hello"}\n');
+      } else {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: true, record: { id: 'record-2' } }));
+      }
+    });
+  });
+  await new Promise((resolve) => blackboardServer.listen(0, '127.0.0.1', resolve));
+  const blackboardPort = blackboardServer.address().port;
+  writeEnv(`JWT_SECRET=blackboard-secret\nVITE_PORT=${blackboardPort}\nMOBIUS_PORT=45616\n`);
+
+  async function runBlackboard(name, args, stdin = null) {
+    const child = spawn(path.join(binDir, name), args, {
+      cwd: nested,
+      env: { ...process.env, APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', VITE_PORT: '', MOBIUS_PORT: '' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    if (stdin == null) child.stdin.end();
+    else child.stdin.end(stdin);
+    const childStatus = await new Promise((resolve) => child.on('close', resolve));
+    return { status: childStatus, stdout: out, stderr: err };
+  }
+
+  const boardRead = await runBlackboard('research_blackboard_read', ['--from=sender-agent', '--research=r1']);
+  assert.strictEqual(boardRead.status, 0, boardRead.stderr);
+  assert.strictEqual(boardRead.stdout, '{"id":"record-1","content":"hello"}\n');
+  assert.strictEqual(blackboardRequests.at(-1).url, '/api/research-blackboard/cli/r1');
+  assert.strictEqual(blackboardRequests.at(-1).claims.sessionRef, 'sender-agent');
+  assert.strictEqual(blackboardRequests.at(-1).claims.action, 'read');
+
+  const boardWrite = await runBlackboard('research_blackboard_write', ['--from=sender-agent', '--research=r1', 'hello', 'team']);
+  assert.strictEqual(boardWrite.status, 0, boardWrite.stderr);
+  assert.match(boardWrite.stdout, /record-2/);
+  assert.deepStrictEqual(JSON.parse(blackboardRequests.at(-1).body), { content: 'hello team' });
+  assert.strictEqual(blackboardRequests.at(-1).claims.limitedReceiver, false);
+
+  const limitedWrite = await runBlackboard('research_blackboard_write', [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', '--receiver=receiver-agent', 'private progress',
+  ]);
+  assert.strictEqual(limitedWrite.status, 0, limitedWrite.stderr);
+  assert.strictEqual(limitedWrite.stderr.trim(), '【Mobius不鼓励使用 --limit-receiver，建议仅在用户强烈要求的情况下才去用它】');
+  assert.strictEqual(blackboardRequests.at(-1).claims.limitedReceiver, true);
+  assert.strictEqual(blackboardRequests.at(-1).claims.receiverRef, 'receiver-agent');
+
+  const limitedStdin = await runBlackboard('research_blackboard_write', [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', '--receiver=receiver-agent', '--stdin',
+  ], 'line one\nline two\n');
+  assert.strictEqual(limitedStdin.status, 0, limitedStdin.stderr);
+  assert.deepStrictEqual(JSON.parse(blackboardRequests.at(-1).body), { content: 'line one\nline two\n' });
+
+  const missingReceiver = run(path.join(binDir, 'research_blackboard_write'), [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', 'content',
+  ], { env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '' } });
+  assert.strictEqual(missingReceiver.status, 2);
+  assert.match(missingReceiver.stderr, /Mobius不鼓励使用 --limit-receiver/);
+  assert.match(missingReceiver.stderr, /requires exactly one/);
+
+  const emptyReceiver = run(path.join(binDir, 'research_blackboard_write'), [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', '--receiver=', 'content',
+  ], { env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '' } });
+  assert.strictEqual(emptyReceiver.status, 2);
+  assert.strictEqual((emptyReceiver.stderr.match(/Mobius不鼓励/g) || []).length, 1);
+  assert.match(emptyReceiver.stderr, /accepts exactly one Session\/Agent ID/);
+
+  const multipleReceivers = run(path.join(binDir, 'research_blackboard_write'), [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', '--receiver=a1', '--receiver=a2', 'content',
+  ], { env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '' } });
+  assert.strictEqual(multipleReceivers.status, 2);
+  assert.match(multipleReceivers.stderr, /Mobius不鼓励使用 --limit-receiver/);
+  assert.match(multipleReceivers.stderr, /exactly one receiver/);
+
+  const receiverWithoutLimit = run(path.join(binDir, 'research_blackboard_write'), [
+    '--from=sender-agent', '--research=r1', '--receiver=a1', 'content',
+  ], { env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '' } });
+  assert.strictEqual(receiverWithoutLimit.status, 2);
+  assert.match(receiverWithoutLimit.stderr, /requires --limit-receiver/);
+  assert.doesNotMatch(receiverWithoutLimit.stderr, /Mobius不鼓励/);
+
+  for (const forcedStatus of [401, 403, 404]) {
+    const rejected = await runBlackboard('research_blackboard_write', [
+      `--from=force-${forcedStatus}`, '--research=r1', '--limit-receiver', '--receiver=receiver-agent', 'content',
+    ]);
+    assert.notStrictEqual(rejected.status, 0);
+    assert.strictEqual((rejected.stderr.match(/Mobius不鼓励/g) || []).length, 1);
+    assert.match(rejected.stderr, new RegExp(`forced HTTP ${forcedStatus}`));
+  }
+
+  await new Promise((resolve) => blackboardServer.close(resolve));
+
+  const networkFailure = await runBlackboard('research_blackboard_write', [
+    '--from=sender-agent', '--research=r1', '--limit-receiver', '--receiver=receiver-agent', 'content',
+  ]);
+  assert.strictEqual(networkFailure.status, 5);
+  assert.strictEqual((networkFailure.stderr.match(/Mobius不鼓励/g) || []).length, 1);
+  assert.match(networkFailure.stderr, /Network error/);
+
+  writeEnv('JWT_SECRET=blackboard-secret\nMOBIUS_PORT=\n');
+  const noFixedPort = run(path.join(binDir, 'research_blackboard_read'), ['--from=sender-agent', '--research=r1'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', VITE_PORT: '45616', MOBIUS_PORT: '45616' },
+  });
+  assert.strictEqual(noFixedPort.status, 3);
+  assert.match(noFixedPort.stderr, /no fixed default is used/);
 
   console.log('mobius CLI tests passed');
 }

@@ -10,8 +10,6 @@ export interface LegacyDeps {
   HIDDEN_FOLDER_NAME: string;
   SKILLS_SUBDIR: string;
   createChiefTeamToken: (researchId: string, chiefSessionId: string) => string;
-  createResearchSessionToken: (researchId: string, sessionId: string) => string;
-  RESEARCH_SESSION_TOKEN_HEADER: string;
   TEAM_TOKEN_HEADER: string;
   isGitRepoRoot: (root: string) => boolean;
   isAssistantSession: (session: any, user?: any) => boolean;
@@ -24,8 +22,6 @@ export function makeLegacyFormatBody(D: LegacyDeps) {
   const HIDDEN_FOLDER_NAME = D.HIDDEN_FOLDER_NAME;
   const SKILLS_SUBDIR = D.SKILLS_SUBDIR;
   const createChiefTeamToken = D.createChiefTeamToken;
-  const createResearchSessionToken = D.createResearchSessionToken;
-  const RESEARCH_SESSION_TOKEN_HEADER = D.RESEARCH_SESSION_TOKEN_HEADER;
   const TEAM_TOKEN_HEADER = D.TEAM_TOKEN_HEADER;
   const isGitRepoRoot = D.isGitRepoRoot;
   const isAssistantSession = D.isAssistantSession;
@@ -61,10 +57,6 @@ function shuffled<T>(items: T[]): T[] {
 // 上下文分段拼装函数. 每段都有中文 (zh_add_*) 与英文 (en_add_*) 两版,
 // 由 formatBody 按 session 的 language 选用. 新增字段时务必同步两版.
 // =====================================================================
-
-function researchBlackboardUrl(researchId: string): string {
-  return `http://localhost:${PORT}/api/research-blackboard/${researchId}`;
-}
 
 // ---------- 中文版 ----------
 
@@ -135,29 +127,12 @@ function zh_add_session_level_info(lines: string[], session: any): void {
 
 function zh_add_research_blackboard_info(lines: string[], research: any, session: any): void {
   if (!(research && research.id)) return;
-  const url = researchBlackboardUrl(research.id);
-  const author = session?.research_role || 'research_assistant';
   const sessionId = session?.session_id && session.session_id !== '(待创建)' ? session.session_id : '';
-  const sessionToken = sessionId ? createResearchSessionToken(research.id, sessionId) : '';
   lines.push('## Research Blackboard');
-  lines.push(`当前研究的 Blackboard 只能通过 Mobius HTTP API 读写。不要直接编辑 \`${HIDDEN_FOLDER_NAME}/blackboard/${research.id}/blackboard.jsonl\` 文件。`);
-  lines.push('');
-  lines.push('读取完整 Blackboard:');
-  lines.push('');
-  lines.push('```bash');
-  lines.push(`curl${sessionToken ? ` -H '${RESEARCH_SESSION_TOKEN_HEADER}: ${sessionToken}'` : ''} ${url}`);
-  lines.push('```');
-  lines.push('');
-  lines.push('写入 Blackboard:');
-  lines.push('');
-  lines.push('```bash');
-  lines.push(`curl -X POST ${url} \\`);
-  lines.push(`  -H 'Content-Type: application/json' \\`);
-  if (sessionToken) lines.push(`  -H '${RESEARCH_SESSION_TOKEN_HEADER}: ${sessionToken}' \\`);
-  lines.push(`  -d '{"author":"${author}${sessionId ? ` (${sessionId})` : ''}","session_id":"${sessionId}","content":"这里写入你的研究进展、发现或需要同步给团队的信息"}'`);
-  lines.push('```');
-  lines.push('');
-  lines.push('Blackboard 内容只记录写入者和内容，不指定接收者。任意写入都会在后台投递给本 Research 中其他已创建 session。');
+  lines.push('仅通过 CLI 操作，禁止直接编辑底层文件：');
+  lines.push(`- 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\``);
+  lines.push(`- 写入：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "研究进展或需要同步的信息"\``);
+  lines.push('普通写入会投递给本 Research 的其他 Session。仅在用户强烈要求定向投递时，追加 `--limit-receiver --receiver=<receiver_id>`。');
   lines.push('');
   if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
     const capability = createChiefTeamToken(research.id, session.session_id);
@@ -285,7 +260,7 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   lines.push('## 当任务完成时的最后一步');
-  lines.push(`当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${session.session_id}\` 删除 flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
+  lines.push(`当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${session.session_id}\` 删除 running.flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
 }
 
 function zh_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -366,29 +341,12 @@ function en_add_session_level_info(lines: string[], session: any): void {
 
 function en_add_research_blackboard_info(lines: string[], research: any, session: any): void {
   if (!(research && research.id)) return;
-  const url = researchBlackboardUrl(research.id);
-  const author = session?.research_role || 'research_assistant';
   const sessionId = session?.session_id && session.session_id !== '(待创建)' ? session.session_id : '';
-  const sessionToken = sessionId ? createResearchSessionToken(research.id, sessionId) : '';
   lines.push('## Research Blackboard');
-  lines.push(`This research's Blackboard can only be read and written through the Mobius HTTP API. Do not directly edit the \`${HIDDEN_FOLDER_NAME}/blackboard/${research.id}/blackboard.jsonl\` file.`);
-  lines.push('');
-  lines.push('Read the full Blackboard:');
-  lines.push('');
-  lines.push('```bash');
-  lines.push(`curl${sessionToken ? ` -H '${RESEARCH_SESSION_TOKEN_HEADER}: ${sessionToken}'` : ''} ${url}`);
-  lines.push('```');
-  lines.push('');
-  lines.push('Write to the Blackboard:');
-  lines.push('');
-  lines.push('```bash');
-  lines.push(`curl -X POST ${url} \\`);
-  lines.push(`  -H 'Content-Type: application/json' \\`);
-  if (sessionToken) lines.push(`  -H '${RESEARCH_SESSION_TOKEN_HEADER}: ${sessionToken}' \\`);
-  lines.push(`  -d '{"author":"${author}${sessionId ? ` (${sessionId})` : ''}","session_id":"${sessionId}","content":"Write your research progress, findings, or anything to sync with the team here"}'`);
-  lines.push('```');
-  lines.push('');
-  lines.push('A Blackboard entry records only its author and content, with no designated recipient. Any write is delivered in the background to the other sessions already created in this Research.');
+  lines.push('Use only the CLI; never edit the backing file directly:');
+  lines.push(`- Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\``);
+  lines.push(`- Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "progress or findings to share"\``);
+  lines.push('Normal writes are delivered to the other Sessions in this Research. Append `--limit-receiver --receiver=<receiver_id>` only when the user strongly requires targeted delivery.');
   lines.push('');
   if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
     const capability = createChiefTeamToken(research.id, session.session_id);
@@ -514,7 +472,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   lines.push('## Final step when the task is complete');
-  lines.push(`When the task ultimately succeeds or fails, you must run \`declare_job_done ${session.session_id}\` to delete the flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
+  lines.push(`When the task ultimately succeeds or fails, you must run \`declare_job_done ${session.session_id}\` to delete the running.flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
 }
 
 // PC task mode prompt injection (Electron/TUI sessions only, when

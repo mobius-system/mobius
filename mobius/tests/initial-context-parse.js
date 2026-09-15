@@ -62,14 +62,12 @@ const enSources = {
   language: 'en',
 }
 const stubDeps = {
-  createResearchSessionToken: (r, s) => `T<${r}|${s}>`,
   createChiefTeamToken: (r, s) => `C<${r}|${s}>`,
   isGitRepoRoot: () => false,
   isAssistantSession: () => false,
   pcTaskModePrompt: () => '',
   builtinMemories: [{ name: 'bm', description: 'bd', body: 'bb' }],
   env: { port: 1, hiddenFolderName: '.imac', skillsSubdir: 'skills-sub' },
-  blackboardTokenHeader: 'x-s',
   teamTokenHeader: 'x-t',
 }
 const enBody = formatBody(enSources, stubDeps)

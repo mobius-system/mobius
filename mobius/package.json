@@ -31,6 +31,7 @@
     "test:project-hierarchy-search": "node --require tsx/cjs tests/project-hierarchy-search.js",
     "test:project-session-order": "node --require tsx/cjs tests/project-session-order.js",
     "test:research-team-policy": "node --require tsx/cjs tests/research-team-policy.js",
+    "test:research-blackboard-auth": "node --require tsx/cjs tests/research-blackboard-auth.js",
     "test:project-user-picker": "node --require tsx/cjs tests/project-user-picker.js",
     "test:user-group-memberships": "node --require tsx/cjs tests/user-group-memberships.js",
     "test:project-memberships": "node --require tsx/cjs tests/project-memberships.js",
