@@ -12,6 +12,7 @@ import {
   functionOutputBody,
   isFunctionCallPayload,
   isFunctionCallOutputPayload,
+  reasoningText,
 } from './entry-extract'
 import { extractInitialContext } from './initial-context'
 
@@ -234,6 +235,15 @@ export function isEmptyThinkingOnlyAssistantEntry(entry: AnyEntry): boolean {
   if (!isThinkingOnlyAssistantEntry(entry)) return false
   const content = entry?.message?.content as any[]
   return content.every((block) => String(block?.thinking || '').trim() === '')
+}
+
+// Codex 闭源模型的 reasoning 只保留 encrypted_content、没有可读正文时，标题栏会显示
+// “Reasoning (闭源模型的推理过程被加密，无法解码）”。该谓词供序列级展示规则识别；
+// 同时带有可读 content/summary 的 reasoning 不命中，仍完整展示实际思考内容。
+export function isUnreadableEncryptedReasoningEntry(entry: AnyEntry): boolean {
+  if (entry?.type !== 'response_item' || entry?.payload?.type !== 'reasoning') return false
+  const encryptedContent = entry?.payload?.encrypted_content
+  return typeof encryptedContent === 'string' && encryptedContent.length > 0 && reasoningText(entry.payload).length === 0
 }
 
 export function assistantResponseText(content: any): string {

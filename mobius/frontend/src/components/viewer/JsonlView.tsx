@@ -18,7 +18,8 @@ import { RoundGroup } from './RoundGroups'
 import { isHiddenJsonlNoiseEntry } from './entry-classify'
 import { extractInitialContext } from './initial-context'
 import { filterDisplayDuplicates } from './display-dedup'
-import { computeCollapsedByEncryptedReasoning, computeCollapsedByForgottenFlag } from './fold-rules'
+import { computeCollapsedByForgottenFlag } from './fold-rules'
+import { hideRepeatedEncryptedReasoning } from './visibility-rules'
 import { buildTaskPlans } from './task-progress'
 import type { HistorySnapshot, SessionHistoryStore } from '../../services/agent-history-store'
 
@@ -137,7 +138,9 @@ function buildRoundFromEntries(entries: AnyEntry[], roundNum: number, baseLineNo
     : entries
   const deduped = filterDisplayDuplicates(windowed)
   const merged = mergeBashToolResultItems(deduped, baseLineNo + windowStart)
-  let visible = merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry))
+  let visible = hideRepeatedEncryptedReasoning(
+    merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)),
+  )
   // 特殊规则 (仅第一轮 / group 1): 一旦出现"初始模式"卡片 (extractInitialContext 命中),
   // 隐藏它之前的所有卡片 —— 初始上下文之前的 setup 噪声 / 边车原文卡不再展示.
   if (roundNum === 1) {
@@ -175,7 +178,6 @@ function collapsedLineNosFor(entries: AnyEntry[], items: JsonlViewItem[]) {
   const hit = collapsedCache.get(entries)
   if (hit) return hit
   const next = computeCollapsedByForgottenFlag(items)
-  for (const lineNo of computeCollapsedByEncryptedReasoning(items)) next.add(lineNo)
   collapsedCache.set(entries, next)
   return next
 }
