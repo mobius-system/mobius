@@ -3,6 +3,16 @@ minimum_pre_commit_version: "3.0.0"
 default_stages: [pre-commit]
 
 repos:
+# POLICY: Agents must never bypass pre-commit or submit code rejected by any hook.
+# The guard below permanently blocks any mobius/extension file from commits.
+  - repo: local
+    hooks:
+      - id: forbid-extension-commits
+        name: 禁止提交 mobius/extension 拓展源码
+        entry: ./scripts/precommit-guard-extension.sh
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
