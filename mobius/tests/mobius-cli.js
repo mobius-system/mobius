@@ -4,6 +4,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const Database = require('better-sqlite3');
 const jwt = require('jsonwebtoken');
 
 const mobiusRoot = path.resolve(__dirname, '..');
@@ -47,9 +48,128 @@ async function main() {
   assert.strictEqual(install.status, 0, install.stderr);
   assert.strictEqual(fs.readFileSync(path.join(binDir, '.mobius-cli-app-dir'), 'utf8').trim(), path.resolve(mobiusRoot, '..'));
   fs.writeFileSync(path.join(binDir, '.mobius-cli-app-dir'), `${appDir}\n`);
-  for (const name of ['generate_localhost_jwt', 'multiagent_send']) {
+  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done']) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755);
   }
+
+  const doneHelp = run(path.join(binDir, 'declare_job_done'), ['--help']);
+  assert.strictEqual(doneHelp.status, 0, doneHelp.stderr);
+  assert.match(doneHelp.stdout, /session_or_agent_id/);
+  assert.strictEqual(run(path.join(binDir, 'declare_job_done'), []).status, 2);
+  assert.strictEqual(run(path.join(binDir, 'declare_job_done'), ['../escape']).status, 2);
+  assert.strictEqual(run(path.join(binDir, 'declare_job_done'), ['a/b']).status, 2);
+
+  const cliDbPath = path.join(appDir, 'cli.db');
+  const projectRoot = path.join(tempRoot, 'project-root');
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const cliDb = new Database(cliDbPath);
+  cliDb.exec(`
+    CREATE TABLE projects (id TEXT PRIMARY KEY, bind_path TEXT);
+    CREATE TABLE sessions_v2 (
+      session_id TEXT PRIMARY KEY,
+      project_id TEXT,
+      agent_session_id TEXT
+    );
+  `);
+  cliDb.prepare('INSERT INTO projects (id, bind_path) VALUES (?, ?)').run('p1', projectRoot);
+  cliDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, agent_session_id) VALUES (?, ?, ?)')
+    .run('session-123', 'p1', 'agent-abc');
+  cliDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, agent_session_id) VALUES (?, ?, ?)')
+    .run('session-default', 'p1', 'agent-default');
+  cliDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, agent_session_id) VALUES (?, ?, ?)')
+    .run('session-dup-a', 'p1', 'agent-duplicate');
+  cliDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, agent_session_id) VALUES (?, ?, ?)')
+    .run('session-dup-b', 'p1', 'agent-duplicate');
+  cliDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, agent_session_id) VALUES (?, ?, ?)')
+    .run('session-escape', 'p1', 'agent-escape');
+  cliDb.close();
+
+  const customFlagDir = path.join(projectRoot, '.imac', 'flags', 'session-123');
+  fs.mkdirSync(customFlagDir, { recursive: true });
+  fs.writeFileSync(path.join(customFlagDir, 'running.flag'), 'session=session-123\n');
+  fs.writeFileSync(path.join(customFlagDir, 'failed.flag'), 'reason=preserve-me\n');
+  writeEnv(`export MOBIUS_HIDDEN_FOLDER_NAME=".imac"\r\nDB_PATH=${cliDbPath} # test database\r\n`);
+
+  const doneByAgent = run(path.join(binDir, 'declare_job_done'), ['agent-abc'], {
+    env: { APP_DIR: '', MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(doneByAgent.status, 0, doneByAgent.stderr);
+  assert.match(doneByAgent.stdout, /Session session-123/);
+  assert.strictEqual(fs.existsSync(path.join(customFlagDir, 'running.flag')), false);
+  assert.strictEqual(fs.readFileSync(path.join(customFlagDir, 'failed.flag'), 'utf8'), 'reason=preserve-me\n');
+
+  const doneAgain = run(path.join(binDir, 'declare_job_done'), ['session-123'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(doneAgain.status, 0, doneAgain.stderr);
+  assert.match(doneAgain.stdout, /already done/);
+
+  const defaultFlagDir = path.join(projectRoot, '.mobius', 'flags', 'session-default');
+  fs.mkdirSync(defaultFlagDir, { recursive: true });
+  fs.writeFileSync(path.join(defaultFlagDir, 'running.flag'), 'session=session-default\n');
+  writeEnv(`DB_PATH='${cliDbPath}'\n`);
+  const doneDefault = run(path.join(binDir, 'declare_job_done'), ['session-default'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(doneDefault.status, 0, doneDefault.stderr);
+  assert.strictEqual(fs.existsSync(path.join(defaultFlagDir, 'running.flag')), false);
+
+  const unknownDone = run(path.join(binDir, 'declare_job_done'), ['unknown-session'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(unknownDone.status, 4);
+  assert.match(unknownDone.stderr, /no Mobius Session found/);
+
+  const legacyDbPath = path.join(appDir, 'legacy-cli.db');
+  const legacyDb = new Database(legacyDbPath);
+  legacyDb.exec(`
+    CREATE TABLE projects (id TEXT PRIMARY KEY, bind_path TEXT);
+    CREATE TABLE sessions_v2 (
+      session_id TEXT PRIMARY KEY,
+      project_id TEXT,
+      claude_session_id TEXT
+    );
+  `);
+  legacyDb.prepare('INSERT INTO projects (id, bind_path) VALUES (?, ?)').run('p1', projectRoot);
+  legacyDb.prepare('INSERT INTO sessions_v2 (session_id, project_id, claude_session_id) VALUES (?, ?, ?)')
+    .run('session-legacy', 'p1', 'agent-legacy');
+  legacyDb.close();
+  const legacyFlagDir = path.join(projectRoot, '.imac', 'flags', 'session-legacy');
+  fs.mkdirSync(legacyFlagDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyFlagDir, 'running.flag'), 'session=session-legacy\n');
+  writeEnv(`MOBIUS_HIDDEN_FOLDER_NAME=.imac\nDB_PATH=${legacyDbPath}\n`);
+  const legacyAgent = run(path.join(binDir, 'declare_job_done'), ['agent-legacy'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(legacyAgent.status, 0, legacyAgent.stderr);
+  assert.strictEqual(fs.existsSync(path.join(legacyFlagDir, 'running.flag')), false);
+
+  writeEnv(`MOBIUS_HIDDEN_FOLDER_NAME=.imac\nDB_PATH=${cliDbPath}\n`);
+  const duplicateAgent = run(path.join(binDir, 'declare_job_done'), ['agent-duplicate'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(duplicateAgent.status, 4);
+  assert.match(duplicateAgent.stderr, /multiple Sessions/);
+
+  const outsideFlagDir = path.join(tempRoot, 'outside-flag-dir');
+  fs.mkdirSync(outsideFlagDir, { recursive: true });
+  fs.writeFileSync(path.join(outsideFlagDir, 'running.flag'), 'must-not-delete\n');
+  const escapeLink = path.join(projectRoot, '.imac', 'flags', 'session-escape');
+  fs.mkdirSync(path.dirname(escapeLink), { recursive: true });
+  fs.symlinkSync(outsideFlagDir, escapeLink, 'dir');
+  const symlinkEscape = run(path.join(binDir, 'declare_job_done'), ['session-escape'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(symlinkEscape.status, 5);
+  assert.match(symlinkEscape.stderr, /escapes the project bind_path/);
+  assert.strictEqual(fs.readFileSync(path.join(outsideFlagDir, 'running.flag'), 'utf8'), 'must-not-delete\n');
+
+  writeEnv(`MOBIUS_HIDDEN_FOLDER_NAME=../unsafe\nDB_PATH=${cliDbPath}\n`);
+  const unsafeHiddenDir = run(path.join(binDir, 'declare_job_done'), ['session-123'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(unsafeHiddenDir.status, 3);
+  assert.match(unsafeHiddenDir.stderr, /safe directory name/);
 
   const help = run(path.join(binDir, 'generate_localhost_jwt'), ['--help']);
   assert.strictEqual(help.status, 0);

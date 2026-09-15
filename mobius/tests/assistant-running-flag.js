@@ -108,7 +108,9 @@ function assertContext() {
   const normal = buildSessionContext(user, 's-normal').body
   const assistant = buildSessionContext(user, 's-assist').body
 
-  assert.match(normal, /running\.flag/, 'normal session should keep running.flag instructions')
+  assert.match(normal, /declare_job_done s-normal/, 'normal session should include the completion command')
+  assert.doesNotMatch(normal, /flags\/s-normal\/running\.flag/, 'normal session should not expose the flag path')
+  assert.doesNotMatch(assistant, /declare_job_done/, 'assistant session context must not mention the completion command')
   assert.doesNotMatch(assistant, /running\.flag/, 'assistant session context must not mention running.flag')
   assert.doesNotMatch(assistant, /标记文件|marker file/, 'assistant session context must not ask for marker cleanup')
   assert.match(assistant, /小莫对话/, 'assistant context should still include the issue context')

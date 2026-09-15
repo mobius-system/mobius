@@ -264,7 +264,7 @@ function zh_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push(isAssistantSession(session)
     ? '### 任务完成时 (成功或失败)'
-    : '### 任务完成时 (成功或失败, 在删除下方 running.flag 之前必须做)');
+    : '### 任务完成时 (成功或失败, 在运行下方 declare_job_done 之前必须做)');
   lines.push(`把分支 \`${wt.branch}\` 合并到 \`agent_smart_dev\` 分支:`);
   lines.push('');
   lines.push('```bash');
@@ -278,20 +278,14 @@ function zh_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push('若合并有冲突, 必须解决全部冲突后再完成合并; 合并完成后重新运行测试验证需求是否满足. 若仍有冲突或测试不通过, 继续修复 → 重新合并 → 重新测试, **直到没有冲突且测试通过为止**.');
   lines.push('一切结束后，尝试git push，如果因为认证，失败了也没关系，跳过即可。');
-  if (!isAssistantSession(session)) {
-    lines.push(`提示: running.flag 位于仓库根 \`${wt.root}/${HIDDEN_FOLDER_NAME}/...\`, 不在 worktree 内 — 重建/删除 worktree 目录时不要误删它.`);
-  }
   lines.push('');
 }
 
 function zh_add_completion_flag_info(lines: string[], session: any, project: any): void {
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
-  const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
-  const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## 当任务完成时的最后一步');
-  lines.push(`当任务最终成功或者最终失败时，你需要删除标记文件 ${flagPath}。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。`);
-  lines.push(`每当用户提出新问题新指令时，都会创建新的running.flag。`);
+  lines.push(`当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${session.session_id}\` 删除 flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
 }
 
 function zh_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -499,7 +493,7 @@ function en_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push(isAssistantSession(session)
     ? '### When the task is done (success or failure)'
-    : '### When the task is done (success or failure, must do this before deleting the running.flag below)');
+    : '### When the task is done (success or failure, must do this before running declare_job_done below)');
   lines.push(`Merge branch \`${wt.branch}\` into the \`agent_smart_dev\` branch:`);
   lines.push('');
   lines.push('```bash');
@@ -513,20 +507,14 @@ function en_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push('If the merge has conflicts, you must resolve all of them before completing the merge; after merging, re-run the tests to verify the requirements are met. If conflicts remain or tests fail, keep fixing → re-merging → re-testing, **until there are no conflicts and the tests pass**.');
   lines.push('When everything is done, try git push; if it fails due to authentication, that is fine, just skip it.');
-  if (!isAssistantSession(session)) {
-    lines.push(`Note: running.flag lives at the repo root \`${wt.root}/${HIDDEN_FOLDER_NAME}/...\`, not inside the worktree — do not accidentally delete it when rebuilding/removing the worktree directory.`);
-  }
   lines.push('');
 }
 
 function en_add_completion_flag_info(lines: string[], session: any, project: any): void {
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
-  const flagRoot = (project && project.bind_path) ? project.bind_path : '.';
-  const flagPath = `${flagRoot}/${HIDDEN_FOLDER_NAME}/flags/${session.session_id}/running.flag`;
   lines.push('## Final step when the task is complete');
-  lines.push(`When the task ultimately succeeds or ultimately fails, you must delete the marker file ${flagPath}. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue.`);
-  lines.push('When user gives new instruction again, running.flag will be recreated.');
+  lines.push(`When the task ultimately succeeds or fails, you must run \`declare_job_done ${session.session_id}\` to delete the flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
 }
 
 // PC task mode prompt injection (Electron/TUI sessions only, when

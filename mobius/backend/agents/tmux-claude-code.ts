@@ -1207,6 +1207,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       `unset VSCODE_IPC_HOOK_CLI VSCODE_GIT_IPC_HANDLE VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_ASKPASS_MAIN`,
       // 标记当前进程运行在受控沙箱环境中。
       `export IS_SANDBOX=1`,
+      // transcript 在回合检查点同步落盘（原本是 100ms 异步批量刷）。
+      `export CLAUDE_CODE_EAGER_FLUSH=1`,
       // 四挡分流: direct/env 裸 exec; proxychains/env_proxychains 套 chains。
       // settingsArg 两分支都要带: 代理分支此前漏拼 --settings, 导致开代理的 session
       // settings 文件 (channel/key/权限/withproxy.json) 被静默丢弃回退全局默认。

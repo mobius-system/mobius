@@ -21,7 +21,7 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   exit 1
 fi
 
-for cmd in multiagent_send generate_localhost_jwt; do
+for cmd in multiagent_send generate_localhost_jwt declare_job_done; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
@@ -34,6 +34,7 @@ echo
 echo "Done. Safe verification examples:"
 echo "  multiagent_send --help"
 echo "  generate_localhost_jwt --help"
+echo "  declare_job_done --help"
 case ":$PATH:" in
   *":$PREFIX:"*) ;;
   *) echo; echo "Note: PATH does not contain $PREFIX; add: export PATH=\"$PREFIX:\$PATH\"" ;;
