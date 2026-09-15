@@ -1,80 +1,133 @@
 #!/usr/bin/env bash
-# multiagent_send — 跨智能体双向通讯 CLI (纯 curl).
-# 前置: 双向 @ 已建立通讯关系 (48h 有效); user_id 取工作区 .imac/multiagent.env.
-#
-# 用法: multiagent_send <self_id> <target_id> <content...>
-#   MOBIUS_BASE       覆盖后端地址 (默认 http://localhost:45616)
-#   MOBIUS_USER_ID    覆盖 user_id (默认读 cwd 向上第一个 .imac/multiagent.env)
-#
-# 输出契约: 成功/失败都打印一行人话到 terminal (stdout/stderr), agent 据此决策下一步.
+# multiagent_send - send a message through the Mobius multiagent API.
 set -euo pipefail
 
-BASE="${MOBIUS_BASE:-http://localhost:45616}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+JWT_HELPER="${MOBIUS_JWT_HELPER:-$SCRIPT_DIR/generate_localhost_jwt}"
+BASE="${MOBIUS_BASE:-}"
 prog="$(basename "$0")"
 
 usage() {
   cat <<USAGE >&2
 Usage: $prog <self_id> <target_id> <content...>
 
-  向目标智能体发送跨智能体通讯 (需已通过双向 @ 建立, 48h 有效).
+  Send a message to a target Session after a bidirectional @ mention.
 
 Options:
   -h, --help    show this help and exit
 
 Environment:
-  MOBIUS_BASE     backend base URL (default: http://localhost:45616)
-  MOBIUS_USER_ID  override user id (default: nearest .imac/multiagent.env)
+  MOBIUS_BASE       backend base URL; otherwise derived from APP_DIR/.env
+  MOBIUS_APP_DIR    override the Mobius APP_DIR used for .env discovery
+  MOBIUS_USER_ID    override the user id (otherwise nearest .imac/multiagent.env)
+  MOBIUS_JWT_HELPER override the JWT helper path
 USAGE
 }
 
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
-[ $# -ge 3 ] || { usage; exit 2; }
+if [[ $# -lt 3 ]]; then
+  usage
+  exit 2
+fi
 
-self_id="$1"; target_id="$2"; shift 2
+self_id="$1"
+target_id="$2"
+shift 2
 content="$*"
+if [[ -z "$content" ]]; then
+  echo "Input error: content must not be empty" >&2
+  exit 2
+fi
 
-# user_id: 显式 env 优先, 否则从 cwd 向上找最近的 .imac/multiagent.env
 user_id="${MOBIUS_USER_ID:-}"
-if [ -z "$user_id" ]; then
+if [[ -z "$user_id" ]]; then
   dir="$PWD"
-  while [ "$dir" != "/" ]; do
-    if [ -f "$dir/.imac/multiagent.env" ]; then
-      user_id="$(grep -E '^MOBIUS_USER_ID=' "$dir/.imac/multiagent.env" | head -n1 | cut -d= -f2-)"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/.imac/multiagent.env" ]]; then
+      user_id="$(awk -F= '$1 == "MOBIUS_USER_ID" { sub(/\r$/, "", $2); print $2; exit }' "$dir/.imac/multiagent.env")"
       break
     fi
-    dir="$(dirname "$dir")"
+    dir="$(dirname -- "$dir")"
   done
 fi
-if [ -z "$user_id" ]; then
-  echo "✗ 无法确定 user_id：未找到 .imac/multiagent.env 且 MOBIUS_USER_ID 未设置" >&2
-  exit 1
+if [[ -z "$user_id" ]]; then
+  echo "Configuration error: MOBIUS_USER_ID is unset and no .imac/multiagent.env was found" >&2
+  exit 3
+fi
+if [[ ! -x "$JWT_HELPER" ]]; then
+  echo "Configuration error: JWT helper is not executable: $JWT_HELPER" >&2
+  exit 3
 fi
 
-token="$(generate_localhost_jwt "$user_id")" || exit 1
+if [[ -z "$BASE" ]]; then
+  APP_DIR="${MOBIUS_APP_DIR:-${APP_DIR:-}}"
+  if [[ -z "$APP_DIR" && -n "${MOBIUS_ROOT:-}" ]]; then
+    APP_DIR="$(cd -- "$MOBIUS_ROOT/.." 2>/dev/null && pwd -P || true)"
+  fi
+  if [[ -z "$APP_DIR" ]]; then
+    if [[ -f "$SCRIPT_DIR/.mobius-cli-app-dir" ]]; then
+      IFS= read -r APP_DIR < "$SCRIPT_DIR/.mobius-cli-app-dir" || true
+    fi
+  fi
+  if [[ -z "$APP_DIR" ]]; then
+    source_app_dir="$(cd -- "$SCRIPT_DIR/../../.." 2>/dev/null && pwd -P || true)"
+    if [[ -f "$source_app_dir/.env" ]]; then
+      APP_DIR="$source_app_dir"
+    fi
+  fi
+  if [[ -z "$APP_DIR" || ! -f "$APP_DIR/.env" ]]; then
+    echo "Configuration error: cannot locate APP_DIR/.env; set MOBIUS_BASE or MOBIUS_APP_DIR" >&2
+    exit 3
+  fi
+  # Keep this precedence identical to start.py: pre-existing environment first,
+  # then .env, with VITE_PORT preferred over MOBIUS_PORT.
+  resolved_port="${VITE_PORT:-${MOBIUS_PORT:-}}"
+  if [[ -z "$resolved_port" ]]; then
+    resolved_port="$(awk -F= '
+    function value(line, v) { v=line; sub(/^[^=]*=/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v); if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v=substr(v, 2, length(v)-2); sub(/[ \t]+#.*/, "", v); return v }
+    /^[ \t]*(export[ \t]+)?VITE_PORT=/ { vite=value($0) }
+    /^[ \t]*(export[ \t]+)?MOBIUS_PORT=/ { mobius=value($0) }
+    END { if (vite != "") print vite; else if (mobius != "") print mobius }
+    ' "$APP_DIR/.env")"
+  fi
+  if [[ ! "$resolved_port" =~ ^[0-9]+$ ]] || (( resolved_port < 1 || resolved_port > 65535 )); then
+    echo "Configuration error: .env must define a valid VITE_PORT or MOBIUS_PORT" >&2
+    exit 3
+  fi
+  BASE="http://localhost:$resolved_port"
+fi
+
+token="$($JWT_HELPER "$user_id")" || exit $?
+if [[ -z "$token" ]]; then
+  echo "Authentication error: JWT helper returned an empty token" >&2
+  exit 4
+fi
 
 body="$(python3 -c 'import json,sys; print(json.dumps({"self_id": sys.argv[1], "target_id": sys.argv[2], "content": " ".join(sys.argv[3:])}))' "$self_id" "$target_id" "$content")"
+resp="$(curl --silent --show-error --connect-timeout 5 --max-time 30 -w '\n%{http_code}' -X POST "$BASE/api/multiagent_communication" \
+  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data "$body")" || {
+  echo "Network error: unable to connect to Mobius backend ($BASE)" >&2
+  exit 5
+}
 
-resp="$(curl -sS -m 30 -w '\n%{http_code}' -X POST "$BASE/api/multiagent_communication" \
-  -H "Authorization: Bearer $token" \
-  -H "Content-Type: application/json" \
-  --data "$body")" || { echo "✗ 无法连接 Mobius 后端（$BASE）" >&2; exit 1; }
-
-http="$(tail -n1 <<<"$resp")"
-body_json="$(sed '$d' <<<"$resp")"
-
+http="${resp##*$'\n'}"
+body_json="${resp%$'\n'*}"
 err_from_json() { python3 -c 'import json,sys; print(json.load(sys.stdin).get("error", ""))' <<<"$1" 2>/dev/null || true; }
-
 case "$http" in
   200)
-    turn="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("turn_number", "?"))' <<<"$body_json" 2>/dev/null || echo '?')"
-    echo "✓ 已送达 Session $target_id（第 ${turn} 轮）"
-    exit 0
+    turn="$(python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True; print(d.get("turn_number", "?"))' <<<"$body_json" 2>/dev/null || true)"
+    if [[ -z "$turn" ]]; then
+      echo "Protocol error: backend returned an invalid success response" >&2
+      exit 6
+    fi
+    echo "Sent to Session $target_id (turn $turn)"
     ;;
-  401) echo "✗ 认证失败：JWT 生成/校验出错（generate_localhost_jwt 或 .env 问题）" >&2; exit 1 ;;
-  403) echo "✗ $(err_from_json "$body_json" || echo 无权限)" >&2; exit 1 ;;
-  404) echo "✗ $(err_from_json "$body_json" || echo "未建立双向通讯关系")" >&2; exit 1 ;;
-  410) echo "✗ $(err_from_json "$body_json" || echo "通讯已过期")" >&2; exit 1 ;;
-  *)   echo "✗ 发送失败（HTTP $http）：$(err_from_json "$body_json")" >&2; exit 1 ;;
+  401) echo "Authentication error: JWT rejected by Mobius backend" >&2; exit 4 ;;
+  403) echo "Permission error: $(err_from_json "$body_json" || echo denied)" >&2; exit 7 ;;
+  404) echo "Link or Session error: $(err_from_json "$body_json" || echo not found)" >&2; exit 8 ;;
+  410) echo "Link expired: $(err_from_json "$body_json" || echo expired)" >&2; exit 9 ;;
+  413) echo "Input error: message is too large" >&2; exit 2 ;;
+  *) echo "Backend error (HTTP $http): $(err_from_json "$body_json")" >&2; exit 10 ;;
 esac

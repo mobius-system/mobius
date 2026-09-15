@@ -1,24 +1,106 @@
 #!/usr/bin/env bash
-# generate_localhost_jwt — 从 mobius .env 读 JWT_SECRET, 签发 localhost 用户 JWT.
-# 与 backend/middleware/auth.ts 的 AuthPayload {id} 同构, 走现有 auth 中间件.
-#
-# 用法: generate_localhost_jwt <user_id>
-#   MOBIUS_ENV_FILE   覆盖 .env 路径 (默认下方写死的部署路径)
+# generate_localhost_jwt - sign a short-lived localhost user JWT.
+# The Mobius .env is always APP_DIR/.env. MOBIUS_APP_DIR may override APP_DIR
+# for an explicitly selected deployment root.
 set -euo pipefail
 
-ENV_FILE="${MOBIUS_ENV_FILE:-/home/tianyi/imac-test/.env}"
-USER_ID="${1:?用法: generate_localhost_jwt <user_id>}"
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'USAGE'
+Usage: generate_localhost_jwt <user_id>
 
-SECRET="$(grep -E '^JWT_SECRET=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '\"'"'"'')"
-if [ -z "$SECRET" ]; then
-  echo "✗ 认证失败：$ENV_FILE 中未找到 JWT_SECRET" >&2
-  exit 1
+Environment:
+  MOBIUS_APP_DIR  override the Mobius APP_DIR (default: APP_DIR from the shell,
+                  otherwise the repository root inferred from this script)
+  MOBIUS_ROOT     legacy Mobius package root (APP_DIR/mobius)
+  MOBIUS_NODE     Node executable (default: first node found in PATH)
+USAGE
+  exit 0
 fi
 
-# mobius 根目录 (jsonwebtoken 所在的 node_modules 的父目录), 部署机固定路径, env 可覆盖:
-MOBIUS_ROOT="${MOBIUS_ROOT:-/home/tianyi/imac-test/mobius}"
-exec /usr/bin/node -e '
-  const path = require("path");
-  const jwt = require(path.join(process.argv[3], "node_modules", "jsonwebtoken"));
-  console.log(jwt.sign({ id: process.argv[1] }, process.argv[2], { expiresIn: "1h" }));
-' "$USER_ID" "$SECRET" "$MOBIUS_ROOT"
+if [[ $# -ne 1 || -z "$1" ]]; then
+  echo "Usage: generate_localhost_jwt <user_id>" >&2
+  exit 2
+fi
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+APP_DIR="${MOBIUS_APP_DIR:-${APP_DIR:-}}"
+if [[ -z "$APP_DIR" && -n "${MOBIUS_ROOT:-}" ]]; then
+  APP_DIR="$(cd -- "$MOBIUS_ROOT/.." 2>/dev/null && pwd -P || true)"
+fi
+if [[ -z "$APP_DIR" ]]; then
+  if [[ -f "$SCRIPT_DIR/.mobius-cli-app-dir" ]]; then
+    IFS= read -r APP_DIR < "$SCRIPT_DIR/.mobius-cli-app-dir" || true
+  fi
+fi
+if [[ -z "$APP_DIR" ]]; then
+  source_app_dir="$(cd -- "$SCRIPT_DIR/../../.." 2>/dev/null && pwd -P || true)"
+  if [[ -f "$source_app_dir/.env" ]]; then
+    APP_DIR="$source_app_dir"
+  fi
+fi
+if [[ -z "$APP_DIR" ]]; then
+  echo "Authentication configuration error: APP_DIR is unavailable; set MOBIUS_APP_DIR or reinstall the CLI" >&2
+  exit 3
+fi
+requested_app_dir="$APP_DIR"
+APP_DIR="$(cd -- "$requested_app_dir" 2>/dev/null && pwd -P)" || {
+  echo "Authentication configuration error: APP_DIR does not exist: $requested_app_dir" >&2
+  exit 3
+}
+
+ENV_FILE="$APP_DIR/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Authentication configuration error: required environment file is missing: $ENV_FILE" >&2
+  exit 3
+fi
+if [[ ! -r "$ENV_FILE" ]]; then
+  echo "Authentication configuration error: environment file is not readable: $ENV_FILE" >&2
+  exit 3
+fi
+
+NODE_BIN="${MOBIUS_NODE:-}"
+if [[ -z "$NODE_BIN" ]]; then
+  NODE_BIN="$(command -v node || true)"
+fi
+if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
+  echo "Authentication runtime error: Node.js executable not found; set MOBIUS_NODE or add node to PATH" >&2
+  exit 3
+fi
+
+JWT_MODULE="$APP_DIR/mobius/node_modules/jsonwebtoken"
+if [[ ! -f "$JWT_MODULE/index.js" ]]; then
+  echo "Authentication runtime error: jsonwebtoken is missing: $JWT_MODULE" >&2
+  echo "Install Mobius dependencies before using this command." >&2
+  exit 3
+fi
+
+# The secret is read by Node directly from APP_DIR/.env. It never appears in
+# shell variables, command-line arguments, or the process environment.
+exec "$NODE_BIN" - "$1" "$APP_DIR" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const jwt = require(path.join(process.argv[3], 'mobius', 'node_modules', 'jsonwebtoken'));
+
+function parseEnvValue(raw) {
+  const value = raw.trim();
+  if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) {
+    return value.slice(1, -1);
+  }
+  return value.replace(/\s+#.*$/, '').trim();
+}
+
+const envPath = path.join(process.argv[3], '.env');
+const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+let secret;
+for (const line of lines) {
+  const match = line.trim().match(/^(?:export\s+)?JWT_SECRET=(.*)$/);
+  if (match) {
+    secret = parseEnvValue(match[1]);
+  }
+}
+if (!secret) {
+  console.error(`Authentication configuration error: JWT_SECRET is missing or empty in ${envPath}`);
+  process.exit(3);
+}
+process.stdout.write(jwt.sign({ id: process.argv[2] }, secret, { expiresIn: '1h' }) + '\n');
+NODE
