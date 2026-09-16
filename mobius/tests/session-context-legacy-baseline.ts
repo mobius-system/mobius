@@ -129,10 +129,10 @@ function zh_add_research_blackboard_info(lines: string[], research: any, session
   if (!(research && research.id)) return;
   const sessionId = session?.session_id && session.session_id !== '(待创建)' ? session.session_id : '';
   lines.push('## Research Blackboard');
-  lines.push('仅通过 CLI 操作，禁止直接编辑底层文件：');
-  lines.push(`- 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\``);
+  lines.push('请通过命令行读写黑板：');
+  lines.push(`- 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\` （禁止轮询，有更新时系统会通知你）`);
   lines.push(`- 写入：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "研究进展或需要同步的信息"\``);
-  lines.push('普通写入会投递给本 Research 的其他 Session。仅在用户强烈要求定向投递时，追加 `--limit-receiver --receiver=<receiver_id>`。');
+  lines.push(`- 写入（定向）（不建议使用，除非用户强烈要求）：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} --limit-receiver --receiver=<receiver_id> "研究进展或需要同步的信息"\``);
   lines.push('');
   if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
     const capability = createChiefTeamToken(research.id, session.session_id);
@@ -343,10 +343,10 @@ function en_add_research_blackboard_info(lines: string[], research: any, session
   if (!(research && research.id)) return;
   const sessionId = session?.session_id && session.session_id !== '(待创建)' ? session.session_id : '';
   lines.push('## Research Blackboard');
-  lines.push('Use only the CLI; never edit the backing file directly:');
-  lines.push(`- Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\``);
+  lines.push('Use the CLI to read and write the Blackboard:');
+  lines.push(`- Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${research.id}\` (do not poll; the system notifies you when there are updates)`);
   lines.push(`- Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "progress or findings to share"\``);
-  lines.push('Normal writes are delivered to the other Sessions in this Research. Append `--limit-receiver --receiver=<receiver_id>` only when the user strongly requires targeted delivery.');
+  lines.push(`- Targeted write (discouraged unless the user strongly requires it): \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} --limit-receiver --receiver=<receiver_id> "progress or findings to share"\``);
   lines.push('');
   if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
     const capability = createChiefTeamToken(research.id, session.session_id);

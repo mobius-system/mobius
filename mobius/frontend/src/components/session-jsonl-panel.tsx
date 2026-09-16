@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import { JsonlLiveTailCard, JsonlView } from './jsonl-view'
 import { VSCodeOpenProvider } from './jsonl-vscode-link'
 import type { SessionHistoryStore } from '../services/agent-history-store'
@@ -60,6 +60,8 @@ type SessionJsonlPanelProps = {
   scrollToEntryUuid?: string | null
   scrollToMatchTs?: string | null
   onMatchScrollResolved?: () => void
+  // 当前会话是否仍保留搜索命中红框。与 URL 中的 match/ts 独立，供 Chat 追底逻辑同步读取。
+  searchHighlightActiveRef?: MutableRefObject<boolean>
   onEasyRoundCountChange?: (count: number) => void
   easyExpandAllSignal?: number
   variant?: 'standard' | 'easy'
@@ -83,6 +85,7 @@ function SessionJsonlPanelInner({
   scrollToEntryUuid,
   scrollToMatchTs,
   onMatchScrollResolved,
+  searchHighlightActiveRef,
   onEasyRoundCountChange,
   easyExpandAllSignal,
   variant = 'standard',
@@ -107,6 +110,9 @@ function SessionJsonlPanelInner({
   }
   const effectiveScrollToEntryUuid = scrollToEntryUuid || highlightTargetRef.current?.uuid || null
   const effectiveScrollToMatchTs = scrollToMatchTs || highlightTargetRef.current?.ts || null
+  if (searchHighlightActiveRef) {
+    searchHighlightActiveRef.current = !!(effectiveScrollToEntryUuid || effectiveScrollToMatchTs)
+  }
   const visibleJsonl = useMemo(
     () => (historyStore ? historyStore.flattenEntries() : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps

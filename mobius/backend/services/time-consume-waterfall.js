@@ -3,7 +3,7 @@ const path = require('path')
 
 const { deprecatedMobiusJsonlPathOf: mobiusJsonlPathOf } = require('./mobius-agent-history-deprecated') // [deprecated-compat] 旧双轨字节统计
 
-const TIME_CONSUME_WATERFALL_VERSION = 6
+const TIME_CONSUME_WATERFALL_VERSION = 7
 const MIN_STEP_MS = 1000
 const JOB_DONE_KEYWORD = 'declare_job_done'
 
@@ -242,7 +242,6 @@ function closeModelSegment(state, endMs, event) {
       startOffsetMs: state.modelStartOffsetMs || 0,
       lineNo: event?.lineNo ?? null,
       source: event?.source ?? null,
-      jobDone: !!event?.jobDone,
     })
   }
   state.modelStartMs = null
@@ -307,6 +306,7 @@ function absorbEventMeta(state, event) {
       startOffsetMs: phaseStartOffsetMs + Math.max(0, event.tsMs - phaseStartMs),
       lineNo: event.lineNo ?? null,
       source: event.source ?? null,
+      jobDone: !!event.jobDone,
     }
     return
   }

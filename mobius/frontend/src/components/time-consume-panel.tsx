@@ -136,7 +136,7 @@ function findZoomToLimitBlocks(segments: TimeConsumeSegment[], totalMs: number, 
 
 function displayDurationMs(segment: TimeConsumeSegment): number {
   const duration = Math.max(0, Number(segment.duration_ms) || 0)
-  return segment.job_done && duration < 1 ? 1 : duration
+  return segment.kind === 'tool' && segment.job_done && duration < 1 ? 1 : duration
 }
 
 export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) {
@@ -401,7 +401,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 <div className="absolute inset-x-0 inset-y-1">
                   {timelineSegments.map((segment) => {
                     const onModelTrack = segment.kind === 'model'
-                    const isJobDone = !!segment.job_done
+                    const isJobDone = segment.kind === 'tool' && !!segment.job_done
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}

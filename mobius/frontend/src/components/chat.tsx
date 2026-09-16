@@ -134,10 +134,11 @@ const LERP_FOLLOW_K = 0.06
 // 高刷屏会略快. 不用 behavior:'smooth' (重发会打断进行中的动画). 配套: 解除钉底
 // 改为方向性判定 (仅"向上滚"才算用户, 见 session-jsonl-panel), 追赶途中 dist 再大
 // 也不误判. 消息/typing 触发的滚底仍由 Chat 自己的 effect 负责.
-function EntriesAutoScroll({ store, containerRef, matchActiveRef, userScrolledUpRef, onBlocked }: {
+function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighlightActiveRef, userScrolledUpRef, onBlocked }: {
   store: SessionHistoryStore | null
   containerRef: React.RefObject<HTMLDivElement | null>
   matchActiveRef: React.RefObject<boolean>
+  searchHighlightActiveRef: React.RefObject<boolean>
   userScrolledUpRef: React.RefObject<boolean>
   onBlocked: () => void
 }) {
@@ -154,7 +155,10 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, userScrolledUp
     rafRef.current = 0
     // userScrolledUpRef 是同步可变 ref (事件处理器里直接改它), 追底每帧直接读,
     // 不用等 React 重渲染, 避免"第一次 wheel 上滚仍被拽回一帧".
-    if (matchActiveRef.current) { scrollDebug('chase: skip (matchActive)'); return }
+    if (matchActiveRef.current || searchHighlightActiveRef.current) {
+      scrollDebug('chase: skip (search navigation/highlight active)')
+      return
+    }
     if (userScrolledUpRef.current) { scrollDebug('chase: STOP (userScrolledUp=true)'); return }
     const el = containerRef.current
     if (!el) return
@@ -172,7 +176,7 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, userScrolledUp
 
   // 触发源 1: 条数变化 (新条目到达). 用户已上滚 → 亮"新消息"按钮, 不抢滚条.
   useEffect(() => {
-    if (matchActiveRef.current) return
+    if (matchActiveRef.current || searchHighlightActiveRef.current) return
     if (userScrolledUpRef.current) {
       scrollDebug('count-effect: count=', count, 'userScrolledUp=true → onBlocked (不追底, 亮"新消息")')
       onBlockedRef.current()
@@ -193,7 +197,7 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, userScrolledUp
     ro.observe(contentRoot)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, matchActiveRef])
+  }, [containerRef, matchActiveRef, searchHighlightActiveRef])
   return null
 }
 
@@ -1923,6 +1927,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   const hasMatchTarget = !!(matchUuid || matchTs)
   const matchTargetActiveRef = useRef(hasMatchTarget)
   matchTargetActiveRef.current = hasMatchTarget
+  // 命中参数被清理后，SessionJsonlPanel 仍会保留红色命中标记；追底必须尊重该状态。
+  const searchHighlightActiveRef = useRef(false)
   // 跳转到位后清掉 URL 里的 match/ts (replace, 不留历史), 避免刷新/切会话重复触发.
   const onMatchScrollResolved = useCallback(() => {
     setSearchParams((prev) => {
@@ -3462,7 +3468,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   // (读的是同步 ref, 只在消息/typing 事件发生时取当时的值; 排队 RAF 执行前再查一次.)
   useEffect(() => {
     // 搜索结果跳转进行中时不抢滚条, 让 JsonlView 的 scrollToKey 把视图钉到命中卡片.
-    if (matchTargetActiveRef.current) return
+    if (matchTargetActiveRef.current || searchHighlightActiveRef.current) return
     if (userScrolledUpRef.current) {
       scrollDebug('message-effect: userScrolledUp=true → setHasNewMessages (不滚底)')
       setHasNewMessages(true)
@@ -3471,7 +3477,10 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       requestAnimationFrame(() => {
         // 滚底回调执行前再查一次: 排队期间用户上滚了就别再抢滚条.
         if (userScrolledUpRef.current) { scrollDebug('message-effect RAF: 执行前 userScrolledUp=true → 放弃滚底'); return }
-        if (matchTargetActiveRef.current) { scrollDebug('message-effect RAF: 执行前 matchActive → 放弃滚底'); return }
+        if (matchTargetActiveRef.current || searchHighlightActiveRef.current) {
+          scrollDebug('message-effect RAF: search navigation/highlight active → 放弃滚底')
+          return
+        }
         const el = chatContainerRef.current
         if (el) el.scrollTop = el.scrollHeight
       })
@@ -4261,6 +4270,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           scrollToEntryUuid={matchUuid}
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
+          searchHighlightActiveRef={searchHighlightActiveRef}
           onEasyRoundCountChange={handleEasyRoundCountChange}
           easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}
@@ -4269,6 +4279,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           store={historyStore}
           containerRef={chatContainerRef}
           matchActiveRef={matchTargetActiveRef}
+          searchHighlightActiveRef={searchHighlightActiveRef}
           userScrolledUpRef={userScrolledUpRef}
           onBlocked={() => setHasNewMessages(true)}
         />

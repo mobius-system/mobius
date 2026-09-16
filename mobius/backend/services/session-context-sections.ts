@@ -213,10 +213,10 @@ export const BlackboardSection = defineSection({
       const sessionId = c.session?.session_id && c.session.session_id !== '(待创建)' ? c.session.session_id : '';
       return md`
         ${t.zh}
-        仅通过 CLI 操作，禁止直接编辑底层文件：
-        - 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\`
+        请通过命令行读写黑板：
+        - 读取：\`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\` （禁止轮询，有更新时系统会通知你）
         - 写入：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} "研究进展或需要同步的信息"\`
-        普通写入会投递给本 Research 的其他 Session。仅在用户强烈要求定向投递时，追加 \`--limit-receiver --receiver=<receiver_id>\`。
+        - 写入（定向）（不建议使用，除非用户强烈要求）：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} --limit-receiver --receiver=<receiver_id> "研究进展或需要同步的信息"\`
       `;
     },
     en: (c, t) => {
@@ -224,10 +224,10 @@ export const BlackboardSection = defineSection({
       const sessionId = c.session?.session_id && c.session.session_id !== '(待创建)' ? c.session.session_id : '';
       return md`
         ${t.en}
-        Use only the CLI; never edit the backing file directly:
-        - Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\`
+        Use the CLI to read and write the Blackboard:
+        - Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\` (do not poll; the system notifies you when there are updates)
         - Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} "progress or findings to share"\`
-        Normal writes are delivered to the other Sessions in this Research. Append \`--limit-receiver --receiver=<receiver_id>\` only when the user strongly requires targeted delivery.
+        - Targeted write (discouraged unless the user strongly requires it): \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} --limit-receiver --receiver=<receiver_id> "progress or findings to share"\`
       `;
     },
   },

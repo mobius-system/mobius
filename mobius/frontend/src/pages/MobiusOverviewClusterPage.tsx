@@ -29,7 +29,7 @@ import { pollRecursive } from '../services/polling'
 import { redactDisplayText } from '../services/text-redaction'
 import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
-type TimeRangeKey = '24h' | '48h' | '72h' | '7d' | '30d'
+type TimeRangeKey = '1h' | '4h' | '24h' | '48h' | '72h' | '7d' | '30d'
 type ClusterMode = 'project' | 'creator'
 type ParentKind = 'issue' | 'research'
 type SessionKind = 'session' | 'research_agent'
@@ -170,6 +170,8 @@ const EMPTY_GRAPH_DATA: ProjectGraphData = {
 }
 
 const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }> = [
+  { key: '1h', label: '1小时', ms: 1 * 60 * 60 * 1000 },
+  { key: '4h', label: '4小时', ms: 4 * 60 * 60 * 1000 },
   { key: '24h', label: '24小时', ms: 24 * 60 * 60 * 1000 },
   { key: '48h', label: '48小时', ms: 48 * 60 * 60 * 1000 },
   { key: '72h', label: '72小时', ms: 72 * 60 * 60 * 1000 },
@@ -1913,6 +1915,7 @@ export default function MobiusOverviewClusterPage() {
   const [compactConversationWindows, setCompactConversationWindows] = useState<boolean>(() => {
     try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
   })
+  const [recentOverlayIds, setRecentOverlayIds] = useState<Set<string> | null>(null)
   const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   // 用户手动关闭过的浮窗 (含活跃会话): 记录在案避免轮询刷新 status 后又自动弹出。
   // 从 DetailDrawer 重新点「显示对话浮窗」时清除, 恢复弹出。
@@ -2155,7 +2158,7 @@ export default function MobiusOverviewClusterPage() {
     })
     return stats
   }, [model.nodes])
-  const overlaySessions = useMemo(() => model.nodes.filter((node) => !dismissedOverlayIds.has(node.id)).map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds, dismissedOverlayIds])
+  const overlaySessions = useMemo(() => model.nodes.filter((node) => !dismissedOverlayIds.has(node.id)).map((node) => ({ id: node.id, title: node.title, projectId: node.projectId, projectName: node.projectName, creatorId: node.creatorId, parentId: node.parentId, parentKind: node.parentKind, color: sessionColor(node), x: node.x, y: node.y, active: recentOverlayIds ? recentOverlayIds.has(node.id) : ['running', 'executing', 'in_progress', 'working'].includes(String(node.status || '').toLowerCase()) || node.source?.agent_status === 'running' || manualOverlayIds.has(node.id) })), [model.nodes, manualOverlayIds, dismissedOverlayIds, recentOverlayIds])
   const activeProjectIds = useMemo(() => new Set(model.projectClusters.map((project) => project.id)), [model.projectClusters])
   const visibleProjects = useMemo(
     () => candidateProjects.filter((project: any) => activeProjectIds.has(project.id) || loadingIds.has(project.id) || !graphDataByProject[project.id]),
@@ -2595,11 +2598,31 @@ export default function MobiusOverviewClusterPage() {
   }
 
   const handleConversationWindowsChange = () => {
+    setRecentOverlayIds(null)
     setShowConversationWindows((value) => {
       const next = !value
       try { localStorage.setItem('mobius:overview-conversation-windows', next ? '1' : '0') } catch {}
       return next
     })
+  }
+
+  const handleRecentConversationWindowsChange = () => {
+    const recentSessions = sortByRecent(model.nodes, (session) => session.activeMs)
+    const selectedSessions = recentSessions.length < 10 ? recentSessions : recentSessions.slice(0, 10)
+    const selectedIds = new Set(selectedSessions.map((session) => session.id))
+    setRecentOverlayIds(selectedIds)
+    setManualOverlayIds(selectedIds)
+    setDismissedOverlayIds((current) => {
+      const next = new Set(current)
+      selectedIds.forEach((id) => next.delete(id))
+      return next
+    })
+    setShowConversationWindows(true)
+    if (selectedSessions.length >= 5) setCompactConversationWindows(true)
+    try {
+      localStorage.setItem('mobius:overview-conversation-windows', '1')
+      if (selectedSessions.length >= 5) localStorage.setItem('mobius:overview-conversation-compact', '1')
+    } catch {}
   }
 
   const handleCompactConversationWindowsChange = () => {
@@ -2903,6 +2926,7 @@ export default function MobiusOverviewClusterPage() {
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
             </div>
+            <button type="button" title="显示近期会话浮窗（最多 10 个）" aria-label="显示近期会话浮窗" onClick={handleRecentConversationWindowsChange} className="flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}><MessageSquare className="h-2.5 w-2.5" />近期会话浮窗</button>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
             </div>
@@ -2973,7 +2997,7 @@ export default function MobiusOverviewClusterPage() {
             )}
           </div>
 
-          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setManualOverlayIds((current) => new Set(current).add(session.id)); setDismissedOverlayIds((current) => { const next = new Set(current); next.delete(session.id); return next }); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
+          <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setRecentOverlayIds(null); setManualOverlayIds((current) => new Set(current).add(session.id)); setDismissedOverlayIds((current) => { const next = new Set(current); next.delete(session.id); return next }); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />
           <AgentConversationOverlays sessions={overlaySessions} enabled={showConversationWindows} compact={compactConversationWindows} modelRef={modelRef} transformRef={overlayTransformRef} onClose={(sessionId) => { setManualOverlayIds((current) => { const next = new Set(current); next.delete(sessionId); return next }); setDismissedOverlayIds((current) => { const next = new Set(current); next.add(sessionId); return next }) }} onOpenSession={(session) => { const base = `/u/${encodeURIComponent(session.creatorId || userParam)}/p/${encodeURIComponent(session.projectId)}/${session.parentKind === 'research' ? 'r' : 'i'}/${encodeURIComponent(session.parentId)}`; const target = `${base}?session=${encodeURIComponent(session.id)}`; const desktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop; if (desktop) navigate(target); else window.open(target, '_blank', 'noopener,noreferrer') }} />
         </main>
       </div>
