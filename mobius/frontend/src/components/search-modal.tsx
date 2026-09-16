@@ -41,6 +41,7 @@ type SearchResult = {
 }
 
 type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
+const NOOP = () => {}
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   user: { label: '用户', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' },
   assistant: { label: '助手', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
@@ -156,7 +157,7 @@ export function SearchModal({
   const isQuick = mode === 'quick'
   const isLoading = isQuick ? quickLoading : loading
 
-  const close = onClose || (() => {})
+  const close = onClose || NOOP
   useEffect(() => { if (!embedded) inputRef.current?.focus() }, [embedded])
   useEffect(() => {
     if (embedded) return
@@ -436,6 +437,26 @@ export function SearchModal({
             </button>
           </div>
         </div>}
+
+        {embedded && !isQuick && (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
+            <span className="mr-auto min-w-0 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              深度搜索会话内容
+            </span>
+            {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+            <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
+              className="h-7 w-7 shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+              style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
+            <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
+              className="h-7 w-7 shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+              style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
+            <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
+              className="h-7 shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
+              style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        )}
 
         {/* 结果区 */}
         <div className={embedded ? 'min-h-[180px]' : 'flex-1 min-h-0 overflow-y-auto'}>
