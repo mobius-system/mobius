@@ -406,7 +406,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
                         className="absolute overflow-hidden rounded-sm border"
-                        title={`${isJobDone ? 'declare_job_done · ' : ''}${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
+                        title={`开始 ${segment.start_at} · 持续 ${formatDuration(segment.duration_ms)}`}
                         style={{
                           left: `${segment.startPercent}%`,
                           top: onModelTrack ? 'calc(25% - 10px)' : 'calc(75% - 10px)',
