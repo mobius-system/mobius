@@ -1,8 +1,0 @@
-{
-  "name": "codex-desktop",
-  "display_name": "Codex Desktop 前端复刻",
-  "description": "Codex 桌面端浅色界面的纯前端交互复刻，使用本地演示数据。",
-  "version": "0.1.0",
-  "icon": "favicon.svg",
-  "project": { "sync": true }
-}
