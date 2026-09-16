@@ -226,8 +226,8 @@ function EasyLoadAllControls({ store, loading, onLoadAll, expandAllSignal }: {
   )
 }
 
-// 原始 JSONL 弹窗的「复制全部 / 下载」共用的取数: 把所有未加载组按 ② 逐组补齐后摊平成
-// JSONL 文本 (用户显式动作, 不截断). 渲染层有预算限制, 但导出走全量.
+// 原始 JSONL 弹窗「下载」的取数: 把所有未加载组按 ② 逐组补齐后摊平成 JSONL 文本
+// (用户显式动作, 不截断). 渲染层有预算限制, 但导出走全量.
 async function collectRawJsonlText(store: SessionHistoryStore | null): Promise<string> {
   if (!store) return ''
   for (const group of store.groups) {
@@ -4927,15 +4927,17 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                   <span className="text-[11px] font-mono truncate min-w-0" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
                 )}
               </span>
+              {/* 复制的是 jsonl 在服务器上的绝对路径 (而非全文): 正文有渲染预算, 全文既长又没必要
+                  进剪贴板; 需要内容用旁边的下载按钮落盘. 路径缺失 (会话无主轨) 时禁用. */}
               <JsonlCopyButton
                 copied={rawJsonlCopied}
-                title="复制全部 JSONL 到剪贴板"
-                copiedTitle="JSONL 已复制"
+                title="复制 JSONL 绝对路径"
+                copiedTitle="路径已复制"
+                disabled={!jsonlPath}
                 onClick={async () => {
-                  // 复制全部 = 把所有未加载组的条目按 ② 逐组补齐后摊平 (用户显式动作, 不截断).
+                  if (!jsonlPath) return
                   try {
-                    const text = await collectRawJsonlText(historyStoreRef.current)
-                    await navigator.clipboard.writeText(text)
+                    await navigator.clipboard.writeText(jsonlPath)
                     setRawJsonlCopied(true)
                     setTimeout(() => setRawJsonlCopied(false), 1000)
                   } catch {}
