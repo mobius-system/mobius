@@ -8,13 +8,20 @@
 // 搜索为用户主动触发 (非轮询); 前端 450ms 防抖 + 最短 2 字符, 避免抖打的后端压力.
 // =====================================================================
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../store'
+import { api, useStore } from '../store'
 import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
-  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy,
+  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy, Zap,
 } from 'lucide-react'
 import { useLayoutMode } from '../services/layout-mode'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
+import {
+  EMPTY_PROJECT_HIERARCHY_SEARCH,
+  hierarchyHitLabel,
+  hierarchyHitUrl,
+  type ProjectHierarchyGroup,
+  type ProjectHierarchySearchResponse,
+} from '../services/project-hierarchy-search'
 
 type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
 type SearchResult = {
@@ -33,6 +40,7 @@ type SearchResult = {
 }
 
 type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
+type SearchMode = 'deep' | 'quick'
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   user: { label: '用户', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' },
@@ -107,17 +115,22 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   const layoutMode = useLayoutMode()
   const dark = theme !== 'light'
   const [q, setQ] = useState('')
+  const [mode, setMode] = useState<SearchMode>('deep')
   const [results, setResults] = useState<SearchResult[]>([])
+  const [quickResults, setQuickResults] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
   const [loading, setLoading] = useState(false)
+  const [quickLoading, setQuickLoading] = useState(false)
   const [err, setErr] = useState('')
   const [meta, setMeta] = useState<{ scanned?: number; candidates?: number; truncated?: boolean } | null>(null)
   const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
   const [range, setRange] = useState<RangeKey>('7d')
   const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || '7天内'
   const reqId = useRef(0)
+  const quickReqId = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const quickAbortRef = useRef<AbortController | null>(null)
   // 匹配选项: caseSensitive 区分大小写, wholeWord 全字匹配 (与后端 /api/search 的 case/word 参数同口径).
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
@@ -127,6 +140,8 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
   const optsRef = useRef({ caseSensitive, wholeWord, range })
   optsRef.current = { caseSensitive, wholeWord, range }
+  const isQuick = mode === 'quick'
+  const isLoading = isQuick ? quickLoading : loading
 
   useEffect(() => { inputRef.current?.focus() }, [])
   useEffect(() => {
@@ -207,19 +222,74 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     })
   }
 
+  // 快速搜索复用用户主页的层级搜索: 只查项目/任务/研究/会话元数据, 不扫描 JSONL 正文.
+  const runQuickSearch = (term: string) => {
+    const t = term.trim()
+    if (t.length < 1) {
+      quickAbortRef.current?.abort()
+      setQuickResults(EMPTY_PROJECT_HIERARCHY_SEARCH)
+      setQuickLoading(false)
+      setSearched(false)
+      return
+    }
+    const id = ++quickReqId.current
+    quickAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    quickAbortRef.current = ctrl
+    setQuickLoading(true)
+    setErr('')
+    setSearched(true)
+    api(`/api/projects/hierarchy-search?q=${encodeURIComponent(t.slice(0, 200))}`, { signal: ctrl.signal })
+      .then((payload: ProjectHierarchySearchResponse) => {
+        if (id !== quickReqId.current) return
+        setQuickResults(payload || EMPTY_PROJECT_HIERARCHY_SEARCH)
+      })
+      .catch((e: any) => {
+        if (e?.name === 'AbortError') return
+        if (id !== quickReqId.current) return
+        setErr(e?.message || '搜索失败')
+      })
+      .finally(() => {
+        if (id === quickReqId.current && !ctrl.signal.aborted) setQuickLoading(false)
+      })
+  }
+
   const onType = (v: string) => {
     setQ(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runSearch(v), 450)
+    debounceRef.current = setTimeout(() => {
+      if (mode === 'quick') runQuickSearch(v)
+      else runSearch(v)
+    }, mode === 'quick' ? 300 : 450)
   }
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
+    quickAbortRef.current?.abort()
   }, [])
+
+  // 切换模式后保留关键词并立即走新模式的搜索链路。
+  useEffect(() => {
+    setSelectedFragment(null)
+    abortRef.current?.abort()
+    quickAbortRef.current?.abort()
+    setLoading(false)
+    setQuickLoading(false)
+    if (q.trim()) {
+      if (mode === 'quick') runQuickSearch(q)
+      else runSearch(q)
+    } else {
+      setResults([])
+      setQuickResults(EMPTY_PROJECT_HIERARCHY_SEARCH)
+      setSearched(false)
+      setErr('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
 
   // 切换时间范围 / 大小写 / 全字: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
   useEffect(() => {
-    if (q.trim().length < 2) return
+    if (mode === 'quick' || q.trim().length < 2) return
     runSearch(q)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, caseSensitive, wholeWord])
@@ -261,71 +331,93 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
     if (target) setSelectedFragment({ result: r, fragment: target })
   }
 
+  const openQuickResult = (group: ProjectHierarchyGroup, hit?: ProjectHierarchyGroup['matches'][number]) => {
+    const project = group.project || {}
+    const target = hit
+      ? hierarchyHitUrl(project, hit)
+      : `/u/${encodeURIComponent(project.created_by || user?.id || '')}/p/${encodeURIComponent(project.id || '')}`
+    onNavigate(target)
+    onClose()
+  }
+
+  const clearSearch = () => {
+    abortRef.current?.abort()
+    quickAbortRef.current?.abort()
+    setQ('')
+    setResults([])
+    setQuickResults(EMPTY_PROJECT_HIERARCHY_SEARCH)
+    setMeta(null)
+    setSearched(false)
+    setErr('')
+    inputRef.current?.focus()
+  }
+
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[8vh] px-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
-        {/* 头部: 关键词输入 */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-          <Search className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-          <input
-            ref={inputRef}
-            value={q}
-            onChange={e => onType(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); runSearch(q) } }}
-            placeholder="搜索所有会话内容 (项目 → 任务/研究 → 会话 → 命中片段)…"
-            className="flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
-            style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
-          />
-          {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). 激活时用 accent 色高亮. */}
-          <button
-            type="button"
-            onClick={() => setCaseSensitive(v => !v)}
-            title="区分大小写"
-            aria-pressed={caseSensitive}
-            className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
-            style={{
-              color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)',
-              borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)',
-              background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent',
-            }}
-          >Aa</button>
-          <button
-            type="button"
-            onClick={() => setWholeWord(v => !v)}
-            title="全字匹配"
-            aria-pressed={wholeWord}
-            className="flex-shrink-0 rounded-md border text-[11px] font-semibold w-7 h-7 cursor-pointer transition-colors"
-            style={{
-              color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)',
-              borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)',
-              background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent',
-            }}
-          >W</button>
-          {/* 时间范围过滤 (默认 7 天内活跃的会话): 缩小候选集加速扫描 */}
-          <select
-            value={range}
-            onChange={e => setRange(e.target.value as RangeKey)}
-            title="时间范围"
-            className="flex-shrink-0 rounded-lg border text-[11px] px-1.5 py-1 cursor-pointer focus:outline-none"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}
-          >
-            {RANGE_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          {loading && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
-          {q && !loading && (
-            <button type="button" onClick={() => { setQ(''); setResults([]); setMeta(null); setSearched(false); inputRef.current?.focus() }}
-              className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
-              <X className="w-4 h-4" />
+        {/* 头部: 关键词输入 + 搜索模式切换。模式在同一弹窗内切换，关键词保持不变。 */}
+        <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex min-w-0 items-center gap-2">
+            <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <input
+              ref={inputRef}
+              value={q}
+              onChange={e => onType(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); isQuick ? runQuickSearch(q) : runSearch(q) } }}
+              placeholder={isQuick ? '快速搜索项目、任务或会话…' : '深度搜索所有会话内容…'}
+              className="min-w-0 flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+              style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
+            />
+            {isLoading && <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+            {q && !isLoading && (
+              <button type="button" onClick={clearSearch} title="清空关键词" aria-label="清空关键词"
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            <button type="button" onClick={onClose} title="关闭 (Esc)" aria-label="关闭搜索"
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
+              <X className="h-4 w-4" />
             </button>
-          )}
-          <button type="button" onClick={onClose} title="关闭 (Esc)"
-            className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
-            <X className="w-4 h-4" />
-          </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isQuick}
+              aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
+              title="切换搜索模式"
+              onClick={() => setMode(isQuick ? 'deep' : 'quick')}
+              className="inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] transition-colors"
+              style={{
+                color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
+                borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',
+                background: isQuick ? 'rgba(245,158,11,0.10)' : 'rgba(148,163,184,0.06)',
+              }}
+            >
+              <span className="font-medium">{isQuick ? '快速搜索' : '深度搜索'}</span>
+              <span className={`relative h-3.5 w-6 rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
+                <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
+              </span>
+              <Zap className="h-3.5 w-3.5" strokeWidth={2.2} />
+            </button>
+            {!isQuick && <div className="flex flex-wrap items-center gap-1.5">
+              {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
+              <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
+                className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
+              <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
+                className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
+              <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
+                className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
+                style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
+                {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>}
+          </div>
         </div>
 
         {/* 结果区 */}
@@ -337,10 +429,21 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             </div>
           ) : !searched ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
-              <FileSearch className="w-7 h-7" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>输入关键词搜索会话内容</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示</p>
+              {isQuick ? <Zap className="h-7 w-7" style={{ color: '#fbbf24' }} /> : <FileSearch className="h-7 w-7" style={{ color: 'var(--text-muted)' }} />}
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{isQuick ? '输入关键词快速定位项目、任务或会话' : '输入关键词搜索会话内容'}</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{isQuick ? '仅匹配名称与描述，响应更快' : `${range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示`}</p>
             </div>
+          ) : isQuick ? (
+            quickResults.projects.length === 0 ? (
+              <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+                <Search className="h-6 w-6" style={{ color: 'var(--text-muted)' }} />
+                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>未找到匹配的项目、任务或会话</p>
+              </div>
+            ) : (
+              <div className="py-1.5">
+                {quickResults.projects.map(group => <QuickSearchGroup key={String(group.project?.id)} group={group} query={q} dark={dark} onOpen={openQuickResult} />)}
+              </div>
+            )
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <Search className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
@@ -402,7 +505,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
         </div>
 
         {/* 底部: 扫描统计 */}
-        {(meta || searched) && (
+        {!isQuick && (meta || searched) && (
           <div className="shrink-0 px-4 py-2 border-t flex items-center justify-between text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             <span>
               {loading && results.length === 0 ? '正在搜索…' : ''}
@@ -412,6 +515,12 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               {caseSensitive || wholeWord ? ` · ${[caseSensitive ? '区分大小写' : '', wholeWord ? '全字匹配' : ''].filter(Boolean).join(' / ')}` : ''}
             </span>
             {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
+          </div>
+        )}
+        {isQuick && searched && (
+          <div className="shrink-0 border-t px-4 py-2 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            {quickLoading ? '正在快速搜索…' : `匹配 ${quickResults.project_count} 个项目 · ${quickResults.match_count} 条结果`}
+            {quickResults.truncated ? ' · 结果较多，仅显示最相关项' : ''}
           </div>
         )}
       </div>
@@ -427,6 +536,54 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
           onBack={() => setSelectedFragment(null)}
           onViewInSession={() => openSession(selectedFragment.result, selectedFragment.fragment)}
         />
+      )}
+    </div>
+  )
+}
+
+function QuickSearchGroup({
+  group,
+  query,
+  dark,
+  onOpen,
+}: {
+  group: ProjectHierarchyGroup
+  query: string
+  dark: boolean
+  onOpen: (group: ProjectHierarchyGroup, hit?: ProjectHierarchyGroup['matches'][number]) => void
+}) {
+  const project = group.project || {}
+  const visibleMatches = group.matches.slice(0, 8)
+  return (
+    <div className="border-b px-4 py-2.5 last:border-b-0" style={{ borderColor: 'var(--border-color)' }} data-quick-search-result={project.id}>
+      <button type="button" onClick={() => onOpen(group)} className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-[var(--bg-card-hover)]">
+        <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#60a5fa' }} />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: dark ? '#e2e8f0' : '#1e293b' }}>{project.name || '(未命名项目)'}</span>
+        <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>{group.total_matches ? `${group.total_matches} 条匹配` : '项目匹配'}</span>
+        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+      </button>
+      {visibleMatches.length > 0 && (
+        <div className="ml-5 mt-1 space-y-0.5 border-l pl-2" style={{ borderColor: 'var(--border-color)' }}>
+          {visibleMatches.map(hit => {
+            const isResearch = hit.kind === 'research' || hit.kind === 'research_agent'
+            const Icon = hit.kind === 'issue' ? CircleDot : isResearch ? FlaskConical : MessagesSquare
+            return (
+              <button key={`${hit.kind}:${hit.id}`} type="button" onClick={() => onOpen(group, hit)}
+                className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
+                title={`${hierarchyHitLabel(hit.kind)}：${hit.title}`}>
+                <Icon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : hit.kind === 'issue' ? '#60a5fa' : '#a855f7' }} />
+                <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>{hit.title || '(未命名)'}</span>
+                <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px]" style={{ color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)' }}>{hierarchyHitLabel(hit.kind)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {visibleMatches.length < group.total_matches && (
+        <div className="ml-7 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>还有 {group.total_matches - visibleMatches.length} 条匹配</div>
+      )}
+      {group.project_match && group.project_matched_fields.length > 0 && (
+        <div className="ml-7 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>项目{group.project_matched_fields.includes('description') ? '描述' : '名称'}命中“{query}”</div>
       )}
     </div>
   )
