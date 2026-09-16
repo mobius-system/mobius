@@ -230,6 +230,15 @@ function visibleOverlayEntries(raw: AnyEntry[]): AnyEntry[] {
   return merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
 }
 
+// 协商/SSE 重连期间，history store 可能短暂只有组元数据，flattenEntries()
+// 会返回空数组。不要让这个瞬时空快照覆盖浮窗里已经显示的历史消息；
+// 等整组条目重新装载后再用有效数据更新。
+function updateVisibleEntries(setState: (updater: (prev: OverlayState) => OverlayState) => void, visible: AnyEntry[]) {
+  setState((prev) => visible.length > 0 || prev.entries.length === 0
+    ? { ...prev, entries: visible, error: undefined }
+    : prev)
+}
+
 function SessionOverlay({ session, state, compact, setState, onClose, onOpenSession, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; compact: boolean; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; onOpenSession: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionDrawerOpen, setMentionDrawerOpen] = useState(false)
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{ sessionId: string; name: string; mode: AgentMentionMode }>>([])
@@ -264,7 +273,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
       liveDataRef.current = true
       const raw = store.flattenEntries().slice(-80)
       const visible = visibleOverlayEntries(raw)
-      setStateRef.current((prev) => ({ ...prev, entries: visible, error: undefined }))
+      updateVisibleEntries(setStateRef.current, visible)
     } catch (e: any) {
       // A timed-out polling request is expected and should not surface as an error or
       // trigger another React render. pollRecursive aborts these requests after 10s.
@@ -279,7 +288,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
     void store.hydrateFromCache().then(() => {
       if (liveDataRef.current) return
       const cached = store.flattenEntries().slice(-80)
-      if (cached.length) setStateRef.current((prev) => ({ ...prev, entries: visibleOverlayEntries(cached) }))
+      if (cached.length) updateVisibleEntries(setStateRef.current, visibleOverlayEntries(cached))
     })
     const stop = pollRecursive((signal) => load(signal), 10_000)
     return () => { stop() }
@@ -292,7 +301,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
     const store = getHistoryStore(session.id)
     const refreshVisible = () => {
       const raw = store.flattenEntries().slice(-80)
-      setStateRef.current((prev) => ({ ...prev, entries: visibleOverlayEntries(raw) }))
+      updateVisibleEntries(setStateRef.current, visibleOverlayEntries(raw))
     }
     const unsubscribe = store.subscribe(refreshVisible)
 
