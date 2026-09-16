@@ -76,7 +76,7 @@ declare global {
 
 // 仅用于全局 Window.openAdminOverlay 的入参类型 — 与 panels.tsx 的 AdminPanelTab 保持一致.
 // 不在此文件 import panels 是为了避免 store ↔ panels 形成循环依赖.
-type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
+type AdminPanelTab = 'users' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
 
 const DEFAULT_BRANDING: Branding = {
   hideLogo: false,

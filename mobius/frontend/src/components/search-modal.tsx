@@ -114,16 +114,20 @@ export function SearchModal({
   onNavigate,
   initialQuery = '',
   initialMode = 'deep',
+  embedded = false,
+  query,
 }: {
-  onClose: () => void
+  onClose?: () => void
   onNavigate: (path: string) => void
   initialQuery?: string
   initialMode?: SearchMode
+  embedded?: boolean
+  query?: string
 }) {
   const { theme, user } = useStore()
   const layoutMode = useLayoutMode()
   const dark = theme !== 'light'
-  const [q, setQ] = useState(initialQuery)
+  const [q, setQ] = useState(query ?? initialQuery)
   const [mode, setMode] = useState<SearchMode>(initialMode)
   const [results, setResults] = useState<SearchResult[]>([])
   const [quickResults, setQuickResults] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
@@ -152,12 +156,14 @@ export function SearchModal({
   const isQuick = mode === 'quick'
   const isLoading = isQuick ? quickLoading : loading
 
-  useEffect(() => { inputRef.current?.focus() }, [])
+  const close = onClose || (() => {})
+  useEffect(() => { if (!embedded) inputRef.current?.focus() }, [embedded])
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    if (embedded) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [close, embedded])
 
   // 流式搜索: GET /api/search?stream=1 走 SSE, result 事件随扫描完成逐条下发, 前端增量渲染.
   // 不能用 EventSource (无法带 Authorization 头), 改用 fetch + ReadableStream 手解 SSE 帧.
@@ -271,6 +277,16 @@ export function SearchModal({
       else runSearch(v)
     }, mode === 'quick' ? 300 : 450)
   }
+  const externalQueryMounted = useRef(false)
+  useEffect(() => {
+    if (!embedded || query === undefined) return
+    if (!externalQueryMounted.current) {
+      externalQueryMounted.current = true
+      return
+    }
+    onType(query)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, query])
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
@@ -338,7 +354,7 @@ export function SearchModal({
     const isDesktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
     if (isDesktop) onNavigate(targetUrl)
     else window.open(targetUrl, '_blank', 'noopener,noreferrer')
-    onClose()
+    close()
   }
 
   const openFragmentPreview = (r: SearchResult, frag?: Fragment) => {
@@ -352,7 +368,7 @@ export function SearchModal({
       ? hierarchyHitUrl(project, hit)
       : `/u/${encodeURIComponent(project.created_by || user?.id || '')}/p/${encodeURIComponent(project.id || '')}`
     onNavigate(target)
-    onClose()
+    close()
   }
 
   const clearSearch = () => {
@@ -369,12 +385,16 @@ export function SearchModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[8vh] px-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]"
-        style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
+    <div className={embedded ? 'w-full min-w-0' : 'fixed inset-0 z-[70] flex items-start justify-center pt-[8vh] px-4'}>
+      {!embedded && <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={close} />}
+      <div className={embedded
+        ? 'relative w-full min-w-0 overflow-hidden rounded-lg border'
+        : 'relative w-full flex flex-col rounded-2xl shadow-2xl max-h-[calc(100vh-16vh-32px)]'}
+        style={embedded
+          ? { background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }
+          : { background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
         {/* 头部: 关键词输入 + 搜索模式切换。模式在同一弹窗内切换，关键词保持不变。 */}
-        <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
+        {!embedded && <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
             <input
@@ -410,15 +430,15 @@ export function SearchModal({
                 <X className="h-4 w-4" />
               </button>
             )}
-            <button type="button" onClick={onClose} title="关闭 (Esc)" aria-label="关闭搜索"
+            <button type="button" onClick={close} title="关闭 (Esc)" aria-label="关闭搜索"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
               <X className="h-4 w-4" />
             </button>
           </div>
-        </div>
+        </div>}
 
         {/* 结果区 */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className={embedded ? 'min-h-[180px]' : 'flex-1 min-h-0 overflow-y-auto'}>
           {err ? (
             <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
               <AlertCircle className="w-6 h-6" style={{ color: '#ef4444' }} />

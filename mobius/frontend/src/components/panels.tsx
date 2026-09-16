@@ -24,6 +24,7 @@ import {
   FolderInput,
   FolderOpen,
   Globe,
+  ImagePlus,
   KeyRound,
   LayoutDashboard,
   Loader2,
@@ -39,6 +40,7 @@ import {
   Server,
   Settings,
   Shield,
+  SlidersHorizontal,
   Sparkles,
   Terminal,
   Trash2,
@@ -66,6 +68,12 @@ import {
   writeTextRedactionRules,
   type TextRedactionRule,
 } from '../services/text-redaction'
+import {
+  CUSTOM_LOGO_MAX_FILE_BYTES,
+  importCustomLogoFile,
+  useCustomLogo,
+  writeCustomLogo,
+} from '../services/brand-logo'
 import { pollRecursive } from '../services/polling'
 import { InlineWebTerminal } from './web-terminal-modal'
 import { ToggleSwitch } from './toggle-switch'
@@ -7518,6 +7526,127 @@ function MigrationImportTab() {
   )
 }
 
+function AdminCustomLogoCard() {
+  const customLogo = useCustomLogo()
+  const hideLogo = useStore((s) => s.branding.hideLogo)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!notice && !error) return undefined
+    const timer = window.setTimeout(() => { setNotice(''); setError('') }, 4000)
+    return () => window.clearTimeout(timer)
+  }, [notice, error])
+
+  const pickFile = async (file: File) => {
+    setNotice('')
+    setError('')
+    try {
+      const dataUrl = await importCustomLogoFile(file)
+      writeCustomLogo(dataUrl)
+      setNotice(`已替换为「${file.name}」，仅保存在当前浏览器`)
+    } catch (e: any) {
+      setError(e?.message || '图片处理失败，请换一张图片')
+    }
+  }
+
+  const restoreDefault = () => {
+    if (!window.confirm('恢复为默认 Logo？自定义图片会从当前浏览器移除。')) return
+    writeCustomLogo(null)
+    setError('')
+    setNotice('已恢复默认 Logo')
+  }
+
+  const maxSizeMb = Math.round(CUSTOM_LOGO_MAX_FILE_BYTES / 1024 / 1024)
+
+  return (
+    <section
+      data-text-redaction-ignore="true"
+      data-tour="admin-section-custom-logo"
+      className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-color)] px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <ImagePlus className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>自定义 Logo</h3>
+          </div>
+          <p className="mt-1 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+            上传一张图片替换莫比乌斯默认 Logo，作用于顶栏、登录页、欢迎页等所有品牌位置。图片只保存在当前浏览器，不会上传到服务器。
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-500/35 bg-cyan-500/10 px-3 text-[12px] font-medium text-cyan-300 transition-colors hover:bg-cyan-500/15"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {customLogo ? '更换图片' : '选择图片'}
+          </button>
+          <button
+            type="button"
+            onClick={restoreDefault}
+            disabled={!customLogo}
+            title={customLogo ? undefined : '当前使用的就是默认 Logo'}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            恢复默认
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 px-4 py-4">
+        <div
+          className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-[var(--border-color)]"
+          style={{ background: 'var(--bg-secondary)' }}
+        >
+          <img
+            src={customLogo || '/logo.png'}
+            alt="Logo 预览"
+            className="max-h-14 max-w-14 object-contain"
+            draggable={false}
+          />
+        </div>
+        <div className="min-w-0 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          <div style={{ color: 'var(--text-primary)' }}>
+            {customLogo ? '当前：自定义 Logo' : '当前：默认 Logo'}
+          </div>
+          <div className="mt-1">支持 PNG / JPG / SVG / WebP，不超过 {maxSizeMb}MB；过大的图片会自动等比缩小。</div>
+          <div className="mt-1">换浏览器或清除浏览器数据后需要重新上传。</div>
+          {hideLogo && (
+            <div className="mt-1 text-amber-400">
+              当前系统配置已关闭 Logo 展示（MOBIUS_ADVANCED_HIDE_LOGO），自定义 Logo 暂不会显示。
+            </div>
+          )}
+        </div>
+      </div>
+
+      {(notice || error) && (
+        <div className="border-t border-[var(--border-color)] px-4 py-2 text-[12px]" style={{ color: error ? '#f87171' : 'var(--text-secondary)' }}>
+          {error || notice}
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          // 同一文件二次选择也要触发 change, 因此每次都清空 value.
+          event.target.value = ''
+          if (file) void pickFile(file)
+        }}
+      />
+    </section>
+  )
+}
+
 function AdminTextRedactionPanel() {
   const [rules, setRules] = useState<TextRedactionRule[]>(() => readTextRedactionRules())
   const [globallyEnabled, setGloballyEnabled] = useState<boolean>(() => readTextRedactionEnabled())
@@ -7973,7 +8102,7 @@ function AdminTextRedactionPanel() {
   )
 }
 
-export type AdminPanelTab = 'users' | 'runtime' | 'redaction' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
+export type AdminPanelTab = 'users' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
 
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
@@ -7983,7 +8112,7 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'extensions', label: '拓展管理', icon: <Puzzle className="h-3.5 w-3.5" /> },
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
   { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
-  { key: 'redaction', label: '文字替换隐藏', icon: <EyeOff className="h-3.5 w-3.5" /> },
+  { key: 'others', label: '其他设置', icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
 ]
 
 export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {
@@ -8110,7 +8239,12 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
 
           {activeTab === 'users' && <AdminUsersPanel />}
 
-          {activeTab === 'redaction' && <AdminTextRedactionPanel />}
+          {activeTab === 'others' && (
+            <div className="flex flex-col gap-3">
+              <AdminCustomLogoCard />
+              <AdminTextRedactionPanel />
+            </div>
+          )}
 
           {activeTab === 'settings' && (
             <div className="flex flex-col gap-3">
