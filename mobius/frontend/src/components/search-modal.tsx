@@ -383,7 +383,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
             <button
               type="button"
               role="switch"
@@ -402,7 +402,6 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               <span className={`relative h-3.5 w-6 rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
                 <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
               </span>
-              <Zap className="h-3.5 w-3.5" strokeWidth={2.2} />
             </button>
             {!isQuick && <div className="flex flex-wrap items-center gap-1.5">
               {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
