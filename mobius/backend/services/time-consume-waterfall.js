@@ -3,8 +3,9 @@ const path = require('path')
 
 const { deprecatedMobiusJsonlPathOf: mobiusJsonlPathOf } = require('./mobius-agent-history-deprecated') // [deprecated-compat] 旧双轨字节统计
 
-const TIME_CONSUME_WATERFALL_VERSION = 5
+const TIME_CONSUME_WATERFALL_VERSION = 6
 const MIN_STEP_MS = 1000
+const JOB_DONE_KEYWORD = 'declare_job_done'
 
 function timeConsumeWaterfallCachePathOf(jsonlPath) {
   if (!jsonlPath || typeof jsonlPath !== 'string') return null
@@ -85,6 +86,15 @@ function callNameOfPayload(payload) {
   return String(payload?.name || payload?.tool_name || payload?.action?.type || 'tool')
 }
 
+function containsJobDoneKeyword(payload) {
+  if (!payload || typeof payload !== 'object') return false
+  try {
+    return JSON.stringify(payload).includes(JOB_DONE_KEYWORD)
+  } catch {
+    return false
+  }
+}
+
 function contentBlocks(entry) {
   const content = entry?.message?.content || entry?.payload?.content
   return Array.isArray(content) ? content : []
@@ -107,6 +117,7 @@ function eventsFromEntry(entry, lineNo = null, source = 'history') {
         type: 'tool_end',
         callId: callIdOfPayload(payload),
         toolName: callNameOfPayload(payload),
+        jobDone: containsJobDoneKeyword(payload),
       })
     }
     return events
@@ -125,6 +136,7 @@ function eventsFromEntry(entry, lineNo = null, source = 'history') {
         type: 'tool_start',
         callId: callIdOfPayload(payload),
         toolName: callNameOfPayload(payload),
+        jobDone: containsJobDoneKeyword(payload),
       })
     }
     if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
@@ -133,6 +145,7 @@ function eventsFromEntry(entry, lineNo = null, source = 'history') {
         type: 'tool_end',
         callId: callIdOfPayload(payload),
         toolName: callNameOfPayload(payload),
+        jobDone: containsJobDoneKeyword(payload),
       })
     }
     return events
@@ -150,6 +163,7 @@ function eventsFromEntry(entry, lineNo = null, source = 'history') {
           type: 'tool_start',
           callId: normalizeCallId(block.id || block.call_id),
           toolName: callNameOfPayload(block),
+          jobDone: containsJobDoneKeyword(block),
         })
       }
     }
@@ -201,7 +215,7 @@ function addSegment(state, segment) {
   const start = Number(segment.startAtMs)
   const end = Number(segment.endAtMs)
   const durationMs = end - start
-  if (!Number.isFinite(durationMs) || durationMs < MIN_STEP_MS) return
+  if (!Number.isFinite(durationMs) || durationMs < 0 || (durationMs < MIN_STEP_MS && !segment.jobDone)) return
   if (state.startAtMs == null) state.startAtMs = start
   const startOffsetMs = Math.max(0, Number(segment.startOffsetMs) || 0)
   state.segments.push({
@@ -210,7 +224,8 @@ function addSegment(state, segment) {
     startOffsetMs,
     open: false,
   })
-  state.totalMs = Math.max(state.totalMs, startOffsetMs + durationMs)
+  const timelineDurationMs = segment.jobDone && durationMs < 1 ? 1 : durationMs
+  state.totalMs = Math.max(state.totalMs, startOffsetMs + timelineDurationMs)
 }
 
 function closeModelSegment(state, endMs, event) {
@@ -227,6 +242,7 @@ function closeModelSegment(state, endMs, event) {
       startOffsetMs: state.modelStartOffsetMs || 0,
       lineNo: event?.lineNo ?? null,
       source: event?.source ?? null,
+      jobDone: !!event?.jobDone,
     })
   }
   state.modelStartMs = null
@@ -308,6 +324,7 @@ function absorbEventMeta(state, event) {
         lineNo: active.lineNo,
         source: active.source,
         toolName: active.toolName,
+        jobDone: active.jobDone,
       })
       delete state.activeTools[callId]
     }
@@ -364,6 +381,7 @@ function responseFromState(state, nowMs, jsonlPath, mutated) {
       line_no: segment.lineNo,
       source: segment.source,
       tool_name: segment.toolName || null,
+      job_done: !!segment.jobDone,
       open: !!segment.open,
     }))
 

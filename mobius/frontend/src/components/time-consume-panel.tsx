@@ -12,6 +12,7 @@ type TimeConsumeSegment = {
   duration_ms: number
   line_no?: number | null
   source?: string | null
+  job_done?: boolean
   open?: boolean
 }
 
@@ -113,7 +114,7 @@ function countVisibleBlocks(segments: TimeConsumeSegment[], totalMs: number, zoo
   const windowStart = Math.max(0, totalMs - visibleDuration)
   let count = 0
   for (const segment of segments) {
-    const segmentEnd = Math.max(0, Number(segment.start_offset_ms) || 0) + Math.max(0, Number(segment.duration_ms) || 0)
+    const segmentEnd = Math.max(0, Number(segment.start_offset_ms) || 0) + displayDurationMs(segment)
     if (segmentEnd > windowStart) count += 1
   }
   return count
@@ -131,6 +132,11 @@ function findZoomToLimitBlocks(segments: TimeConsumeSegment[], totalMs: number, 
     else lo = mid
   }
   return Math.ceil(hi * 2) / 2
+}
+
+function displayDurationMs(segment: TimeConsumeSegment): number {
+  const duration = Math.max(0, Number(segment.duration_ms) || 0)
+  return segment.job_done && duration < 1 ? 1 : duration
 }
 
 export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) {
@@ -190,7 +196,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
     const fromData = Number(data?.total_ms) || 0
     if (fromData > 0) return fromData
     return segments.reduce((max, segment) => {
-      const end = Math.max(0, Number(segment.start_offset_ms) || 0) + Math.max(0, Number(segment.duration_ms) || 0)
+      const end = Math.max(0, Number(segment.start_offset_ms) || 0) + displayDurationMs(segment)
       return Math.max(max, end)
     }, 0)
   }, [data?.total_ms, segments])
@@ -235,7 +241,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
     return segments
       .map((segment) => {
         const segmentStart = Math.max(0, Number(segment.start_offset_ms) || 0)
-        const segmentEnd = segmentStart + Math.max(0, Number(segment.duration_ms) || 0)
+        const segmentEnd = segmentStart + displayDurationMs(segment)
         const clippedStart = Math.max(segmentStart, windowStart)
         const clippedEnd = Math.min(segmentEnd, windowEnd)
         return {
@@ -395,22 +401,29 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 <div className="absolute inset-x-0 inset-y-1">
                   {timelineSegments.map((segment) => {
                     const onModelTrack = segment.kind === 'model'
+                    const isJobDone = !!segment.job_done
                     return (
                       <div
                         key={`${segment.start_at}-${segment.line_no ?? 'n'}-${segment.kind}`}
                         className="absolute overflow-hidden rounded-sm border"
-                        title={`${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
+                        title={`${isJobDone ? 'declare_job_done · ' : ''}${segment.label} · ${formatDuration(segment.duration_ms)} · ${segment.start_at} → ${segment.end_at}`}
                         style={{
                           left: `${segment.startPercent}%`,
                           top: onModelTrack ? 'calc(25% - 10px)' : 'calc(75% - 10px)',
                           height: 'calc(25% - 4px)',
                           width: `${Math.max(segment.widthPercent, 0.45)}%`,
                           minWidth: 4,
-                          borderColor: onModelTrack ? 'rgba(125,211,252,0.24)' : 'rgba(196,181,253,0.24)',
-                          background: onModelTrack
+                          borderColor: isJobDone
+                            ? 'rgba(250,204,21,0.62)'
+                            : onModelTrack ? 'rgba(125,211,252,0.24)' : 'rgba(196,181,253,0.24)',
+                          background: isJobDone
+                            ? 'linear-gradient(180deg, rgba(250,204,21,0.96) 0%, rgba(202,138,4,0.84) 100%)'
+                            : onModelTrack
                             ? 'linear-gradient(180deg, rgba(56,189,248,0.88) 0%, rgba(2,132,199,0.74) 100%)'
                             : 'linear-gradient(180deg, rgba(167,139,250,0.88) 0%, rgba(124,58,237,0.74) 100%)',
-                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
+                          boxShadow: isJobDone
+                            ? '0 0 8px rgba(250,204,21,0.24), inset 0 1px 0 rgba(255,255,255,0.22)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.14)',
                         }}
                       />
                     )
