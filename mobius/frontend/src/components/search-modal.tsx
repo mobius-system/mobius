@@ -22,6 +22,7 @@ import {
   type ProjectHierarchyGroup,
   type ProjectHierarchySearchResponse,
 } from '../services/project-hierarchy-search'
+import { SearchModeToggle, type SearchMode } from './search-mode-toggle'
 
 type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
 type SearchResult = {
@@ -40,8 +41,6 @@ type SearchResult = {
 }
 
 type SelectedSearchFragment = { result: SearchResult; fragment: Fragment }
-type SearchMode = 'deep' | 'quick'
-
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   user: { label: '用户', color: '#60a5fa', bg: 'rgba(59,130,246,0.15)' },
   assistant: { label: '助手', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
@@ -110,12 +109,22 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
   { value: 'all', label: '全部' },
 ]
 
-export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (path: string) => void }) {
+export function SearchModal({
+  onClose,
+  onNavigate,
+  initialQuery = '',
+  initialMode = 'deep',
+}: {
+  onClose: () => void
+  onNavigate: (path: string) => void
+  initialQuery?: string
+  initialMode?: SearchMode
+}) {
   const { theme, user } = useStore()
   const layoutMode = useLayoutMode()
   const dark = theme !== 'light'
-  const [q, setQ] = useState('')
-  const [mode, setMode] = useState<SearchMode>('deep')
+  const [q, setQ] = useState(initialQuery)
+  const [mode, setMode] = useState<SearchMode>(initialMode)
   const [results, setResults] = useState<SearchResult[]>([])
   const [quickResults, setQuickResults] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
   const [loading, setLoading] = useState(false)
@@ -254,6 +263,16 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
       })
   }
 
+  // 从主页内嵌搜索框打开时，复用传入的关键词直接启动对应搜索模式。
+  useEffect(() => {
+    const term = initialQuery.trim()
+    if (!term) return
+    if (initialMode === 'quick') runQuickSearch(term)
+    else runSearch(term)
+    // SearchModal 每次打开都会重新挂载，初始关键词只需执行一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onType = (v: string) => {
     setQ(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -379,25 +398,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
             />
             {isLoading && <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
             <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isQuick}
-                aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
-                title="切换搜索模式"
-                onClick={() => setMode(isQuick ? 'deep' : 'quick')}
-                className="inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] transition-colors"
-                style={{
-                  color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
-                  borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',
-                  background: isQuick ? 'rgba(245,158,11,0.10)' : 'rgba(148,163,184,0.06)',
-                }}
-              >
-                <span className="font-medium">{isQuick ? '快速搜索' : '深度搜索'}</span>
-                <span className={`relative h-3.5 w-6 rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
-                  <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
-                </span>
-              </button>
+              <SearchModeToggle mode={mode} onChange={setMode} />
               {!isQuick && <>
                 {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
                 <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}

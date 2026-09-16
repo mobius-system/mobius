@@ -174,6 +174,13 @@ if (!blackboardPrompt.includes('research_blackboard_read --from=c1524307 --resea
 } else {
   console.log('  ok   research prompt uses short Blackboard CLI commands without legacy HTTP credentials')
 }
+if (!blackboardPrompt.includes('禁止轮询，有更新时系统会通知你')
+  || !blackboardPrompt.includes('--limit-receiver --receiver=<receiver_id>')) {
+  failures += 1
+  console.log('  FAIL research prompt is missing the no-polling or targeted-write guidance')
+} else {
+  console.log('  ok   research prompt includes no-polling and explicit targeted-write guidance')
+}
 
 // ── 自洽性: 每个块的 build 输出首行必须命中自身 pattern ──────────────────────
 const { SESSION_SECTIONS } = require('../backend/services/session-context-sections')
