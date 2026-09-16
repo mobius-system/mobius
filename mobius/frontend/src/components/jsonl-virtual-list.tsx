@@ -252,12 +252,14 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     const node = root.querySelector<HTMLElement>(`[data-jsonl-line-no="${scrollToEntryLineNo}"]`)
     if (!node) return
     // 这里用浏览器原生的 scrollIntoView，而不是复用 block 顶部的手工坐标：具体卡片可能
-    // 位于嵌套的 Round/Explore 容器内，原生实现会逐层选择正确的可滚动祖先。
+    // 位于嵌套的 Round/Explore 容器内，原生实现会逐层选择正确的可滚动祖先。group 的
+    // 虚拟化预定位仍是 instant，真实卡片挂载后这一段再 smooth 居中，兼顾远距离可靠性和观感。
     let doneTimer: ReturnType<typeof setTimeout> | null = null
     const raf = requestAnimationFrame(() => {
-      node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
-      // 留一帧给浏览器提交滚动位置，再通知上层清 URL 定位参数。
-      doneTimer = setTimeout(() => onScrollToEntryDoneRef.current?.(), 0)
+      node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
+      // 不在动画起步时就清 URL 定位参数；给原生 smooth scroll 留出完成窗口，期间
+      // searchNavigationActive 继续阻止追底。若内容尺寸变化，本 effect 会重跑并重新校准。
+      doneTimer = setTimeout(() => onScrollToEntryDoneRef.current?.(), 500)
     })
     return () => { cancelAnimationFrame(raf); if (doneTimer) clearTimeout(doneTimer) }
   }, [scrollToEntryLineNo, contentVersion, heightVersion, scrollOffset])
