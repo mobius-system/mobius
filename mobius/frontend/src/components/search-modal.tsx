@@ -341,6 +341,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   }
 
   const clearSearch = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
     quickAbortRef.current?.abort()
     setQ('')
