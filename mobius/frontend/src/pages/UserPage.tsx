@@ -29,6 +29,8 @@ import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
 import { SearchMatchText } from '../components/search-match-text'
+import { SearchModal } from '../components/search-modal'
+import { SearchModeToggle, type SearchMode } from '../components/search-mode-toggle'
 import {
   effectiveProjectCardBorderTheme,
   projectCardHeaderStyle,
@@ -212,6 +214,8 @@ export default function UserPage() {
   })
   useEffect(() => { try { localStorage.setItem('mobius:ui:user-page:view', activeView) } catch {} }, [activeView])
   const [search, setSearch] = useState('')
+  const [projectSearchMode, setProjectSearchMode] = useState<SearchMode>('quick')
+  const [showDeepSearch, setShowDeepSearch] = useState(false)
   const [hierarchySearch, setHierarchySearch] = useState<ProjectHierarchySearchResponse>(EMPTY_PROJECT_HIERARCHY_SEARCH)
   const [hierarchySearchLoading, setHierarchySearchLoading] = useState(false)
   const [hierarchySearchError, setHierarchySearchError] = useState('')
@@ -254,7 +258,7 @@ export default function UserPage() {
 
   useEffect(() => {
     const query = search.trim().slice(0, 200)
-    if (!query) {
+    if (projectSearchMode !== 'quick' || !query) {
       setHierarchySearch(EMPTY_PROJECT_HIERARCHY_SEARCH)
       setHierarchySearchLoading(false)
       setHierarchySearchError('')
@@ -280,7 +284,18 @@ export default function UserPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [search])
+  }, [projectSearchMode, search])
+
+  const handleProjectSearchModeChange = (next: SearchMode) => {
+    setProjectSearchMode(next)
+    if (next === 'deep') setShowDeepSearch(true)
+    else setShowDeepSearch(false)
+  }
+
+  const closeDeepSearch = () => {
+    setShowDeepSearch(false)
+    setProjectSearchMode('quick')
+  }
 
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
@@ -626,23 +641,26 @@ export default function UserPage() {
 
               {/* 搜索、筛选与屏蔽入口集中为一条紧凑工具栏，窄屏自动换行。 */}
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap">
-                <div className="relative min-w-0 flex-1 sm:min-w-[240px]">
-                  <Search className="absolute left-2.5 top-3 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
-                  <input value={search} onChange={e => setSearch(e.target.value)}
-                    maxLength={200}
-                    data-project-hierarchy-search
-                    placeholder="搜索项目、任务或会话..."
-                    className="h-[38px] w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
-                    style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                  {hierarchySearchLoading ? (
-                    <LoaderCircle className="absolute right-2.5 top-3 h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
-                  ) : search ? (
-                    <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setSearch('')}
-                      className="absolute right-1.5 top-[7px] flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
-                      style={{ color: 'var(--text-muted)' }}>
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
+                <div className="flex min-w-0 flex-1 items-center gap-2 sm:min-w-[240px]">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="absolute left-2.5 top-3 h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                      maxLength={200}
+                      data-project-hierarchy-search
+                      placeholder="搜索项目、任务或会话..."
+                      className="h-[38px] w-full rounded-lg pl-8 pr-8 text-[12px] focus:outline-none focus:border-blue-500/30"
+                      style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+                    {hierarchySearchLoading ? (
+                      <LoaderCircle className="absolute right-2.5 top-3 h-3.5 w-3.5 animate-spin" style={{ color: '#60a5fa' }} />
+                    ) : search ? (
+                      <button type="button" aria-label="清空搜索" title="清空搜索" onClick={() => setSearch('')}
+                        className="absolute right-1.5 top-[7px] flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--bg-hover)]"
+                        style={{ color: 'var(--text-muted)' }}>
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <SearchModeToggle mode={projectSearchMode} onChange={handleProjectSearchModeChange} compact />
                 </div>
                 <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <button type="button" onClick={() => setProjectFilters([])} title="显示全部未屏蔽项目"
@@ -1079,6 +1097,7 @@ export default function UserPage() {
         onClose={() => setHidingProject(null)}
       />}
       {extDeletingProject && <ExtensionDeleteModal project={extDeletingProject} onClose={() => setExtDeletingProject(null)} onDone={() => { setExtDeletingProject(null); refresh() }} />}
+      {showDeepSearch && <SearchModal initialQuery={search} initialMode="deep" onClose={closeDeepSearch} onNavigate={navigate} />}
     </div>
   )
 }
