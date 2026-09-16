@@ -7,7 +7,7 @@
  *  - RoundGroup: 一个对话轮次 (1 条 user 问题 + N 条 agent 回复); 最新两轮默认展开,
  *    更早的轮在跌出最新两轮时自动折叠, 用户手动操作过的轮尊重用户.
  */
-import { Fragment, memo, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Search } from 'lucide-react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
 import type { ToolStatus, ToolStatusMap } from './tool-status'
@@ -19,6 +19,7 @@ import { JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
+import { ASSISTANT_END_TURN_THEME } from './themes'
 
 // 每卡工具状态 (组级 map 的预派生值): 按 (entry 身份, map 身份) 记忆.
 // 传 primitive 给卡片 → SSE 新数据只换 map 身份, 内容未变的卡拿到同一字符串, memo 保持.
@@ -120,6 +121,33 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusM
   )
 }
 
+// 巨轮窗口跳过中段条目时的提示卡: 不说明白的话, 用户会以为这一轮内容就这么多.
+// 非可展开卡, 配色对齐"结束"卡的金色系统主题 (amber), 在长列表里同样一眼可扫.
+export function HiddenGapCard({ count }: { count: number }) {
+  return (
+    <div className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm px-3 py-1.5 flex items-center gap-2 ${ASSISTANT_END_TURN_THEME.border} ${ASSISTANT_END_TURN_THEME.bg}`}>
+      <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
+        <span className={`h-1.5 w-1.5 rounded-full ${ASSISTANT_END_TURN_THEME.dot}`}></span>
+      </span>
+      <span className={`font-mono font-semibold flex-shrink-0 ${ASSISTANT_END_TURN_THEME.text}`}>隐藏</span>
+      <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">本轮过长，此处隐藏了一些对话内容</span>
+      <span className="text-[10px] font-mono text-[var(--text-muted)] flex-shrink-0">{count} 条</span>
+    </div>
+  )
+}
+
+// 一条提示行 (左侧与普通卡片一致的行号槽 + 卡片本体), 与 RoundGroup 的其它行同构.
+function HiddenGapRow({ count }: { count: number }) {
+  return (
+    <div className="flex items-start gap-1.5">
+      <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">⋯</span>
+      <div className="flex-1 min-w-0">
+        <HiddenGapCard count={count} />
+      </div>
+    </div>
+  )
+}
+
 export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, taskPlans }: { items: JsonlViewItem[]; onlyGroup: boolean; forceExpandAll?: boolean; showMeta?: boolean; toolStatusMap?: ToolStatusMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null; taskPlans?: TaskPlanByUuid | null }) {
   // 只有一组时强制展开, 禁止折叠; forceExpandAll (点 "加载全部") 时也展开; 其它场景保留原默认折叠行为
   const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
@@ -198,6 +226,18 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
   const renderSeq: ExploreRenderItem[] = groupExploreItems(round.items, toolStatusMap)
+  // 巨轮被窗口跳过的中段: 在对应位置插提示行 (游标按 renderSeq 顺序推进, 与 items 下标单调对应).
+  const hiddenGaps = round.hiddenGaps || []
+  let gapCursor = 0
+  const gapsBefore = (relIdx: number) => {
+    const rows: ReactNode[] = []
+    while (gapCursor < hiddenGaps.length && hiddenGaps[gapCursor].at <= relIdx) {
+      const gap = hiddenGaps[gapCursor]
+      gapCursor += 1
+      rows.push(<HiddenGapRow key={`hidden-gap-${gapCursor}-${gap.at}`} count={gap.count} />)
+    }
+    return rows
+  }
 
   return (
     <div className="mb-1">
@@ -280,18 +320,22 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
           {renderSeq.map((ri, idx) => {
             if (ri.kind === 'explore') {
               return (
-                <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">
-                  <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
-                  <div className="flex-1 min-w-0">
-                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
+                <Fragment key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`}>
+                  {gapsBefore(ri.items[0]?.relIdx ?? 0)}
+                  <div className="flex items-start gap-1.5">
+                    <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
+                    <div className="flex-1 min-w-0">
+                      <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               )
             }
             const item = ri.item
             const isUserItem = item.relIdx === 0
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
+                {gapsBefore(item.relIdx)}
                 <div className="flex items-start gap-1.5">
                   <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">
                     {/* 编号: 用户问题=轮次号(如 3), AI 回复=轮次号.子序号(如 3.1/3.2) */}
@@ -316,6 +360,10 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
               </Fragment>
             )
           })}
+          {/* 跳过段落在可见序列末尾 (at === items.length) 时, 提示行走在最后一行之后. */}
+          {hiddenGaps.slice(gapCursor).map((gap, index) => (
+            <HiddenGapRow key={`hidden-gap-tail-${index}-${gap.at}`} count={gap.count} />
+          ))}
         </div>
       )}
     </div>

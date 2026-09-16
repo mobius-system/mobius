@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { VirtualizedBlockList } from '../jsonl-virtual-list'
-import type { AnyEntry, JsonlViewItem, JsonlRenderBlock, Round } from './types'
+import type { AnyEntry, JsonlViewItem, JsonlRenderBlock, Round, RoundHiddenGap } from './types'
 import { mergeBashToolResultItems } from './entry-extract'
 import { collectResolvedCallIds } from './tool-status'
 import { RoundGroup } from './RoundGroups'
@@ -38,9 +38,13 @@ import {
   saveRoundHeaderPaletteIndex,
 } from './round-header-palette'
 
-// 单组条目渲染窗口上限: 巨轮只渲染尾部窗口 (虚拟列表保证视口流畅,
+// 单组条目渲染窗口上限: 巨轮只渲染"开轮条目 + 尾部窗口" (虚拟列表保证视口流畅,
 // 这里限制的是首次进组的流水线成本).
 const GROUP_ENTRY_WINDOW = 256
+// 巨轮额外保留的组头条目数: 开轮的用户问题卡 (边车原文卡 + 原生 user 卡) 必须留在
+// 窗口里, 否则尾部窗口会把"这一轮在问什么"整段切掉 —— 用户只能看到半截回复.
+// 留 8 条: 覆盖两张开轮卡 + 紧随其后的首条回复, 成本可忽略.
+const GROUP_ENTRY_HEAD = 8
 
 function JsonlInitialSkeleton() {
   return (
@@ -125,6 +129,14 @@ function targetIndexOf(entries: AnyEntry[], uuid?: string | null, ts?: string | 
   return -1
 }
 
+// 巨轮窗口跳过中段条目时插进流水线的占位条目: 跟着普通条目一起穿过去重/合并/过滤,
+// 渲染前被回收成 round.hiddenGaps (位置 = 它在可见序列里的下标), 不会进入 round.items.
+// 必须用白名单内的 type (否则会被 isHiddenJsonlNoiseEntry 当噪声丢掉) 且不命中任何特例谓词.
+const HIDDEN_GAP_MARK = 'mobius-hidden-gap'
+function hiddenGapEntry(count: number): AnyEntry {
+  return { type: 'system', subtype: HIDDEN_GAP_MARK, hiddenCount: count }
+}
+
 function buildRoundFromEntries(entries: AnyEntry[], roundNum: number, baseLineNo: number, targetUuid?: string | null, targetTs?: string | null): Round {
   let windowStart = Math.max(0, entries.length - GROUP_ENTRY_WINDOW)
   // 搜索命中可能在很早的条目里。保留命中条目周围的窗口，既不把整轮全部挂载，
@@ -133,11 +145,50 @@ function buildRoundFromEntries(entries: AnyEntry[], roundNum: number, baseLineNo
   if (targetIndex >= 0 && entries.length > GROUP_ENTRY_WINDOW) {
     windowStart = Math.max(0, Math.min(targetIndex - Math.floor(GROUP_ENTRY_WINDOW / 2), entries.length - GROUP_ENTRY_WINDOW))
   }
-  const windowed = entries.length > GROUP_ENTRY_WINDOW
-    ? entries.slice(windowStart, windowStart + GROUP_ENTRY_WINDOW)
-    : entries
+  // 渲染窗口 = 开轮条目段 (组头, 保住用户问题卡) + 主窗口段 (尾部窗口 / 搜索命中窗口).
+  // 两段之间的中段被跳过, 跳过处插占位条目 -> 渲染成"本轮过长"提示卡.
+  const spans = entries.length > GROUP_ENTRY_WINDOW
+    ? [
+        { start: 0, end: Math.min(GROUP_ENTRY_HEAD, windowStart) },
+        { start: windowStart, end: Math.min(windowStart + GROUP_ENTRY_WINDOW, entries.length) },
+      ]
+    : [{ start: 0, end: entries.length }]
+  // 两段重叠/相接时合并 (搜索命中窗口落到组头段内的情形), 避免凭空多出一段"隐藏".
+  const pieces: { start: number; end: number }[] = []
+  for (const span of spans) {
+    if (span.end <= span.start) continue
+    const last = pieces[pieces.length - 1]
+    if (last && span.start <= last.end) last.end = Math.max(last.end, span.end)
+    else pieces.push({ ...span })
+  }
+  const windowed: AnyEntry[] = []
+  pieces.forEach((piece, index) => {
+    const hiddenStart = index === 0 ? 0 : pieces[index - 1].end
+    if (piece.start > hiddenStart) {
+      // 只数"本来会显示成卡片"的条目: 被跳过的原始条目里混着 last-prompt / 快照等噪声,
+      // 直接报原始条数会让提示卡的数字虚高.
+      const hiddenCount = entries.slice(hiddenStart, piece.start).filter((entry) => !isHiddenJsonlNoiseEntry(entry)).length
+      // 跳过的全是噪声 → 用户本来就看不到差别, 不插提示.
+      if (hiddenCount > 0) windowed.push(hiddenGapEntry(hiddenCount))
+    }
+    windowed.push(...entries.slice(piece.start, piece.end))
+  })
+  // 窗口是分段拼接时组内行号不再连续, 按条目的组内原始序号重编, 让编号同样留出空档.
+  const groupIndexOf = new Map<AnyEntry, number>()
+  if (pieces.length > 1) entries.forEach((entry, index) => { if (entry && typeof entry === 'object') groupIndexOf.set(entry, index) })
   const deduped = filterDisplayDuplicates(windowed)
   const merged = mergeBashToolResultItems(deduped, baseLineNo + windowStart)
+  if (groupIndexOf.size > 0) {
+    for (const item of merged) {
+      const original = groupIndexOf.get(item.entry)
+      if (original !== undefined) item.lineNo = baseLineNo + original + 1
+      // 合并进本卡的 tool_result 也按原始序号重编, 否则它们会沿用连续性假设下的错号.
+      for (const result of [...(item.bashResults || []), ...(item.readResults || [])]) {
+        const resultIndex = groupIndexOf.get(result.entry)
+        if (resultIndex !== undefined) result.lineNo = baseLineNo + resultIndex + 1
+      }
+    }
+  }
   let visible = hideRepeatedEncryptedReasoning(
     merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)),
   )
@@ -147,7 +198,21 @@ function buildRoundFromEntries(entries: AnyEntry[], roundNum: number, baseLineNo
     const initialIndex = visible.findIndex((item) => extractInitialContext(item.entry) !== null)
     if (initialIndex > 0) visible = visible.slice(initialIndex)
   }
-  return { roundNum, items: visible.map((item, index) => ({ ...item, relIdx: index })) }
+  // 回收占位条目: at = 提示行要插在 items 中的下标.
+  const items: JsonlViewItem[] = []
+  const hiddenGaps: RoundHiddenGap[] = []
+  for (const item of visible) {
+    if (item.entry?.subtype === HIDDEN_GAP_MARK) {
+      hiddenGaps.push({ at: items.length, count: Number(item.entry.hiddenCount) || 0 })
+      continue
+    }
+    items.push(item)
+  }
+  return {
+    roundNum,
+    items: items.map((item, index) => ({ ...item, relIdx: index })),
+    hiddenGaps: hiddenGaps.length > 0 ? hiddenGaps : undefined,
+  }
 }
 
 // 每组渲染结果按 entries 数组身份记忆 (SSE 只让收数据的组换数组身份):
