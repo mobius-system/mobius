@@ -366,7 +366,7 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
         {/* 头部: 关键词输入 + 搜索模式切换。模式在同一弹窗内切换，关键词保持不变。 */}
         <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
             <input
               ref={inputRef}
@@ -378,6 +378,41 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
             />
             {isLoading && <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+            <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isQuick}
+                aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
+                title="切换搜索模式"
+                onClick={() => setMode(isQuick ? 'deep' : 'quick')}
+                className="inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] transition-colors"
+                style={{
+                  color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
+                  borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',
+                  background: isQuick ? 'rgba(245,158,11,0.10)' : 'rgba(148,163,184,0.06)',
+                }}
+              >
+                <span className="font-medium">{isQuick ? '快速搜索' : '深度搜索'}</span>
+                <span className={`relative h-3.5 w-6 rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
+                  <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
+                </span>
+              </button>
+              {!isQuick && <>
+                {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
+                <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
+                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                  style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
+                <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
+                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                  style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
+                <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
+                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
+                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
+                  {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </>}
+            </div>
             {q && !isLoading && (
               <button type="button" onClick={clearSearch} title="清空关键词" aria-label="清空关键词"
                 className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
@@ -388,41 +423,6 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
               <X className="h-4 w-4" />
             </button>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isQuick}
-              aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
-              title="切换搜索模式"
-              onClick={() => setMode(isQuick ? 'deep' : 'quick')}
-              className="inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] transition-colors"
-              style={{
-                color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
-                borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',
-                background: isQuick ? 'rgba(245,158,11,0.10)' : 'rgba(148,163,184,0.06)',
-              }}
-            >
-              <span className="font-medium">{isQuick ? '快速搜索' : '深度搜索'}</span>
-              <span className={`relative h-3.5 w-6 rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
-                <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
-              </span>
-            </button>
-            {!isQuick && <div className="flex flex-wrap items-center gap-1.5">
-              {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
-              <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
-                className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
-                style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
-              <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
-                className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
-                style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
-              <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-                className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
-                style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
-                {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>}
           </div>
         </div>
 
