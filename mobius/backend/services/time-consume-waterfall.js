@@ -324,7 +324,7 @@ function absorbEventMeta(state, event) {
         lineNo: active.lineNo,
         source: active.source,
         toolName: active.toolName,
-        jobDone: active.jobDone,
+        jobDone: !!(active.jobDone || event.jobDone),
       })
       delete state.activeTools[callId]
     }

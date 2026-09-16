@@ -1907,6 +1907,8 @@ type EasyProjectOption = {
   runningCount?: number
 }
 
+type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
+
 export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
@@ -1929,6 +1931,10 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   matchTargetActiveRef.current = hasMatchTarget
   // 命中参数被清理后，SessionJsonlPanel 仍会保留红色命中标记；追底必须尊重该状态。
   const searchHighlightActiveRef = useRef(false)
+  const searchHighlightTargetRef = useRef<{ uuid: string | null; ts: string | null } | null>(null)
+  const [searchHighlightClearSignal, setSearchHighlightClearSignal] = useState(0)
+  const [searchHits, setSearchHits] = useState<SearchHitTarget[]>([])
+  const [searchHitIndex, setSearchHitIndex] = useState(0)
   // 跳转到位后清掉 URL 里的 match/ts (replace, 不留历史), 避免刷新/切会话重复触发.
   const onMatchScrollResolved = useCallback(() => {
     setSearchParams((prev) => {
@@ -1939,6 +1945,65 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       return next
     }, { replace: true })
   }, [setSearchParams])
+
+  const sessionIdForSearchHits = currentSession?.session_id || currentTask?.task_id || ''
+  useEffect(() => {
+    if (!sessionIdForSearchHits) {
+      setSearchHits([])
+      return
+    }
+    try {
+      const raw = localStorage.getItem(`mobius:search-hits:${sessionIdForSearchHits}`)
+      const parsed = raw ? JSON.parse(raw) : []
+      setSearchHits(Array.isArray(parsed) ? parsed.filter((hit) => hit && (hit.uuid || hit.timestamp)) : [])
+    } catch {
+      setSearchHits([])
+    }
+  }, [sessionIdForSearchHits])
+
+  const hitKey = (hit: SearchHitTarget | null | undefined) => hit ? `${hit.uuid || ''}:${hit.timestamp || ''}` : ''
+  useEffect(() => {
+    const targetKey = hitKey(searchHighlightTargetRef.current)
+    const index = searchHits.findIndex((hit) => hitKey(hit) === targetKey)
+    if (index >= 0) setSearchHitIndex(index)
+  }, [searchHits, matchUuid, matchTs])
+  const targetForHit = useCallback((hit: SearchHitTarget | undefined) => {
+    if (!hit) return
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (hit.uuid) next.set('match', hit.uuid); else next.delete('match')
+      if (hit.timestamp) next.set('ts', hit.timestamp); else next.delete('ts')
+      return next
+    }, { replace: true })
+    searchHighlightActiveRef.current = true
+  }, [setSearchParams])
+  const jumpCurrentSearchHit = useCallback(() => {
+    targetForHit(searchHighlightTargetRef.current ? {
+      uuid: searchHighlightTargetRef.current.uuid,
+      timestamp: searchHighlightTargetRef.current.ts,
+    } : searchHits[searchHitIndex])
+  }, [searchHitIndex, searchHits, targetForHit])
+  const moveSearchHit = useCallback((delta: number) => {
+    if (searchHits.length === 0) return
+    const nextIndex = (searchHitIndex + delta + searchHits.length) % searchHits.length
+    setSearchHitIndex(nextIndex)
+    targetForHit(searchHits[nextIndex])
+  }, [searchHitIndex, searchHits, targetForHit])
+  const clearSearchHits = useCallback(() => {
+    searchHighlightActiveRef.current = false
+    searchHighlightTargetRef.current = null
+    setSearchHighlightClearSignal((value) => value + 1)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('match')
+      next.delete('ts')
+      return next
+    }, { replace: true })
+    if (sessionIdForSearchHits) {
+      try { localStorage.removeItem(`mobius:search-hits:${sessionIdForSearchHits}`) } catch {}
+    }
+    setSearchHits([])
+  }, [sessionIdForSearchHits, setSearchParams])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
@@ -4271,6 +4336,13 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           scrollToMatchTs={matchTs}
           onMatchScrollResolved={onMatchScrollResolved}
           searchHighlightActiveRef={searchHighlightActiveRef}
+          searchHighlightTargetRef={searchHighlightTargetRef}
+          searchHighlightClearSignal={searchHighlightClearSignal}
+          searchHits={searchHits}
+          onSearchHitJump={jumpCurrentSearchHit}
+          onSearchHitPrevious={() => moveSearchHit(-1)}
+          onSearchHitNext={() => moveSearchHit(1)}
+          onSearchHitClear={clearSearchHits}
           onEasyRoundCountChange={handleEasyRoundCountChange}
           easyExpandAllSignal={easyExpandAllSignal}
           variant={layout === 'easy' ? 'easy' : 'standard'}

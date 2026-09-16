@@ -299,6 +299,11 @@ export function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNa
   // 极简模式下改跳极简工作台 (research → research 区带 agent), 由 easy-route-state 统一构造。
   const openSession = (r: SearchResult, frag?: Fragment) => {
     const first = frag || r.fragments[0]
+    // Keep all hits for the destination session so the session footer can offer
+    // previous/next navigation after the URL's one-shot match parameters are cleared.
+    try {
+      localStorage.setItem(`mobius:search-hits:${r.session_id}`, JSON.stringify(r.fragments))
+    } catch {}
     const extra = (() => {
       if (!first) return ''
       const parts: string[] = []

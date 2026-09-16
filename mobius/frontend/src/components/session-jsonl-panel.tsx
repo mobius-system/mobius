@@ -62,6 +62,13 @@ type SessionJsonlPanelProps = {
   onMatchScrollResolved?: () => void
   // 当前会话是否仍保留搜索命中红框。与 URL 中的 match/ts 独立，供 Chat 追底逻辑同步读取。
   searchHighlightActiveRef?: MutableRefObject<boolean>
+  searchHighlightTargetRef?: MutableRefObject<{ uuid: string | null; ts: string | null } | null>
+  searchHighlightClearSignal?: number
+  searchHits?: Array<{ uuid?: string | null; timestamp?: string | null }>
+  onSearchHitJump?: () => void
+  onSearchHitPrevious?: () => void
+  onSearchHitNext?: () => void
+  onSearchHitClear?: () => void
   onEasyRoundCountChange?: (count: number) => void
   easyExpandAllSignal?: number
   variant?: 'standard' | 'easy'
@@ -86,6 +93,13 @@ function SessionJsonlPanelInner({
   scrollToMatchTs,
   onMatchScrollResolved,
   searchHighlightActiveRef,
+  searchHighlightTargetRef,
+  searchHighlightClearSignal = 0,
+  searchHits = [],
+  onSearchHitJump,
+  onSearchHitPrevious,
+  onSearchHitNext,
+  onSearchHitClear,
   onEasyRoundCountChange,
   easyExpandAllSignal,
   variant = 'standard',
@@ -95,6 +109,7 @@ function SessionJsonlPanelInner({
   // URL 中的 match/ts 会在首次精确滚动完成后被上层清理，命中视觉反馈不能随之消失。
   // 面板本地保留本次目标，直到切换到另一份 historyStore（即离开当前会话）。
   const highlightTargetRef = useRef<{ uuid: string | null; ts: string | null } | null>(null)
+  const previousClearSignalRef = useRef(searchHighlightClearSignal)
   const previousStoreRef = useRef(historyStore)
   // Keep the target synchronously while rendering. The parent removes match/ts as soon as
   // scrolling completes; a passive effect here can lose a frame (and the highlight) when
@@ -108,10 +123,19 @@ function SessionJsonlPanelInner({
   if (scrollToEntryUuid || scrollToMatchTs) {
     highlightTargetRef.current = { uuid: scrollToEntryUuid || null, ts: scrollToMatchTs || null }
   }
+  if (previousClearSignalRef.current !== searchHighlightClearSignal) {
+    previousClearSignalRef.current = searchHighlightClearSignal
+    highlightTargetRef.current = null
+  }
   const effectiveScrollToEntryUuid = scrollToEntryUuid || highlightTargetRef.current?.uuid || null
   const effectiveScrollToMatchTs = scrollToMatchTs || highlightTargetRef.current?.ts || null
   if (searchHighlightActiveRef) {
     searchHighlightActiveRef.current = !!(effectiveScrollToEntryUuid || effectiveScrollToMatchTs)
+  }
+  if (searchHighlightTargetRef) {
+    searchHighlightTargetRef.current = effectiveScrollToEntryUuid || effectiveScrollToMatchTs
+      ? { uuid: effectiveScrollToEntryUuid, ts: effectiveScrollToMatchTs }
+      : null
   }
   const visibleJsonl = useMemo(
     () => (historyStore ? historyStore.flattenEntries() : []),
@@ -248,6 +272,16 @@ function SessionJsonlPanelInner({
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
             新消息
           </button>
+        </div>
+      )}
+      {searchHits.length > 0 && (searchHighlightActiveRef?.current || searchHighlightTargetRef?.current) && (
+        <div className="flex justify-center py-1 flex-shrink-0">
+          <div className="inline-flex items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-1.5 py-1 shadow-md" role="group" aria-label="搜索命中导航">
+            <button type="button" onClick={onSearchHitJump} className="rounded-full px-2 py-1 text-[11px] font-medium text-red-200 hover:bg-red-500/20">跳转</button>
+            <button type="button" onClick={onSearchHitPrevious} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="上一个命中">上一个命中</button>
+            <button type="button" onClick={onSearchHitNext} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="下一个命中">下一个命中</button>
+            <button type="button" onClick={onSearchHitClear} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="清除搜索结果">清除搜索结果</button>
+          </div>
         </div>
       )}
     </div>
