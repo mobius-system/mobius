@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { ToastCard } from './components/toast-card'
 import { useStore, api } from './store'
 import { startTextRedactionRuntime } from './services/text-redaction'
+import { startBrandOverridesRuntime, subscribeBrandName } from './services/brand-overrides'
 import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
 import { pollRecursive } from './services/polling'
@@ -475,6 +476,19 @@ function AuthenticatedApp() {
 
 export default function App() {
   const { token, user, authChecking, theme, backgroundFlowEnabled, logout } = useStore()
+
+  // 浏览器本地品牌覆盖: 自定义 logo 同步到浏览器标签页图标, 自定义系统名称重算 branding
+  // (Tab 标题/登录页等所有读 branding.systemName* 的地方随之更新). 两者都跟随其他标签页改动.
+  useEffect(() => {
+    const refresh = () => useStore.getState().refreshBranding()
+    refresh()
+    const stopFavicon = startBrandOverridesRuntime()
+    const stopBrandName = subscribeBrandName(refresh)
+    return () => {
+      stopFavicon()
+      stopBrandName()
+    }
+  }, [])
 
   useEffect(() => {
     if (token && !user) {

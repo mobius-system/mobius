@@ -1,4 +1,4 @@
-import { useCustomLogo } from '../services/brand-logo'
+import { useCustomLogo } from '../services/brand-overrides'
 
 type MobiusLogoProps = {
   size?: number

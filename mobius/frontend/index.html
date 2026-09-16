@@ -30,8 +30,19 @@
           };
         }
       } catch (e) { /* 拉失败时回退默认值, 不阻塞首屏 */ }
+      // 浏览器本地「自定义系统名称」(只在本机 localStorage, 不上传服务器) 只用于首屏标题,
+      // 让标题直接就是用户自定义的名字, 不会先闪一下默认名.
+      // 注意: **不要**把覆盖写回 branding —— window.__BRANDING__ 必须保持服务端原值,
+      // 否则 store 里"服务端基底 + 本地覆盖"的叠加会失去基底, 清除自定义后回不到默认名.
+      var titleName = branding.systemNameZh;
+      try {
+        var custom = JSON.parse(localStorage.getItem('mobius:custom-brand-name') || 'null');
+        if (custom && typeof custom === 'object' && typeof custom.zh === 'string' && custom.zh) {
+          titleName = custom.zh;
+        }
+      } catch (e) { /* 自定义名解析失败时沿用服务端配置 */ }
       window.__BRANDING__ = branding;
-      document.title = branding.systemNameZh || ' ';
+      document.title = titleName || ' ';
     })();
   </script>
 </head>

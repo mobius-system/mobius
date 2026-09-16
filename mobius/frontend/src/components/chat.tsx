@@ -7,7 +7,7 @@ import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, A
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
-import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal } from './session-welcome'
+import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
@@ -1977,6 +1977,19 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     }, { replace: true })
     searchHighlightActiveRef.current = true
   }, [setSearchParams])
+  const applySessionSearchHits = useCallback((hits: SessionSearchHit[], selectedIndex: number) => {
+    const targets = hits
+      .filter((hit) => hit && (hit.uuid || hit.timestamp))
+      .map((hit) => ({ uuid: hit.uuid || null, timestamp: hit.timestamp || null }))
+    if (targets.length === 0) return
+    const nextIndex = Math.max(0, Math.min(selectedIndex, targets.length - 1))
+    setSearchHits(targets)
+    setSearchHitIndex(nextIndex)
+    if (sessionIdForSearchHits) {
+      try { localStorage.setItem(`mobius:search-hits:${sessionIdForSearchHits}`, JSON.stringify(targets)) } catch {}
+    }
+    targetForHit(targets[nextIndex])
+  }, [sessionIdForSearchHits, targetForHit])
   const jumpCurrentSearchHit = useCallback(() => {
     targetForHit(searchHighlightTargetRef.current ? {
       uuid: searchHighlightTargetRef.current.uuid,
@@ -4765,6 +4778,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                 projectId={currentProjectId || undefined}
                 initialPanel="memory"
                 persistActivePanel
+                onSessionSearchHits={applySessionSearchHits}
                 leadingControls={renderAdvancedSessionActions('default')}
                 onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
                 visibilityOptions={[
@@ -4783,6 +4797,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
                     { id: 'git', label: 'Git' },
                     { id: 'ports', label: '端口' },
                     { id: 'time', label: '耗时' },
+                    { id: 'search', label: '会话内搜索' },
                   ]}
               />
             </UnifiedButtonGroup>

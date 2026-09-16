@@ -50,6 +50,7 @@ const MAX_CANDIDATES = 600;
 const JSONL_READ_CHUNK_SIZE = 512 * 1024;
 const MAX_EXTRACTED_TEXT = 200 * 1024; // 单条消息展示文本上限；需覆盖长上下文里的命中窗口
 const MAX_FRAGMENTS_PER_SESSION = 3;
+const MAX_SCOPED_FRAGMENTS_PER_SESSION = 100;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const SEARCH_BUDGET_MS = 2 * 60 * 1000;
@@ -84,10 +85,10 @@ function tryStringify(v: any, cap: number): string {
 function extractTextFromEntry(entry: any): { role: string; text: string; timestamp: string | null } | null {
   if (!entry || typeof entry !== 'object') return null;
   const msg = entry.message;
-  const role: string = msg?.role || entry.type || 'unknown';
-  const timestamp: string | null = entry.timestamp || entry.created_at || msg?.created_at || null;
+  const role: string = msg?.role || entry?.payload?.role || entry.type || 'unknown';
+  const timestamp: string | null = entry.timestamp || entry.created_at || msg?.created_at || entry?.payload?.timestamp || null;
   let text = '';
-  const content = msg?.content;
+  const content = msg?.content ?? entry?.payload?.content ?? entry?.content;
   if (typeof content === 'string') {
     text = content;
   } else if (Array.isArray(content)) {
@@ -96,6 +97,10 @@ function extractTextFromEntry(entry: any): { role: string; text: string; timesta
       if (!c || typeof c !== 'object') continue;
       if (c.type === 'text' && typeof c.text === 'string') {
         parts.push(c.text);
+      } else if (typeof c.input_text === 'string') {
+        parts.push(c.input_text);
+      } else if (typeof c.output_text === 'string') {
+        parts.push(c.output_text);
       } else if (c.type === 'thinking' && typeof c.thinking === 'string') {
         parts.push(c.thinking);
       } else if (c.type === 'tool_use') {
@@ -109,8 +114,12 @@ function extractTextFromEntry(entry: any): { role: string; text: string; timesta
       }
     }
     text = parts.join('\n');
-  } else if (entry.type === 'error' && typeof msg?.content === 'string') {
-    text = msg.content;
+  } else if (entry?.payload?.type === 'function_call' || entry?.payload?.type === 'custom_tool_call') {
+    text = `[工具 ${entry.payload.name || ''}] ${tryStringify(entry.payload.arguments ?? entry.payload.input, MAX_EXTRACTED_TEXT)}`;
+  } else if (entry?.payload?.type === 'function_call_output' || entry?.payload?.type === 'custom_tool_call_output') {
+    text = `[结果] ${tryStringify(entry.payload.output ?? entry.payload.content, MAX_EXTRACTED_TEXT)}`;
+  } else if (entry.type === 'event_msg') {
+    text = tryStringify(entry?.payload?.message ?? entry?.payload?.content, MAX_EXTRACTED_TEXT);
   }
   // 去掉 NUL, 保留足够长的正文用于定位命中窗口。旧版这里截到 4000 字，
   // 会导致长上下文后半段命中但展示片段不含关键词。
@@ -282,9 +291,15 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   const stream = truthy(req.query.stream);
 
   const projectId = String(req.query.project_id || '').trim() || null;
+  const sessionId = String(req.query.session_id || '').trim() || null;
   const maxCandidates = clampInt(req.query.candidates, DEFAULT_CANDIDATES, 1, MAX_CANDIDATES);
   const limit = clampInt(req.query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
-  const maxFragments = clampInt(req.query.max_fragments, MAX_FRAGMENTS_PER_SESSION, 1, 5);
+  const maxFragments = clampInt(
+    req.query.max_fragments,
+    MAX_FRAGMENTS_PER_SESSION,
+    1,
+    sessionId ? MAX_SCOPED_FRAGMENTS_PER_SESSION : 5,
+  );
 
   // 时间范围过滤 (默认 7 天内活跃的会话): 缩小候选集以加速 JSONL 扫描.
   // 复用本库惯用法 (见 services/agent-prompt-events.ts): 用 SQLite strftime('now', 修饰符)
@@ -302,8 +317,9 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
   // 候选 session (带 project / issue / research 名的 join), 按 last_active 倒序, 限候选量.
   const conds: string[] = [];
   const params: any[] = [];
+  if (sessionId) { conds.push('s.session_id = ?'); params.push(sessionId); }
   if (projectId) { conds.push('s.project_id = ?'); params.push(projectId); }
-  else {
+  else if (!sessionId) {
     // 全局搜索 (未显式指定项目): 排除小莫助理项目 (系统描述或名称后缀命中, 见上方常量)。
     // 显式带 project_id 的调用 = 明确要搜该项目内内容, 不在此排除。
     // p 为 LEFT JOIN, 项目行不存在或字段为 NULL 时 NOT IN/NOT LIKE 结果为 NULL,

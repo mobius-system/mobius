@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { type ThemeName, nextThemeName, normalizeTheme } from './theme'
+import { applyBrandNameOverride } from './services/brand-overrides'
 
 const BACKGROUND_FLOW_STORAGE_KEY = 'cc-background-flow'
 const ASSISTANT_BUBBLE_STORAGE_KEY = 'mobius:ui:assistant-bubble'
@@ -86,7 +87,7 @@ const DEFAULT_BRANDING: Branding = {
   appDir: '',
 }
 
-function loadInitialBranding(): Branding {
+function loadRawBranding(): Branding {
   const injected = typeof window !== 'undefined' ? window.__BRANDING__ : undefined
   if (!injected) return DEFAULT_BRANDING
   return {
@@ -98,13 +99,25 @@ function loadInitialBranding(): Branding {
   }
 }
 
+// 服务端下发的品牌配置启动时定型, 运行期不变; 作为叠加浏览器本地「自定义系统名称」的基底.
+const RAW_BRANDING: Branding = loadRawBranding()
+
+// 用户实际看到的品牌配置 = 服务端配置 + 本地自定义覆盖.
+// 统一在这里叠加, 组件读 store 的 branding 即可, 不必各自判断有没有本地覆盖.
+export function resolveBranding(): Branding {
+  return applyBrandNameOverride(RAW_BRANDING)
+}
+
+// 服务端下发的系统名称 (未经浏览器本地覆盖的原始值), 供设置面板展示"默认名"。
+export const SERVER_BRAND_NAME = { zh: RAW_BRANDING.systemNameZh, en: RAW_BRANDING.systemNameEn }
+
 // 隐藏工作缓存目录名 (.imac / .mobius): 由 index.html 同步注入 window.__BRANDING__, 启动时定型,
 // 运行期不再变化, 故作为模块级常量导出; 组件拼 <bindPath>/<HIDDEN_FOLDER_NAME>/... 路径时直接 import 使用.
-export const HIDDEN_FOLDER_NAME = loadInitialBranding().hiddenFolderName
+export const HIDDEN_FOLDER_NAME = RAW_BRANDING.hiddenFolderName
 
 // 仓库根绝对路径 (APP_DIR): 同样由 index.html 同步注入, 启动时定型. 用于给 agent 展示 skill 绝对路径等,
 // 避免前端硬编码部署路径. 空字符串表示后端未下发 (旧版), 调用方需自行回退.
-export const APP_DIR = loadInitialBranding().appDir
+export const APP_DIR = RAW_BRANDING.appDir
 
 interface User {
   id: string
@@ -339,7 +352,7 @@ interface AppState {
   hideOthersProjects: boolean
   // 用户隔离 v3: 当前用户已 mute 的项目 ID 集合
   mutedProjectIds: string[]
-  // Branding: logo/系统名/Tab 标题. 来自 .env, 前端只读不可改.
+  // Branding: logo/系统名/Tab 标题. 基底来自 .env, 其中系统名可被浏览器本地覆盖 (自定义系统名称).
   branding: Branding
   // 移动端侧栏抽屉开关 (TopNav 汉堡按钮触发, ResizablePanel 抽屉态读取)
   mobileNavOpen: boolean
@@ -357,6 +370,8 @@ interface AppState {
   setMutedProjectIds: (ids: string[]) => void
   setMobileNavOpen: (open: boolean) => void
   setMobileNavBreakpoint: (px: number) => void
+  // 浏览器本地「自定义系统名称」变更后重算 branding (服务端基底 + 本地覆盖).
+  refreshBranding: () => void
   setWorkspaceLayoutMode: (mode: WorkspaceLayoutMode) => void
   toggleWorkspaceLayoutMode: () => void
   // 切换到某会话时调用: 恢复该会话保存的布局, 未保存过则回落默认 (不写回).
@@ -418,7 +433,7 @@ export const useStore = create<AppState>((set) => ({
   assistantBubbleEnabled: loadAssistantBubbleEnabled(),
   hideOthersProjects: false,
   mutedProjectIds: [],
-  branding: loadInitialBranding(),
+  branding: resolveBranding(),
   mobileNavOpen: false,
   mobileNavBreakpoint: 900,
   // 启动默认值; 进入会话后由 applySessionWorkspaceLayout 按会话校正.
@@ -437,6 +452,7 @@ export const useStore = create<AppState>((set) => ({
   setMutedProjectIds: (ids) => set({ mutedProjectIds: Array.isArray(ids) ? ids : [] }),
   setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
   setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 900 }),
+  refreshBranding: () => set({ branding: resolveBranding() }),
   setWorkspaceLayoutMode: (mode) => {
     const next = normalizeLayoutMode(mode)
     // 写回当前会话的布局记忆 (无当前会话则不持久化, 仅改内存态).

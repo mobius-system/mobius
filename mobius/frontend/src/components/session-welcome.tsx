@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Settings2, Upload, X } from 'lucide-react'
+import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Search, Settings2, Upload, X } from 'lucide-react'
 import { api } from '../store'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
@@ -319,13 +319,20 @@ interface SelectionSnapshotResponse {
 // =====================================================================
 const ACTIVE_PANEL_STORAGE_KEY = 'mobius:skill-memory-active-panel'
 
-type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time' | 'display-settings'
+type SessionResourcePanel = 'skill' | 'memory' | 'git' | 'ports' | 'time' | 'search' | 'display-settings'
+
+export type SessionSearchHit = {
+  role: string
+  snippet: string
+  timestamp?: string | null
+  uuid?: string | null
+}
 
 function readStoredActivePanel(): null | SessionResourcePanel | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     const value = window.localStorage.getItem(ACTIVE_PANEL_STORAGE_KEY)
-    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time' || value === 'display-settings') return value
+    if (value === 'skill' || value === 'memory' || value === 'git' || value === 'ports' || value === 'time' || value === 'search' || value === 'display-settings') return value
     if (value === 'closed') return null
     return undefined
   } catch {
@@ -618,12 +625,137 @@ function ResourceTabButton({
   )
 }
 
+function SessionSearchPanel({
+  sessionId,
+  onSelectHits,
+}: {
+  sessionId?: string
+  onSelectHits?: (hits: SessionSearchHit[], selectedIndex: number) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<SessionSearchHit[]>([])
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setQuery('')
+    setHits([])
+    setSelectedIndex(null)
+    setSearched(false)
+    setError('')
+  }, [sessionId])
+
+  const runSearch = async () => {
+    const term = query.trim()
+    if (!sessionId || term.length < 2 || loading) return
+    setLoading(true)
+    setError('')
+    setSearched(true)
+    setSelectedIndex(null)
+    try {
+      const params = new URLSearchParams({
+        q: term,
+        session_id: sessionId,
+        range: 'all',
+        candidates: '1',
+        limit: '1',
+        max_fragments: '100',
+      })
+      const response = await api(`/api/search?${params.toString()}`)
+      const nextHits = Array.isArray(response?.results?.[0]?.fragments)
+        ? response.results[0].fragments.filter((hit: SessionSearchHit) => hit && (hit.uuid || hit.timestamp))
+        : []
+      setHits(nextHits)
+    } catch (e: any) {
+      setHits([])
+      setError(e?.message || '搜索失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const selectHit = (index: number) => {
+    setSelectedIndex(index)
+    onSelectHits?.(hits, index)
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2" data-testid="session-search-panel">
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(event) => { event.preventDefault(); void runSearch() }}
+      >
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索当前会话"
+            aria-label="搜索当前会话"
+            className="h-8 w-full rounded-md border bg-transparent pl-7 pr-2 text-[11px] outline-none focus:border-red-400/70"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!sessionId || query.trim().length < 2 || loading}
+          className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-md border px-2.5 text-[11px] font-medium transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-45"
+          style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.45)' }}
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+          搜索
+        </button>
+      </form>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-label="会话内搜索结果">
+        {error ? (
+          <div className="py-5 text-center text-[11px] text-red-400">{error}</div>
+        ) : loading ? (
+          <div className="flex items-center justify-center gap-1.5 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在搜索当前会话...
+          </div>
+        ) : searched && hits.length === 0 ? (
+          <div className="py-5 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>当前会话没有命中</div>
+        ) : hits.length > 0 ? (
+          <>
+            <div className="mb-1 px-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>找到 {hits.length} 个命中，点击定位</div>
+            <div className="space-y-1">
+              {hits.map((hit, index) => (
+                <button
+                  key={`${hit.uuid || ''}:${hit.timestamp || ''}:${index}`}
+                  type="button"
+                  data-session-search-result={index}
+                  aria-label={`查看第 ${index + 1} 个命中`}
+                  onClick={() => selectHit(index)}
+                  className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-red-500/10 ${selectedIndex === index ? 'border-red-500/80 bg-red-500/10' : ''}`}
+                  style={{ borderColor: selectedIndex === index ? undefined : 'var(--border-color)' }}
+                >
+                  <div className="mb-0.5 flex items-center gap-1.5 text-[9px]">
+                    <span className="rounded bg-red-500/15 px-1 py-0.5 text-red-300">{hit.role || '消息'}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>{hit.timestamp ? new Date(hit.timestamp).toLocaleString('zh-CN') : `命中 ${index + 1}`}</span>
+                  </div>
+                  <div className="line-clamp-3 break-all text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{hit.snippet}</div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="py-5 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>输入至少 2 个字符搜索本会话全部内容</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function SessionSkillMemoryEditor({
   sessionId,
   projectId,
   initialPanel = null,
   persistActivePanel = false,
   onOpenKnowledge,
+  onSessionSearchHits,
   leadingControls,
   visibilityOptions = [],
 }: {
@@ -632,6 +764,7 @@ export function SessionSkillMemoryEditor({
   initialPanel?: null | SessionResourcePanel
   persistActivePanel?: boolean
   onOpenKnowledge?: () => void
+  onSessionSearchHits?: (hits: SessionSearchHit[], selectedIndex: number) => void
   leadingControls?: ReactNode
   visibilityOptions?: VisibilityOption[]
 }) {
@@ -917,6 +1050,7 @@ export function SessionSkillMemoryEditor({
   const gitActive = activePanel === 'git'
   const portsActive = activePanel === 'ports'
   const timeActive = activePanel === 'time'
+  const searchActive = activePanel === 'search'
   const displaySettingsActive = activePanel === 'display-settings'
   const resourceKind: 'skill' | 'memory' | null = skillActive ? 'skill' : memActive ? 'memory' : null
 
@@ -983,6 +1117,16 @@ export function SessionSkillMemoryEditor({
             dataTour="session-time-toggle"
           />
           <ResourceTabButton
+            buttonId="search"
+            label="会话内搜索"
+            icon={<Search className="h-3.5 w-3.5 text-red-400" strokeWidth={1.9} />}
+            active={searchActive}
+            activeClass="border-red-400/60 bg-red-500/15 text-red-100 shadow-sm"
+            idleClass="border-transparent"
+            onClick={() => setActivePanelAndPersist(activePanel === 'search' ? null : 'search')}
+            dataTour="session-search-toggle"
+          />
+          <ResourceTabButton
             label="显示设置"
             icon={<Settings2 className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.9} />}
             active={displaySettingsActive}
@@ -1020,6 +1164,7 @@ export function SessionSkillMemoryEditor({
                         <TimeConsumePanel sessionId={sessionId} />
                       </Suspense>
                     )
+                    : searchActive ? <SessionSearchPanel sessionId={sessionId} onSelectHits={onSessionSearchHits} />
                     : displaySettingsActive ? <ButtonVisibilitySwitchList options={visibilityOptions} />
                     : (
                     <div className="space-y-1.5">
