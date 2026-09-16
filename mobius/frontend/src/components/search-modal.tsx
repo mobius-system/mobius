@@ -263,16 +263,6 @@ export function SearchModal({
       })
   }
 
-  // 从主页内嵌搜索框打开时，复用传入的关键词直接启动对应搜索模式。
-  useEffect(() => {
-    const term = initialQuery.trim()
-    if (!term) return
-    if (initialMode === 'quick') runQuickSearch(term)
-    else runSearch(term)
-    // SearchModal 每次打开都会重新挂载，初始关键词只需执行一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const onType = (v: string) => {
     setQ(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
