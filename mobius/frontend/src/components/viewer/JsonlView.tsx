@@ -200,6 +200,7 @@ export function JsonlView({
   showMeta = true,
   scrollToEntryUuid,
   scrollToMatchTs,
+  searchNavigationRequested = false,
   onScrollResolved,
   onPauseToDequeue,
 }: {
@@ -215,6 +216,9 @@ export function JsonlView({
   // 搜索结果跳转: 命中条目 uuid / timestamp; 未加载的组先 ② 再定位.
   scrollToEntryUuid?: string | null
   scrollToMatchTs?: string | null
+  // URL 里仍有本次搜索参数时为 true。命中目标会长期保留用于红色高亮，
+  // 但自动滚动只在这个请求开始时启动，完成或用户操作后立即解锁视野。
+  searchNavigationRequested?: boolean
   onScrollResolved?: () => void
   // 排队卡片闪电按钮: 打断当前 turn 并出队下一条排队指令.
   onPauseToDequeue?: () => void
@@ -291,11 +295,21 @@ export function JsonlView({
   // (快照 rev 变化后本 effect 重跑, 条目到位再精确定位).
   const [extTarget, setExtTarget] = useState<{ key: string; offset: number } | null>(null)
   const [extFocusLineNo, setExtFocusLineNo] = useState<number | null>(null)
+  const [searchNavigationActive, setSearchNavigationActive] = useState(searchNavigationRequested)
   const extActive = !!(scrollToEntryUuid || scrollToMatchTs)
   const onResolvedRef = useRef(onScrollResolved)
   onResolvedRef.current = onScrollResolved
   const storeRef = useRef(store)
   storeRef.current = store
+  useEffect(() => {
+    if (searchNavigationRequested) setSearchNavigationActive(true)
+  }, [searchNavigationRequested])
+
+  const finishSearchNavigation = () => {
+    setSearchNavigationActive(false)
+    onResolvedRef.current?.()
+  }
+
   useEffect(() => {
     if (!extActive) { setExtTarget(null); setExtFocusLineNo(null); return }
     if (initialLoading) { setExtTarget(null); return }
@@ -331,7 +345,7 @@ export function JsonlView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extActive, scrollToEntryUuid, scrollToMatchTs, initialLoading, snapshot.rev])
 
-  const activeTarget = extTarget ?? internalTarget
+  const activeTarget = (searchNavigationActive ? extTarget : null) ?? internalTarget
 
   const renderBlocks = useMemo<JsonlRenderBlock[]>(() => {
     const blocks: JsonlRenderBlock[] = rounds.map((r, index) => ({
@@ -428,7 +442,8 @@ export function JsonlView({
         // Keep the owning group highlighted even when the exact card is still loading
         // (or the target only resolved to group metadata). The card itself is marked once
         // extFocusLineNo is known.
-        forceOpen={block.key === extTarget?.key}
+        forceOpen={searchNavigationActive && block.key === extTarget?.key}
+        searchHighlighted={block.key === extTarget?.key}
         showMeta={showMeta}
         toolStatusMap={entries ? toolStatusMapFor(entries) : null}
         collapseLineNos={entries ? collapsedLineNosFor(entries, r.round.items) : undefined}
@@ -489,23 +504,26 @@ export function JsonlView({
         blocks={renderBlocks}
         renderBlock={renderBlock}
         scrollToKey={activeTarget?.key ?? null}
-        scrollToEntryLineNo={extFocusLineNo}
+        scrollToEntryLineNo={searchNavigationActive ? extFocusLineNo : null}
         scrollOffset={activeTarget?.offset ?? 0}
         onScrollToKeyDone={() => {
-          if (extTarget && extFocusLineNo !== null) return
-          if (extTarget) {
+          if (searchNavigationActive && extTarget && extFocusLineNo !== null) return
+          if (searchNavigationActive && extTarget) {
             // URL cleanup must not clear the visual target: SessionJsonlPanel retains it
             // for the lifetime of this history store, so loading/reflow cannot make the
             // red group/card treatment disappear.
-            onResolvedRef.current?.()
+            finishSearchNavigation()
             return
           }
           setInternalTarget(null)
         }}
         onScrollToEntryDone={() => {
-          if (!extTarget || extFocusLineNo === null) return
-          onResolvedRef.current?.()
+          if (!searchNavigationActive || !extTarget || extFocusLineNo === null) return
+          finishSearchNavigation()
           setInternalTarget(null)
+        }}
+        onNavigationCancel={() => {
+          if (searchNavigationActive) finishSearchNavigation()
         }}
       />
     </div>

@@ -220,6 +220,7 @@ function SessionJsonlPanelInner({
                 showMeta={showJsonlMeta}
                 scrollToEntryUuid={effectiveScrollToEntryUuid}
                 scrollToMatchTs={effectiveScrollToMatchTs}
+                searchNavigationRequested={!!(scrollToEntryUuid || scrollToMatchTs)}
                 onScrollResolved={onMatchScrollResolved}
                 onPauseToDequeue={onPauseToDequeue}
               />

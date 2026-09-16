@@ -78,6 +78,7 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   scrollOffset = 0,
   onScrollToKeyDone,
   onScrollToEntryDone,
+  onNavigationCancel,
 }: {
   blocks: TBlock[]
   renderBlock: (block: TBlock) => ReactNode
@@ -93,6 +94,8 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   onScrollToKeyDone?: () => void
   // 具体条目已实际挂载并完成精确滚动时触发。搜索定位以此为完成点，不能只按轮次到位计时。
   onScrollToEntryDone?: () => void
+  // 用户主动滚动、触摸或按下指针时停止自动定位，把视野控制权立即还给用户。
+  onNavigationCancel?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   // scrollToKey 的滚动用 root: 两条渲染路径 (虚拟/非虚拟) 都挂这个 ref, 使跳转逻辑统一.
@@ -107,6 +110,25 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   onScrollToKeyDoneRef.current = onScrollToKeyDone
   const onScrollToEntryDoneRef = useRef(onScrollToEntryDone)
   onScrollToEntryDoneRef.current = onScrollToEntryDone
+  const onNavigationCancelRef = useRef(onNavigationCancel)
+  onNavigationCancelRef.current = onNavigationCancel
+
+  useEffect(() => {
+    if (!scrollToKey) return
+    const root = scrollRootRef.current
+    if (!root) return
+    const scrollParent = findScrollParent(root)
+    if (!scrollParent) return
+    const cancel = () => onNavigationCancelRef.current?.()
+    scrollParent.addEventListener('wheel', cancel, { passive: true })
+    scrollParent.addEventListener('touchstart', cancel, { passive: true })
+    scrollParent.addEventListener('pointerdown', cancel, { passive: true })
+    return () => {
+      scrollParent.removeEventListener('wheel', cancel)
+      scrollParent.removeEventListener('touchstart', cancel)
+      scrollParent.removeEventListener('pointerdown', cancel)
+    }
+  }, [scrollToKey])
 
   useEffect(() => {
     const root = rootRef.current

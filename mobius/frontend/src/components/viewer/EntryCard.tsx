@@ -168,11 +168,13 @@ function resolveDesiredOpen(opts: {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCollapse = false, showMeta = true, dense = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
   entry: AnyEntry
   lineNo?: number
   // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
   forceOpen?: boolean
+  // 红色搜索命中标记独立于 forceOpen；自动定位结束后仍醒目，但不再干预用户折叠。
+  searchHighlighted?: boolean
   // parentOrderedCollapse: 上下文折叠规则命中的卡片 (forgotten-flag 收尾链路 / 加密 reasoning) —
   // 默认折叠, 压过本地展开条件, 但被 forceOpen 压过. 用户仍可手动展开 (onToggle 写回 state, userToggledRef 阻止自动掀开).
   parentOrderedCollapse?: boolean
@@ -396,9 +398,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, parentOrderedCol
       data-density={dense ? 'dense' : undefined}
       open={open}
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
-      data-search-hit={forceOpen ? 'true' : undefined}
-      aria-label={forceOpen ? '搜索命中条目' : undefined}
-      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${forceOpen ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
+      data-search-hit={searchHighlighted ? 'true' : undefined}
+      aria-label={searchHighlighted ? '搜索命中条目' : undefined}
+      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
       <summary className={`jsonl-entry-summary cursor-pointer ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
@@ -584,5 +586,5 @@ function toolResultsEqual(a: BashToolResult[] | undefined, b: BashToolResult[] |
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && contentEqual(prev.taskPlan, next.taskPlan, 4),
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.searchHighlighted === next.searchHighlighted && contentEqual(prev.taskPlan, next.taskPlan, 4),
 )

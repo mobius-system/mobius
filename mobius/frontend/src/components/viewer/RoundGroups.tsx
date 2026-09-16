@@ -31,13 +31,14 @@ function toolStatusOf(entry: AnyEntry, map: ToolStatusMap | null | undefined): T
   return status
 }
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, parentOrderedCollapse = false, showMeta = true, dense = false, toolStatus, taskPlans }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, toolStatus, taskPlans }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   // forceOpen: 搜索命中该卡, 透传给 JsonEntryCard 强制展开.
   forceOpen?: boolean
+  searchHighlighted?: boolean
   // parentOrderedCollapse: 上下文折叠规则命中的卡片, 透传给 JsonEntryCard 默认折叠 (用户仍可手动展开).
   parentOrderedCollapse?: boolean
   showMeta?: boolean
@@ -60,7 +61,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   const uuid = typeof entry?.uuid === 'string' ? entry.uuid : null
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} bashResults={bashResults} readResults={readResults} toolStatus={toolStatus} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} searchHighlighted={searchHighlighted} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} bashResults={bashResults} readResults={readResults} toolStatus={toolStatus} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
@@ -68,7 +69,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
 
 // 探索类工具聚合容器: 把连续的只读/搜索调用折叠成 "已探索 N 个工具" 一行 (Cursor 式).
 // 含失败调用时默认展开并标红, 摘要行带错误标记 (折叠也不能藏起错误); 展开后逐条渲染子卡片.
-export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, taskPlans }: {
+export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, forceFocusOpen = false, taskPlans }: {
   items: RoundItem[]
   hasError: boolean
   showMeta?: boolean
@@ -76,6 +77,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusM
   collapseLineNos?: Set<number>
   // 搜索命中卡可能被聚合在“探索”组内；组本身也必须打开，子卡才有机会展开/滚到。
   focusLineNo?: number | null
+  forceFocusOpen?: boolean
   taskPlans?: TaskPlanByUuid | null
 }) {
   const containsFocus = typeof focusLineNo === 'number' && items.some(item => item.lineNo === focusLineNo)
@@ -106,7 +108,8 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusM
               readResults={item.readResults}
               showMeta={showMeta}
               toolStatus={toolStatusOf(item.entry, toolStatusMap)}
-              forceOpen={item.lineNo === focusLineNo}
+              forceOpen={forceFocusOpen && item.lineNo === focusLineNo}
+              searchHighlighted={item.lineNo === focusLineNo}
               parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
               taskPlans={taskPlans}
             />
@@ -171,16 +174,19 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
 // 自动规则: 用户没插手过 (sticky=false) 时跟随"末两轮展开"自动开合;
 // 用户点过一次后 sticky=true, 自动规则永不再接管. 展开即加载由 store 状态机保证.
 // memo: 未收数据的组全部 prop 身份稳定 (round 缓存 + 回调缓存 + map 缓存), 整组跳过重渲染.
-function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky = false, loading = false, failed = false, resident = false, onUserToggle, onAutoOpen, onAutoClose, onRetry, forceOpen = false, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, headerPalette, taskPlans, headerTitle, headerSummary }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; open: boolean; sticky?: boolean; loading?: boolean; failed?: boolean; resident?: boolean; onUserToggle: () => void; onAutoOpen: () => void; onAutoClose: () => void; onRetry: () => void; forceOpen?: boolean; showMeta?: boolean; toolStatusMap?: ToolStatusMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null; headerTitle?: string; headerSummary?: string }) {
+function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky = false, loading = false, failed = false, resident = false, onUserToggle, onAutoOpen, onAutoClose, onRetry, forceOpen = false, searchHighlighted = false, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, headerPalette, taskPlans, headerTitle, headerSummary }: { round: Round; isLast: boolean; isSecondLast: boolean; onlyGroup: boolean; open: boolean; sticky?: boolean; loading?: boolean; failed?: boolean; resident?: boolean; onUserToggle: () => void; onAutoOpen: () => void; onAutoClose: () => void; onRetry: () => void; forceOpen?: boolean; searchHighlighted?: boolean; showMeta?: boolean; toolStatusMap?: ToolStatusMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null; headerTitle?: string; headerSummary?: string }) {
   const autoOpen = isLast || isSecondLast
   // 自动开合同步: store 状态落后于期望态时推一把 (首次挂载/轮次升跌时).
   useEffect(() => {
     // 搜索命中是显式导航，必须压过此前把该轮锁定为 sticky/closed 的状态。
     if (forceOpen) { if (!open) onAutoOpen(); return }
+    // 自动定位结束后只保留红色标记与当前开合状态；用户可以自行折叠，
+    // 也不会被“旧轮次自动关闭”规则立刻收回去。
+    if (searchHighlighted) return
     if (sticky) return
     if (onlyGroup || autoOpen) { if (!open) onAutoOpen(); return }
     if (open) onAutoClose()
-  }, [sticky, autoOpen, onlyGroup, forceOpen, open, onAutoOpen, onAutoClose])
+  }, [sticky, autoOpen, onlyGroup, forceOpen, searchHighlighted, open, onAutoOpen, onAutoClose])
   // 首帧防闪: store 还没来得及转移时, 按"应展开"先行绘制 (视觉态), effect 随后对齐真实态.
   const openVisual = open || forceOpen || (!sticky && (onlyGroup || autoOpen))
 
@@ -202,17 +208,17 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
         data-round-header-palette={headerPalette.id}
         aria-keyshortcuts="Control+Shift+K"
         title={`轮次背景：${headerPalette.name} · Ctrl+Shift+K 切换`}
-        data-search-hit-group={forceOpen ? 'true' : undefined}
-        className={`round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${forceOpen ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
+        data-search-hit-group={searchHighlighted ? 'true' : undefined}
+        className={`round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
         style={{
           '--round-header-background': headerPalette.background,
           '--round-header-background-size': headerPalette.backgroundSize,
           // round-group-trigger 的基础 CSS 会从这些变量写入 border-color；命中态
           // 用变量覆盖而不是只依赖 Tailwind border 类，确保不会被基础样式盖掉。
-          '--round-header-border': forceOpen ? 'rgba(239,68,68,0.95)' : headerPalette.border,
-          '--round-header-border-hover': forceOpen ? 'rgba(248,113,113,1)' : headerPalette.borderHover,
-          '--round-header-accent': forceOpen ? 'rgba(239,68,68,1)' : headerPalette.accent,
-          boxShadow: forceOpen
+          '--round-header-border': searchHighlighted ? 'rgba(239,68,68,0.95)' : headerPalette.border,
+          '--round-header-border-hover': searchHighlighted ? 'rgba(248,113,113,1)' : headerPalette.borderHover,
+          '--round-header-accent': searchHighlighted ? 'rgba(239,68,68,1)' : headerPalette.accent,
+          boxShadow: searchHighlighted
             ? 'inset 3px 0 0 rgba(239,68,68,1), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(239,68,68,0.24), 0 0 22px rgba(239,68,68,0.3)'
             : undefined,
         } as CSSProperties}
@@ -225,7 +231,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
           {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
           {openVisual ? '' : (userSummary || '(空)')}
         </span>
-        {forceOpen && (
+        {searchHighlighted && (
           <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
             <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
             搜索命中
@@ -277,7 +283,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
                 <div key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`} className="flex items-start gap-1.5">
                   <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                   <div className="flex-1 min-w-0">
-                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} taskPlans={taskPlans} />
+                    <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
                   </div>
                 </div>
               )
@@ -300,7 +306,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
                       readResults={item.readResults}
                       showMeta={showMeta}
                       toolStatus={toolStatusOf(item.entry, toolStatusMap)}
-                      forceOpen={item.lineNo === focusLineNo}
+                      forceOpen={forceOpen && item.lineNo === focusLineNo}
+                      searchHighlighted={item.lineNo === focusLineNo}
                       parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
                       taskPlans={taskPlans}
                     />
