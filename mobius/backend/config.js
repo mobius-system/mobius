@@ -119,6 +119,31 @@ function backendNameForModel(modelOrKey) {
   return key ? MODEL_OPTIONS[key].backend : DEFAULT_AGENT_BACKEND;
 }
 
+const FORGOTTEN_FLAG_GUIDANCE =
+  'It seems that the running flag is still present, did you encounter any problems? ' +
+  '(1) If you cannot solve the problem, please run `declare_job_failed <session_or_agent_id> "failure reason"` to write `failed.flag` and remove `running.flag`. ' +
+  '(2) If you have already finished the job and forgot about the flag, run `declare_job_done <session_or_agent_id>`. ' +
+  '(3) If you are waiting for some callback or schedule, just state what you are waiting for and keep waiting.';
+const DEFAULT_FORGOTTEN_FLAG_MESSAGE =
+  `[A message that comes from the system, not the user]: ${FORGOTTEN_FLAG_GUIDANCE}`;
+const LEGACY_FORGOTTEN_FLAG_GUIDANCE =
+  'It seems that the running flag is still present; did you encounter any problems? ' +
+  '(1) If you cannot solve the problem, please delete `running.flag` and add a `failed.flag`. ' +
+  '(2) If you have already finished the job and forgot about the flag, delete it. ' +
+  '(3) If you are waiting for some callback or schedule, just state what you are waiting for and keep waiting.';
+const LEGACY_FORGOTTEN_FLAG_MESSAGES = Object.freeze([
+  LEGACY_FORGOTTEN_FLAG_GUIDANCE,
+  `[A message that comes from the system, not the user]: ${LEGACY_FORGOTTEN_FLAG_GUIDANCE}`,
+  LEGACY_FORGOTTEN_FLAG_GUIDANCE.replace('present;', 'present,'),
+  `[A message that comes from the system, not the user]: ${LEGACY_FORGOTTEN_FLAG_GUIDANCE.replace('present;', 'present,')}`,
+]);
+
+function normalizeForgottenFlagMessage(value) {
+  const message = String(value ?? '');
+  const legacy = LEGACY_FORGOTTEN_FLAG_MESSAGES.find((candidate) => message.startsWith(candidate));
+  return legacy ? DEFAULT_FORGOTTEN_FLAG_MESSAGE + message.slice(legacy.length) : message;
+}
+
 module.exports = {
   PORT: parseInt(process.env.MOBIUS_PORT || '45614', 10),
   AGENT_TMUX_SOCKET,
@@ -207,12 +232,9 @@ module.exports = {
   // forgotten-flag-scanner 检测到 "agent 停工但 running.flag 未删" 时, 自动发给
   // 该 session 的默认提醒文案 (单一真相源). 项目可在设置里用 forgotten_flag_message
   // 覆盖; 前端把本文案预填进输入框, 清空保存 → 存 NULL → scanner 仍回退到这里.
-  DEFAULT_FORGOTTEN_FLAG_MESSAGE:
-    '[A message that comes from the system, not the user]: ' +
-    'It seems that the running flag is still present, did you encounter any problems? ' +
-    '(1) If you cannot solve the problem, please run `declare_job_failed <session_or_agent_id> "failure reason"` to write `failed.flag` and remove `running.flag`. ' +
-    '(2) If you have already finished the job and forgot about the flag, run `declare_job_done <session_or_agent_id>`. ' +
-    '(3) If you are waiting for some callback or schedule, just state what you are waiting for and keep waiting.',
+  DEFAULT_FORGOTTEN_FLAG_MESSAGE,
+  LEGACY_FORGOTTEN_FLAG_MESSAGES,
+  normalizeForgottenFlagMessage,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES: 10,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES: 30,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF: 2,

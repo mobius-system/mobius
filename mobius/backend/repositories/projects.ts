@@ -2,6 +2,7 @@ import { db } from '../../db';
 import {
   APP_DIR,
   DEFAULT_FORGOTTEN_FLAG_MESSAGE,
+  normalizeForgottenFlagMessage,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
@@ -163,7 +164,7 @@ function hydrate(row: ProjectRawRowWithExtras | null | undefined): ProjectRow | 
     // 前端用它预填输入框 (单一真相源在 config.DEFAULT_FORGOTTEN_FLAG_MESSAGE).
     forgotten_flag_message_effective:
       (typeof row.forgotten_flag_message === 'string' && row.forgotten_flag_message.trim())
-        ? row.forgotten_flag_message
+        ? normalizeForgottenFlagMessage(row.forgotten_flag_message)
         : DEFAULT_FORGOTTEN_FLAG_MESSAGE,
     forgotten_flag_issue_interval_minutes: issueInit,
     forgotten_flag_research_interval_minutes: researchInit,

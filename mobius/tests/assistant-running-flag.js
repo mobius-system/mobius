@@ -15,6 +15,12 @@ process.env.LOCAL_WORKSPACE_ROOT = path.join(tempRoot, 'local')
 
 const { db } = require('../db')
 const { Sessions } = require('../backend/repositories/sessions')
+const { Projects } = require('../backend/repositories/projects')
+const {
+  DEFAULT_FORGOTTEN_FLAG_MESSAGE,
+  LEGACY_FORGOTTEN_FLAG_MESSAGES,
+  normalizeForgottenFlagMessage,
+} = require('../backend/config')
 const { buildSessionContext } = require('../backend/services/session-context')
 const { safeWriteRunningFlag, readRunningFlag } = require('../backend/utils/session-flags')
 const { scanOnce, LOG_FILE } = require('../backend/services/forgotten-flag-scanner')
@@ -117,6 +123,20 @@ function assertContext() {
   assert.match(assistant, /小莫对话/, 'assistant context should still include the issue context')
 }
 
+function assertLegacyReminderNormalization() {
+  const legacy = LEGACY_FORGOTTEN_FLAG_MESSAGES[0]
+  assert.strictEqual(normalizeForgottenFlagMessage(legacy), DEFAULT_FORGOTTEN_FLAG_MESSAGE)
+  assert.strictEqual(
+    normalizeForgottenFlagMessage(`${legacy}\n\nProject-specific suffix.`),
+    `${DEFAULT_FORGOTTEN_FLAG_MESSAGE}\n\nProject-specific suffix.`,
+  )
+  assert.strictEqual(normalizeForgottenFlagMessage('fully custom reminder'), 'fully custom reminder')
+
+  run('UPDATE projects SET forgotten_flag_message = ? WHERE id = ?', legacy, 'p-test')
+  const project = Projects.findById('p-test')
+  assert.strictEqual(project.forgotten_flag_message_effective, DEFAULT_FORGOTTEN_FLAG_MESSAGE)
+}
+
 async function assertScannerExemption(repoRoot) {
   safeWriteRunningFlag(repoRoot, 's-normal', { backend: 'test' }, 'assistant-running-flag-test')
   safeWriteRunningFlag(repoRoot, 's-assist', { backend: 'test' }, 'assistant-running-flag-test')
@@ -148,6 +168,7 @@ async function main() {
   initGitRepo(repoRoot)
   insertFixtures(repoRoot)
   assertContext()
+  assertLegacyReminderNormalization()
   assertRunningFlagInstanceStable(repoRoot)
   await assertScannerExemption(repoRoot)
   console.log('assistant-running-flag: ok')

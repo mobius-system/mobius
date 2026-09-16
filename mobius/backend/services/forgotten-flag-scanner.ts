@@ -34,6 +34,7 @@ import { db } from '../../db';
 import {
   APP_DIR,
   DEFAULT_FORGOTTEN_FLAG_MESSAGE,
+  normalizeForgottenFlagMessage,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
@@ -598,7 +599,7 @@ async function maybeNotify(f: any): Promise<string> {
   // 3) 解析消息: 项目配置优先, 空则用默认.
   const projMsg = (typeof s.forgotten_flag_message === 'string' && s.forgotten_flag_message.trim())
     ? s.forgotten_flag_message : null;
-  const messageTemplate = projMsg || DEFAULT_FORGOTTEN_FLAG_MESSAGE;
+  const messageTemplate = normalizeForgottenFlagMessage(projMsg || DEFAULT_FORGOTTEN_FLAG_MESSAGE);
   // Project/default messages may use the documented placeholder; reminders sent
   // to a concrete Session must contain an executable command with its real ID.
   const message = messageTemplate

@@ -16,6 +16,8 @@ import {
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE,
+  LEGACY_FORGOTTEN_FLAG_MESSAGES,
+  normalizeForgottenFlagMessage,
 } from './backend/config';
 
 console.log(`[mobius/db] using shared SQLite at: ${DB_PATH}`);
@@ -976,6 +978,27 @@ function migrateProjectsForgottenFlagMessage() {
     if (!cols.includes('forgotten_flag_message')) {
       db.exec('ALTER TABLE projects ADD COLUMN forgotten_flag_message TEXT');
       console.log('[mobius/db] migrate: projects.forgotten_flag_message 已加 (NULL=用默认文案)');
+    }
+    const legacyMessages = new Set(LEGACY_FORGOTTEN_FLAG_MESSAGES.map((message: string) => message.trim()));
+    const rows = db.prepare(`
+      SELECT id, forgotten_flag_message
+      FROM projects
+      WHERE forgotten_flag_message IS NOT NULL AND trim(forgotten_flag_message) <> ''
+    `).all() as Array<{ id: string; forgotten_flag_message: string }>;
+    const update = db.prepare('UPDATE projects SET forgotten_flag_message = ? WHERE id = ?');
+    let migrated = 0;
+    const migrate = db.transaction(() => {
+      for (const row of rows) {
+        const current = row.forgotten_flag_message;
+        const normalized = normalizeForgottenFlagMessage(current);
+        if (normalized === current) continue;
+        update.run(legacyMessages.has(current.trim()) ? null : normalized, row.id);
+        migrated += 1;
+      }
+    });
+    migrate();
+    if (migrated > 0) {
+      console.log(`[mobius/db] migrate: ${migrated} project(s) upgraded from legacy forgotten-flag guidance`);
     }
   } catch (e) {
     console.warn('[mobius/db] ⚠️  projects forgotten_flag_message 迁移失败:', e.message);
