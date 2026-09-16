@@ -182,6 +182,14 @@ if (!blackboardPrompt.includes('禁止轮询，有更新时系统会通知你')
   console.log('  ok   research prompt includes no-polling and explicit targeted-write guidance')
 }
 
+const completionPrompt = researchPrompt
+if (!completionPrompt.includes('declare_job_done c1524307') || !completionPrompt.includes('declare_job_failed c1524307')) {
+  failures += 1
+  console.log('  FAIL completion prompt does not contain concrete success/failure CLI commands')
+} else {
+  console.log('  ok   completion prompt contains concrete declare_job_done and declare_job_failed commands')
+}
+
 // ── 自洽性: 每个块的 build 输出首行必须命中自身 pattern ──────────────────────
 const { SESSION_SECTIONS } = require('../backend/services/session-context-sections')
 let selfCheckFailures = 0

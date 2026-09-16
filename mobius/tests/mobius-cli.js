@@ -49,7 +49,7 @@ async function main() {
   assert.strictEqual(install.status, 0, install.stderr);
   assert.strictEqual(fs.readFileSync(path.join(binDir, '.mobius-cli-app-dir'), 'utf8').trim(), path.resolve(mobiusRoot, '..'));
   fs.writeFileSync(path.join(binDir, '.mobius-cli-app-dir'), `${appDir}\n`);
-  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done', 'research_blackboard_read', 'research_blackboard_write', '.research_blackboard_cli']) {
+  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done', 'declare_job_failed', 'research_blackboard_read', 'research_blackboard_write', '.research_blackboard_cli']) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755);
   }
 
@@ -66,6 +66,11 @@ async function main() {
   assert.strictEqual(run(path.join(binDir, 'declare_job_done'), []).status, 2);
   assert.strictEqual(run(path.join(binDir, 'declare_job_done'), ['../escape']).status, 2);
   assert.strictEqual(run(path.join(binDir, 'declare_job_done'), ['a/b']).status, 2);
+
+  const failedHelp = run(path.join(binDir, 'declare_job_failed'), ['--help']);
+  assert.strictEqual(failedHelp.status, 0, failedHelp.stderr);
+  assert.match(failedHelp.stdout, /failure_reason/);
+  assert.strictEqual(run(path.join(binDir, 'declare_job_failed'), ['session-123']).status, 2);
 
   const cliDbPath = path.join(appDir, 'cli.db');
   const projectRoot = path.join(tempRoot, 'project-root');
@@ -121,6 +126,15 @@ async function main() {
   });
   assert.strictEqual(doneDefault.status, 0, doneDefault.stderr);
   assert.strictEqual(fs.existsSync(path.join(defaultFlagDir, 'running.flag')), false);
+
+  fs.writeFileSync(path.join(defaultFlagDir, 'running.flag'), 'session=session-default\n');
+  const failedDefault = run(path.join(binDir, 'declare_job_failed'), ['session-default', 'build', 'failed\nwith details'], {
+    env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },
+  });
+  assert.strictEqual(failedDefault.status, 0, failedDefault.stderr);
+  assert.match(failedDefault.stdout, /Job declared failed/);
+  assert.strictEqual(fs.existsSync(path.join(defaultFlagDir, 'running.flag')), false);
+  assert.match(fs.readFileSync(path.join(defaultFlagDir, 'failed.flag'), 'utf8'), /reason=build failed\\nwith details/);
 
   const unknownDone = run(path.join(binDir, 'declare_job_done'), ['unknown-session'], {
     env: { APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', DB_PATH: '', MOBIUS_DATA_PATH: '', MOBIUS_HIDDEN_FOLDER_NAME: '' },

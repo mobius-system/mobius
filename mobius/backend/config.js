@@ -210,8 +210,8 @@ module.exports = {
   DEFAULT_FORGOTTEN_FLAG_MESSAGE:
     '[A message that comes from the system, not the user]: ' +
     'It seems that the running flag is still present, did you encounter any problems? ' +
-    '(1) If you cannot solve the problem, please delete `running.flag` and add a `failed.flag`. ' +
-    '(2) If you have already finished the job and forgot about the flag, delete it. ' +
+    '(1) If you cannot solve the problem, please run `declare_job_failed <session_or_agent_id> "failure reason"` to write `failed.flag` and remove `running.flag`. ' +
+    '(2) If you have already finished the job and forgot about the flag, run `declare_job_done <session_or_agent_id>`. ' +
     '(3) If you are waiting for some callback or schedule, just state what you are waiting for and keep waiting.',
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES: 10,
   DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES: 30,

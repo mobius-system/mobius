@@ -109,6 +109,7 @@ function assertContext() {
   const assistant = buildSessionContext(user, 's-assist').body
 
   assert.match(normal, /declare_job_done s-normal/, 'normal session should include the completion command')
+  assert.match(normal, /declare_job_failed s-normal/, 'normal session should include the failure command')
   assert.doesNotMatch(normal, /flags\/s-normal\/running\.flag/, 'normal session should not expose the flag path')
   assert.doesNotMatch(assistant, /declare_job_done/, 'assistant session context must not mention the completion command')
   assert.doesNotMatch(assistant, /running\.flag/, 'assistant session context must not mention running.flag')

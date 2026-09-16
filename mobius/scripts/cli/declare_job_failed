@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# declare_job_failed - mark a Mobius Session job failed and remove its running.flag.
+set -euo pipefail
+
+prog="$(basename "$0")"
+
+usage() {
+  cat <<USAGE
+Usage: $prog <session_or_agent_id> <failure_reason...>
+
+  Resolve a Mobius Session (by Mobius Session ID or backend Agent ID), write a
+  failed.flag containing the reason, and remove that Session's running.flag.
+  The operation is idempotent and replaces any previous failure record.
+
+Options:
+  -h, --help    show this help and exit
+
+Environment:
+  MOBIUS_APP_DIR  override the Mobius APP_DIR (default: APP_DIR from the shell,
+                  otherwise the installation marker or source repository)
+  MOBIUS_ROOT     legacy Mobius package root (APP_DIR/mobius)
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+if [[ $# -lt 2 || -z "$1" ]]; then
+  usage >&2
+  exit 2
+fi
+
+job_id="$1"
+shift
+reason="$*"
+if [[ ! "$job_id" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]]; then
+  echo "Input error: session_or_agent_id may contain only letters, digits, '_' and '-' (1-128 characters)" >&2
+  exit 2
+fi
+if [[ -z "${reason//[[:space:]]/}" ]]; then
+  echo "Input error: failure_reason must not be empty" >&2
+  exit 2
+fi
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+APP_DIR="${MOBIUS_APP_DIR:-${APP_DIR:-}}"
+if [[ -z "$APP_DIR" && -n "${MOBIUS_ROOT:-}" ]]; then
+  APP_DIR="$(cd -- "$MOBIUS_ROOT/.." 2>/dev/null && pwd -P || true)"
+fi
+if [[ -z "$APP_DIR" && -f "$SCRIPT_DIR/.mobius-cli-app-dir" ]]; then
+  IFS= read -r APP_DIR < "$SCRIPT_DIR/.mobius-cli-app-dir" || true
+fi
+if [[ -z "$APP_DIR" ]]; then
+  source_app_dir="$(cd -- "$SCRIPT_DIR/../../.." 2>/dev/null && pwd -P || true)"
+  if [[ -f "$source_app_dir/.env" ]]; then APP_DIR="$source_app_dir"; fi
+fi
+if [[ -z "$APP_DIR" ]]; then
+  echo "Configuration error: APP_DIR is unavailable; set MOBIUS_APP_DIR or reinstall the CLI" >&2
+  exit 3
+fi
+requested_app_dir="$APP_DIR"
+APP_DIR="$(cd -- "$requested_app_dir" 2>/dev/null && pwd -P)" || {
+  echo "Configuration error: APP_DIR does not exist: $requested_app_dir" >&2
+  exit 3
+}
+ENV_FILE="$APP_DIR/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Configuration error: required environment file is missing: $ENV_FILE" >&2
+  exit 3
+fi
+if [[ ! -r "$ENV_FILE" ]]; then
+  echo "Configuration error: environment file is not readable: $ENV_FILE" >&2
+  exit 3
+fi
+
+python3 - "$APP_DIR" "$job_id" "$reason" <<'PY'
+from __future__ import annotations
+
+import os
+import re
+import sqlite3
+import sys
+from pathlib import Path
+
+
+def fail(message: str, code: int) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def parse_env_value(raw: str) -> str:
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return re.split(r"\s+#", value, maxsplit=1)[0].strip()
+
+
+def read_env(env_path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        lines = env_path.read_text(encoding='utf-8').splitlines()
+    except OSError as exc:
+        fail(f"Configuration error: cannot read {env_path}: {exc}", 3)
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('export '):
+            line = line[len('export '):].strip()
+        match = re.fullmatch(r'([A-Za-z_][A-Za-z0-9_]*)=(.*)', line)
+        if match:
+            values[match.group(1)] = parse_env_value(match.group(2))
+    return values
+
+
+app_dir = Path(sys.argv[1]).resolve()
+requested_id = sys.argv[2]
+reason = sys.argv[3]
+env_values = read_env(app_dir / '.env')
+
+
+def setting(name: str, default: str = '') -> str:
+    return os.environ.get(name) or env_values.get(name) or default
+
+
+hidden_name = setting('MOBIUS_HIDDEN_FOLDER_NAME', '.mobius')
+if (not hidden_name or len(hidden_name) > 128 or hidden_name in {'.', '..'}
+        or not re.fullmatch(r'[A-Za-z0-9._-]+', hidden_name)):
+    fail('Configuration error: MOBIUS_HIDDEN_FOLDER_NAME must be a safe directory name', 3)
+
+db_value = setting('DB_PATH')
+if not db_value:
+    db_value = str(Path(setting('MOBIUS_DATA_PATH', '/data')) / 'mobuis.db')
+db_path = Path(db_value).expanduser()
+if not db_path.is_absolute():
+    db_path = app_dir / db_path
+db_path = db_path.resolve()
+if not db_path.is_file():
+    fail(f'Configuration error: Mobius database does not exist: {db_path}', 3)
+
+connection: sqlite3.Connection | None = None
+try:
+    connection = sqlite3.connect(f'{db_path.as_uri()}?mode=ro', uri=True, timeout=5)
+    connection.row_factory = sqlite3.Row
+    columns = {row[1] for row in connection.execute('PRAGMA table_info(sessions_v2)').fetchall()}
+    if not columns:
+        fail(f'Configuration error: sessions_v2 is missing from {db_path}', 3)
+    exact = connection.execute(
+        '''SELECT s.session_id, p.bind_path FROM sessions_v2 AS s
+           LEFT JOIN projects AS p ON p.id = s.project_id WHERE s.session_id = ?''',
+        (requested_id,),
+    ).fetchone()
+    if exact is not None:
+        row = exact
+    elif 'agent_session_id' in columns or 'claude_session_id' in columns:
+        agent_column = 'agent_session_id' if 'agent_session_id' in columns else 'claude_session_id'
+        matches = connection.execute(
+            f'''SELECT s.session_id, p.bind_path FROM sessions_v2 AS s
+                LEFT JOIN projects AS p ON p.id = s.project_id
+                WHERE s.{agent_column} = ? LIMIT 2''',
+            (requested_id,),
+        ).fetchall()
+        if len(matches) > 1:
+            fail(f'Lookup error: Agent ID is associated with multiple Sessions: {requested_id}', 4)
+        row = matches[0] if matches else None
+    else:
+        row = None
+except sqlite3.Error as exc:
+    fail(f'Configuration error: cannot query Mobius database {db_path}: {exc}', 3)
+finally:
+    if connection is not None:
+        connection.close()
+
+if row is None:
+    fail(f'Lookup error: no Mobius Session found for ID: {requested_id}', 4)
+
+session_id = str(row['session_id'] or '')
+if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', session_id):
+    fail('Safety error: resolved Session ID is not safe for a flag path', 5)
+bind_path = str(row['bind_path'] or '').strip()
+if not bind_path:
+    fail(f'Configuration error: Session {session_id} has no project bind_path', 3)
+project_root = Path(bind_path).expanduser()
+if not project_root.is_absolute():
+    project_root = app_dir / project_root
+project_root = project_root.resolve()
+flag_parent = project_root / hidden_name / 'flags' / session_id
+running_path = flag_parent / 'running.flag'
+failed_path = flag_parent / 'failed.flag'
+
+try:
+    resolved_parent = flag_parent.resolve(strict=False)
+    resolved_parent.relative_to(project_root)
+except (OSError, ValueError) as exc:
+    fail(f'Safety error: flag directory escapes the project bind_path: {exc}', 5)
+
+flag_parent.mkdir(parents=True, exist_ok=True)
+encoded_reason = reason.replace('\r', '').replace('\n', '\\n')[:2000]
+if failed_path.is_symlink():
+    fail(f'Safety error: failed.flag is a symbolic link: {failed_path}', 5)
+failed_path.write_text(
+    f'session={session_id}\nfailedAt={__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")}\nreason={encoded_reason}\n',
+    encoding='utf-8',
+)
+try:
+    running_path.unlink(missing_ok=True)
+except OSError as exc:
+    fail(f'Operation error: cannot remove {running_path}: {exc}', 5)
+print(f'Job declared failed: wrote failed.flag and removed running.flag for Session {session_id}')
+PY

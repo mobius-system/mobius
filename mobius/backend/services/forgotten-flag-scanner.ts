@@ -598,7 +598,12 @@ async function maybeNotify(f: any): Promise<string> {
   // 3) 解析消息: 项目配置优先, 空则用默认.
   const projMsg = (typeof s.forgotten_flag_message === 'string' && s.forgotten_flag_message.trim())
     ? s.forgotten_flag_message : null;
-  const message = projMsg || DEFAULT_FORGOTTEN_FLAG_MESSAGE;
+  const messageTemplate = projMsg || DEFAULT_FORGOTTEN_FLAG_MESSAGE;
+  // Project/default messages may use the documented placeholder; reminders sent
+  // to a concrete Session must contain an executable command with its real ID.
+  const message = messageTemplate
+    .replaceAll('<session_or_agent_id>', sid)
+    .replaceAll('<session_id>', sid);
   const msgSrc = projMsg ? 'project-config' : 'default';
 
   // 4) 解析 workspace (拿 cwd/flagRoot 供 backend "进程不在则 spawn"). 失败则

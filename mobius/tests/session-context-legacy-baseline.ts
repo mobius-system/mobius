@@ -239,7 +239,7 @@ function zh_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push(isAssistantSession(session)
     ? '### 任务完成时 (成功或失败)'
-    : '### 任务完成时 (成功或失败, 在运行下方 declare_job_done 之前必须做)');
+    : '### 任务完成时 (成功或失败, 在运行下方命令之前必须做)');
   lines.push(`把分支 \`${wt.branch}\` 合并到 \`agent_smart_dev\` 分支:`);
   lines.push('');
   lines.push('```bash');
@@ -260,7 +260,7 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   lines.push('## 当任务完成时的最后一步');
-  lines.push(`当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${session.session_id}\` 删除 running.flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
+  lines.push(`当任务最终成功时，运行 \`declare_job_done ${session.session_id}\` 删除 running.flag 文件；当任务最终失败时，运行 \`declare_job_failed ${session.session_id} "失败原因"\` 写入 failed.flag 并删除 running.flag。不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
 }
 
 function zh_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -451,7 +451,7 @@ function en_add_worktree_info(lines: string[], issue: any, project: any, session
   lines.push('');
   lines.push(isAssistantSession(session)
     ? '### When the task is done (success or failure)'
-    : '### When the task is done (success or failure, must do this before running declare_job_done below)');
+    : '### When the task is done (success or failure, do this before running the command below)');
   lines.push(`Merge branch \`${wt.branch}\` into the \`agent_smart_dev\` branch:`);
   lines.push('');
   lines.push('```bash');
@@ -472,7 +472,7 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
   if (isAssistantSession(session)) return;
   lines.push('## Final step when the task is complete');
-  lines.push(`When the task ultimately succeeds or fails, you must run \`declare_job_done ${session.session_id}\` to delete the running.flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
+  lines.push(`When the task ultimately succeeds, run \`declare_job_done ${session.session_id}\` to remove running.flag; when it ultimately fails, run \`declare_job_failed ${session.session_id} "failure reason"\` to write failed.flag and remove running.flag. Do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
 }
 
 // PC task mode prompt injection (Electron/TUI sessions only, when

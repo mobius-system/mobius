@@ -424,7 +424,7 @@ export const WorktreeSection = defineSection({
 
         此后所有代码改动都在该 worktree 内进行. (备注：可能存在不止一个git仓库，请随机应变）
 
-        ${c.session_is_assistant ? '### 任务完成时 (成功或失败)' : '### 任务完成时 (成功或失败, 在运行下方 declare_job_done 之前必须做)'}
+        ${c.session_is_assistant ? '### 任务完成时 (成功或失败)' : '### 任务完成时 (成功或失败, 在运行下方命令之前必须做)'}
         ${`把分支 \`${wt.branch}\` 合并到 \`agent_smart_dev\` 分支:`}
 
         \`\`\`bash
@@ -471,7 +471,7 @@ export const WorktreeSection = defineSection({
 
         From now on, make all code changes inside this worktree. (Note: there may be more than one git repo, so adapt as needed.)
 
-        ${c.session_is_assistant ? '### When the task is done (success or failure)' : '### When the task is done (success or failure, must do this before running declare_job_done below)'}
+        ${c.session_is_assistant ? '### When the task is done (success or failure)' : '### When the task is done (success or failure, do this before running the command below)'}
         ${`Merge branch \`${wt.branch}\` into the \`agent_smart_dev\` branch:`}
 
         \`\`\`bash
@@ -501,7 +501,7 @@ export const CompletionFlagSection = defineSection({
       if (c.session_is_assistant) return null;
       return md`
         ${t.zh}
-        当任务最终成功或者最终失败时，你需要运行 \`declare_job_done ${c.session.session_id}\` 删除 running.flag 文件。但是，不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。
+        当任务最终成功时，运行 \`declare_job_done ${c.session.session_id}\` 删除 running.flag 文件；当任务最终失败时，运行 \`declare_job_failed ${c.session.session_id} "失败原因"\` 写入 failed.flag 并删除 running.flag。不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。
       `;
     },
     en: (c, t) => {
@@ -509,7 +509,7 @@ export const CompletionFlagSection = defineSection({
       if (c.session_is_assistant) return null;
       return md`
         ${t.en}
-        When the task ultimately succeeds or fails, you must run \`declare_job_done ${c.session.session_id}\` to delete the running.flag file. But do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.
+        When the task ultimately succeeds, run \`declare_job_done ${c.session.session_id}\` to remove running.flag; when it ultimately fails, run \`declare_job_failed ${c.session.session_id} "failure reason"\` to write failed.flag and remove running.flag. Do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.
       `;
     },
   },
