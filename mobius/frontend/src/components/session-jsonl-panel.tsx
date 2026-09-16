@@ -277,6 +277,7 @@ function SessionJsonlPanelInner({
       {searchHits.length > 0 && (searchHighlightActiveRef?.current || searchHighlightTargetRef?.current) && (
         <div className="flex justify-center py-1 flex-shrink-0">
           <div className="inline-flex items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-1.5 py-1 shadow-md" role="group" aria-label="搜索命中导航">
+            <span className="px-2 text-[11px] font-semibold text-red-100">查看命中</span>
             <button type="button" onClick={onSearchHitJump} className="rounded-full px-2 py-1 text-[11px] font-medium text-red-200 hover:bg-red-500/20">跳转</button>
             <button type="button" onClick={onSearchHitPrevious} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="上一个命中">上一个命中</button>
             <button type="button" onClick={onSearchHitNext} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="下一个命中">下一个命中</button>
