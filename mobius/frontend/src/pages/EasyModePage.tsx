@@ -99,6 +99,7 @@ const EASY_DEFAULT_PROJECT_NAME = 'let-us-chat'
 const EASY_DEFAULT_ISSUE_TITLE = 'a random chat'
 const EASY_NEW_PROJECT_ISSUE_TITLE = 'demo issue'
 const EASY_DEFAULT_DESCRIPTION = 'no description'
+const EASY_LAST_SELECTION_KEY = 'mobius:easy-mode:last-session-selection'
 
 async function ensureEasyIssue(projectId: string, title: string): Promise<{ id: string; title: string }> {
   const response = await api(`/api/projects/${projectId}/issues?status=active`)
@@ -163,6 +164,21 @@ function timeGreeting(displayName?: string) {
   return `晚上好，${name}`
 }
 
+function readEasyLastSelection(): Pick<EasySessionSelection, 'projectId' | 'issueId' | 'issueTitle'> {
+  try {
+    const raw = localStorage.getItem(EASY_LAST_SELECTION_KEY)
+    if (!raw) return { projectId: '', issueId: '', issueTitle: '' }
+    const parsed = JSON.parse(raw)
+    return {
+      projectId: typeof parsed?.projectId === 'string' ? parsed.projectId : '',
+      issueId: typeof parsed?.issueId === 'string' ? parsed.issueId : '',
+      issueTitle: typeof parsed?.issueTitle === 'string' ? parsed.issueTitle : '',
+    }
+  } catch {
+    return { projectId: '', issueId: '', issueTitle: '' }
+  }
+}
+
 export default function EasyModePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
@@ -198,9 +214,13 @@ export default function EasyModePage() {
   const [showWelcome, setShowWelcome] = useState(() => !search.get('session'))
   const [welcomePrompt, setWelcomePrompt] = useState('')
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
-  const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(EMPTY_EASY_SESSION_SELECTION)
+  const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(() => ({
+    ...EMPTY_EASY_SESSION_SELECTION,
+    ...readEasyLastSelection(),
+  }))
   const [welcomeCreating, setWelcomeCreating] = useState(false)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
+  const [welcomeSelectionNotice, setWelcomeSelectionNotice] = useState(false)
   const [editingSession, setEditingSession] = useState<RecentSession | null>(null)
   const [deletingSession, setDeletingSession] = useState<RecentSession | null>(null)
   const [createErrorToast, setCreateErrorToast] = useState<{ message: string } | null>(null)
@@ -216,6 +236,7 @@ export default function EasyModePage() {
   const [remotesError, setRemotesError] = useState('')
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const messageSentRefreshTimerRef = useRef<number | null>(null)
+  const welcomeSelectionNoticeTimerRef = useRef<number | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
@@ -607,6 +628,8 @@ export default function EasyModePage() {
   const openWelcome = () => {
     setShowWelcome(true)
     setWelcomePrompt('')
+    setWelcomeSelection(current => ({ ...current, ...readEasyLastSelection(), createProject: false }))
+    setWelcomeSelectionNotice(true)
     setCurrentSession(null)
     setCurrentTask(null)
     setCurrentIssue(null)
@@ -617,6 +640,30 @@ export default function EasyModePage() {
     next.delete('panel')
     setSearch(next)
   }
+
+  const showWelcomeSelectionNotice = () => {
+    setWelcomeSelectionNotice(true)
+    if (welcomeSelectionNoticeTimerRef.current) window.clearTimeout(welcomeSelectionNoticeTimerRef.current)
+    welcomeSelectionNoticeTimerRef.current = window.setTimeout(() => setWelcomeSelectionNotice(false), 5000)
+  }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(EASY_LAST_SELECTION_KEY, JSON.stringify({
+        projectId: welcomeSelection.projectId,
+        issueId: welcomeSelection.issueId,
+        issueTitle: welcomeSelection.issueTitle,
+      }))
+    } catch {}
+  }, [welcomeSelection.projectId, welcomeSelection.issueId, welcomeSelection.issueTitle])
+
+  useEffect(() => {
+    if (!showWelcome) return
+    showWelcomeSelectionNotice()
+    return () => {
+      if (welcomeSelectionNoticeTimerRef.current) window.clearTimeout(welcomeSelectionNoticeTimerRef.current)
+    }
+  }, [showWelcome])
 
   // 欢迎页提交: 输入框内容 + 下方选择直接创建并启动会话, 不再二次跳配置弹窗.
   // 请求体与「新建快捷会话」完全同源 (POST /api/issues/:id/sessions + 首条消息启动).
@@ -1056,13 +1103,26 @@ export default function EasyModePage() {
                   toolbar={
                     <EasySessionConfigBar
                       selection={welcomeSelection}
-                      onChange={setWelcomeSelection}
+                      onChange={next => {
+                        const restored = !next.createProject && welcomeSelection.createProject
+                          ? { ...next, ...readEasyLastSelection() }
+                          : next
+                        setWelcomeSelection(restored)
+                        if (!next.createProject && welcomeSelection.createProject) showWelcomeSelectionNotice()
+                      }}
                       projects={projects}
                       recentSessions={sessions}
                       dark={theme !== 'light'}
                     />
                   }
                 />
+                {welcomeSelectionNotice && !welcomeSelection.createProject ? (
+                  <div className="easy-selection-notice" role="status">
+                    当前选择：{projects.find(project => String(project.id) === welcomeSelection.projectId)?.name || '未选择项目'}
+                    {' · '}
+                    {welcomeSelection.issueTitle || '未选择任务'}
+                  </div>
+                ) : null}
               </div>
               <div className="easy-welcome-suggestions"><span>钉钉办公</span><span>文档创作</span><span>数据分析</span><span>多人工作台</span><span>创意设计</span><span>深度调研</span></div>
             </div>
@@ -1126,7 +1186,7 @@ export default function EasyModePage() {
                 ...updated,
                 issue_title: updated.issue_title ?? undefined,
                 project_name: updated.project_name ?? undefined,
-              })
+              } as any)
             }
             setEditingSession(null)
           }}
