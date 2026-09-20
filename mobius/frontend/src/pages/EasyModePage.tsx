@@ -20,10 +20,12 @@ import {
   Network,
   PanelLeft,
   Plus,
+  Pencil,
   Puzzle,
   Search as SearchIcon,
   Settings,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -45,7 +47,7 @@ import {
   EMPTY_EASY_SESSION_SELECTION,
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
-import { formatDefaultSessionName } from '../components/modals'
+import { ConfirmModal, RenameSessionModal, formatDefaultSessionName } from '../components/modals'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
@@ -199,6 +201,8 @@ export default function EasyModePage() {
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(EMPTY_EASY_SESSION_SELECTION)
   const [welcomeCreating, setWelcomeCreating] = useState(false)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
+  const [editingSession, setEditingSession] = useState<RecentSession | null>(null)
+  const [deletingSession, setDeletingSession] = useState<RecentSession | null>(null)
   const [createErrorToast, setCreateErrorToast] = useState<{ message: string } | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
@@ -801,26 +805,51 @@ export default function EasyModePage() {
     }
   }
 
+  const handleDeleteSession = async () => {
+    if (!deletingSession) return
+    const deletedSessionId = deletingSession.session_id
+    const response = await api(`/api/sessions/${deletedSessionId}`, { method: 'DELETE' })
+    setSessions(current => current.filter(session => session.session_id !== deletedSessionId))
+    if (sessionParam === deletedSessionId) {
+      setCurrentSession(null)
+      setCurrentTask(null)
+      const next = new URLSearchParams(search)
+      next.delete('session')
+      setSearch(next, { replace: true })
+    }
+    setDeletingSession(null)
+    if (response?.message) alert(response.message)
+  }
+
   const extensionProjects = projects.filter((project: any) => project?.kind === 'extension')
   const renderSessionRow = (session: RecentSession, nested = false) => {
     const active = session.session_id === sessionParam && contextMatchesProject && activePanel === 'sessions'
     const status = sessionStatus(session)
     return (
-      <button
-        key={session.session_id}
-        type="button"
-        onClick={() => selectSession(session)}
-        className={`easy-sidebar-session ${active ? 'easy-sidebar-session--active' : ''} ${nested ? 'easy-sidebar-session--nested' : ''}`}
-        data-session-id={session.session_id}
-        aria-current={active ? 'true' : undefined}
-        title={session.name || session.session_id}
-      >
-        <span className="easy-sidebar-session__state" data-status={session.agent_status || session.status || 'idle'} />
-        <span className="min-w-0 flex-1 truncate">{session.name || session.session_id}</span>
-        {session.agent_status === 'running' || session.agent_status === 'pending' ? (
-          <span className="easy-sidebar-session__status">{status.label}</span>
-        ) : null}
-      </button>
+      <div key={session.session_id} className={`easy-sidebar-session-row ${nested ? 'easy-sidebar-session-row--nested' : ''}`}>
+        <button
+          type="button"
+          onClick={() => selectSession(session)}
+          className={`easy-sidebar-session ${active ? 'easy-sidebar-session--active' : ''} ${nested ? 'easy-sidebar-session--nested' : ''}`}
+          data-session-id={session.session_id}
+          aria-current={active ? 'true' : undefined}
+          title={session.name || session.session_id}
+        >
+          <span className="easy-sidebar-session__state" data-status={session.agent_status || session.status || 'idle'} />
+          <span className="min-w-0 flex-1 truncate">{session.name || session.session_id}</span>
+          {session.agent_status === 'running' || session.agent_status === 'pending' ? (
+            <span className="easy-sidebar-session__status">{status.label}</span>
+          ) : null}
+        </button>
+        <span className="easy-sidebar-session__actions" aria-label={`${session.name || '会话'}操作`}>
+          <button type="button" className="easy-sidebar-session__action easy-sidebar-session__action--rename" title="重命名" aria-label={`重命名 ${session.name || '会话'}`} onClick={() => setEditingSession(session)}>
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button type="button" className="easy-sidebar-session__action easy-sidebar-session__action--delete" title="删除" aria-label={`删除 ${session.name || '会话'}`} onClick={() => setDeletingSession(session)}>
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </span>
+      </div>
     )
   }
 
@@ -1077,6 +1106,34 @@ export default function EasyModePage() {
             setCreateIssueOverride('')
           }}
           onNavigate={navigate}
+        />
+      )}
+      {editingSession && (
+        <RenameSessionModal
+          session={editingSession}
+          onClose={() => setEditingSession(null)}
+          onRenamed={(updated: RecentSession) => {
+            setSessions(current => current.map(session => session.session_id === updated.session_id ? { ...session, ...updated } : session))
+            if (currentSession?.session_id === updated.session_id) {
+              setCurrentSession({
+                ...currentSession,
+                ...updated,
+                issue_title: updated.issue_title ?? undefined,
+                project_name: updated.project_name ?? undefined,
+              })
+            }
+            setEditingSession(null)
+          }}
+        />
+      )}
+      {deletingSession && (
+        <ConfirmModal
+          title="删除会话"
+          message={`确定删除会话「${deletingSession.name || deletingSession.session_id}」？删除后将立即永久删除，不再保留。`}
+          onConfirm={handleDeleteSession}
+          onClose={() => setDeletingSession(null)}
+          confirmText="删除"
+          confirmClass="bg-red-500 hover:bg-red-600"
         />
       )}
       {createSuccessToast && (

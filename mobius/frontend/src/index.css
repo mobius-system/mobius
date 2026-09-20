@@ -6060,6 +6060,51 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session {
   font-size: 11px;
   transition: background .14s ease, color .14s ease;
 }
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row {
+  position: relative;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row .easy-sidebar-session {
+  padding-right: 48px;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session__actions {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .14s ease;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:hover .easy-sidebar-session__actions,
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:focus-within .easy-sidebar-session__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  transition: color .14s ease, background .14s ease, border-color .14s ease;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action--rename:hover {
+  color: var(--accent-primary);
+  border-color: color-mix(in srgb, var(--accent-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action--delete:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, .24);
+  background: rgba(239, 68, 68, .10);
+}
 body:has([data-page="easy-mode"]) .easy-sidebar-session:hover,
 body:has([data-page="easy-mode"]) .easy-sidebar-session--active {
   background: var(--bg-hover);
