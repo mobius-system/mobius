@@ -92,7 +92,7 @@ function randomProjectSlug() {
   return `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}_${randomProjectWord(RANDOM_PROJECT_NOUNS)}`
 }
 
-function randomProjectBindPath(workDir?: string | null) {
+export function randomProjectBindPath(workDir?: string | null) {
   const root = (workDir || '').trim().replace(/\/+$/, '')
   if (!root) return ''
   return `${root || '/'}/${randomProjectSlug()}`.replace(/\/{2,}/g, '/')

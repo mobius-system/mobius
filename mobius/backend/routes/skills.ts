@@ -186,6 +186,13 @@ router.get('/', auth, (req: express.Request, res: express.Response) => {
   res.json(Skills.listForUser(user.id).map((sk: SkillRow) => shapeSkill(sk, user, true)));
 });
 
+// 新项目尚无项目上下文，只提供当前用户与内置 Skill。
+router.get('/creation-options', auth, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
+  res.json([...visibleSkillList(user, Skills.listForUser(user.id)), ...Skills.listBuiltin()]
+    .map((sk: SkillRow) => shapeSkill(sk, user, true)));
+});
+
 // ---- 跨用户/项目复制目录 (全员可读) --------------------------------------
 // 列出全平台所有用户级 / 项目级 skill, 供「新建时从其他用户/项目复制」浏览.
 // 必须定义在 GET /:id 之前, 否则 'catalog' 会被当成 skill id.

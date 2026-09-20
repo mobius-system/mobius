@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, CircleDot, FolderKanban, FolderOpen, Languages, Type } from 'lucide-react'
 import { api } from '../store'
+import { createPortal } from 'react-dom'
+import { PathPickerModal } from './modals'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import {
   DropdownSelect,
@@ -32,6 +34,7 @@ export type EasySessionSelection = {
   excludedSkills: string[]
   excludedMemories: string[]
   projectPath: string
+  projectPathManual?: boolean
   projectName: string
 }
 
@@ -87,6 +90,7 @@ export function EasySessionModeTabs({ selection, onChange }: {
       issueTitle: '',
       projectPath: next ? selection.projectPath : '',
       projectName: next ? selection.projectName : '',
+      projectPathManual: next ? selection.projectPathManual : false,
       excludedSkills: [],
       excludedMemories: [],
     })
@@ -124,6 +128,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
   recentSessions: RecentSessionLite[]
   dark: boolean
 }) {
+  const [pathPickerOpen, setPathPickerOpen] = useState(false)
   const [projectIssues, setProjectIssues] = useState<any[]>([])
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
@@ -162,6 +167,16 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
 
   // 任务变更 → 拉该任务的上下文预览: 可用 Skill/Memory、默认排除集、上次所选模型
   useEffect(() => {
+    if (createProject) {
+      let alive = true
+      setAvailSkills([]); setAvailMemories([]); setScopeLastModel('')
+      Promise.all([api('/api/skills/creation-options'), api('/api/memories')]).then(([skills, memories]) => {
+        if (!alive) return
+        setAvailSkills((Array.isArray(skills) ? skills : []).filter((s: PickItem) => s.scope === 'user' || s.scope === 'builtin'))
+        setAvailMemories((Array.isArray(memories) ? memories : []).filter((m: PickItem) => m.scope === 'user'))
+      }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]) } })
+      return () => { alive = false }
+    }
     if (!issueId) {
       setAvailSkills([]); setAvailMemories([]); setScopeLastModel('')
       return
@@ -192,7 +207,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
       setAvailSkills([]); setAvailMemories([]); setScopeLastModel('')
     })
     return () => { alive = false }
-  }, [issueId])
+  }, [createProject, issueId])
 
   useEffect(() => {
     modelTouchedRef.current = false
@@ -263,28 +278,34 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     <>
       {createProject ? (
         <>
-          <label className="relative min-w-0 flex-1" title={selection.projectPath || '路径'}>
-            <FolderOpen className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: selection.projectPath.trim() ? '#60a5fa' : 'var(--text-muted)' }} />
-            <input
-              value={selection.projectPath}
-              onChange={event => onChange({ ...selection, projectPath: event.target.value })}
-              aria-label="路径"
-              placeholder="路径"
-              className="h-7 w-full min-w-[116px] rounded-lg border bg-transparent pl-7 pr-2 text-[11px] outline-none transition-colors placeholder:!text-[var(--placeholder-color)] focus:border-blue-500/60"
-              style={{ borderColor: selection.projectPath.trim() ? 'rgba(59,130,246,0.72)' : 'var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
-            />
-          </label>
           <label className="relative min-w-0 flex-1" title={selection.projectName || '项目名'}>
             <Type className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: selection.projectName.trim() ? '#60a5fa' : 'var(--text-muted)' }} />
             <input
               value={selection.projectName}
               onChange={event => onChange({ ...selection, projectName: event.target.value })}
               aria-label="项目名"
-              placeholder="项目名"
+              required
+              aria-required="true"
+              placeholder="项目名（必填）"
               className="h-7 w-full min-w-[96px] rounded-lg border bg-transparent pl-7 pr-2 text-[11px] outline-none transition-colors placeholder:!text-[var(--placeholder-color)] focus:border-blue-500/60"
               style={{ borderColor: selection.projectName.trim() ? 'rgba(59,130,246,0.72)' : 'var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
             />
           </label>
+          <button type="button" aria-label="选择中枢路径"
+            title={selection.projectPath || '选择中枢路径（未设置时自动生成）'}
+            onClick={() => setPathPickerOpen(true)}
+            className="h-7 w-7 shrink-0 rounded-lg border flex items-center justify-center hover:bg-[var(--bg-card-hover)]"
+            style={{ borderColor: selection.projectPath ? 'rgba(59,130,246,0.72)' : 'var(--input-border)', color: selection.projectPath ? '#60a5fa' : 'var(--text-secondary)' }}>
+            <FolderOpen className="h-3.5 w-3.5" />
+          </button>
+          {pathPickerOpen && createPortal(
+            <PathPickerModal initialPath={selection.projectPath || undefined}
+              onClose={() => setPathPickerOpen(false)}
+              onPick={(abs, _rel, manual) => {
+                const { selection: latest, onChange: emit } = latestRef.current
+                emit({ ...latest, projectPath: abs, projectPathManual: !!manual })
+                setPathPickerOpen(false)
+              }} />, document.body)}
         </>
       ) : (
         <>
@@ -365,7 +386,8 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         excludedMemories={new Set(selection.excludedMemories)}
         onToggleSkill={id => toggleExcluded('skill', id)}
         onToggleMemory={id => toggleExcluded('memory', id)}
-        disabled={createProject || !issueId}
+        disabled={!createProject && !issueId}
+        emptySkillText={createProject ? '暂无用户级或内置 Skill' : '该任务未启用 Skill'}
       />
     </>
   )

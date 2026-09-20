@@ -47,7 +47,7 @@ import {
   EMPTY_EASY_SESSION_SELECTION,
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
-import { ConfirmModal, RenameSessionModal, formatDefaultSessionName } from '../components/modals'
+import { ConfirmModal, RenameSessionModal, randomProjectBindPath, formatDefaultSessionName } from '../components/modals'
 import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
@@ -682,10 +682,6 @@ export default function EasyModePage() {
       projectPath,
       projectName,
     } = welcomeSelection
-    if (createProject && !projectPath.trim()) {
-      setCreateErrorToast({ message: '请填写项目路径' })
-      return
-    }
     if (createProject && !projectName.trim()) {
       setCreateErrorToast({ message: '请填写项目名' })
       return
@@ -696,13 +692,15 @@ export default function EasyModePage() {
       let targetIssue: { id: string; title: string } | null = null
 
       if (createProject) {
+        const bindPath = projectPath.trim() || randomProjectBindPath(user?.work_dir)
+        if (!bindPath) throw new Error('当前用户尚未配置工作目录，请选择中枢路径')
         targetProject = await api('/api/projects', {
           method: 'POST',
           body: JSON.stringify({
             name: projectName.trim(),
             description: prompt,
-            bindPath: projectPath.trim(),
-            bindPathManual: true,
+            bindPath,
+            bindPathManual: !!projectPath.trim() && !!welcomeSelection.projectPathManual,
             defaultUseWorktree: false,
             researchEnabled: false,
             visibility: 'private',
@@ -748,7 +746,7 @@ export default function EasyModePage() {
 
       if (!targetProject?.id || !targetIssue?.id) throw new Error('无法确定会话所属的项目与任务')
       const name = formatDefaultSessionName(targetIssue.title)
-      const keepsSelectedContext = targetIssue.id === issueId
+      const keepsSelectedContext = createProject || targetIssue.id === issueId
       const session = await api(`/api/issues/${targetIssue.id}/sessions`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1094,10 +1092,8 @@ export default function EasyModePage() {
                   theme={theme}
                   onChange={event => setWelcomePrompt(event.target.value)}
                   onSend={submitWelcomePrompt}
-                  submitDisabled={welcomeCreating || (welcomeSelection.createProject && (!welcomeSelection.projectPath.trim() || !welcomeSelection.projectName.trim()))}
-                  submitTooltip={welcomeSelection.createProject && !welcomeSelection.projectPath.trim()
-                    ? '请填写项目路径'
-                    : welcomeSelection.createProject && !welcomeSelection.projectName.trim()
+                  submitDisabled={welcomeCreating || (welcomeSelection.createProject && !welcomeSelection.projectName.trim())}
+                  submitTooltip={welcomeSelection.createProject && !welcomeSelection.projectName.trim()
                       ? '请填写项目名'
                       : '开始新会话'}
                   toolbar={
