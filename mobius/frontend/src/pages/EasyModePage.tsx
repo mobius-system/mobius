@@ -85,6 +85,9 @@ type EasyPanel = 'sessions' | 'overview' | 'extensions' | 'devices' | 'context'
 type SessionListMode = 'grouped' | 'flat'
 
 const RECENT_SESSION_LIMIT = 50
+// 提交问题后延迟这么久补拉一次近期会话: 会话启动/状态翻转要立刻反映到左栏,
+// 不必等下一轮 10s 轮询 (也不能立即拉, 后端此刻往往还没把状态刷成执行中)。
+const MESSAGE_SENT_REFRESH_DELAY_MS = 1000
 const CREATE_SUCCESS_TOAST_MS = 4000
 const EASY_LIST_MODE_KEY = 'mobius:easy-mode:session-list-mode'
 // 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
@@ -206,6 +209,7 @@ export default function EasyModePage() {
   const [remotesLoading, setRemotesLoading] = useState(false)
   const [remotesError, setRemotesError] = useState('')
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
+  const messageSentRefreshTimerRef = useRef<number | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
@@ -367,22 +371,40 @@ export default function EasyModePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.user])
 
+  // 拉一次 /api/tasks/recent 覆盖左栏列表; 当前会话若掉出近 50 条也要保留在列表里。
+  const refreshRecentSessions = useCallback(async (signal?: AbortSignal) => {
+    const recent = await api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal })
+    setSessions((current) => {
+      const next = normalizeRecent(recent)
+      const selected = current.find(session => session.session_id === sessionParam)
+      return selected && !next.some(session => session.session_id === selected.session_id)
+        ? [selected, ...next]
+        : next
+    })
+  }, [sessionParam])
+
+  // 提交问题后的补拉: 连续发送只保留最后一次定时器, 不重复叠加请求。
+  const scheduleRefreshAfterSend = useCallback(() => {
+    if (messageSentRefreshTimerRef.current !== null) window.clearTimeout(messageSentRefreshTimerRef.current)
+    messageSentRefreshTimerRef.current = window.setTimeout(() => {
+      messageSentRefreshTimerRef.current = null
+      refreshRecentSessions().catch(() => {}) // 轮询仍在兜底, 单次失败静默
+    }, MESSAGE_SENT_REFRESH_DELAY_MS)
+  }, [refreshRecentSessions])
+
+  useEffect(() => () => {
+    if (messageSentRefreshTimerRef.current !== null) window.clearTimeout(messageSentRefreshTimerRef.current)
+  }, [])
+
   useEffect(() => pollRecursive(async (signal) => {
     if (document.visibilityState !== 'visible') return
     setRefreshing(true)
     try {
-      const recent = await api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal })
-      setSessions((current) => {
-        const next = normalizeRecent(recent)
-        const selected = current.find(session => session.session_id === sessionParam)
-        return selected && !next.some(session => session.session_id === selected.session_id)
-          ? [selected, ...next]
-          : next
-      })
+      await refreshRecentSessions(signal)
     } finally {
       setRefreshing(false)
     }
-  }, 10_000, 10_000, { startImmediately: false }), [params.user, sessionParam])
+  }, 10_000, 10_000, { startImmediately: false }), [params.user, sessionParam, refreshRecentSessions])
 
   useEffect(() => {
     if (!createSuccessToast) return
@@ -679,6 +701,8 @@ export default function EasyModePage() {
           body: JSON.stringify({ content: [name, prompt].filter(Boolean).join('\n\n'), request_id: requestId }),
         }).catch(() => {})
       }
+      // 新建会话同样是「提交问题」: 1s 后再拉一次, 让左栏立刻显示该会话已在执行。
+      scheduleRefreshAfterSend()
       handleSessionCreated({
         ...session,
         project_id: session?.project_id || String(targetProject.id),
@@ -991,6 +1015,7 @@ export default function EasyModePage() {
         ) : currentSession && contextMatchesProject ? (
           <ChatArea
             layout="easy"
+            onMessageSent={scheduleRefreshAfterSend}
             easyProjectControl={{
               selectedProjectId: effectiveProject || selectedSession?.project_id || undefined,
               selectedProjectName: selectedProjectOption?.name || selectedSession?.project_name || projects.find((project: any) => project.id === selectedSession?.project_id)?.name,

@@ -1941,9 +1941,11 @@ type EasyProjectOption = {
 
 type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
 
-export function ChatArea({ layout = 'default', onNewSession, easyProjectControl }: {
+export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easyProjectControl }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
+  // 消息提交成功后的回调 (所有发送路径共用)。外层用它把「会话已开始执行」尽快同步到侧栏。
+  onMessageSent?: () => void
   easyProjectControl?: {
     selectedProjectId?: string
     selectedProjectName?: string
@@ -3209,6 +3211,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       })
       setLastSendError('')
       hideBackendFailure(sessionId)
+      onMessageSent?.()
       return resp
     } catch (e: any) {
       const text = e?.message || '发送失败'
@@ -3222,7 +3225,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       setTimeout(() => loadHistoryRef.current(), 500)
       throw e
     }
-  }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure, holdLiveOverride])
+  }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure, holdLiveOverride, onMessageSent])
 
   const clearVoiceTimers = useCallback(() => {
     if (voiceStopTimerRef.current !== null) {
