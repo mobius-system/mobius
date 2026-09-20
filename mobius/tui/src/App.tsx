@@ -9,7 +9,7 @@
  * GET /api/auth/me; on a stale token, re-login with the stored username/password
  * (matching the desktop electron flow). Otherwise show the login form.
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text } from 'ink'
 import { MobiusClient, getMe, login, ApiError } from './api.js'
 import { clearLogin, loadLogin, saveLogin, type LoginRecord } from './config.js'
@@ -39,18 +39,33 @@ export function App() {
   const [ready, setReady] = useState<ReadyState | null>(null)
   const [chatKey, setChatKey] = useState(0)
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null)
+  // Mutating MobiusClient.token is enough for future requests, while this
+  // revision also re-renders Chat so its token-dependent SSE effect reconnects.
+  const [, setAuthRevision] = useState(0)
+  const aimuxAuthGeneration = useRef(0)
   const [aimuxStatus, setAimuxStatus] = useState<AimuxStatus>({
     state: process.env.MOBIUS_TUI_DISABLE_AIMUX === '1' ? 'disabled' : 'stopped',
     phase: 'idle',
     detail: process.env.MOBIUS_TUI_DISABLE_AIMUX === '1' ? 'AIMUX 自动连接已关闭' : '登录后自动连接',
   })
 
-  function bootAimux(rec: LoginRecord): void {
+  function bootAimux(rec: LoginRecord, activeClient: MobiusClient): void {
     // AIMUX installation/connection is deliberately backgrounded: the TUI can
     // continue into project preparation while a first-time pip install runs.
+    const generation = ++aimuxAuthGeneration.current
     void startAimuxConnection({
       server: rec.server,
       token: rec.token,
+      refreshToken: async () => {
+        const refreshed = await login(rec.server, rec.username, rec.password)
+        if (generation !== aimuxAuthGeneration.current) return null
+        const updated: LoginRecord = { ...rec, token: refreshed.token, user: refreshed.user }
+        await saveLogin(updated)
+        activeClient.setToken(refreshed.token)
+        setUserId(refreshed.user.id)
+        setAuthRevision(value => value + 1)
+        return refreshed.token
+      },
       onStatus: (status: AimuxStatus) => {
         setAimuxStatus(status)
         if (status.detail) setBootMsg(status.detail)
@@ -58,7 +73,7 @@ export function App() {
     }).catch((e: any) => setBootMsg(`AIMUX 启动失败: ${e?.message ?? String(e)}`))
   }
 
-  useEffect(() => () => { void stopAimuxConnection() }, [])
+  useEffect(() => () => { aimuxAuthGeneration.current += 1; void stopAimuxConnection() }, [])
 
   // ── bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => { (async () => {
@@ -71,32 +86,32 @@ export function App() {
       const me = await getMe(rec.server, rec.token)
       setUserId(me.id)
       setClient(c); setRoute('prep')
-      bootAimux(rec)
+      bootAimux(rec, c)
     } catch {
       // token expired — try to re-login with stored creds
-      if (rec.password) {
-        try {
-          setBootMsg('登录态已过期，重新登录…')
-          const r = await login(rec.server, rec.username, rec.password)
-          const updated: LoginRecord = { ...rec, token: r.token, user: r.user }
-          await saveLogin(updated)
-          setUserId(r.user.id)
-          setClient(new MobiusClient(rec.server, r.token))
-          setRoute('prep')
-          bootAimux(updated)
-          return
-        } catch { /* fall through to login */ }
-      }
+      try {
+        setBootMsg('登录态已过期，重新登录…')
+        const r = await login(rec.server, rec.username, rec.password)
+        const updated: LoginRecord = { ...rec, token: r.token, user: r.user }
+        await saveLogin(updated)
+        const refreshedClient = new MobiusClient(rec.server, r.token)
+        setUserId(r.user.id)
+        setClient(refreshedClient)
+        setRoute('prep')
+        bootAimux(updated, refreshedClient)
+        return
+      } catch { /* fall through to login */ }
       setRoute('login')
     }
   })() }, [])
 
   // ── handlers ───────────────────────────────────────────────────────────────
   function onLoginSuccess(rec: LoginRecord) {
+    const loggedInClient = new MobiusClient(rec.server, rec.token)
     setUserId(rec.user.id)
-    setClient(new MobiusClient(rec.server, rec.token))
+    setClient(loggedInClient)
     setRoute('prep')
-    bootAimux(rec)
+    bootAimux(rec, loggedInClient)
   }
 
   function onPrepReady(st: ReadyState) {
@@ -151,6 +166,7 @@ export function App() {
   }
 
   async function onLogout() {
+    aimuxAuthGeneration.current += 1
     if (process.env.MOBIUS_TUI_DEBUG) console.error('[route] logout')
     try {
       await clearLogin()

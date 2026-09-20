@@ -100,6 +100,10 @@ type LiveDebugSnapshot = {
   backendWorking: boolean | null
   // 乐观窗口 (提交后强开 / 终止后强关), null = 无窗口, 按轮询结果.
   liveOverride: 'on' | 'off' | null
+  // 发送阶段 (发送按钮灰着, 左下角 正在发送/正在唤醒中/唤醒超时 黄字期间).
+  sendingPhase: boolean
+  // 实际生效模式: 终止窗 > 提交窗/发送阶段 > 后端状态.
+  liveMode: 'on' | 'off' | null
   parentGate: {
     standardVariant: boolean
     alive: boolean
@@ -2372,7 +2376,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const working = backendWorking === true
     // 与渲染用的门槛同源: 乐观窗口 (提交后 5s 强开 / 终止后 10s 强关) 覆盖轮询结果.
     const backendGate = alive && working
-    const shouldMount = standardVariant && (liveOverride === 'on' ? true : liveOverride === 'off' ? false : backendGate)
+    const shouldMount = standardVariant && (liveMode === 'on' ? true : liveMode === 'off' ? false : backendGate)
     const tail = jsonlEntriesNow.slice(-5).map(debugTailEntry)
     const lastEntry = tail[tail.length - 1] || null
     // 与 ChatArea 传给 SessionJsonlPanel/JsonlLiveTailCard 的值保持一致：
@@ -2384,14 +2388,15 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
     const lastEntryAnyTimestamp = lastEntry
       ? lastEntry.timestamp || lastEntry.createdAt || lastEntry.payloadTimestamp || lastEntry.messageCreatedAt
       : null
-    const cardWouldReturnNull = shouldMount && !hasUsableTimestamp
+    // 强开窗 ('on', 含发送阶段) 内不吃时间戳门槛: 会话刚启动 / 首条 entry 还没落盘时也要出卡.
+    const cardWouldReturnNull = shouldMount && !hasUsableTimestamp && liveMode !== 'on'
     const reasons: string[] = []
 
     if (!standardVariant) reasons.push(`variant=${variant}（当前不是 standard 渲染分支）`)
-    if (liveOverride === 'off') reasons.push('终止乐观窗内（强制不挂载 LIVE）')
-    if (liveOverride === 'on') reasons.push('提交乐观窗内（强制挂载 LIVE）')
-    if (liveOverride === null && !alive) reasons.push(`backendAlive=${String(backendAlive)}（父级不会挂载 LIVE）`)
-    if (liveOverride === null && !working) reasons.push(`backendWorking=${String(backendWorking)}（父级不会挂载 LIVE）`)
+    if (liveMode === 'off') reasons.push('终止乐观窗内（强制不挂载 LIVE）')
+    if (liveMode === 'on') reasons.push(liveOverride === 'on' ? '提交乐观窗内（强制挂载 LIVE）' : '发送阶段内（强制挂载 LIVE）')
+    if (liveMode === null && !alive) reasons.push(`backendAlive=${String(backendAlive)}（父级不会挂载 LIVE）`)
+    if (liveMode === null && !working) reasons.push(`backendWorking=${String(backendWorking)}（父级不会挂载 LIVE）`)
     if (jsonlEntriesNow.length === 0) reasons.push('jsonlEntries 为空')
     if (jsonlEntriesNow.length > 0 && !lastTimestampProp) reasons.push('所有 JSONL entry 都没有可解析时间戳')
     if (jsonlEntriesNow.length > 0 && latestTimestamp.index !== null && latestTimestamp.index !== jsonlEntriesNow.length - 1 && lastEntryAnyTimestamp === null) {
@@ -2408,6 +2413,8 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
       backendAlive,
       backendWorking,
       liveOverride,
+      sendingPhase,
+      liveMode,
       parentGate: { standardVariant, alive, working, shouldMount },
       jsonlCount: jsonlEntriesNow.length,
       tail,
@@ -2509,6 +2516,19 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
   // 发送阶段提示: 自发送瞬间起计时, 按耗时显示黄字阶段 (正在发送 / 正在唤醒中 / 唤醒超时).
   // pendingSendAt 与 messageSubmitting 全部解除 (发送按钮恢复) 时置回 null, 还原原提示.
   const [sendingHint, setSendingHint] = useState<string | null>(null)
+  // 发送阶段 (发送按钮灰着, 即左下角出现 正在发送/正在唤醒中/唤醒时间长于预期 黄字的那段时间).
+  // 这是"会话正在启动"的唯一前端判据, 与黄字提示同源, 保证两者永远同步.
+  const sendingPhase = pendingSendAt !== null || messageSubmitting
+  // LIVE 卡实际生效模式 (优先级从高到低):
+  //   终止乐观窗 'off' — 用户刚点过终止, 即便发送阶段还没解除也不该弹回 LIVE 卡;
+  //   提交乐观窗 'on' / 发送阶段 — 强制显示;
+  //   null — 交给后端 alive && working 判定.
+  // 发送阶段并入 'on' 的原因: 乐观窗只有 5s, 而唤醒慢的会话 (进程创建 / 首轮上下文加载) 能持续
+  // 十几秒, 卡片先消失、左下角黄字还在, 看起来像消息丢了. 黄字在, LIVE 卡就在.
+  const liveMode: 'on' | 'off' | null =
+    liveOverride === 'off' ? 'off'
+    : liveOverride === 'on' || sendingPhase ? 'on'
+    : null
   const [backendWorktreeIgnored, setBackendWorktreeIgnored] = useState(false)
   const [lastSendError, setLastSendError] = useState('')
   const [dismissedBackendFailureKeys, setDismissedBackendFailureKeys] = useState<Record<string, string>>({})
@@ -4442,7 +4462,7 @@ export function ChatArea({ layout = 'default', onNewSession, easyProjectControl 
           showJsonlMeta={showJsonlMeta}
           backendAlive={backendAlive}
           backendWorking={backendWorking}
-          liveCardMode={liveOverride ?? 'auto'}
+          liveCardMode={liveMode ?? 'auto'}
           backendPid={backendPid}
           realTimeInfo={backendRealTimeInfo}
           hasNewMessages={hasNewMessages}

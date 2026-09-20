@@ -170,7 +170,10 @@ function SessionJsonlPanelInner({
   const liveCardVisible = liveCardMode === 'on' ? true
     : liveCardMode === 'off' ? false
     : !!(backendAlive === true && backendWorking === true)
-  const liveCardMounted = variant === 'standard' && exclusiveContent == null && liveCardVisible && !!lastTimestamp
+  // 强开窗 (提交乐观窗 / 发送阶段, 见 chat.tsx liveMode) 内不要求已有时间戳: 会话刚提交、首条
+  // entry 还没落盘时, 卡片按"已提交 · 等待智能体响应…"渲染, 与左下角黄字提示同一时间段.
+  const liveCardMounted = variant === 'standard' && exclusiveContent == null && liveCardVisible
+    && (!!lastTimestamp || liveCardMode === 'on')
   const [liveTokenText, setLiveTokenText] = useState('')
   const liveTokenBufferRef = useRef('')
   const liveTokenDisplayRef = useRef('')

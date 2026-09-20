@@ -417,11 +417,13 @@ interface SupervisorOptions {
   token: string
   identifier: string
   onStatus: (s: AimuxStatus) => void
+  /** Re-authenticate after AIMUX reports an expired/invalid bridge JWT. */
+  refreshToken?: () => Promise<string | null>
   heartbeatIntervalMs?: number
   heartbeatFailureThreshold?: number
   retryBaseMs?: number
   probeConnection?: () => Promise<boolean>
-  spawnProcess?: () => ChildProcess
+  spawnProcess?: (token: string) => ChildProcess
 }
 
 export class AimuxSupervisor {
@@ -433,13 +435,14 @@ export class AimuxSupervisor {
   private heartbeatFailures = 0
   private reconnectAttempt = 0
   private bridgeConnected = false
+  private refreshingToken = false
   private opts: SupervisorOptions
   constructor(opts: SupervisorOptions) { this.opts = opts }
   start() { this.stopping = false; this.spawnChild() }
   private spawnChild() {
     const { server, token, identifier, onStatus } = this.opts
     onStatus({ state: 'starting', phase: 'connecting', detail: '正在连接 Mobius AIMUX bridge…', identifier, attempt: this.reconnectAttempt })
-    const child = this.opts.spawnProcess?.() ?? spawn(
+    const child = this.opts.spawnProcess?.(token) ?? spawn(
       aimuxExe(),
       reverseConnectArgs(server, identifier, token),
       { windowsHide: true },
@@ -474,8 +477,46 @@ export class AimuxSupervisor {
       const reason = code !== 0 && tail.trim()
         ? `AIMUX 进程退出（code=${code}）: ${tail.trim().split(/[\r\n]+/).filter(Boolean).slice(-3).join(' ⏎ ').slice(-220)} · 日志: ${aimuxLogPath()}`
         : `AIMUX 进程退出（code=${code}） · 日志: ${aimuxLogPath()}`
+      // AIMUX reserves exit code 4 for auth_required. A long-running TUI used
+      // to keep respawning with the JWT captured at startup, so every retry
+      // was rejected with the same 401 forever. Refresh before respawning and
+      // update opts.token so both the child arguments and heartbeat use it.
+      if (code === 4 || /unauthorized|forbidden|token.*invalid|auth(?:entication)?[_ ]required/i.test(tail)) {
+        void this.refreshCredentials(reason)
+        return
+      }
       this.scheduleReconnect(reason)
     })
+  }
+
+  private async refreshCredentials(reason: string): Promise<void> {
+    if (this.stopping || this.refreshingToken) return
+    const refreshToken = this.opts.refreshToken
+    if (!refreshToken) { this.scheduleReconnect(reason); return }
+    this.refreshingToken = true
+    this.opts.onStatus({
+      state: 'starting', phase: 'retrying',
+      detail: 'AIMUX 登录凭据已过期，正在刷新 JWT…',
+      identifier: this.opts.identifier,
+    })
+    try {
+      const token = await refreshToken()
+      if (this.stopping) return
+      if (!token) throw new Error('登录接口未返回新 JWT')
+      this.opts.token = token
+      this.reconnectAttempt = 0
+      appendAimuxLog(installLogQueue, `AIMUX JWT refreshed at ${new Date().toISOString()}; restarting bridge client\n`)
+      this.opts.onStatus({
+        state: 'starting', phase: 'connecting',
+        detail: 'JWT 已刷新，正在重新连接 AIMUX bridge…',
+        identifier: this.opts.identifier,
+      })
+      this.spawnChild()
+    } catch (error: any) {
+      if (!this.stopping) this.scheduleReconnect(`JWT 刷新失败: ${error?.message ?? String(error)}`)
+    } finally {
+      this.refreshingToken = false
+    }
   }
 
   private startHeartbeat() {
@@ -572,7 +613,12 @@ let installing: Promise<void> | null = null
 // `aimux reverse connect --help`. See reverseConnectArgs for why this is probed.
 let cachedSilentFlag: string | null | undefined = undefined
 
-export async function startAimuxConnection(opts: { server: string; token: string; onStatus?: (s: AimuxStatus) => void }): Promise<void> {
+export async function startAimuxConnection(opts: {
+  server: string
+  token: string
+  onStatus?: (s: AimuxStatus) => void
+  refreshToken?: () => Promise<string | null>
+}): Promise<void> {
   const onStatus = opts.onStatus ?? (() => {})
   // Tests and explicitly opted-out users should not spawn a network worker.
   if (process.env.MOBIUS_TUI_DISABLE_AIMUX === '1') {
@@ -602,8 +648,8 @@ export async function startAimuxConnection(opts: { server: string; token: string
     }
     const silentFlag = cachedSilentFlag
     supervisor = new AimuxSupervisor({
-      server: opts.server, token: opts.token, identifier, onStatus,
-      spawnProcess: () => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, opts.token, process.platform, silentFlag)),
+      server: opts.server, token: opts.token, identifier, onStatus, refreshToken: opts.refreshToken,
+      spawnProcess: token => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag)),
     })
     supervisor.start()
   })().finally(() => { installing = null })

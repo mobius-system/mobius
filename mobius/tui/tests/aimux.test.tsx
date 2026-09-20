@@ -73,6 +73,36 @@ async function testAutomaticReconnect() {
   await supervisor.stop()
 }
 
+async function testJwtRefreshAfterUnauthorizedExit() {
+  console.log('\n[AIMUX 3b] expired JWT refresh + restart')
+  const statuses: string[] = []
+  const spawnTokens: string[] = []
+  const children: any[] = []
+  let refreshCalls = 0
+  const supervisor = new AimuxSupervisor({
+    server: 'https://mobius.test', token: 'jwt-expired', identifier: 'tui-auth-refresh',
+    retryBaseMs: 100_000,
+    probeConnection: async () => true,
+    refreshToken: async () => { refreshCalls += 1; return 'jwt-fresh' },
+    spawnProcess: token => {
+      spawnTokens.push(token)
+      const child = fakeChild(() => {})
+      children.push(child)
+      return child
+    },
+    onStatus: status => statuses.push(`${status.state}:${status.phase}:${status.detail}`),
+  })
+  supervisor.start()
+  children[0].stderr.emit('data', Buffer.from('error: bridge register rejected: HTTP 401 Unauthorized\n'))
+  children[0].emit('exit', 4)
+  for (let i = 0; i < 50 && spawnTokens.length < 2; i += 1) await delay(5)
+  ok(refreshCalls === 1, 'code=4 triggers exactly one JWT refresh')
+  ok(spawnTokens.length === 2, 'AIMUX restarts immediately after JWT refresh')
+  ok(spawnTokens[0] === 'jwt-expired' && spawnTokens[1] === 'jwt-fresh', 'restarted AIMUX receives the fresh JWT instead of the startup token')
+  ok(statuses.some(s => s.includes('正在刷新 JWT')) && statuses.some(s => s.includes('JWT 已刷新')), 'status explains credential refresh and reconnect')
+  await supervisor.stop()
+}
+
 async function testBundleArchAndUrl() {
   console.log('\n[AIMUX 4] Plan B bundle arch / url')
   const arch = bundleArch()
@@ -225,6 +255,7 @@ async function main() {
   await testStatusLine()
   await testProbeContract()
   await testAutomaticReconnect()
+  await testJwtRefreshAfterUnauthorizedExit()
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()

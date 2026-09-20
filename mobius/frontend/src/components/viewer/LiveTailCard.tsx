@@ -72,20 +72,24 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenT
   const lastMs = lastTimestamp ? new Date(lastTimestamp).getTime() : null
   const silenceSec = lastMs ? Math.max(0, Math.floor((now - lastMs) / 1000)) : null
   // 还没有任何 jsonl entry → 不出 LIVE 卡片 (不再显示 "等首条 entry..." 占位).
-  if (silenceSec == null) return null
+  // 例外: 乐观窗 (刚提交 / 发送阶段, 会话正在启动) 内照常出卡, 按下面的"已提交 · 等待智能体响应…"
+  // 渲染 — 此时无沉默时长可算, 但卡片本身就是"消息已发出、正在唤醒"的可视信号.
+  if (silenceSec == null && !optimistic) return null
   const tokenText = liveTokenText || ''
   const liveActive = tokenText.length > 0
-  // 乐观窗 (刚提交, 后端还没报 working) 内不按沉默时长判严重度: 此时 lastTimestamp 参照的
-  // 还是上一条历史 entry, 照常渲染会闪一条"沉默 Xm"红卡, 与"刚提交"的动作相悖.
+  // 乐观窗 (刚提交 / 发送阶段, 后端还没报 working) 内不按沉默时长判严重度: 此时 lastTimestamp 参照的
+  // 还是上一条历史 entry, 照常渲染会闪一条"沉默 Xm"红卡, 与"刚提交"的动作相悖. 无 entry 时更是
+  // 无处可算 (silenceSec=null), 一并归到同一分支.
+  const silenceForSeverity = optimistic ? null : silenceSec
   const sev: 'normal' | 'warn' | 'stale' =
-    optimistic ? 'normal'
-    : silenceSec < 30 ? 'normal'
-    : silenceSec < 120 ? 'warn'
+    silenceForSeverity == null ? 'normal'
+    : silenceForSeverity < 30 ? 'normal'
+    : silenceForSeverity < 120 ? 'warn'
     : 'stale'
-  const fallbackText = optimistic ? '已提交 · 等待智能体响应…'
-    : sev === 'normal' ? `生成中 · 距上条 entry ${formatDuration(silenceSec)}`
-    : sev === 'warn'   ? `沉默 ${formatDuration(silenceSec)} — API 可能长尾, 继续等等`
-    :                    `⚠ 沉默 ${formatDuration(silenceSec)} — API 可能长尾, 请耐心等待`
+  const fallbackText = silenceForSeverity == null ? '已提交 · 等待智能体响应…'
+    : sev === 'normal' ? `生成中 · 距上条 entry ${formatDuration(silenceForSeverity)}`
+    : sev === 'warn'   ? `沉默 ${formatDuration(silenceForSeverity)} — API 可能长尾, 继续等等`
+    :                    `⚠ 沉默 ${formatDuration(silenceForSeverity)} — API 可能长尾, 请耐心等待`
   const legacyText = liveTextRef.current && now <= liveUntilRef.current
     ? liveTextRef.current
     : fallbackText
