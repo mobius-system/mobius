@@ -5680,6 +5680,18 @@ body.mobius-resizing .mobius-resizable-handle {
   -webkit-backdrop-filter: blur(22px);
   box-shadow: 0 20px 54px rgba(0, 0, 0, .18), inset 0 1px 0 color-mix(in srgb, white 7%, transparent) !important;
 }
+/* create_session_mode (简易模式欢迎页) 的输入框比会话内高 50%: 96 → 144.
+   多出的高度全部给可输入区 (文本框 42 → 63), 否则卡片变高后会在文本框和底部工具条之间留一条空白带。
+   同选择器 + 同特异度, 靠源码顺序覆盖上面那份 96px; 会话内 follow_session_mode 不受影响。 */
+[data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
+  height: 144px !important;
+  max-height: 144px !important;
+}
+[data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] textarea {
+  height: 63px !important;
+  min-height: 63px !important;
+  max-height: 63px !important;
+}
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input textarea {
   height: 42px !important;
   min-height: 42px !important;
