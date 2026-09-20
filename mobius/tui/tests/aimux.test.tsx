@@ -53,54 +53,61 @@ async function testProbeContract() {
   } finally { globalThis.fetch = realFetch }
 }
 
-async function testAutomaticReconnect() {
-  console.log('\n[AIMUX 3] heartbeat-triggered reconnect')
-  const statuses: string[] = []
-  let probes = 0, spawns = 0, kills = 0
-  const supervisor = new AimuxSupervisor({
-    server: 'https://mobius.test', token: 'jwt-test', identifier: 'tui-test',
-    heartbeatIntervalMs: 5, heartbeatFailureThreshold: 2, retryBaseMs: 5,
-    probeConnection: async () => { probes += 1; return probes >= 3 },
-    spawnProcess: () => { spawns += 1; return fakeChild(() => { kills += 1 }) },
-    onStatus: status => statuses.push(`${status.state}:${status.phase}:${status.detail}`),
-  })
-  supervisor.start()
-  for (let i = 0; i < 30 && !statuses.some(s => s.startsWith('connected:')); i += 1) await delay(5)
-  ok(kills >= 1, 'two failed heartbeats terminate the stale AIMUX process')
-  ok(spawns >= 2, 'supervisor starts a fresh AIMUX process after heartbeat loss')
-  ok(statuses.some(s => s.includes('第 1 次重连')), 'reconnect status reports its retry attempt')
-  ok(statuses.some(s => s.startsWith('connected:connected:心跳正常')), 'a later successful heartbeat restores connected state')
-  await supervisor.stop()
+async function testAdoptOrSpawn() {
+  console.log('\n[AIMUX 3] shared daemon adopt-or-spawn')
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-shared-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  try {
+    let spawns = 0
+    const mk = () => new AimuxSupervisor({
+      server: 'https://mobius.test', token: 'jwt-test', identifier: 'tui-shared',
+      probeConnection: async () => ({ connected: true, authError: false }),
+      spawnProcess: () => { spawns += 1; const c = fakeChild(() => {}); c.pid = process.pid; return c },
+      onStatus: () => {},
+    })
+    const first = mk()
+    await first.start()
+    ok(spawns === 1, 'first TUI spawns the shared daemon')
+    const second = mk()
+    await second.start()
+    ok(spawns === 1, 'second TUI adopts the live daemon instead of spawning a duplicate')
+    await first.stop(); await second.stop()
+  } finally {
+    if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
+    await fs.rm(home, { recursive: true, force: true })
+  }
 }
 
-async function testJwtRefreshAfterUnauthorizedExit() {
-  console.log('\n[AIMUX 3b] expired JWT refresh + restart')
-  const statuses: string[] = []
-  const spawnTokens: string[] = []
-  const children: any[] = []
-  let refreshCalls = 0
-  const supervisor = new AimuxSupervisor({
-    server: 'https://mobius.test', token: 'jwt-expired', identifier: 'tui-auth-refresh',
-    retryBaseMs: 100_000,
-    probeConnection: async () => true,
-    refreshToken: async () => { refreshCalls += 1; return 'jwt-fresh' },
-    spawnProcess: token => {
-      spawnTokens.push(token)
-      const child = fakeChild(() => {})
-      children.push(child)
-      return child
-    },
-    onStatus: status => statuses.push(`${status.state}:${status.phase}:${status.detail}`),
-  })
-  supervisor.start()
-  children[0].stderr.emit('data', Buffer.from('error: bridge register rejected: HTTP 401 Unauthorized\n'))
-  children[0].emit('exit', 4)
-  for (let i = 0; i < 50 && spawnTokens.length < 2; i += 1) await delay(5)
-  ok(refreshCalls === 1, 'code=4 triggers exactly one JWT refresh')
-  ok(spawnTokens.length === 2, 'AIMUX restarts immediately after JWT refresh')
-  ok(spawnTokens[0] === 'jwt-expired' && spawnTokens[1] === 'jwt-fresh', 'restarted AIMUX receives the fresh JWT instead of the startup token')
-  ok(statuses.some(s => s.includes('正在刷新 JWT')) && statuses.some(s => s.includes('JWT 已刷新')), 'status explains credential refresh and reconnect')
-  await supervisor.stop()
+async function testJwtRefreshViaProbe() {
+  console.log('\n[AIMUX 3b] expired JWT refresh via heartbeat probe')
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-jwt-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  try {
+    const spawnTokens: string[] = []
+    let refreshCalls = 0
+    let firstProbe = true
+    const supervisor = new AimuxSupervisor({
+      server: 'https://mobius.test', token: 'jwt-expired', identifier: 'tui-auth-refresh',
+      heartbeatIntervalMs: 5,
+      probeConnection: async () => {
+        if (firstProbe) { firstProbe = false; return { connected: false, authError: true } }
+        return { connected: true, authError: false }
+      },
+      refreshToken: async () => { refreshCalls += 1; return 'jwt-fresh' },
+      spawnProcess: token => { spawnTokens.push(token); const c = fakeChild(() => {}); c.pid = 99999999; return c },
+      onStatus: () => {},
+    })
+    await supervisor.start()
+    for (let i = 0; i < 50 && spawnTokens.length < 2; i += 1) await delay(5)
+    ok(refreshCalls >= 1, 'probe authError triggers a JWT refresh')
+    ok(spawnTokens[0] === 'jwt-expired' && spawnTokens[1] === 'jwt-fresh', 'respawned daemon receives the fresh JWT instead of the startup token')
+    await supervisor.stop()
+  } finally {
+    if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
+    await fs.rm(home, { recursive: true, force: true })
+  }
 }
 
 async function testBundleArchAndUrl() {
@@ -114,36 +121,6 @@ async function testBundleArchAndUrl() {
   try {
     ok(bundleUrl('win-x64') === 'https://example.test/cdn/mobius-python-win-x64-v6.zip', 'MOBIUS_TUI_PYTHON_BUNDLE_URL overrides the CDN base and trims trailing slash')
   } finally { if (saved === undefined) delete process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL; else process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL = saved }
-}
-
-async function testPersistentProcessLog() {
-  console.log('\n[AIMUX 9] persistent process diagnostics')
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-log-'))
-  const savedHome = process.env.MOBIUS_TUI_HOME
-  process.env.MOBIUS_TUI_HOME = home
-  const statuses: string[] = []
-  let childRef: any
-  const supervisor = new AimuxSupervisor({
-    server: 'https://mobius.test', token: 'secret-token', identifier: 'tui-log',
-    retryBaseMs: 100_000,
-    probeConnection: async () => true,
-    spawnProcess: () => {
-      childRef = fakeChild(() => {})
-      return childRef
-    },
-    onStatus: status => statuses.push(status.detail || ''),
-  })
-  supervisor.start()
-  childRef.stderr.emit('data', Buffer.from('Traceback\n  File "site-packages/loguru/_ctime_functions.py", line 7\nImportError: win32_setctime missing\n'))
-  childRef.emit('exit', 1)
-  await delay(40)
-  const log = await fs.readFile(aimuxLogPath(), 'utf8')
-  ok(log.includes('win32_setctime missing') && log.includes('AIMUX exit code=1'), 'AIMUX stdout/stderr and exit code are persisted')
-  ok(log.includes('_ctime_functions.py') && !log.includes('secret-token'), 'diagnostic log keeps traceback context without JWT')
-  ok(statuses.some(s => s.includes('日志:') && s.includes('aimux.log')), 'failure status points to the persistent log path')
-  await supervisor.stop()
-  if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
-  await fs.rm(home, { recursive: true, force: true })
 }
 
 function captureStdout(child: ReturnType<typeof spawn>): Promise<string> {
@@ -254,8 +231,8 @@ async function testDownloadBundleStream() {
 async function main() {
   await testStatusLine()
   await testProbeContract()
-  await testAutomaticReconnect()
-  await testJwtRefreshAfterUnauthorizedExit()
+  await testAdoptOrSpawn()
+  await testJwtRefreshViaProbe()
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()
@@ -264,7 +241,6 @@ async function main() {
   testBundleHealthCheck()
   await testEnsureFromBundleReady()
   await testDownloadBundleStream()
-  await testPersistentProcessLog()
   console.log(`\n==== AIMUX RESULT: ${pass} passed, ${fail} failed ====\n`)
   process.exit(fail === 0 ? 0 : 1)
 }

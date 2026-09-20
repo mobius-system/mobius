@@ -5,13 +5,14 @@
  * aimux on first use, then keep `aimux reverse connect` attached to the
  * currently authenticated Mobius server.  Nothing is started before login.
  */
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { promises as fs, existsSync, createWriteStream } from 'node:fs'
+import { promises as fs, existsSync, createWriteStream, mkdirSync, openSync, closeSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import extract from 'extract-zip'
+import lockfile from 'proper-lockfile'
 import { mobiusHome } from './config.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
@@ -272,6 +273,19 @@ export function spawnLauncher(launcher: AimuxLauncher, args: string[]): ChildPro
     : spawn(launcher.python, ['-m', 'aimux', ...args], { windowsHide: true })
 }
 
+/** 以守护进程形态 spawn aimux：detached(父变 init)+ stdio 重定向到 aimux.log, 不随 TUI 退出而亡。 */
+function spawnDetachedDaemon(launcher: AimuxLauncher, args: string[]): ChildProcess {
+  let logFd = -1
+  try { mkdirSync(mobiusHome(), { recursive: true }); logFd = openSync(aimuxLogPath(), 'a') } catch { logFd = -1 }
+  const stdio: StdioOptions = logFd >= 0 ? ['ignore', logFd, logFd] : 'ignore'
+  const child = launcher.kind === 'exe'
+    ? spawn(launcher.path, args, { detached: true, stdio, windowsHide: true })
+    : spawn(launcher.python, ['-m', 'aimux', ...args], { detached: true, stdio, windowsHide: true })
+  if (logFd >= 0) { try { closeSync(logFd) } catch { /* ignore */ } }
+  child.unref?.()
+  return child
+}
+
 /** test-only 导出: 暴露内部 downloadBundle 以便单测 mock fetch 验证流式下载+进度。 */
 export const downloadBundleForTest = downloadBundle
 
@@ -319,15 +333,65 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
 
-export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd()): string {
+/** Effective OS user (not `$USER`, which sudo/containers can pollute). */
+function currentUsername(): string {
+  try { return os.userInfo().username } catch { return process.env.USER || process.env.USERNAME || 'user' }
+}
+
+/** Per (username, workspace) hash — reused by the identifier and the lease/lock filenames. */
+export function aimuxWorkspaceHash(username = currentUsername(), cwd = process.cwd()): string {
+  return createHash('sha256').update(`${username}:${path.resolve(cwd)}`).digest('hex').slice(0, 10)
+}
+
+export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd(), username = currentUsername()): string {
   const host = hostname.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
-  // One machine may run several Mobius TUIs for different projects.  A
-  // hostname-only identifier makes every reverse client register with the
-  // same name and --replace continuously evicts its siblings ("client
-  // replaced").  The normalized cwd hash is stable across restarts/resume but
-  // unique for the common multi-project case.
-  const workspace = createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 10)
-  return `tui-${host || 'pc'}-${workspace}`
+  // One machine may run several Mobius TUIs for different projects (and for
+  // different users). A hostname-only identifier makes every reverse client
+  // register with the same name and --replace continuously evicts its siblings.
+  // The (username, cwd) hash is stable across restarts/resume but unique per
+  // user and per workspace, so separate projects/users never collide.
+  return `tui-${host || 'pc'}-${aimuxWorkspaceHash(username, cwd)}`
+}
+
+// ── shared-daemon coordination files (one reverse connect per user+workspace) ──
+// The reverse connect is a detached daemon shared by every TUI in the same
+// user+workspace. Two files coordinate it, both under ~/.mobius/aimux-runtime/:
+//   <hash>.lease — mtime = "some TUI renewed me recently" (liveness heartbeat);
+//                  content = the daemon's pid (for dead-process detection).
+//   <hash>.lock  — short-lived spawn lock (proper-lockfile), so exactly one TUI
+//                  spawns at a time and a crashed spawner never wedges the lock.
+const LEASE_TIMEOUT_MS = 10 * 60 * 1000 // daemon is orphaned after 10 min without a renew
+const LEASE_RENEW_MS = 5_000            // adopters renew the lease every 5s
+
+const aimuxRuntimeDir = () => path.join(mobiusHome(), 'aimux-runtime')
+const leasePath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lease`)
+const lockPath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lock`)
+
+async function ensureRuntimeDir(): Promise<void> {
+  await fs.mkdir(aimuxRuntimeDir(), { recursive: true, mode: 0o700 })
+}
+
+async function writeLease(hash: string, pid: number): Promise<void> {
+  await ensureRuntimeDir()
+  await fs.writeFile(leasePath(hash), String(pid), { mode: 0o600 })
+}
+
+async function readLeasePid(hash: string): Promise<number | null> {
+  try {
+    const pid = Number.parseInt(await fs.readFile(leasePath(hash), 'utf8'), 10)
+    return Number.isInteger(pid) && pid > 0 ? pid : null
+  } catch { return null }
+}
+
+/** Bump the lease mtime so the daemon sees "someone still wants me". */
+async function touchLease(hash: string): Promise<void> {
+  await ensureRuntimeDir()
+  const now = new Date()
+  try { await fs.utimes(leasePath(hash), now, now) } catch { /* no lease yet (not spawned) */ }
+}
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch { return false }
 }
 
 /**
@@ -389,12 +453,16 @@ export function pickSilentFlag(helpText: string, platform: NodeJS.Platform = pro
   return null
 }
 
-export async function probeAimuxBridgeConnection(
+/** Result of a bridge heartbeat: is the stream up, and did the JWT just get rejected? */
+export interface AimuxBridgeProbe { connected: boolean; authError: boolean }
+
+/** Heartbeat probe that distinguishes "stream down" from "JWT expired" (401/403). */
+export async function probeAimuxBridge(
   server: string,
   token: string,
   identifier: string,
   timeoutMs = 4_000,
-): Promise<boolean> {
+): Promise<AimuxBridgeProbe> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -402,14 +470,24 @@ export async function probeAimuxBridgeConnection(
       `${server.replace(/\/$/, '')}/aimux_bridge/api/remotes/${encodeURIComponent(identifier)}/connection`,
       { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
     )
-    if (!response.ok) return false
+    if (response.status === 401 || response.status === 403) return { connected: false, authError: true }
+    if (!response.ok) return { connected: false, authError: false }
     const data: any = await response.json().catch(() => ({}))
-    return data?.identifier === identifier && data?.event_stream_connected === true
+    return { connected: data?.identifier === identifier && data?.event_stream_connected === true, authError: false }
   } catch {
-    return false
+    return { connected: false, authError: false }
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export async function probeAimuxBridgeConnection(
+  server: string,
+  token: string,
+  identifier: string,
+  timeoutMs = 4_000,
+): Promise<boolean> {
+  return (await probeAimuxBridge(server, token, identifier, timeoutMs)).connected
 }
 
 interface SupervisorOptions {
@@ -420,85 +498,118 @@ interface SupervisorOptions {
   /** Re-authenticate after AIMUX reports an expired/invalid bridge JWT. */
   refreshToken?: () => Promise<string | null>
   heartbeatIntervalMs?: number
-  heartbeatFailureThreshold?: number
   retryBaseMs?: number
-  probeConnection?: () => Promise<boolean>
+  probeConnection?: () => Promise<boolean | AimuxBridgeProbe>
   spawnProcess?: (token: string) => ChildProcess
 }
 
+/**
+ * Coordinates the shared `aimux reverse connect` daemon for one user+workspace.
+ *
+ * The daemon is spawned detached (survives this TUI) and shared by every TUI in
+ * the same user+workspace. Two files under ~/.mobius/aimux-runtime/ coordinate
+ * it: a lease (mtime = "a TUI renewed me recently", content = daemon pid) and a
+ * short-lived spawn lock (proper-lockfile). A TUI only spawns when no live daemon
+ * is found; otherwise it adopts and keeps renewing the lease. The daemon is never
+ * killed on TUI exit — it is torn down when the lease expires (handled by aimux).
+ */
 export class AimuxSupervisor {
-  private child: ChildProcess | null = null
   private stopping = false
-  private retry: ReturnType<typeof setTimeout> | null = null
-  private heartbeatTimer: ReturnType<typeof setTimeout> | null = null
-  private heartbeatEpoch = 0
-  private heartbeatFailures = 0
-  private reconnectAttempt = 0
-  private bridgeConnected = false
   private refreshingToken = false
+  private reconnectAttempt = 0
+  private leaseTimer: ReturnType<typeof setTimeout> | null = null
+  private probeTimer: ReturnType<typeof setTimeout> | null = null
   private opts: SupervisorOptions
-  constructor(opts: SupervisorOptions) { this.opts = opts }
-  start() { this.stopping = false; this.spawnChild() }
-  private spawnChild() {
-    const { server, token, identifier, onStatus } = this.opts
-    onStatus({ state: 'starting', phase: 'connecting', detail: '正在连接 Mobius AIMUX bridge…', identifier, attempt: this.reconnectAttempt })
-    const child = this.opts.spawnProcess?.(token) ?? spawn(
-      aimuxExe(),
-      reverseConnectArgs(server, identifier, token),
-      { windowsHide: true },
-    )
-    this.child = child
-    this.startHeartbeat()
-    let tail = ''   // 缓存 aimux 最近输出, 进程异常退出时带进状态行, 便于诊断(code=1 不再是黑盒)
-    const logWrite = { queue: Promise.resolve() }
-    appendAimuxLog(logWrite, `\n===== AIMUX start ${new Date().toISOString()} =====\n`)
-    appendAimuxLog(logWrite, `server=${server} identifier=${identifier} platform=${process.platform} arch=${process.arch}\n`)
-    const classify = (buf: Buffer) => {
-      const text = buf.toString('utf8')
-      tail = (tail + text).slice(-4000)
-      appendAimuxLog(logWrite, text)
-      if (!this.bridgeConnected && /connected|registered|event stream|heartbeat|sse/i.test(text)) {
-        onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 已启动，等待 bridge 心跳确认…', identifier })
-      } else if (/connection (refused|reset|closed|error)|failed to connect|unauthorized|forbidden|token.*invalid/i.test(text)) {
-        onStatus({ state: 'failed', phase: 'heartbeat', detail: text.trim().slice(-200), identifier })
+  private hash: string
+  constructor(opts: SupervisorOptions) { this.opts = opts; this.hash = aimuxWorkspaceHash() }
+
+  async start(): Promise<void> {
+    this.stopping = false
+    await this.ensureDaemon()
+    this.startLeaseRenewal()
+    this.scheduleProbe()
+  }
+
+  /** Adopt an existing daemon if one is alive; otherwise spawn (under the lock). */
+  private async ensureDaemon(): Promise<void> {
+    const pid = await readLeasePid(this.hash)
+    if (pid !== null && pidAlive(pid)) {
+      this.opts.onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 守护进程已在运行，采用中…', identifier: this.opts.identifier })
+      return
+    }
+    await this.spawnDaemon()
+  }
+
+  /** Spawn the detached daemon exactly once, serialized by the path lock. */
+  private async spawnDaemon(): Promise<void> {
+    await ensureRuntimeDir()
+    const release = await lockfile.lock(lockPath(this.hash), {
+      stale: 30_000,
+      retries: { retries: 30, factor: 1.2, minTimeout: 100, maxTimeout: 1000 },
+    }).catch(() => null)
+    try {
+      // Re-check under the lock — another TUI may have spawned while we waited.
+      const pid = await readLeasePid(this.hash)
+      if (pid !== null && pidAlive(pid)) return
+      const { server, token, identifier, onStatus } = this.opts
+      onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
+      const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token))
+      child.on('error', (e: Error) => { appendAimuxLog(installLogQueue, `\n[aimux spawn error] ${e.stack || e.message}\n`) })
+      await writeLease(this.hash, child.pid ?? 0)
+      child.unref?.()
+      this.reconnectAttempt = 0
+    } finally {
+      if (release) await release()
+    }
+  }
+
+  /** Renew the lease every 5s while this TUI is alive. */
+  private startLeaseRenewal(): void {
+    const tick = () => {
+      if (this.stopping) return
+      void touchLease(this.hash).catch(() => {})
+      this.leaseTimer = setTimeout(tick, LEASE_RENEW_MS)
+    }
+    void touchLease(this.hash).catch(() => {})
+    this.leaseTimer = setTimeout(tick, LEASE_RENEW_MS)
+  }
+
+  private scheduleProbe(): void {
+    if (this.stopping) return
+    this.probeTimer = setTimeout(() => void this.checkDaemon(), this.opts.heartbeatIntervalMs ?? 5_000)
+  }
+
+  /** Probe the bridge; refresh on auth error, respawn only when the daemon died. */
+  private async checkDaemon(): Promise<void> {
+    if (this.stopping) return
+    const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier))
+    const probe: AimuxBridgeProbe = typeof raw === 'boolean' ? { connected: raw, authError: false } : raw
+    if (this.stopping) return
+    if (probe.authError) {
+      await this.refreshCredentials('JWT 已过期')
+    } else if (probe.connected) {
+      this.reconnectAttempt = 0
+      this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `心跳正常 · ${this.opts.identifier}`, identifier: this.opts.identifier })
+    } else {
+      const pid = await readLeasePid(this.hash)
+      if (pid === null || !pidAlive(pid)) {
+        this.reconnectAttempt += 1
+        this.opts.onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 守护进程已退出，重连中（第 ${this.reconnectAttempt} 次）…`, identifier: this.opts.identifier, attempt: this.reconnectAttempt })
+        await this.spawnDaemon()
+      } else {
+        // Daemon alive but stream down → transient; its own reconnect handles it.
+        this.opts.onStatus({ state: 'starting', phase: 'heartbeat', detail: '等待 bridge 心跳确认…', identifier: this.opts.identifier })
       }
     }
-    child.stdout?.on('data', classify); child.stderr?.on('data', classify)
-    child.on('error', e => {
-      appendAimuxLog(logWrite, `\n[spawn error] ${e.stack || e.message}\n`)
-      onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 启动失败: ${e.message} · 日志: ${aimuxLogPath()}`, identifier })
-    })
-    child.on('exit', code => {
-      if (this.child !== child) return
-      this.child = null
-      this.stopHeartbeat()
-      if (this.stopping) { onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier }); return }
-      appendAimuxLog(logWrite, `\n===== AIMUX exit code=${code} ${new Date().toISOString()} =====\n`)
-      const reason = code !== 0 && tail.trim()
-        ? `AIMUX 进程退出（code=${code}）: ${tail.trim().split(/[\r\n]+/).filter(Boolean).slice(-3).join(' ⏎ ').slice(-220)} · 日志: ${aimuxLogPath()}`
-        : `AIMUX 进程退出（code=${code}） · 日志: ${aimuxLogPath()}`
-      // AIMUX reserves exit code 4 for auth_required. A long-running TUI used
-      // to keep respawning with the JWT captured at startup, so every retry
-      // was rejected with the same 401 forever. Refresh before respawning and
-      // update opts.token so both the child arguments and heartbeat use it.
-      if (code === 4 || /unauthorized|forbidden|token.*invalid|auth(?:entication)?[_ ]required/i.test(tail)) {
-        void this.refreshCredentials(reason)
-        return
-      }
-      this.scheduleReconnect(reason)
-    })
+    this.scheduleProbe()
   }
 
   private async refreshCredentials(reason: string): Promise<void> {
     if (this.stopping || this.refreshingToken) return
     const refreshToken = this.opts.refreshToken
-    if (!refreshToken) { this.scheduleReconnect(reason); return }
+    if (!refreshToken) return
     this.refreshingToken = true
-    this.opts.onStatus({
-      state: 'starting', phase: 'retrying',
-      detail: 'AIMUX 登录凭据已过期，正在刷新 JWT…',
-      identifier: this.opts.identifier,
-    })
+    this.opts.onStatus({ state: 'starting', phase: 'retrying', detail: 'AIMUX 登录凭据已过期，正在刷新 JWT…', identifier: this.opts.identifier })
     try {
       const token = await refreshToken()
       if (this.stopping) return
@@ -506,103 +617,24 @@ export class AimuxSupervisor {
       this.opts.token = token
       this.reconnectAttempt = 0
       appendAimuxLog(installLogQueue, `AIMUX JWT refreshed at ${new Date().toISOString()}; restarting bridge client\n`)
-      this.opts.onStatus({
-        state: 'starting', phase: 'connecting',
-        detail: 'JWT 已刷新，正在重新连接 AIMUX bridge…',
-        identifier: this.opts.identifier,
-      })
-      this.spawnChild()
-    } catch (error: any) {
-      if (!this.stopping) this.scheduleReconnect(`JWT 刷新失败: ${error?.message ?? String(error)}`)
+      this.opts.onStatus({ state: 'starting', phase: 'connecting', detail: 'JWT 已刷新，正在重新连接 AIMUX bridge…', identifier: this.opts.identifier })
+      await this.spawnDaemon()
+    } catch {
+      // refresh failed → the probe loop will retry on the next tick
     } finally {
       this.refreshingToken = false
     }
   }
 
-  private startHeartbeat() {
-    this.stopHeartbeat()
-    this.heartbeatFailures = 0
-    this.bridgeConnected = false
-    const epoch = ++this.heartbeatEpoch
-    void this.checkHeartbeat(epoch)
-  }
-
-  private stopHeartbeat() {
-    this.heartbeatEpoch += 1
-    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer)
-    this.heartbeatTimer = null
-  }
-
-  private async checkHeartbeat(epoch: number): Promise<void> {
-    const connected = await (this.opts.probeConnection?.() ?? probeAimuxBridgeConnection(this.opts.server, this.opts.token, this.opts.identifier))
-    if (this.stopping || epoch !== this.heartbeatEpoch || !this.child) return
-
-    const threshold = this.opts.heartbeatFailureThreshold ?? 3
-    if (connected) {
-      this.heartbeatFailures = 0
-      this.reconnectAttempt = 0
-      this.bridgeConnected = true
-      this.opts.onStatus({
-        state: 'connected', phase: 'connected',
-        detail: `心跳正常 · ${this.opts.identifier}`,
-        identifier: this.opts.identifier,
-      })
-    } else {
-      this.heartbeatFailures += 1
-      if (this.heartbeatFailures >= threshold) {
-        this.bridgeConnected = false
-        await this.restartAfterDisconnect(`bridge 心跳连续 ${this.heartbeatFailures} 次未响应`)
-        return
-      }
-      this.opts.onStatus({
-        state: 'starting', phase: 'heartbeat',
-        detail: `等待 bridge 心跳确认（${this.heartbeatFailures}/${threshold}）…`,
-        identifier: this.opts.identifier,
-      })
-    }
-    const interval = this.opts.heartbeatIntervalMs ?? 5_000
-    this.heartbeatTimer = setTimeout(() => void this.checkHeartbeat(epoch), interval)
-  }
-
-  private async restartAfterDisconnect(reason: string) {
-    this.stopHeartbeat()
-    await this.killChild()
-    if (!this.stopping) this.scheduleReconnect(reason)
-  }
-
-  private scheduleReconnect(reason: string) {
-    if (this.stopping || this.retry) return
-    this.reconnectAttempt += 1
-    const base = this.opts.retryBaseMs ?? 1_000
-    const delay = Math.min(15_000, base * (2 ** Math.min(this.reconnectAttempt - 1, 4)))
-    const seconds = Math.max(1, Math.ceil(delay / 1_000))
-    this.opts.onStatus({
-      state: 'failed', phase: 'retrying',
-      detail: `${reason}，${seconds} 秒后进行第 ${this.reconnectAttempt} 次重连…`,
-      identifier: this.opts.identifier,
-      attempt: this.reconnectAttempt,
-    })
-    this.retry = setTimeout(() => {
-      this.retry = null
-      if (!this.stopping) this.spawnChild()
-    }, delay)
-  }
-
-  private async killChild() {
-    const child = this.child
-    this.child = null
-    if (!child?.pid) return
-    if (WIN) await run('taskkill', ['/PID', String(child.pid), '/T', '/F'])
-    else try { child.kill('SIGTERM') } catch { /* ignore */ }
-  }
-
-  async stop() {
+  async stop(): Promise<void> {
     this.stopping = true
-    if (this.retry) clearTimeout(this.retry)
-    this.retry = null
-    this.stopHeartbeat()
-    await this.killChild()
-    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止', identifier: this.opts.identifier })
+    if (this.leaseTimer) clearTimeout(this.leaseTimer)
+    this.leaseTimer = null
+    if (this.probeTimer) clearTimeout(this.probeTimer)
+    this.probeTimer = null
+    // The daemon is shared: do NOT kill it. It self-terminates when the lease
+    // expires (no TUI renewing it for 10 minutes).
+    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止（守护进程继续运行）', identifier: this.opts.identifier })
   }
 }
 
@@ -649,9 +681,9 @@ export async function startAimuxConnection(opts: {
     const silentFlag = cachedSilentFlag
     supervisor = new AimuxSupervisor({
       server: opts.server, token: opts.token, identifier, onStatus, refreshToken: opts.refreshToken,
-      spawnProcess: token => spawnLauncher(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag)),
+      spawnProcess: token => spawnDetachedDaemon(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag)),
     })
-    supervisor.start()
+    await supervisor.start()
   })().finally(() => { installing = null })
   await installing
 }
