@@ -2839,11 +2839,11 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
             </button>}
             <div className="min-w-0 flex-1">
               <div className="truncate text-[10px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
-              <div className="mt-0.5 flex items-center gap-2 text-[8px]" style={{ color: 'var(--text-muted)' }}>
-                {clusterMode === 'creator' && <span>{model.creatorClusters.length} Creators</span>}
-                <span>{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
-                <span title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
-                {snapshotLoading && <span>正在加载全局快照</span>}
+              <div className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden text-[8px]" style={{ color: 'var(--text-muted)' }}>
+                {clusterMode === 'creator' && <span className="flex-shrink-0 whitespace-nowrap">{model.creatorClusters.length} Creators</span>}
+                <span className="min-w-0 truncate">{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
+                <span className="min-w-0 truncate" title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
+                {snapshotLoading && <span className="flex-shrink-0 whitespace-nowrap">正在加载全局快照</span>}
               </div>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
