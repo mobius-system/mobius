@@ -1059,9 +1059,11 @@ export function SessionSkillMemoryEditor({
     <>
       <div className="session-resource-editor flex min-h-0 flex-1 flex-col gap-3">
         {/* 所有会话操作共用一个流式按钮带。隐藏按钮或侧栏变窄时，浏览器按真实可用空间自动回填与换行。 */}
+        {/* 按钮间隔 0.3rem = 4.8px (原 gap-1.5 的 6px 减 20%); 改这里必须同步改 index.css 里
+            .session-resource-tabs--balanced > button 的列宽算式, 否则列宽与真实间距不匹配. */}
         <div
           ref={controlsRef}
-          className="advanced-session-actions mobius-chat-input-actions session-resource-tabs session-resource-tabs--balanced flex flex-wrap content-start justify-center gap-1.5"
+          className="advanced-session-actions mobius-chat-input-actions session-resource-tabs session-resource-tabs--balanced flex flex-wrap content-start justify-center gap-[0.3rem]"
           style={{ '--session-control-columns': controlColumns } as CSSProperties}
           data-testid="advanced-session-actions"
           aria-label="高级会话按钮组"
