@@ -458,8 +458,7 @@ export default function EasyModePage() {
       setShowWelcome(false)
       const next = new URLSearchParams(search)
       next.set('session', session.session_id)
-      if (session.project_id) next.set('project', session.project_id)
-      else next.delete('project')
+      next.delete('project')
       next.delete('panel')
       setSearch(next)
     }
@@ -1025,7 +1024,14 @@ export default function EasyModePage() {
           </main>
         ) : sessionTransitioning ? (
           <main className="easy-content easy-content--empty" data-testid="easy-session-transition">
-            <Loading text="正在打开新项目…" />
+            <div className="easy-session-transition-loader" role="status" aria-live="polite">
+              <div className="easy-session-transition-loader__orb">
+                <Sparkles className="easy-session-transition-loader__spark" />
+                <span className="easy-session-transition-loader__ring" />
+              </div>
+              <strong>正在打开新项目…</strong>
+              <span>正在载入会话与工作区</span>
+            </div>
           </main>
         ) : showWelcome ? (
           <main className="easy-content easy-content--welcome" data-testid="easy-welcome-panel">
