@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Mic, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
+import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
 
@@ -40,6 +40,8 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   hasReadyAttachments: boolean
   hasPendingSend: boolean
   modelAvailable: boolean
+  /** 打开本地文件选择器上传附件 (与标准模式「更多输入功能 → 上传文件」同一动作) */
+  onUpload: () => void
   /** 终止当前智能体正在执行的操作 (与标准模式标题栏的"终止"按钮同一动作) */
   onStop: () => void
   /** 终止指令已发出后的反馈态: 按钮转红并脉冲, 1.8s 后自动回落 */
@@ -135,6 +137,21 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             <span className="truncate">提交后可配置项目、任务、模型和上下文</span>
           </span>
         ) : null}
+        {/* 上传附件: 标准模式把它收在「更多输入功能」菜单里, 简易模式只留这一个入口, 直接放在行内.
+            样式与同一行其它按钮一致 (无边框圆形, 见 Unify easy-mode chat input toolbar buttons). */}
+        {follow && (
+          <AdvancedInteractionBtn
+            onClick={follow.onUpload}
+            label="上传文件"
+            tooltip="上传文件"
+            accent="blue"
+            motion="breathe"
+            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
+            iconClassName="h-[17px] w-[17px]"
+            style={{ color: '#d1d5db' }}
+            icon={<Paperclip className="h-[17px] w-[17px]" />}
+          />
+        )}
         {follow && (
           <AdvancedInteractionBtn
             onClick={follow.onToggleVoice}

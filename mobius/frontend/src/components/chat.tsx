@@ -4504,6 +4504,20 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           )}
           {layout === 'easy' && (
             <div className="easy-session-chat-input-shell min-w-0 flex-shrink-0 p-3">
+              {/* 附件芯片: 标准输入框整块在简易模式下隐藏, 芯片若留在那里面, 上传/粘贴后就没有任何可见反馈. */}
+              {attachments.length > 0 && (
+                <div className="mb-2 flex max-h-20 flex-wrap items-start gap-1.5 overflow-y-auto pr-1">
+                  {attachments.map(att => (
+                    <AttachmentChip
+                      key={att.id}
+                      att={att}
+                      theme={theme as 'dark' | 'light' | 'purple'}
+                      onRemove={() => removeAttachment(att.id)}
+                      onPreview={openAttachmentImagePreview}
+                    />
+                  ))}
+                </div>
+              )}
               <EasySessionChatInput
                 mode="follow_session_mode"
                 input={input}
@@ -4530,6 +4544,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   setInputFocused(false)
                 }}
                 onToggleVoice={toggleVoiceRecording}
+                onUpload={openFilePicker}
                 onSend={send}
                 toolbar={
                   // 简易布局下标准侧栏按钮组不渲染, 这里把它收进贴住输入框的工具浮层 (同一份定义).
@@ -4719,6 +4734,58 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               </div>
             </div>
             <div className="relative flex items-end gap-2 px-3 pb-3 pt-0">
+              {/* 更多输入功能: 上传文件 / 压缩上文 / 展开大输入。简易模式有独立输入框组件, 这一行只服务常规模式。 */}
+              <div className="relative">
+                <AdvancedInteractionBtn
+                  ref={inputMenuButtonRef}
+                  onClick={toggleInputMenu}
+                  aria-haspopup="menu"
+                  aria-expanded={inputMenuOpen}
+                  label="更多输入功能"
+                  tooltip="更多输入功能"
+                  accent="blue"
+                  motion="breathe"
+                  buttonClassName="h-7 w-7 rounded-full"
+                  iconClassName="h-[17px] w-[17px]"
+                  style={{
+                    color: theme !== 'light' ? '#d1d5db' : '#374151',
+                    border: `1px solid ${inputMenuOpen ? 'rgba(96,165,250,0.38)' : (theme !== 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')}`,
+                    background: inputMenuOpen ? 'rgba(59,130,246,0.12)' : undefined,
+                  }}
+                  icon={<Plus className="h-[17px] w-[17px]" strokeWidth={2.2} />}
+                />
+                {inputMenuOpen && (
+                  <div
+                    ref={inputMenuRef}
+                    role="menu"
+                    className="absolute bottom-11 left-0 z-30 min-w-[200px] rounded-lg shadow-xl py-1"
+                    style={{
+                      background: 'var(--menu-bg)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
+                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); openFilePicker() }}
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      style={{ color: 'var(--text-primary)' }}>
+                      <Paperclip className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+                      <span>上传文件</span>
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setCompactConfirmOpen(true) }}
+                      disabled={!sessionId}
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      style={{ color: 'var(--text-primary)' }}>
+                      <Archive className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
+                      <span>压缩上文</span>
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
+                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      style={{ color: 'var(--text-primary)' }}>
+                      {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
+                      <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
               <AdvancedInteractionBtn
                 onClick={toggleVoiceRecording}
                 disabled={messageSubmitting || voiceState === 'transcribing'}
