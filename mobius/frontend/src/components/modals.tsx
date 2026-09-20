@@ -2263,8 +2263,10 @@ export function NewSessionModal({
   const entityPurposeLabel = isResearch ? `${displayEntityLabel} 目的/问题描述` : `${displayEntityLabel}目的/问题描述`
   const chiefExists = existingSessions.some((s: any) => s.research_role === 'chief_researcher')
   const DRAFT_KEY = isPresetMode ? `session-preset:${projectId || issueId || researchId || 'unknown'}`
+    // v2: "修改模型并继续" 改为默认不选中任何 Skill/Memory, 旧草稿记录的是改造前的默认勾选,
+    // 继续沿用会让新默认失效 → 换 key 让旧草稿自然作废 (只影响该会话的这一份草稿).
     : continueFromSessionId
-      ? `continue-session:${continueFromSessionId}`
+      ? `continue-session:v2:${continueFromSessionId}`
       : `new-session:${isResearch ? `r:${researchId}` : `i:${issueId}`}`
   const initialDraft = isPresetMode ? null : draftLoad<{
     name?: string
@@ -2659,6 +2661,12 @@ export function NewSessionModal({
       if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_skill_ids) {
         defaultSkillEx = new Set(initialDraft.excluded_skill_ids.filter(id => availableSkillIds.has(id)))
       }
+      // "修改模型并继续" 默认不选中任何 Skill/Memory: 这里先按"全不选"排除全集 (必选内置 Skill 由下方
+      // requiredSessionSkillIds 放回). 用户在本弹窗内勾选过的草稿 (selection_ready) 优先, 不覆盖.
+      const continueResetSelection = !!continueFromSessionId && !isPresetMode && !initialDraft?.selection_ready
+      if (continueResetSelection) {
+        defaultSkillEx = new Set(availableSkillIds)
+      }
       requiredSessionSkillIds.forEach(id => defaultSkillEx.delete(id))
       // 选中的 research agent skill 强制注入; 其他 research agent skill 与它互斥, 必须排除.
       defaultSkillEx = normalizeSkillExclusions(defaultSkillEx, availableSkillIds)
@@ -2670,6 +2678,9 @@ export function NewSessionModal({
       )
       if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_memory_ids) {
         defaultMemoryEx = new Set(initialDraft.excluded_memory_ids.filter(id => availableMemoryIds.has(id)))
+      }
+      if (continueResetSelection) {
+        defaultMemoryEx = new Set(availableMemoryIds)
       }
       if (isSelfEvolveGuidedDemo) {
         defaultSkillEx = normalizeSkillExclusions(
