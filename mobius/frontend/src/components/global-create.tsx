@@ -602,7 +602,7 @@ export function SkillMemoryPicker({
               <div className="min-w-0">
                 {singleTrigger ? (
                   // 单入口形态: 弹窗内用 tab 在 Skill / Memory 之间切换
-                  <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+                  <div className="inline-flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                     {(['skill', 'memory'] as const).map(kind => (
                       <button key={kind} type="button" onClick={() => { setPanel(kind); setQ('') }}
                         className="h-7 rounded-md px-2.5 text-[12px] transition-colors"

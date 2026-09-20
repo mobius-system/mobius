@@ -198,6 +198,7 @@ export default function EasyModePage() {
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(EMPTY_EASY_SESSION_SELECTION)
   const [welcomeCreating, setWelcomeCreating] = useState(false)
+  const [sessionTransitioning, setSessionTransitioning] = useState(false)
   const [createErrorToast, setCreateErrorToast] = useState<{ message: string } | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
@@ -447,6 +448,17 @@ export default function EasyModePage() {
 
   const handleSessionCreated = (session: RecentSession) => {
     setCreateSuccessToast({ name: session?.name || '新会话' })
+    // 从「+ 新任务」提交后立即进入新项目中的会话，不再停留在欢迎页。
+    if (session?.session_id) {
+      setSessionTransitioning(true)
+      setShowWelcome(false)
+      const next = new URLSearchParams(search)
+      next.set('session', session.session_id)
+      if (session.project_id) next.set('project', session.project_id)
+      else next.delete('project')
+      next.delete('panel')
+      setSearch(next)
+    }
     // 创建接口返回的对象可能不含项目/任务展示字段，立即重拉近期列表，避免用户等待
     // 下一轮 10 秒轮询才能在左栏看到新会话。
     api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`)
@@ -461,6 +473,11 @@ export default function EasyModePage() {
         }
       })
   }
+
+  useEffect(() => {
+    if (!sessionTransitioning || !sessionParam || selectedSession?.session_id !== sessionParam) return
+    setSessionTransitioning(false)
+  }, [sessionTransitioning, sessionParam, selectedSession?.session_id])
 
   // 全局搜索可以打开不在“最近 50 个”中的历史会话；刷新深链时也补拉该会话，
   // 避免 URL 中的有效 session 因近期列表未包含而被错误清除。
@@ -976,6 +993,10 @@ export default function EasyModePage() {
             <div className="easy-content-header"><BrainCircuit className="h-5 w-5" /><div><h1>记忆与技能</h1><p>管理新会话默认可用的个人上下文</p></div></div>
             <div className="easy-context-tabs"><button type="button" className={contextTab === 'skills' ? 'is-active' : ''} onClick={() => setContextTab('skills')}><Sparkles className="h-3.5 w-3.5" />技能</button><button type="button" className={contextTab === 'memories' ? 'is-active' : ''} onClick={() => setContextTab('memories')}><BrainCircuit className="h-3.5 w-3.5" />记忆</button></div>
             <div className="easy-context-body">{contextTab === 'skills' ? <SkillsManager scope="user" /> : <MemoriesManager scope="user" />}</div>
+          </main>
+        ) : sessionTransitioning ? (
+          <main className="easy-content easy-content--empty" data-testid="easy-session-transition">
+            <Loading text="正在打开新项目…" />
           </main>
         ) : showWelcome ? (
           <main className="easy-content easy-content--welcome" data-testid="easy-welcome-panel">

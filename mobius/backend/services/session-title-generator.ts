@@ -10,12 +10,16 @@
  *
  * 受同一开关控制: admin-settings autoGenerateSessionTitle.enabled(默认 on)。
  *
- * 做法: 扫描「默认名(含时间戳) + 消息数≥2 + 非 claude-code 后端」的会话, 用该会话自身
- * 的 codex 通道(base_url + key + model, OpenAI 兼容 chat/completions)把首条用户消息
- * 浓缩成一个简短标题, 写回 sessions_v2.name。失败冷却避免反复打爆模型。
+ * 做法: 扫描「默认名(含时间戳) + 消息数≥2 + 非 claude-code 后端」的会话, 依次尝试两条路:
+ *   ① 新版 codex(0.154+)自己生成的标题 —— state_5.sqlite → threads.name, 由后端
+ *      tmux-codex.getSessionTitle 读出, 与用户在 codex 侧所见一致, 无需模型调用。
+ *   ② 旧版 codex 兜底: 用该会话自身的 codex 通道(base_url + key + model, OpenAI 兼容
+ *      chat/completions)把首条用户消息浓缩成一个简短标题。
+ * 结果都写回 sessions_v2.name。失败冷却避免反复打爆模型。
  */
 import * as fs from 'fs';
 import adminSettings from './admin-settings';
+import agents from '../agents';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 import * as modelRegistry from './model-registry';
@@ -131,6 +135,18 @@ async function generateTitle(endpoint: Endpoint, firstUserText: string): Promise
   }
 }
 
+// 新版 codex(0.154+)自己会把会话标题写进 state_5.sqlite → threads.name, 后端 getSessionTitle
+// 直接读得到。取到就用它: 与用户在 codex 侧看到的一致, 且省掉一次模型调用。
+// 取不到(旧版 codex 无该列 / 标题尚未生成) → 返回 null, 回落下面的模型浓缩兜底。
+function codexNativeTitle(sessionId: string): string | null {
+  try {
+    const title = agents.get('tmux-codex')?.getSessionTitle?.(sessionId)
+    return title ? String(title) : null
+  } catch {
+    return null;
+  }
+}
+
 function firstRealUserContent(sessionId: string): string | null {
   const inputs = Messages.userInputsForTask(sessionId) || [];
   for (const u of inputs) {
@@ -143,6 +159,13 @@ function firstRealUserContent(sessionId: string): string | null {
 }
 
 async function tryGenerateFor(row: { session_id: string; model: string }): Promise<boolean> {
+  // codex 自己生成的标题优先, 无则走模型浓缩(旧版 codex 的兜底)。
+  const native = codexNativeTitle(row.session_id);
+  if (native) {
+    Sessions.updateName(row.session_id, native.slice(0, DB_TITLE_MAX));
+    console.log(`[session-title-generator] titled ${row.session_id} -> "${native.slice(0, DB_TITLE_MAX)}" (codex)`);
+    return true;
+  }
   const endpoint = resolveCodexEndpoint(row.model);
   if (!endpoint) return false;
   const firstUser = firstRealUserContent(row.session_id);

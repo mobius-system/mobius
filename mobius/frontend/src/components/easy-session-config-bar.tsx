@@ -76,7 +76,7 @@ export function EasySessionModeTabs({ selection, onChange }: {
   selection: EasySessionSelection
   onChange: (next: EasySessionSelection) => void
 }) {
-  const modes = [{ createProject: false, label: '新建会话' }, { createProject: true, label: '创建项目' }]
+  const modes = [{ createProject: false, label: '新建会话' }, { createProject: true, label: '全新项目' }]
   const selectMode = (next: boolean) => {
     if (next === selection.createProject) return
     onChange({

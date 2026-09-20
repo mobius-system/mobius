@@ -5,6 +5,8 @@
  * interactive Codex TUI. Implements the same AgentBackend contract as tmux-claude-code:
  *   - input:     tmux load-buffer + paste-buffer -p + Enter
  *   - read:      tail of $CODEX_HOME/sessions/YYYY/MM/DD/rollout-...<thread-id>.jsonl
+ *   - title:     $CODEX_HOME/state_5.sqlite → threads.name (Codex 0.154+ titles its own threads;
+ *                older rollouts fall back to the base jsonl scan)
  *   - interrupt: tmux send-keys C-c x 3
  *   - terminate: tmux kill-window
  *   - completion: shares the .imac/flags/<sessionId> flag convention with the Claude backend
@@ -548,6 +550,38 @@ function codexThreadById(threadId: string) {
   }
 }
 
+// Collapse a raw title into one line; "" becomes null so callers can treat it as absent.
+function normalizeCodexTitle(value: unknown): string | null {
+  if (value == null) return null
+  const title = String(value).replace(/\0/g, '').replace(/\s+/g, ' ').trim()
+  return title || null
+}
+
+// The title Codex generated for this thread, from threads.name of the state db; null when the
+// thread is unknown or Codex has not titled it yet. Codex 0.154+ writes its own concise session
+// title there (tui/src/app/thread_title.rs) and no longer puts a title event in the rollout jsonl.
+// Older state dbs have no `name` column at all: that SELECT throws, and the caller falls back.
+function codexThreadTitleById(threadId: string | null): string | null {
+  if (!threadId) return null
+  const db = openStateDb()
+  if (!db) return null
+  try {
+    const row: any = db.prepare('SELECT name FROM threads WHERE id = ?').get(threadId)
+    return normalizeCodexTitle(row?.name)
+  } catch {
+    return null
+  } finally {
+    try { db.close() } catch {}
+  }
+}
+
+// rollout-<ts>-<threadId>.jsonl → threadId, for a rollout bound before agentSessionId was recorded.
+function codexThreadIdFromRolloutPath(jsonlPath: string | null | undefined): string | null {
+  if (!jsonlPath) return null
+  const m = path.basename(jsonlPath).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i)
+  return m ? m[1] : null
+}
+
 // rollout_path from the state db, else a recursive walk of $CODEX_HOME/sessions for <threadId>.jsonl.
 function findRolloutPathByThreadId(threadId: string) {
   const row = codexThreadById(threadId)
@@ -1064,6 +1098,16 @@ class TmuxCodexBackend extends AgentBackend {
         || null
   }
 
+  // Codex thread id for a Mobius session, same three-level lookup as the jsonl path (a row that
+  // predates agentSessionId still resolves it from the rollout file name).
+  _resolveAgentSessionId(sessionId: string): string | null {
+    return this.runtime.get(sessionId)?.agentSessionId
+        || this._lookupPersistedEntry(sessionId)?.agentSessionId
+        || this._lookupArchivedEntry(sessionId)?.agentSessionId
+        || codexThreadIdFromRolloutPath(this._resolveJsonlPath(sessionId))
+        || null
+  }
+
   // Dequeue detection: codex records "human input actually consumed by the agent" in two shapes,
   // either of which counts as a dequeue:
   //   ① response_item.message.role=='user' — human input written into the rollout as a user message
@@ -1080,6 +1124,14 @@ class TmuxCodexBackend extends AgentBackend {
   // History snapshot from the agent-history-store DB (native jsonl increments are backfilled before the read).
   getHistory(sessionId: string, _opts: QueryOpts = {}): HistorySnapshot {
     return getHistorySnapshot(sessionId, this._resolveJsonlPath(sessionId), this.containDequeueEvent.bind(this), []) as HistorySnapshot
+  }
+
+  // The title Codex itself generated for this session, read from the state db (threads.name).
+  // New Codex (0.154+) writes it there and nothing title-shaped into the rollout jsonl, so the
+  // base jsonl scan finds nothing; the rollouts of older Codex keep going through that scan.
+  getSessionTitle(sessionId: string, opts: QueryOpts = {}): string | null {
+    return codexThreadTitleById(this._resolveAgentSessionId(sessionId))
+        || super.getSessionTitle(sessionId, opts)
   }
 
   // Per-step timings derived from the jsonl, cached beside it (see time-consume-waterfall).
@@ -2007,6 +2059,8 @@ module.exports = {
   TmuxCodexBackend,
   HUB,
   codexRolloutPathOf,
+  codexThreadTitleById,
+  codexThreadIdFromRolloutPath,
   runningFlagPathOf,
   failedFlagPathOf,
   findCodexRecentErrorInPane,

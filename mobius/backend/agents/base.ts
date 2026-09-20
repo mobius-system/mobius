@@ -148,6 +148,8 @@ class AgentBackend {
   }
 
   // Best-effort scan of history for an agent title event; automatic titles use raw_entry instead.
+  // Subclasses with a better source override this:
+  //   - tmux-codex: the title Codex generated for the thread, from state_5.sqlite → threads.name.
   getSessionTitle(sessionId: string, opts: QueryOpts = {}) {
     const hist = this.getHistory(sessionId, opts) || {}
     const entries = Array.isArray(hist.entries) ? hist.entries : []
@@ -219,9 +221,14 @@ class AgentBackend {
   }
 
   // Last resort for a session whose window has closed: runtime and persisted are both empty.
-  _lookupArchivedJsonlPath(sessionId: string): string | null {
+  _lookupArchivedEntry(sessionId: string): any {
     if (!this.archive?.[sessionId] && this.archiveFile) this.archive = this._loadJson(this.archiveFile)
-    return this.archive?.[sessionId]?.jsonlPath || null
+    return this.archive?.[sessionId] || null
+  }
+
+  // The archived row's jsonl path alone, for callers that only need to read history.
+  _lookupArchivedJsonlPath(sessionId: string): string | null {
+    return this._lookupArchivedEntry(sessionId)?.jsonlPath || null
   }
 
   // Whether this session routes through a proxy; null when never recorded.

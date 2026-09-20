@@ -6243,17 +6243,18 @@ body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; 
 [data-page="easy-mode"] .easy-welcome-card { width: min(832px, 100%); margin-top: -2vh; }
 [data-page="easy-mode"] .easy-welcome-mode-tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: -1px;
-  padding-inline: 4px;
+  gap: 1px;
+  margin-bottom: -2px;
+  padding-inline: 0;
   position: relative;
   z-index: 2;
 }
 [data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"] {
-  padding: 7px 11px 8px;
+  height: 28px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-bottom: 0;
-  border-radius: 7px;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--text-muted);
   font-size: 13px;
@@ -6261,20 +6262,26 @@ body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; 
   cursor: pointer;
   transition: color 150ms, background-color 150ms;
 }
-[data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"]:hover,
 [data-page="easy-mode"] .easy-welcome-mode-tabs [aria-selected="true"] {
   color: var(--text-primary);
 }
+[data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"]:hover {
+  color: color-mix(in srgb, var(--text-primary) 86%, var(--text-muted));
+}
 [data-page="easy-mode"] .easy-welcome-mode-tabs [aria-selected="true"] {
-  padding-bottom: 9px;
-  border-color: rgba(255, 255, 255, 0.1);
-  border-radius: 9px 9px 0 0;
+  border-width: 1px;
+  border-color: var(--input-border);
+  border-bottom-color: transparent;
   background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.025);
 }
 [data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"]:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 3px;
   border-radius: 3px;
+}
+[data-page="easy-mode"] .easy-welcome-card .easy-session-chat-input {
+  border-top-left-radius: 0 !important;
 }
 [data-page="easy-mode"] .easy-welcome-card > .mobius-chat-area--easy { height: 245px; flex: 0 0 245px; background: transparent; }
 [data-page="easy-mode"] .easy-welcome-card .mobius-chat-history { display: none; }
