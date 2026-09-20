@@ -7,7 +7,7 @@
 // 兜底 getBootData().aimuxIdentifier; 可操作路径取自 getProjectLocalPath(projectId))。
 // 当前选中模式按 session 记到 localStorage, 下次打开菜单时高亮回显。
 // aimux 状态经 preload 暴露的 getAimuxStatus()/onAimuxStatus() 取得, 无需改桌面端。
-import { memo, useCallback, useEffect, useRef, useState, type SVGProps } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject, type SVGProps } from 'react'
 import { Server, Laptop, ArrowLeftRight, Check, Undo2 } from 'lucide-react'
 import { api } from '../store'
 import { pollRecursive } from '../services/polling'
@@ -147,6 +147,54 @@ function connText(c: boolean | null): string {
   return c === null ? '…' : c ? '已连接' : '断开'
 }
 
+/**
+ * 下拉菜单锚点: 默认右对齐触发器 (菜单向左展开)。但触发器紧跟在会话标题后面, 距聊天面板
+ * 左缘往往不足一个菜单宽度 —— 菜单会伸出面板, 被 .chat-major-panel 的 overflow:hidden 裁掉
+ * (看起来像被左侧栏遮挡)。故打开时量一次可用空间: 左侧放不下就翻到触发器右侧展开,
+ * 两侧都放不下 (面板比菜单还窄) 才把菜单夹回面板内。
+ * 返回菜单的内联定位样式; 未测量前保持原来的右对齐, useLayoutEffect 在绘制前完成测量, 不会闪。
+ */
+function useMenuAnchor(
+  open: boolean,
+  wrapRef: RefObject<HTMLElement>,
+  menuRef: RefObject<HTMLElement>,
+): CSSProperties {
+  const [position, setPosition] = useState<{ left: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null)
+      return
+    }
+    const wrap = wrapRef.current
+    const menu = menuRef.current
+    if (!wrap || !menu) return
+    // 裁剪边界 = 聊天面板; 面板缺失时退化为视口 (本控件恒在会话头部内, 正常拿得到)。
+    const panel = wrap.closest('.chat-major-panel')
+    const bounds = panel
+      ? panel.getBoundingClientRect()
+      : { left: 0, right: window.innerWidth }
+    const box = wrap.getBoundingClientRect()
+    const width = menu.offsetWidth
+    const margin = 8 // 与面板边缘留白, 避免贴边/压住圆角
+
+    const rightAligned = box.width - width // 相对触发器左缘: 菜单右缘贴触发器右缘
+    const fitsLeft = box.left + rightAligned >= bounds.left + margin
+    const fitsRight = box.left + width <= bounds.right - margin
+    if (fitsLeft) {
+      setPosition({ left: rightAligned })
+    } else if (fitsRight) {
+      setPosition({ left: 0 })
+    } else {
+      const low = bounds.left + margin - box.left
+      const high = bounds.right - margin - width - box.left
+      setPosition({ left: Math.min(Math.max(rightAligned, low), Math.max(low, high)) })
+    }
+  }, [open, wrapRef, menuRef])
+
+  return position ? { left: position.left } : { right: 0 }
+}
+
 function RemoteAimuxMcpIndicatorInner({
   session,
   sessionId,
@@ -167,6 +215,8 @@ function RemoteAimuxMcpIndicatorInner({
   const [menuOpen, setMenuOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuStyle = useMenuAnchor(menuOpen, wrapRef, menuRef)
 
   const canSwitch = !!sessionId && !!onSwitchDevice
 
@@ -300,9 +350,11 @@ function RemoteAimuxMcpIndicatorInner({
 
       {canSwitch && menuOpen && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label="切换 aimux 协作设备"
-          className="aimux-mode-menu absolute right-0 top-full z-50 mt-1.5 min-w-[288px] origin-top-right"
+          style={menuStyle}
+          className="aimux-mode-menu absolute top-full z-50 mt-1.5 min-w-[288px] origin-top-right"
         >
           <div className="aimux-mode-menu__header">
             <span className={`aimux-mode-menu__dot aimux-mode-menu__dot--${tone}`} />
@@ -427,6 +479,8 @@ function AimuxLinkIndicatorInner({
   const [activeMode, setActiveMode] = useState<AimuxMode | null>(() => readMode(sessionId || ''))
   const [firing, setFiring] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuStyle = useMenuAnchor(menuOpen, wrapRef, menuRef)
 
   // 切换 session 时按新 sessionId 重读本地记录
   useEffect(() => { setActiveMode(readMode(sessionId || '')) }, [sessionId])
@@ -528,9 +582,11 @@ function AimuxLinkIndicatorInner({
 
       {hasMenu && menuOpen && (
         <div
+          ref={menuRef}
           role="menu"
           aria-label="aimux 工作模式"
-          className="aimux-mode-menu absolute right-0 top-full z-50 mt-1.5 min-w-[224px] origin-top-right"
+          style={menuStyle}
+          className="aimux-mode-menu absolute top-full z-50 mt-1.5 min-w-[224px] origin-top-right"
         >
           <div className="aimux-mode-menu__header" title={label}>
             <span className={`aimux-mode-menu__dot aimux-mode-menu__dot--${tone}`} />

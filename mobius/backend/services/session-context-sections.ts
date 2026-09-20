@@ -321,10 +321,12 @@ function knowledgeHintLines(c: SectionCtx, lang: 'zh' | 'en'): string[] {
       '此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：',
       `- 如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制）→ \`${pkPath}\`；`,
       `- 如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`${ikPath}\`；`,
+      `无论记录在哪里，都要记住：必须按照功能模块作为索引，分门别类写入。绝不允许记流水账。发现过时的、矛盾的知识，直接清除！`,
     ] : [
       'Additionally, if you need to remember information for future sessions, write it to the appropriate knowledge file (do not write to ~/.codex or ~/.claude):',
       `- For project-wide general knowledge (overall facts, common practices, cross-task reusable experience; keep what you write into project_knowledge concise and restrained) → \`${pkPath}\`;`,
       `- For knowledge relevant only to the current task with limited generality, write to issue_knowledge → \`${ikPath}\`;`,
+      `No matter where the knowledge are kept, remember: they must be indexed by functional module and written in categories. Never allow diary-like knowledge record. If outdated or contradictory knowledge is found, remove it immediately!`,
     ];
   }
   return lang === 'zh' ? [
