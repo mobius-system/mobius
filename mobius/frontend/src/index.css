@@ -6244,12 +6244,15 @@ body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; 
 [data-page="easy-mode"] .easy-welcome-mode-tabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 10px;
+  margin-bottom: -1px;
   padding-inline: 4px;
+  position: relative;
+  z-index: 2;
 }
 [data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"] {
-  padding: 6px 10px;
-  border: 0;
+  padding: 7px 11px 8px;
+  border: 1px solid transparent;
+  border-bottom: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--text-muted);
@@ -6263,7 +6266,10 @@ body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; 
   color: var(--text-primary);
 }
 [data-page="easy-mode"] .easy-welcome-mode-tabs [aria-selected="true"] {
-  background: color-mix(in srgb, #3b82f6 16%, transparent);
+  padding-bottom: 9px;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-radius: 9px 9px 0 0;
+  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
 }
 [data-page="easy-mode"] .easy-welcome-mode-tabs [role="tab"]:focus-visible {
   outline: 2px solid #3b82f6;
