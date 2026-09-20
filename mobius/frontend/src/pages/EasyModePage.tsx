@@ -41,6 +41,7 @@ import { ChatArea } from '../components/chat'
 import { EasySessionChatInput } from '../components/easy-session-chat-input'
 import {
   EasySessionConfigBar,
+  EasySessionModeTabs,
   EMPTY_EASY_SESSION_SELECTION,
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
@@ -981,29 +982,32 @@ export default function EasyModePage() {
             <div className="easy-welcome-card">
               <MobiusLogo size={46} className="easy-welcome-logo" />
               <h1>{timeGreeting(user?.display_name)}<br />您需要莫比乌斯执行什么任务？</h1>
-              <EasySessionChatInput
-                mode="create_session_mode"
-                input={welcomePrompt}
-                inputPlaceholder="描述你想让莫比乌斯完成的任务…"
-                theme={theme}
-                onChange={event => setWelcomePrompt(event.target.value)}
-                onSend={submitWelcomePrompt}
-                submitDisabled={welcomeCreating || (welcomeSelection.createProject && (!welcomeSelection.projectPath.trim() || !welcomeSelection.projectName.trim()))}
-                submitTooltip={welcomeSelection.createProject && !welcomeSelection.projectPath.trim()
-                  ? '请填写项目路径'
-                  : welcomeSelection.createProject && !welcomeSelection.projectName.trim()
-                    ? '请填写项目名'
-                    : '开始新会话'}
-                toolbar={
-                  <EasySessionConfigBar
-                    selection={welcomeSelection}
-                    onChange={setWelcomeSelection}
-                    projects={projects}
-                    recentSessions={sessions}
-                    dark={theme !== 'light'}
-                  />
-                }
-              />
+              <EasySessionModeTabs selection={welcomeSelection} onChange={setWelcomeSelection} />
+              <div id="easy-welcome-composer" role="tabpanel" aria-labelledby={`easy-welcome-mode-${welcomeSelection.createProject ? 1 : 0}`}>
+                <EasySessionChatInput
+                  mode="create_session_mode"
+                  input={welcomePrompt}
+                  inputPlaceholder="描述你想让莫比乌斯完成的任务…"
+                  theme={theme}
+                  onChange={event => setWelcomePrompt(event.target.value)}
+                  onSend={submitWelcomePrompt}
+                  submitDisabled={welcomeCreating || (welcomeSelection.createProject && (!welcomeSelection.projectPath.trim() || !welcomeSelection.projectName.trim()))}
+                  submitTooltip={welcomeSelection.createProject && !welcomeSelection.projectPath.trim()
+                    ? '请填写项目路径'
+                    : welcomeSelection.createProject && !welcomeSelection.projectName.trim()
+                      ? '请填写项目名'
+                      : '开始新会话'}
+                  toolbar={
+                    <EasySessionConfigBar
+                      selection={welcomeSelection}
+                      onChange={setWelcomeSelection}
+                      projects={projects}
+                      recentSessions={sessions}
+                      dark={theme !== 'light'}
+                    />
+                  }
+                />
+              </div>
               <div className="easy-welcome-suggestions"><span>钉钉办公</span><span>文档创作</span><span>数据分析</span><span>多人工作台</span><span>创意设计</span><span>深度调研</span></div>
             </div>
           </main>

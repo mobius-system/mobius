@@ -12,7 +12,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, CircleDot, FolderKanban, FolderOpen, Languages, Type } from 'lucide-react'
 import { api } from '../store'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
-import { ToggleSwitch } from './toggle-switch'
 import {
   DropdownSelect,
   SkillMemoryPicker,
@@ -70,6 +69,52 @@ const LANGUAGE_OPTIONS: DropdownOption[] = [
 /** 活跃任务排在前面, 同组内保持接口返回的 last_active 倒序 */
 function activeFirst(items: any[]): any[] {
   return [...items].sort((a, b) => (a?.status === 'active' ? 0 : 1) - (b?.status === 'active' ? 0 : 1))
+}
+
+/** 欢迎页输入框上方的创建方式 Tab，共用原有 selection。 */
+export function EasySessionModeTabs({ selection, onChange }: {
+  selection: EasySessionSelection
+  onChange: (next: EasySessionSelection) => void
+}) {
+  const modes = [{ createProject: false, label: '新建会话' }, { createProject: true, label: '创建项目' }]
+  const selectMode = (next: boolean) => {
+    if (next === selection.createProject) return
+    onChange({
+      ...selection,
+      createProject: next,
+      projectId: '',
+      issueId: '',
+      issueTitle: '',
+      projectPath: next ? selection.projectPath : '',
+      projectName: next ? selection.projectName : '',
+      excludedSkills: [],
+      excludedMemories: [],
+    })
+  }
+  return (
+    <div className="easy-welcome-mode-tabs" role="tablist" aria-label="创建方式">
+      {modes.map((mode, index) => (
+        <button
+          key={mode.label}
+          id={`easy-welcome-mode-${index}`}
+          type="button"
+          role="tab"
+          aria-label={mode.label}
+          aria-selected={selection.createProject === mode.createProject}
+          aria-controls="easy-welcome-composer"
+          tabIndex={selection.createProject === mode.createProject ? 0 : -1}
+          onClick={() => selectMode(mode.createProject)}
+          onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - index
+            selectMode(modes[nextIndex].createProject)
+            document.getElementById(`easy-welcome-mode-${nextIndex}`)?.focus()
+          }}
+        >{mode.label}</button>
+      ))}
+    </div>
+  )
 }
 
 export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark }: {
@@ -149,6 +194,10 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     return () => { alive = false }
   }, [issueId])
 
+  useEffect(() => {
+    modelTouchedRef.current = false
+  }, [createProject])
+
   const selectedProject = projects.find(p => p.id === projectId)
   // 模型三级默认: 任务上次所选 > 项目默认 > 全局默认 > 内置 codex
   useEffect(() => {
@@ -160,7 +209,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     if (next && next !== latestRef.current.selection.model) {
       latestRef.current.onChange({ ...latestRef.current.selection, model: next })
     }
-  }, [scopeLastModel, selectedProject?.default_model, globalDefaultModel, modelOptions])
+  }, [createProject, scopeLastModel, selectedProject?.default_model, globalDefaultModel, modelOptions])
 
   // 未选项目时的任务候选: 近期会话里出现过的任务, 按最近活跃排序, 同一任务只留一条
   const recentTasks = useMemo<TaskOption[]>(() => {
@@ -212,29 +261,6 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
 
   return (
     <>
-      <ToggleSwitch
-        checked={createProject}
-        onChange={next => {
-          modelTouchedRef.current = false
-          const { selection: latest, onChange: emit } = latestRef.current
-          emit({
-            ...latest,
-            createProject: next,
-            projectId: '',
-            issueId: '',
-            issueTitle: '',
-            projectPath: next ? latest.projectPath : '',
-            projectName: next ? latest.projectName : '',
-            excludedSkills: [],
-            excludedMemories: [],
-          })
-        }}
-        aria-label="创建项目"
-        className="flex h-7 flex-shrink-0 items-center gap-1.5 rounded-lg px-1 text-[11px]"
-        title="创建项目"
-      >
-        <span style={{ color: createProject ? '#60a5fa' : 'var(--text-muted)' }}>创建项目</span>
-      </ToggleSwitch>
       {createProject ? (
         <>
           <label className="relative min-w-0 flex-1" title={selection.projectPath || '路径'}>
