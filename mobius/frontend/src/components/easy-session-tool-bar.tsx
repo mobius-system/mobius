@@ -73,8 +73,9 @@ export function EasySessionToolBar({ children, label = '会话工具', disabled 
         aria-expanded={open}
         icon={<Wrench className="h-3.5 w-3.5" strokeWidth={2} />}
         iconClassName="h-3.5 w-3.5"
-        buttonClassName="inline-flex h-7 w-7 flex-none items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-        style={{ borderColor: open ? 'rgba(59,130,246,0.55)' : 'var(--border-color)' }}
+        buttonClassName="inline-flex h-7 w-7 flex-none items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+        // 与同一行右侧的麦克风/终止/加急/发送保持同一套无边框圆形样式: 用背景色而非描边表示展开态.
+        style={{ color: open ? '#60a5fa' : '#d1d5db', background: open ? 'rgba(59,130,246,0.14)' : undefined }}
         onClick={() => setOpen(value => !value)}
       />
       {open && pos && createPortal(

@@ -146,7 +146,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             motion="breathe"
             buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
             iconClassName="h-[17px] w-[17px]"
-            style={{ color: follow.voiceState === 'recording' ? '#f87171' : '#d1d5db', border: '1px solid rgba(255,255,255,0.12)' }}
+            style={{ color: follow.voiceState === 'recording' ? '#f87171' : '#d1d5db' }}
             icon={follow.voiceState === 'recording' ? <Square className="h-[17px] w-[17px]" fill="currentColor" /> : follow.voiceState === 'transcribing' ? <RefreshCw className="h-[17px] w-[17px] animate-spin" /> : <Mic className="h-[17px] w-[17px]" />}
           />
         )}
@@ -163,7 +163,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             className={`session-stop-button ${follow.stopFeedbackActive ? 'session-stop-button--active' : ''}`}
             buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
             iconClassName="h-[17px] w-[17px]"
-            style={follow.stopFeedbackActive ? undefined : { border: '1px solid rgba(255,255,255,0.12)' }}
             icon={<Square className={`h-[10px] w-[10px] ${follow.stopFeedbackActive ? 'session-stop-button__square' : ''}`} fill="currentColor" />}
           />
         )}
@@ -178,7 +177,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             motion="breathe"
             buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
             iconClassName="h-[17px] w-[17px]"
-            style={{ color: '#d1d5db', border: '1px solid rgba(255,255,255,0.12)' }}
+            style={{ color: '#d1d5db' }}
             icon={<Zap className="h-[17px] w-[17px]" />}
           />
         )}
