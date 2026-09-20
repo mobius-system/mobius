@@ -5,11 +5,6 @@ import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
 import { HelpHint } from './project-page/help-hint'
-import {
-  CONTEXT_SETUP_DEMO_TOUR_EVENT,
-  patchContextSetupDemoState,
-  readContextSetupDemoState,
-} from '../services/context-setup-demo'
 
 // =====================================================================
 // MemoriesManager — 用户级 / 项目级 Memory 管理
@@ -57,14 +52,6 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
     } catch (e: any) { alert(e?.message || '删除失败') }
   }
 
-  const markContextSetupMemorySynced = (result: any) => {
-    const state = readContextSetupDemoState()
-    if (!state?.active || state.projectId !== projectId) return
-    if (!result?.memory && !result?.synced && !result?.uploaded) return
-    patchContextSetupDemoState({ memorySyncedAt: Date.now() })
-    window.dispatchEvent(new CustomEvent(CONTEXT_SETUP_DEMO_TOUR_EVENT, { detail: { force: true } }))
-  }
-
   const refreshProjectKnowledge = async () => {
     if (scope !== 'project' || !projectId) return
     setProjectKnowledgeRefreshing(true)
@@ -73,7 +60,6 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
       const r: any = await api(`${baseUrl}/project-knowledge/refresh`, { method: 'POST' })
       if (r?.synced) {
         setProjectKnowledgeInfo(`${r.changed ? '已更新' : '已同步'}: ${r.memory_name || '项目知识'} (${r.body_length || 0} 字符)`)
-        markContextSetupMemorySynced(r)
       } else {
         setProjectKnowledgeInfo(r?.reason || '未发现项目知识文件')
       }
@@ -102,7 +88,6 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
         `已上传并同步: ${r.memory_name || '项目知识'} (${r.body_length || 0} 字符)。` +
         '也可以用新建、复制或刷新项目知识沉淀来创建 Memory。'
       )
-      markContextSetupMemorySynced(r)
       refresh()
     } catch (e: any) {
       setProjectKnowledgeInfo(e?.message || '上传失败')
@@ -130,7 +115,6 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
         `已导入 ${imported.length} 条: ${imported.map((m: any) => m.name).join(', ') || '无'}` +
         (skipped.length ? `；跳过 ${skipped.length} 条: ${skipped.map((s: any) => `${s.name} (${s.reason})`).join('; ')}` : '')
       )
-      if (scope === 'project') markContextSetupMemorySynced(r)
       refresh()
     } catch (e: any) {
       setMemoryFileInfo(e?.message || '上传失败')

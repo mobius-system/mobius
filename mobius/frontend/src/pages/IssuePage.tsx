@@ -15,8 +15,6 @@ import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
 import { RecentSessionGroupList } from '../components/recent-session-group-list'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
-import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
-import { LOGO_REVIEW_PROJECT_ID, LOGO_REVIEW_SESSION_NAME } from '../services/logo-review-demo'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { normalizeRecentSessions, recentSessionTarget, RECENT_SESSION_LIMIT, type RecentSession } from '../services/recent-sessions'
 import { RecentSessionRow } from '../components/recent-session-row'
@@ -26,7 +24,6 @@ import { useListReorderAnimation } from '../services/list-reorder-animation'
 const EditorPane = lazy(() => import('../components/workspace/editor-pane').then(m => ({ default: m.EditorPane })))
 const CodeConversationPane = lazy(() => import('../components/workspace/code-conversation-pane').then(m => ({ default: m.CodeConversationPane })))
 
-const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 const SESSION_SIDEBAR_PAGE_SIZE = 16  // sidebar 会话列表每页 16, 超过即分页
 const ISSUE_SUMMARY_COLLAPSED_KEY = 'mobius:ui:sidebar:issue-summary:collapsed'
 const SESSION_LIST_MODE_KEY = 'mobius:ui:sidebar:session-list-mode'
@@ -309,20 +306,6 @@ export default function IssuePage() {
     })
   }
 
-  // 引导式 Demo 旧路径依赖手动点 [完成] 推进 tour. 现在 [完成] 已移除, 改成
-  // session list 刷新时检测 job_accomplished=true (running.flag 已删) 的 demo
-  // session, 自动写入 sessionCompletedAt 推进 tour. 防抖: useEffect 依赖 sessions,
-  // patchGuidedDemoSessionCompleted 内部按 sessionId 落到对应 demo state, 重复
-  // patch 同一时间戳无副作用.
-  useEffect(() => {
-    sessions.forEach((s: any) => {
-      if (s?.job_accomplished === true && isGuidedDemoSession(s.session_id)) {
-        patchGuidedDemoSessionCompleted(s.session_id)
-        window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
-      }
-    })
-  }, [sessions])
-
   const handleDeleteSession = async () => {
     if (!deletingSession) return
     const deletedSessionId = deletingSession.session_id
@@ -539,10 +522,6 @@ export default function IssuePage() {
                   </div>
                 </button>
               ) : sidebarPagination.pagedItems.map((s: any) => {
-                // guided-demo / logo-review 的 tour 锚点 (session-card / logo-review-session-card)
-                // 从原右侧会话卡片网格迁移到左侧 SessionRow: 会话导航统一在左侧列表, demo 流程不破坏.
-                const isLogoReviewSessionCard = projectId === LOGO_REVIEW_PROJECT_ID
-                  && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
                 return (
                   <SessionRow key={s.session_id}
                     session={s}
@@ -550,7 +529,6 @@ export default function IssuePage() {
                     onSelect={onSelectSession}
                     onEdit={(s) => setEditingSession(s)}
                     onDelete={(s) => setDeletingSession(s)}
-                    dataTour={isGuidedDemoSession(s.session_id) ? 'session-card' : isLogoReviewSessionCard ? 'logo-review-session-card' : undefined}
                   />
                 )
               })
@@ -775,8 +753,7 @@ function WorkspacePaneLoading({ label }: { label: string }) {
 // SessionOverview — 没有选中 session 时的右侧主区
 // 会话导航统一收敛到左侧 SessionRow 列表 (master-detail 的 master), 这里只做
 // 任务概览: 统计摘要 + 状态统计卡 + 新建会话入口. 不再与左侧列表并列展示同一批
-// 会话卡片 (消除冗余). guided-demo / logo-review 的 tour 锚点已迁移到左侧
-// SessionRow (见 IssuePage 渲染处), demo 流程不破坏.
+// 会话卡片 (消除冗余).
 // =====================================================================
 function SessionOverview({ sessions, onNewSession, projectId }: {
   sessions: any[]

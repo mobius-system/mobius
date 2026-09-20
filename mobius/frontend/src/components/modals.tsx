@@ -10,20 +10,6 @@ import { ProjectUserContextWhitelist } from './context-whitelist'
 import { ToggleSwitch } from './toggle-switch'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, AttachmentComposer, appendAttachmentsToDesc } from './attachments'
-import {
-  completeGuidedDemoStateForProject,
-  isGuidedDemoIssue,
-  isGuidedDemoProject,
-  patchGuidedDemoState,
-  readActiveGuidedDemo,
-} from '../services/guided-demo'
-import {
-  SELF_EVOLVE_GUIDE_STYLE_MEMORY_NAMES,
-  SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME,
-  SELF_EVOLVE_REQUIRED_MEMORY_NAME,
-  SELF_EVOLVE_REQUIRED_SKILL_NAME,
-} from '../services/self-evolve-demo'
-import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
@@ -376,23 +362,14 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
     canRunSession?: boolean
     inviteMembers?: MemberInput[]
   }>(DRAFT_KEY)
-  const guidedDemo = readActiveGuidedDemo()
-  const guidedDemoState = guidedDemo?.state
-  const isGuidedDemo = !!guidedDemoState?.active && !guidedDemoState.projectId
-  const [name, setName] = useState(isGuidedDemo ? (guidedDemoState?.projectName || '') : (initialDraft?.name || ''))
-  const [desc, setDesc] = useState(isGuidedDemo ? (guidedDemoState?.projectDescription || '') : (initialDraft?.desc || ''))
-  const initialBindPathFromDraft = !isGuidedDemo && initialDraft?.bindPath?.trim() ? (initialDraft.bindPath || '') : ''
-  const [bindPath, setBindPath] = useState(
-    isGuidedDemo
-      ? (guidedDemoState?.projectRelPath || '')
-      : (initialBindPathFromDraft || randomProjectBindPath(user?.work_dir))
-  )
-  const [bindPathSource, setBindPathSource] = useState<'auto' | 'custom'>(
-    isGuidedDemo || initialBindPathFromDraft ? 'custom' : 'auto'
-  )
-  const [bindPathManual, setBindPathManual] = useState(isGuidedDemo ? false : !!initialDraft?.bindPathManual)
-  const [defaultUseWorktree, setDefaultUseWorktree] = useState(isGuidedDemo ? false : (typeof initialDraft?.defaultUseWorktree === 'boolean' ? initialDraft.defaultUseWorktree : false))
-  const [researchEnabled, setResearchEnabled] = useState(isGuidedDemo ? false : !!initialDraft?.researchEnabled)
+  const [name, setName] = useState(initialDraft?.name || '')
+  const [desc, setDesc] = useState(initialDraft?.desc || '')
+  const initialBindPathFromDraft = initialDraft?.bindPath?.trim() ? (initialDraft.bindPath || '') : ''
+  const [bindPath, setBindPath] = useState(initialBindPathFromDraft || randomProjectBindPath(user?.work_dir))
+  const [bindPathSource, setBindPathSource] = useState<'auto' | 'custom'>(initialBindPathFromDraft ? 'custom' : 'auto')
+  const [bindPathManual, setBindPathManual] = useState(!!initialDraft?.bindPathManual)
+  const [defaultUseWorktree, setDefaultUseWorktree] = useState(typeof initialDraft?.defaultUseWorktree === 'boolean' ? initialDraft.defaultUseWorktree : false)
+  const [researchEnabled, setResearchEnabled] = useState(!!initialDraft?.researchEnabled)
   const [visibility, setVisibility] = useState<ProjectVisibility>(
     initialDraft?.visibility === 'team' || initialDraft?.visibility === 'public' || initialDraft?.visibility === 'allowlist'
       ? initialDraft.visibility
@@ -405,9 +382,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
-  const initialKind = isGuidedDemo
-    ? 'default'
-    : (initialDraft?.projectKind === 'research' || initialDraft?.projectKind === 'extension' ? initialDraft.projectKind : 'default')
+  const initialKind = initialDraft?.projectKind === 'research' || initialDraft?.projectKind === 'extension' ? initialDraft.projectKind : 'default'
   const canCreateExtensionProject = user?.role === 'admin' || user?.role === 'developer'
   const initialProjectKind: NewProjectKind = canCreateExtensionProject || initialKind !== 'extension' ? initialKind : 'default'
   const initialDraftHasContent = !!(
@@ -417,28 +392,27 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
     || initialDraft?.extensionName?.trim()
   )
   const [projectKind, setProjectKind] = useState<NewProjectKind>(initialProjectKind)
-  const [step, setStep] = useState<'type' | 'details'>(isGuidedDemo || initialDraftHasContent ? 'details' : 'type')
+  const [step, setStep] = useState<'type' | 'details'>(initialDraftHasContent ? 'details' : 'type')
   const [extensionName, setExtensionName] = useState(initialDraft?.extensionName || '')
   // v3 写权限: 默认关闭, 与后端 schema 默认一致; private 项目这两个开关无效, 但允许 owner 主动打开.
   const [canPostIssue, setCanPostIssue] = useState<boolean>(!!initialDraft?.canPostIssue)
   const [canRunSession, setCanRunSession] = useState<boolean>(!!initialDraft?.canRunSession)
 
   useEffect(() => {
-    if (isGuidedDemo || projectKind === 'extension' || bindPathSource !== 'auto') return
+    if (projectKind === 'extension' || bindPathSource !== 'auto') return
     if (bindPath.trim() || !user?.work_dir) return
     setBindPath(randomProjectBindPath(user.work_dir))
     setBindPathManual(false)
-  }, [bindPath, bindPathSource, isGuidedDemo, projectKind, user?.work_dir])
+  }, [bindPath, bindPathSource, projectKind, user?.work_dir])
 
   useEffect(() => {
-    if (isGuidedDemo) return
     const hasDraftContent = !!(name.trim() || desc.trim() || extensionName.trim() || (bindPath.trim() && bindPathSource === 'custom'))
     if (hasDraftContent) {
       draftSave(DRAFT_KEY, { name, desc, bindPath, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession }, { minChars: 0 })
     } else {
       draftClear(DRAFT_KEY)
     }
-  }, [isGuidedDemo, name, desc, bindPath, bindPathSource, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession])
+  }, [name, desc, bindPath, bindPathSource, bindPathManual, defaultUseWorktree, researchEnabled, visibility, inviteMembers, projectKind, extensionName, canPostIssue, canRunSession])
 
   const refreshRandomBindPath = () => {
     let next = randomProjectBindPath(user?.work_dir)
@@ -485,7 +459,6 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         name,
         description: desc,
         visibility,
-        guidedDemoKind: isGuidedDemo ? guidedDemo?.kind : undefined,
       }
       if (projectKind === 'extension') {
         body.kind = 'extension'
@@ -506,20 +479,6 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       })
       if ((p as any)?.error) { setErr((p as any).error); return }
       draftClear(DRAFT_KEY)
-      if (isGuidedDemo && guidedDemo && p?.id) {
-        const patch: any = { projectId: p.id }
-        if (guidedDemo.kind === 'context-setup' && p?.guided_demo_assets?.ok) {
-          patch.preparedAt = Date.now()
-          if (p.guided_demo_assets.memory_material) patch.memoryMaterialRelPath = p.guided_demo_assets.memory_material
-          if (p.guided_demo_assets.skill_material_file) patch.skillMaterialRelPath = p.guided_demo_assets.skill_material_file
-          if (p.guided_demo_assets.materials_zip) patch.materialsZipRelPath = p.guided_demo_assets.materials_zip
-        } else if (guidedDemo.kind === 'project-import' && p?.guided_demo_assets?.ok) {
-          patch.preparedAt = Date.now()
-          if (p.guided_demo_assets.upload_sample_dir) patch.uploadSampleDirRelPath = p.guided_demo_assets.upload_sample_dir
-          if (p.guided_demo_assets.upload_sample_zip) patch.uploadSampleZipRelPath = p.guided_demo_assets.upload_sample_zip
-        }
-        patchGuidedDemoState(guidedDemo.kind, patch)
-      }
       onCreated(p)
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
@@ -683,14 +642,12 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         ) : (
           <>
             <div className="mb-4 flex items-center gap-2">
-              {!isGuidedDemo && (
-                <button type="button" onClick={() => { setErr(''); setStep('type') }}
-                  title="返回选择项目类型"
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border bg-[var(--bg-card-hover)]"
-                  style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                  <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
-                </button>
-              )}
+              <button type="button" onClick={() => { setErr(''); setStep('type') }}
+                title="返回选择项目类型"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border bg-[var(--bg-card-hover)]"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
+              </button>
               <div className="min-w-0">
                 <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建{NEW_PROJECT_KIND_LABELS[projectKind]}</h3>
                 <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1144,13 +1101,6 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
     if (!password) { setErr('请输入当前账号密码'); return }
     setLoading(true); setErr('')
     try {
-      const demo = readActiveGuidedDemo()
-      const logoReviewDemo = demo?.kind === 'logo-review' ? readLogoReviewDemoState() : null
-      const cleanupProjectId = logoReviewDemo?.cleanupProjectId || demo?.state.projectId
-      const cleanupProjectRelPath = logoReviewDemo?.cleanupProjectRelPath || demo?.state.projectRelPath
-      const cleanupDemoWorkspace = !!demo?.state.active
-        && cleanupProjectId === project.id
-        && (cleanupProjectRelPath || '').startsWith('/imac-demo/')
       await api(`/api/projects/${project.id}`, {
         method: 'DELETE',
         body: JSON.stringify({
@@ -1158,10 +1108,8 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
           irreversible_acknowledged: dangerAcknowledged,
           current_password: password,
           reason: reason.trim(),
-          cleanup_demo_workspace: cleanupDemoWorkspace,
         }),
       })
-      completeGuidedDemoStateForProject(project.id)
       onDeleted()
     } catch (e: any) {
       setPassword('')
@@ -1326,9 +1274,6 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
     visibility?: IssueVisibility
     isPlanning?: boolean
   }>(DRAFT_KEY)
-  const guidedDemo = readActiveGuidedDemo()
-  const guidedDemoState = guidedDemo?.state
-  const isGuidedDemo = isGuidedDemoProject(projectId) && !guidedDemoState?.issueId
   const { theme, projects } = useStore()
   // 从 store 找父项目: 用来限制 issue 的可见性不能比 project 宽 (反向放大禁止).
   const parentProject: any = (projects || []).find((p: any) => p.id === projectId)
@@ -1344,13 +1289,13 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
   if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
   const initialVisibility: IssueVisibility =
     (initialDraft?.visibility && allowedVisibilities.includes(initialDraft.visibility)) ? initialDraft.visibility : 'inherit'
-  const [title, setTitle] = useState(isGuidedDemo ? guidedDemoState?.issueTitle || '' : (initialDraft?.title || ''))
-  const [desc, setDesc] = useState(isGuidedDemo ? guidedDemoState?.issueDescription || '' : (initialDraft?.desc || ''))
-  const [descTouched, setDescTouched] = useState(isGuidedDemo ? true : !!initialDraft?.descTouched)
-  const [useWorktree, setUseWorktree] = useState(isGuidedDemo ? false : (typeof initialDraft?.useWorktree === 'boolean' ? initialDraft.useWorktree : defaultUseWorktree))
-  const [createFirstSession, setCreateFirstSession] = useState(isGuidedDemo ? false : (typeof initialDraft?.createFirstSession === 'boolean' ? initialDraft.createFirstSession : true))
+  const [title, setTitle] = useState(initialDraft?.title || '')
+  const [desc, setDesc] = useState(initialDraft?.desc || '')
+  const [descTouched, setDescTouched] = useState(!!initialDraft?.descTouched)
+  const [useWorktree, setUseWorktree] = useState(typeof initialDraft?.useWorktree === 'boolean' ? initialDraft.useWorktree : defaultUseWorktree)
+  const [createFirstSession, setCreateFirstSession] = useState(typeof initialDraft?.createFirstSession === 'boolean' ? initialDraft.createFirstSession : true)
   const [isPlanning, setIsPlanning] = useState(forcePlanning || (typeof initialDraft?.isPlanning === 'boolean' ? initialDraft.isPlanning : false))
-  const [branch, setBranch] = useState(isGuidedDemo ? '' : (initialDraft?.branch || ''))
+  const [branch, setBranch] = useState(initialDraft?.branch || '')
   const [visibility, setVisibility] = useState<IssueVisibility>(initialVisibility)
   const [permissionOpen, setPermissionOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -1362,8 +1307,8 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
   const parentVisibilityLabel = parentVisibility === 'public' ? '公开' : '私有'
 
   useEffect(() => {
-    if (!isGuidedDemo) draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning })
-  }, [DRAFT_KEY, isGuidedDemo, title, desc, descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning])
+    draftSave(DRAFT_KEY, { title, desc: descTouched ? desc : '', descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning })
+  }, [DRAFT_KEY, title, desc, descTouched, useWorktree, createFirstSession, branch, visibility, isPlanning])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写任务标题'); return }
     // 描述留空时按 placeholder 承诺「默认同标题」回落, 不再报错.
@@ -1382,7 +1327,6 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
         }),
       })
       draftClear(DRAFT_KEY)
-      if (isGuidedDemo && guidedDemo && iss?.id) patchGuidedDemoState(guidedDemo.kind, { issueId: iss.id })
       onCreated(iss, { createFirstSession: isPlanning ? false : createFirstSession, planningSessionId: iss?.planning_session_id })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
@@ -1934,26 +1878,6 @@ function SessionSkillPreviewDialog({ skill, isDark, onClose }: { skill: WizardIt
   )
 }
 
-function isSelfEvolveRequiredMemoryItem(item: { name?: string }) {
-  return String(item.name || '') === SELF_EVOLVE_REQUIRED_MEMORY_NAME
-}
-
-function isSelfEvolveProjectMemoryItem(item: { name?: string; description?: string }) {
-  const text = `${item.name || ''} ${item.description || ''}`
-  return text.includes(SELF_EVOLVE_PROJECT_KNOWLEDGE_MEMORY_NAME)
-    || (text.includes('项目知识') && (text.includes('MOBIUS') || text.includes('中台') || text.includes('莫比乌斯')))
-}
-
-function isSelfEvolveGuideMemoryItem(item: { id?: string; name?: string; description?: string }) {
-  const text = `${item.id || ''} ${item.name || ''} ${item.description || ''}`
-  return SELF_EVOLVE_GUIDE_STYLE_MEMORY_NAMES.some(name => text.includes(name))
-    || (text.includes('引导') && text.includes('文案'))
-}
-
-function shouldKeepSelfEvolveMemory(item: { id?: string; name?: string; description?: string }) {
-  return isSelfEvolveRequiredMemoryItem(item) || isSelfEvolveProjectMemoryItem(item) || isSelfEvolveGuideMemoryItem(item)
-}
-
 type SessionModelOption = {
   key: string
   value?: string
@@ -2282,20 +2206,12 @@ export function NewSessionModal({
     selection_ready?: boolean
     mentions?: SessionMentionSelection[]
   }>(DRAFT_KEY)
-  const guidedDemo = readActiveGuidedDemo()
-  const guidedDemoState = guidedDemo?.state
-  const isGuidedDemo = !isPresetMode && !!issueId && isGuidedDemoIssue(issueId) && !guidedDemoState?.sessionId
-  const isSelfEvolveGuidedDemo = isGuidedDemo && guidedDemo?.kind === 'self-evolve'
   const isExtensionProject = projectKind === 'extension'
-  const requiredSessionSkill = isSelfEvolveGuidedDemo
-    ? { dirName: SELF_EVOLVE_REQUIRED_SKILL_NAME, name: SELF_EVOLVE_REQUIRED_SKILL_NAME, label: SELF_EVOLVE_REQUIRED_SKILL_NAME }
-    : (isExtensionProject
-      ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
-      : requiredSkill)
+  const requiredSessionSkill = isExtensionProject
+    ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
+    : requiredSkill
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [name, setName] = useState(() => isGuidedDemo
-    ? (guidedDemoState?.sessionName || '')
-    : (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
+  const [name, setName] = useState(() => initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix))
   // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 桌面端初值 'dual' (默认双侧, 避免 mount 秒提交时 null 导致 UI 与必选逻辑不一致); web 端恒 null → 不注入、不影响 skill.
   const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
     typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
@@ -2316,9 +2232,7 @@ export function NewSessionModal({
       setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
     })
   }, [])
-  const [desc, setDesc] = useState(isGuidedDemo
-    ? (guidedDemoState?.sessionDescription || '')
-    : (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
+  const [desc, setDesc] = useState(initialPreset?.description || initialDraft?.desc || defaultDescription || '')
   const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
     Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
   )
@@ -2447,7 +2361,7 @@ export function NewSessionModal({
   }, [])
 
   useEffect(() => {
-    if (!isGuidedDemo && !isPresetMode) {
+    if (!isPresetMode) {
       draftSave(DRAFT_KEY, {
         name,
         desc,
@@ -2464,7 +2378,7 @@ export function NewSessionModal({
         mentions: selectedMentions,
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isGuidedDemo, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -2618,16 +2532,16 @@ export function NewSessionModal({
   }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
 
   // 拉取当前 issue/research 的"上次所选模型" (该作用域最近一次 Session 的 model).
-  // preset / 引导演示模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
+  // preset 模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
   useEffect(() => {
-    if (isPresetMode || isGuidedDemo) { setScopeLastModel(''); return }
+    if (isPresetMode) { setScopeLastModel(''); return }
     let alive = true
     fetchPreview(new Set(), new Set(), { includeDefaults: true, includeBody: false, includeItemBodies: false })
       .then(d => { if (alive) setScopeLastModel(typeof d?.defaults?.model === 'string' ? d.defaults.model : '') })
       .catch(() => { if (alive) setScopeLastModel('') })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueId, researchId, isPresetMode, isGuidedDemo])
+  }, [issueId, researchId, isPresetMode])
 
   const goPreview = async () => {
     if (!name.trim()) { setErr(`请填写${isResearch ? ' ' : ''}${entityNameLabel}`); return }
@@ -2682,23 +2596,6 @@ export function NewSessionModal({
       if (continueResetSelection) {
         defaultMemoryEx = new Set(availableMemoryIds)
       }
-      if (isSelfEvolveGuidedDemo) {
-        defaultSkillEx = normalizeSkillExclusions(
-          new Set(
-            (pAll.sources?.skills || [])
-              .filter(sk => !matchesRequiredSkill(sk))
-              .map(sk => sk.id)
-              .filter(id => availableSkillIds.has(id))
-          ),
-          availableSkillIds,
-        )
-        defaultMemoryEx = new Set(
-          (pAll.sources?.memories || [])
-            .filter(memory => !shouldKeepSelfEvolveMemory(memory))
-            .map(memory => memory.id)
-            .filter(id => availableMemoryIds.has(id))
-        )
-      }
       const hasInheritedExclusions = defaultSkillEx.size > 0 || defaultMemoryEx.size > 0
       const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx, { includeDefaults: true }) : pAll
       setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
@@ -2733,8 +2630,8 @@ export function NewSessionModal({
 
   // ---- 用户级 ↔ 项目级: 复制为项目级 / 移除项目级条目 -------------------------
   // 复制为项目级 = 把我的用户级条目快照复制到项目级 (原件保留); 移除 = 删除项目级条目。
-  // 仅在有项目上下文时展示入口; 引导演示模式禁止变更, 避免污染演示项目。
-  const canScopeChange = !!projectId && !isGuidedDemo
+  // 仅在有项目上下文时展示入口。
+  const canScopeChange = !!projectId
   // 拉项目级 Skill/Memory 目录, 用于判断是否已有我复制的项目级条目。
   useEffect(() => {
     if (!canScopeChange || !projectId) { setProjectSkillCatalog([]); setProjectMemoryCatalog([]); return }
@@ -2873,7 +2770,6 @@ export function NewSessionModal({
       })
       draftClear(DRAFT_KEY)
       if (deferPurpose) markFireAndForgetSession(s?.session_id)
-      if (isGuidedDemo && guidedDemo && s?.session_id) patchGuidedDemoState(guidedDemo.kind, { sessionId: s.session_id })
       onCreated(s)
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
@@ -3464,17 +3360,9 @@ export function NewSessionModal({
                       {availableMemories.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无</p>}
                       {availableMemories.map(m => {
                         const checked = !excludedMemories.has(m.id)
-                        const memoryTour = isSelfEvolveGuidedDemo
-                          ? isSelfEvolveRequiredMemoryItem(m)
-                            ? 'session-preview-self-evolve-required-memory'
-                            : isSelfEvolveProjectMemoryItem(m)
-                              ? 'session-preview-self-evolve-project-memory'
-                              : isSelfEvolveGuideMemoryItem(m)
-                                ? 'session-preview-self-evolve-guide-memory'
-                                : undefined
-                          : m.name.includes('莫比乌斯光点标志空间案例') || m.name.includes('莫比乌斯光点 Logo 空间案例')
-                            ? 'session-preview-logo-memory'
-                            : undefined
+                        const memoryTour = m.name.includes('莫比乌斯光点标志空间案例') || m.name.includes('莫比乌斯光点 Logo 空间案例')
+                          ? 'session-preview-logo-memory'
+                          : undefined
                         return (
                           <div
                             key={m.id}

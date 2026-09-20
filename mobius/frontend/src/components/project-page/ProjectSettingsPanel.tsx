@@ -8,12 +8,6 @@ import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
-import { readContextSetupDemoState } from '../../services/context-setup-demo'
-import {
-  PROJECT_IMPORT_DEMO_TOUR_EVENT,
-  patchProjectImportDemoState,
-  readProjectImportDemoState,
-} from '../../services/project-import-demo'
 import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
 import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
 import { ProjectPackagePanel } from './ProjectPackagePanel'
@@ -595,42 +589,8 @@ export function ProjectSettingsPanel({
   const [gitActionRunning, setGitActionRunning] = useState<GitTrackingAction | ''>('')
   const [gitActionMessage, setGitActionMessage] = useState('')
   const [gitActionError, setGitActionError] = useState('')
-  const [, setImportDemoRefreshKey] = useState(0)
-  const [importUploadConfirmBusy, setImportUploadConfirmBusy] = useState(false)
-  const [importCleanupBusy, setImportCleanupBusy] = useState(false)
-  const [importGuideMessage, setImportGuideMessage] = useState('')
   const [bindPathCopied, setBindPathCopied] = useState(false)
-  const importDemoState = readProjectImportDemoState()
-  const contextDemoState = readContextSetupDemoState()
-  const importDemoActiveForProject = !!importDemoState?.active && importDemoState.projectId === project?.id
-  const contextDemoActiveForProject = !!contextDemoState?.active && contextDemoState.projectId === project?.id
   const canManageProject = project?.can_manage !== false
-  const projectBindRoot = project?.bind_path ? String(project.bind_path).replace(/\/+$/, '') : ''
-  const uploadSampleZipRelPath = (importDemoState?.uploadSampleZipRelPath || 'upload-samples/vanilla-todomvc-upload-sample.zip').replace(/^\/+/, '')
-  const downloadToken = (typeof localStorage !== 'undefined' && localStorage.getItem('cc-token')) || ''
-  const downloadUrlForRelPath = (relPath?: string) => {
-    const rel = (relPath || '').replace(/^\/+/, '')
-    if (!projectBindRoot || !rel) return ''
-    return `/api/download?path=${encodeURIComponent(`${projectBindRoot}/${rel}`)}${downloadToken ? `&token=${encodeURIComponent(downloadToken)}` : ''}`
-  }
-  const uploadSampleDownloadUrl = importDemoActiveForProject
-    ? downloadUrlForRelPath(uploadSampleZipRelPath)
-    : ''
-  const showImportUploadCompleteButton = importDemoActiveForProject
-    && !!importDemoState?.uploadSampleDownloadedAt
-    && !importDemoState?.uploadSampleUploadedAt
-  const showImportCleanupButton = importDemoActiveForProject
-    && !!importDemoState?.uploadSampleUploadedAt
-    && !importDemoState?.uploadSampleClearedAt
-  const contextMaterialsZipUrl = contextDemoActiveForProject
-    ? downloadUrlForRelPath(contextDemoState?.materialsZipRelPath || 'context-materials/context-setup-materials.zip')
-    : ''
-  const contextMemoryMaterialUrl = contextDemoActiveForProject
-    ? downloadUrlForRelPath(contextDemoState?.memoryMaterialRelPath || 'context-materials/project_knowledge.md')
-    : ''
-  const contextSkillMaterialUrl = contextDemoActiveForProject
-    ? downloadUrlForRelPath(contextDemoState?.skillMaterialRelPath || 'context-materials/weekly-notes-summary/SKILL.md')
-    : ''
   const assistantProject = isAssistantProject(project, user?.id)
   const deletePolicy = project?.delete_policy
   const canDeleteProject = deletePolicy?.allowed === true
@@ -662,67 +622,6 @@ export function ProjectSettingsPanel({
       if (activePane === 'versions') setActivePane('settings')
     } finally {
       setGitTrackingLoading(false)
-    }
-  }
-
-  const markImportSampleDownloaded = () => {
-    if (!project?.id || !importDemoActiveForProject) return
-    patchProjectImportDemoState({ uploadSampleDownloadedAt: Date.now() })
-    setImportGuideMessage('样例已开始下载。解压后请打开网页代码编辑器，把文件夹拖进项目目录。')
-    setImportDemoRefreshKey((value) => value + 1)
-    window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
-    }, 360)
-  }
-
-  const confirmImportUploadSample = async () => {
-    if (!project?.id || !importDemoActiveForProject || importUploadConfirmBusy) return
-    setImportUploadConfirmBusy(true)
-    setImportGuideMessage('')
-    try {
-      const data = await api(`/api/projects/${project.id}/files?path=/`)
-      const entries = Array.isArray(data?.entries) ? data.entries : []
-      const names = new Set(entries.map((entry: any) => String(entry?.name || '')))
-      const hasUploadedFolder = names.has('vanilla-todomvc')
-      const hasUploadedContents = names.has('index.html') && names.has('package.json') && names.has('src')
-      if (!hasUploadedFolder && !hasUploadedContents) {
-        setImportGuideMessage('还没有在项目目录里看到上传样例。请先把解压后的文件夹拖进网页代码编辑器左侧资源管理器，再点击确认。')
-        return
-      }
-      patchProjectImportDemoState({
-        uploadSampleUploadedAt: Date.now(),
-        uploadWalkthroughCompletedAt: Date.now(),
-      })
-      setImportGuideMessage('已确认上传样例。下一步可以清空样例，再学习公开仓库下载方式。')
-      setImportDemoRefreshKey((value) => value + 1)
-      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
-    } catch (e: any) {
-      setImportGuideMessage(e?.message || '确认上传样例失败')
-    } finally {
-      setImportUploadConfirmBusy(false)
-    }
-  }
-
-  const clearImportUploadSample = async () => {
-    if (!project?.id || !importDemoActiveForProject || importCleanupBusy) return
-    setImportCleanupBusy(true)
-    setImportGuideMessage('')
-    try {
-      const data = await api(`/api/projects/${project.id}/guided-demo/import/clear-upload-sample`, { method: 'POST' })
-      patchProjectImportDemoState({
-        uploadWalkthroughCompletedAt: Date.now(),
-        uploadSampleClearedAt: Date.now(),
-      })
-      const removedCount = Array.isArray(data?.removed) ? data.removed.length : 0
-      setImportGuideMessage(removedCount > 0
-        ? '已清空上传样例，可以继续学习公开仓库下载方式。'
-        : '没有发现已上传的样例，可以继续学习公开仓库下载方式。')
-      setImportDemoRefreshKey((value) => value + 1)
-      window.dispatchEvent(new CustomEvent(PROJECT_IMPORT_DEMO_TOUR_EVENT, { detail: { force: true } }))
-    } catch (e: any) {
-      setImportGuideMessage(e?.message || '清空上传样例失败')
-    } finally {
-      setImportCleanupBusy(false)
     }
   }
 
@@ -1059,86 +958,6 @@ export function ProjectSettingsPanel({
                         style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                         {bindPathCopied ? <Check className="h-4 w-4" strokeWidth={2} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
                       </button>
-                    )}
-                    {importDemoActiveForProject && uploadSampleDownloadUrl && (
-                      <a
-                        href={uploadSampleDownloadUrl}
-                        download
-                        onClick={markImportSampleDownloaded}
-                        data-tour="project-import-sample-download"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 flex items-center gap-1.5 whitespace-nowrap"
-                        title="仅导入演示项目显示：下载上传样例"
-                      >
-                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        下载上传样例
-                      </a>
-                    )}
-                    {showImportUploadCompleteButton && (
-                      <button
-                        type="button"
-                        onClick={confirmImportUploadSample}
-                        disabled={importUploadConfirmBusy}
-                        data-tour="project-import-confirm-upload-sample"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-sky-500/15 text-sky-500 hover:bg-sky-500/25 transition-colors border border-sky-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="仅导入演示项目显示：确认已经把上传样例拖进项目目录"
-                      >
-                        <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        {importUploadConfirmBusy ? '检查中...' : '我已完成上传'}
-                      </button>
-                    )}
-                    {showImportCleanupButton && (
-                      <button
-                        type="button"
-                        onClick={clearImportUploadSample}
-                        disabled={importCleanupBusy}
-                        data-tour="project-import-clear-upload-sample"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 transition-colors border border-amber-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="仅导入演示项目显示：清空刚才上传的样例并继续"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        {importCleanupBusy ? '清理中...' : '清空上传样例'}
-                      </button>
-                    )}
-                    {contextDemoActiveForProject && contextMaterialsZipUrl && (
-                      <a
-                        href={contextMaterialsZipUrl}
-                        download
-                        data-tour="project-context-materials-download"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-cyan-500/15 text-cyan-500 hover:bg-cyan-500/25 transition-colors border border-cyan-500/25 flex items-center gap-1.5 whitespace-nowrap"
-                        title="仅资料配置演示项目显示：下载演示素材包"
-                      >
-                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        下载资料包
-                      </a>
-                    )}
-                    {contextDemoActiveForProject && contextMemoryMaterialUrl && (
-                      <a
-                        href={contextMemoryMaterialUrl}
-                        download
-                        data-tour="project-context-memory-download"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 flex items-center gap-1.5 whitespace-nowrap"
-                        title="仅资料配置演示项目显示：下载项目知识文件"
-                      >
-                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        下载项目知识
-                      </a>
-                    )}
-                    {contextDemoActiveForProject && contextSkillMaterialUrl && (
-                      <a
-                        href={contextSkillMaterialUrl}
-                        download
-                        data-tour="project-context-skill-download"
-                        className="h-9 px-3 rounded-lg text-[12px] bg-violet-500/15 text-violet-500 hover:bg-violet-500/25 transition-colors border border-violet-500/25 flex items-center gap-1.5 whitespace-nowrap"
-                        title="仅资料配置演示项目显示：下载技能文件"
-                      >
-                        <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                        下载技能文件
-                      </a>
-                    )}
-                    {importDemoActiveForProject && importGuideMessage && (
-                      <div className="basis-full text-[11px] text-amber-500 leading-5">
-                        {importGuideMessage}
-                      </div>
                     )}
                   </div>
                 </div>

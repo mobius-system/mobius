@@ -5,11 +5,6 @@ import type { IssueConfirmAction } from './types'
 import { SearchMatchText } from '../search-match-text'
 import { textMatchesProjectSearch, type ProjectSessionMatch } from '../../services/project-session-search'
 import { projectSessionPreview, sortProjectSessions } from '../../services/project-session-order'
-import {
-  LOGO_REVIEW_ISSUE_TITLE,
-  LOGO_REVIEW_PROJECT_ID,
-  LOGO_REVIEW_SESSION_NAME,
-} from '../../services/logo-review-demo'
 
 type IssueCardProps = {
   issue: any
@@ -45,8 +40,6 @@ export function IssueCard({
   const normalizedTitle = String(issue.title || '').trim().replace(/\s+/g, ' ')
   const normalizedDescription = description.replace(/\s+/g, ' ')
   const hasDistinctDescription = !!description && normalizedDescription !== normalizedTitle
-  const isLogoReviewIssue = projectId === LOGO_REVIEW_PROJECT_ID
-    && String(issue.title || '').includes(LOGO_REVIEW_ISSUE_TITLE)
   // v3 写权限: can_manage=false (非 owner, 不是允许名单, 项目不可写) 时隐藏所有管理按钮.
   // 后端 shapeProjectForUser 已经算好 can_manage; 这里在 issue 上也兼容读 issue.can_manage (个别路径会下发).
   const canManage = issue.can_manage !== false
@@ -76,7 +69,6 @@ export function IssueCard({
   if (listView) {
     return (
       <div
-        data-tour={isLogoReviewIssue ? 'logo-review-issue-card' : undefined}
         className="rounded-lg border group transition-all hover:border-blue-500/30"
         style={cardStyle}>
         <div className="flex items-center gap-2 px-3 pt-2">
@@ -84,7 +76,6 @@ export function IssueCard({
           <svg className="w-4 h-4 flex-shrink-0" style={{ color: isCompleted ? '#22c55e' : '#60a5fa' }} fill={isCompleted ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
           <Link
             to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
-            data-tour={isLogoReviewIssue ? 'logo-review-issue-link' : undefined}
             className={`min-w-0 flex-1 truncate text-[13px] font-semibold hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
             style={titleColor}>{issue.title}</Link>
           {headerActions}
@@ -103,7 +94,6 @@ export function IssueCard({
 
   return (
     <div
-      data-tour={isLogoReviewIssue ? 'logo-review-issue-card' : undefined}
       className="rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-blue-500/30 h-[220px]"
       style={cardStyle}>
       <div className="px-4 py-3 border-b flex items-start gap-2" style={{ borderColor: 'var(--border-color)' }}>
@@ -111,7 +101,6 @@ export function IssueCard({
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: isCompleted ? '#22c55e' : '#60a5fa' }} fill={isCompleted ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
         <Link
           to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
-          data-tour={isLogoReviewIssue ? 'logo-review-issue-link' : undefined}
           className="text-[14px] min-w-0 font-semibold flex-1 hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}"
           style={titleColor}>{issue.title}</Link>
         {headerActions}
@@ -141,11 +130,9 @@ export function IssueCard({
         ) : (
           <div className="space-y-1">
             {previewSessions.map((s: any) => {
-              const isLogoReviewSession = isLogoReviewIssue && String(s.name || '').includes(LOGO_REVIEW_SESSION_NAME)
               const showDescription = showingSessionMatches && textMatchesProjectSearch(s.description, searchQuery)
               return (
                 <Link key={s.session_id} to={`/u/${userParam}/p/${projectId}/i/${issue.id}?session=${s.session_id}`}
-                  data-tour={isLogoReviewSession ? 'logo-review-session-link' : undefined}
                   data-project-card-session-match={showingSessionMatches ? s.session_id : undefined}
                   className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
                   <AgentStatusDot agentStatus={s.agent_status} className="flex-shrink-0" />

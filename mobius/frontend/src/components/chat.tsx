@@ -17,7 +17,6 @@ import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
 import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
-import { isGuidedDemoSession, patchGuidedDemoSessionCompleted } from '../services/guided-demo'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
 import {
@@ -50,7 +49,6 @@ import {
   VOICE_RECORDING_MAX_MS,
 } from '../services/assistant-voice'
 
-const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 // LIVE 卡乐观窗口时长: 提交问题后强制显示 5s, 点击终止后强制隐藏 10s.
 const LIVE_OPTIMISTIC_SHOW_MS = 5000
 const LIVE_OPTIMISTIC_HIDE_MS = 10000
@@ -2535,7 +2533,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [lastSendError, setLastSendError] = useState('')
   const [dismissedBackendFailureKeys, setDismissedBackendFailureKeys] = useState<Record<string, string>>({})
   const [hiddenBackendFailureBefore, setHiddenBackendFailureBefore] = useState<Record<string, number>>({})
-  const guidedCompletionNotifiedRef = useRef<Set<string>>(new Set())
   const backendFailureMessage = useMemo(() => formatBackendFailureMessage(backendFailedReason), [backendFailedReason])
   const backendFailureKey = backendJobFailed === true
     ? (backendFailedAt || backendFailedReason || backendFailureMessage || 'failed')
@@ -2634,11 +2631,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               s.session_id === sessionId ? { ...s, agent_status: liveAgentStatus } : s
             )))
           }
-        }
-        if (r?.job_accomplished === true && isGuidedDemoSession(sessionId) && !guidedCompletionNotifiedRef.current.has(sessionId)) {
-          guidedCompletionNotifiedRef.current.add(sessionId)
-          patchGuidedDemoSessionCompleted(sessionId)
-          window.dispatchEvent(new CustomEvent(GUIDED_DEMO_TOUR_EVENT, { detail: { force: false } }))
         }
         // pending 清除条件 (任意一个满足):
         //   ① 后端确认 working=true   (agent 已开始干) — 但加急发送时 session 本来就在 working,
@@ -4078,7 +4070,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       key={startModalSessionId}
       sessionName={currentSession?.name}
       sessionDescription={(currentSession as any)?.description || ''}
-      autoConfirm={!isGuidedDemoSession(startModalSessionId)}
+      autoConfirm
       onConfirm={async () => {
         // Errors remain visible in the confirmation card; dismiss only after a successful send.
         await startSession()

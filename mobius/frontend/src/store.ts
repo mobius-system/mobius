@@ -69,7 +69,7 @@ interface Branding {
 declare global {
   interface Window {
     __BRANDING__?: Branding
-    // 全局打开管理中心 overlay (shell.tsx 注册). 引导系统「重温管理中心」按钮先打开 overlay 再启动引导.
+    // 全局打开管理中心 overlay (shell.tsx 注册).
     // 可选 tab: 传入即直接落到该 tab (例如 'runtime' = 运行监控), 不传则用管理中心默认 tab.
     openAdminOverlay?: (tab?: AdminPanelTab) => void
   }

@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  CircleQuestionMark,
   Clock,
   Copy,
   Cpu,
@@ -79,6 +80,7 @@ import {
   writeCustomLogo,
 } from '../services/brand-overrides'
 import { pollRecursive } from '../services/polling'
+import { startSceneTour } from '../services/tour'
 import { InlineWebTerminal } from './web-terminal-modal'
 import { ToggleSwitch } from './toggle-switch'
 import { SkillMarketLink } from './skill-market-link'
@@ -8415,17 +8417,29 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
             </div>
           </div>
         </div>
-        {activeTab === 'runtime' && (
+        <div className="flex shrink-0 items-center gap-2">
+          {/* 全项目仅剩的引导路线: 在这里手动重温管理中心各模块讲解 (首触时由 TourController 自动启动). */}
           <button
             type="button"
-            title="刷新运行监控"
-            onClick={() => refresh()}
-            disabled={loading}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            title="重温管理中心引导"
+            aria-label="重温管理中心引导"
+            onClick={() => { void startSceneTour('admin-center') }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <CircleQuestionMark className="h-4 w-4" />
           </button>
-        )}
+          {activeTab === 'runtime' && (
+            <button
+              type="button"
+              title="刷新运行监控"
+              onClick={() => refresh()}
+              disabled={loading}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">

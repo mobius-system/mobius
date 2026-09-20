@@ -8,9 +8,8 @@ import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
 import { AdminPanel, type AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
-import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, ChevronRight, CircleDot, CircleQuestionMark, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -813,7 +812,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showRecentSessions, setShowRecentSessions] = useState(false)
-  const [showGuideHelp, setShowGuideHelp] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   // 调色盘里的主题列表与当前激活 id — 在下拉菜单和顶栏按钮里都用到.
   // 每次打开菜单 / 关闭调色盘 / 主题切换时刷新, 避免在下拉里看到陈旧数据.
@@ -1228,7 +1226,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               </TopNavActionElement>
             </>
           )}
-          {/* 帮助与引导入口已并入用户菜单 (top-user-menu) 内的「帮助与引导」菜单项 */}
           <TopNavActionElement
             as="a"
             href="https://github.com/mobius-system/mobius.git"
@@ -1476,7 +1473,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             )}
           </div>
 
-          {/* 用户菜单与普通模式一致，管理、帮助、下载和退出入口始终可用。 */}
+          {/* 用户菜单与普通模式一致，管理、下载和退出入口始终可用。 */}
           <div className="relative" data-tour="top-user-menu">
             <TopNavActionElement
               type="button"
@@ -1503,12 +1500,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   </button>
                 )}
                 <div className="border-t my-0.5" style={{ borderColor: 'var(--border-color)' }} />
-                <button onClick={() => { setShowUserMenu(false); setShowGuideHelp(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
-                  style={{ color: 'var(--text-primary)' }}>
-                  <CircleQuestionMark className="w-3.5 h-3.5" strokeWidth={2} />
-                  帮助与引导
-                </button>
                 <button onClick={() => { setShowUserMenu(false); setShowAimuxGuide(true) }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
@@ -1564,7 +1555,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showDesktopDownload && <DesktopDownloadModal onClose={() => setShowDesktopDownload(false)} />}
       {showTerminalInstall && <TerminalInstallModal onClose={() => setShowTerminalInstall(false)} />}
       {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
-      {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
       {showSearch && (
         <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
@@ -1588,7 +1578,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 // =====================================================================
 type OverlayKind = 'admin' | null
 
-// 全局打开 overlay 的函数 (供引导系统等外部触发, 如「重温管理中心」按钮先打开 overlay 再启动引导).
+// 全局打开 overlay 的函数 (供外部按钮触发, 如「监控」「配置」入口直接落到对应 tab).
 // 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
 // 使用 pending 模式: OverlayPanels 在 useEffect 中赋值 _setOverlay 之前若被调用, 请求会留在 _pendingAdminTab
 // 里, 下次 OverlayPanels 挂载 AdminPanel 时读取并清空, 避免「点按钮 overlay 没反应 / 落错 tab」.

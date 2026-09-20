@@ -6,11 +6,6 @@ import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
 import { HelpHint } from './project-page/help-hint'
 import { SkillMarketLink } from './skill-market-link'
-import {
-  CONTEXT_SETUP_DEMO_TOUR_EVENT,
-  patchContextSetupDemoState,
-  readContextSetupDemoState,
-} from '../services/context-setup-demo'
 
 // =====================================================================
 // normalizeGithubSkillInput — 把用户从网站/文档直接复制的"安装命令"或"仓库 URL"
@@ -147,7 +142,6 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
       })
       const imported = Array.isArray(r?.skills) ? r.skills : []
       const skipped = Array.isArray(r?.skipped) ? r.skipped : []
-      markContextSetupSkillImported(r)
       refresh()
       if (skipped.length > 0) {
         setImportInfo(
@@ -197,23 +191,11 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
       } else {
         closeAdd(); refresh()
       }
-      markContextSetupSkillImported({ skills: imported, skipped })
     } catch (e: any) {
       setErr(e?.message || '导入失败')
     } finally {
       setSubmitting(false)
     }
-  }
-
-  const markContextSetupSkillImported = (result: any) => {
-    const state = readContextSetupDemoState()
-    if (!state?.active || state.projectId !== projectId) return
-    const imported = Array.isArray(result?.skills) ? result.skills : []
-    const skipped = Array.isArray(result?.skipped) ? result.skipped : []
-    const hasExpectedSkill = [...imported, ...skipped].some((item: any) => item?.name === state.skillName)
-    if (!hasExpectedSkill) return
-    patchContextSetupDemoState({ skillImportedAt: Date.now() })
-    window.dispatchEvent(new CustomEvent(CONTEXT_SETUP_DEMO_TOUR_EVENT, { detail: { force: true } }))
   }
 
   const uploadSkillFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -237,7 +219,6 @@ export function SkillsManager({ scope, projectId }: { scope: 'user' | 'project';
         (skipped.length ? `；跳过 ${skipped.length} 个: ${skipped.map((s: any) => `${s.name} (${s.reason})`).join('; ')}` : '') +
         '。也可以从 GitHub 包安装、用本地绝对路径导入，或复制已有 Skill。'
       )
-      markContextSetupSkillImported(r)
       refresh()
     } catch (e: any) {
       setFileImportInfo(e?.message || '上传导入失败')

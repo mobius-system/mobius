@@ -4,7 +4,8 @@
  * 合并改动 (2026-09-02):
  *   - 顶栏独立切换按钮 [data-testid="layout-mode-toggle"] 已删除;
  *   - 切换入口改为外观菜单内的简易模式开关 [data-testid="easy-mode-switch"]。
- *   - 顶栏独立帮助按钮 [data-tour="top-guide-help"] 已删除, 入口并入用户菜单「帮助与引导」。
+ *   - 顶栏独立帮助按钮 [data-tour="top-guide-help"] 已删除; 用户菜单内的「帮助与引导」入口
+ *     也随引导系统整体移除 (项目仅保留管理中心引导)。
  *
  * 断言:
  *   普通态: 顶栏外观按钮可见, 打开菜单 → 内含简易模式开关。
@@ -78,13 +79,12 @@ try {
   const hasGithub = await page.locator('.mobius-topnav-github').count()
   record('专家态: 外观/用户菜单/GitHub 齐全', hasAppearance && hasUserMenu && hasGithub > 0)
 
-  // 帮助入口已并入用户菜单: 顶栏无独立按钮, 菜单内有「帮助与引导」项
+  // 引导系统已整体移除: 顶栏无独立帮助按钮, 用户菜单内也没有「帮助与引导」项
   const topGuideGone = (await page.locator('.mobius-topnav-actions > [data-tour="top-guide-help"]').count()) === 0
   record('专家态: 顶栏独立帮助按钮已移除', topGuideGone)
   await page.click('[data-tour="top-user-menu"] button[aria-haspopup="menu"]')
-  const guideItem = page.locator('[data-tour="top-user-menu"] > div button', { hasText: '帮助与引导' })
-  await guideItem.waitFor({ state: 'visible' })
-  record('专家态: 用户菜单内含「帮助与引导」菜单项', true)
+  const guideItemCount = await page.locator('[data-tour="top-user-menu"] > div button', { hasText: '帮助与引导' }).count()
+  record('专家态: 用户菜单内无「帮助与引导」菜单项', guideItemCount === 0)
   await page.keyboard.press('Escape')
   await page.click('body', { position: { x: 5, y: 400 } })
   await page.waitForTimeout(300)
