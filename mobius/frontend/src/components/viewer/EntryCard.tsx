@@ -329,6 +329,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
     theme.label === '图像' ||
     (assistantEntryText(entry).trim().length > 0 && !canCode)
   )
+  // 平铺文本卡 (正文 markdown) 的复制按钮与时间移到卡片底部独立一行, 不压正文.
+  // Flat text cards move their copy button and timestamp into a footer row under the body.
+  const easyFlatText = easyFlat && !canCode && !canImage
   const easyInline = easyMode && !easyOpener && !easyFlat
   const easyCompactSummary = easyInline || easyOpener
   const easyHideType = easyOpener || easyFlat
@@ -407,7 +410,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   // 视觉位置不变, 但 DOM 上 button 是 details 的直接子元素而非 summary 后代, 规范合规.
   // 字段模式也带复制按钮 (复制原始 JSON), 与精简模式的复制按钮对齐, 故 hasHeaderAction
   // 额外纳入 mode === 'field' —— 让只支持字段模式的小卡片也能露出复制入口.
-  const hasHeaderAction = open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || (mode === 'initial') || canCompact || canCode || canImage || canPlan || canInitial)
+  const hasHeaderAction = !easyFlatText && open && ((mode === 'compact') || (mode === 'field') || (mode === 'image') || (mode === 'plan') || (mode === 'initial') || canCompact || canCode || canImage || canPlan || canInitial)
 
   // 模式切换图标按钮: 计算点击后将切换到的目标模式 + 悬停说明.
   // (原为文字按钮显示目标模式名, 现改为图标按钮, 文字说明收进 title.)
@@ -610,6 +613,24 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
             </div>
           ) : (
             Object.entries(renderEntry).map(([k, v]) => <KeyNode key={k} k={k} v={v} depth={0} />)
+          )}
+          {easyFlatText && (
+            <div className="easy-flat-footer">
+              {ts && <span className="easy-flat-footer__time font-mono">{ts}</span>}
+              <JsonlCopyButton
+                copied={copied}
+                title="复制渲染前的原始 markdown 源"
+                copiedTitle="Markdown 已复制"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  navigator.clipboard.writeText(headerSummary.full).then(() => {
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1000)
+                  })
+                }}
+              />
+            </div>
           )}
         </div>
       )}

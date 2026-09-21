@@ -4727,6 +4727,36 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   background: transparent !important;
   padding: 0 !important;
 }
+/* 平铺文本卡底部信息行: 时间 + 复制按钮, 独占一行不压正文 */
+/* Footer row under a flat text card: timestamp and copy button on their own line */
+.easy-flat-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.easy-flat-footer__time {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-dimmed);
+  user-select: none;
+}
+.easy-flat-footer .jsonl-icon-button {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.easy-flat-footer .jsonl-icon-button:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
 .easy-flat-image {
   border: 0 !important;
   background: transparent !important;
