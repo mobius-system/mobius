@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Bot,
@@ -53,6 +53,7 @@ import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 import { MobiusLogo } from '../components/mobius-logo'
+import { appendAttachmentsToDesc, newAttId, uploadAttachmentFile, type Attachment } from '../components/attachments'
 
 const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
 
@@ -231,6 +232,7 @@ export default function EasyModePage() {
   // /easy_mode?session=<id> 会被欢迎页永久挡在前面, 会话怎么都打不开。
   const [showWelcome, setShowWelcome] = useState(() => !search.get('session'))
   const [welcomePrompt, setWelcomePrompt] = useState('')
+  const [welcomeAttachments, setWelcomeAttachments] = useState<Attachment[]>([])
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(() => ({
     ...EMPTY_EASY_SESSION_SELECTION,
@@ -253,6 +255,7 @@ export default function EasyModePage() {
   const [remotesLoading, setRemotesLoading] = useState(false)
   const [remotesError, setRemotesError] = useState('')
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
+  const welcomeFileInputRef = useRef<HTMLInputElement | null>(null)
   const messageSentRefreshTimerRef = useRef<number | null>(null)
   const welcomeSelectionNoticeTimerRef = useRef<number | null>(null)
   const navigate = useNavigate()
@@ -646,6 +649,7 @@ export default function EasyModePage() {
   const openWelcome = () => {
     setShowWelcome(true)
     setWelcomePrompt('')
+    clearWelcomeAttachments()
     setWelcomeSelection(current => ({ ...current, ...readEasyLastSelection(), createProject: false }))
     setWelcomeSelectionNotice(true)
     setCurrentSession(null)
@@ -664,6 +668,74 @@ export default function EasyModePage() {
     if (welcomeSelectionNoticeTimerRef.current) window.clearTimeout(welcomeSelectionNoticeTimerRef.current)
     welcomeSelectionNoticeTimerRef.current = window.setTimeout(() => setWelcomeSelectionNotice(false), 5000)
   }
+
+  // 欢迎页附件与会话输入框共用 /api/upload, 粘贴截图和选择文件都进入同一列表。
+  // Welcome attachments share /api/upload with the conversation input; pasted screenshots and picked files use one list.
+  const enqueueWelcomeFiles = useCallback((files: FileList | File[]) => {
+    const incoming = Array.from(files || [])
+    if (incoming.length === 0) return
+    incoming.forEach(file => {
+      const isImage = file.type.startsWith('image/')
+      const attachment: Attachment = {
+        id: newAttId(), name: file.name || 'file', size: file.size || 0,
+        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+        kind: isImage ? 'image' : 'file', status: 'uploading',
+      }
+      setWelcomeAttachments(current => [...current, attachment])
+      uploadAttachmentFile(file)
+        .then(result => setWelcomeAttachments(current => current.map(item => item.id === attachment.id
+          ? { ...item, status: 'done', path: result.path, size: result.size || item.size }
+          : item)))
+        .catch(error => setWelcomeAttachments(current => current.map(item => item.id === attachment.id
+          ? { ...item, status: 'error', error: error?.message || '上传失败' }
+          : item)))
+    })
+  }, [])
+
+  const handleWelcomePaste = useCallback((event: ClipboardEvent<HTMLDivElement>) => {
+    const clipboard = event.clipboardData
+    if (!clipboard) return
+    const files: File[] = []
+    if (clipboard.files?.length) {
+      for (let index = 0; index < clipboard.files.length; index += 1) files.push(clipboard.files[index])
+    } else if (clipboard.items?.length) {
+      for (let index = 0; index < clipboard.items.length; index += 1) {
+        const item = clipboard.items[index]
+        if (item.kind === 'file') {
+          const file = item.getAsFile()
+          if (file) files.push(file)
+        }
+      }
+    }
+    if (files.length > 0) {
+      event.preventDefault()
+      enqueueWelcomeFiles(files)
+    }
+  }, [enqueueWelcomeFiles])
+
+  const removeWelcomeAttachment = useCallback((id: string) => {
+    setWelcomeAttachments(current => {
+      const target = current.find(item => item.id === id)
+      if (target?.previewUrl) {
+        try { URL.revokeObjectURL(target.previewUrl) } catch {}
+      }
+      return current.filter(item => item.id !== id)
+    })
+  }, [])
+
+  const clearWelcomeAttachments = useCallback(() => {
+    setWelcomeAttachments(current => {
+      current.forEach(item => {
+        if (item.previewUrl) {
+          try { URL.revokeObjectURL(item.previewUrl) } catch {}
+        }
+      })
+      return []
+    })
+  }, [])
+
+  const welcomeAttachmentsUploading = welcomeAttachments.some(item => item.status === 'uploading')
+  const welcomeAttachmentsReady = welcomeAttachments.some(item => item.status === 'done' && !!item.path)
 
   useEffect(() => {
     try {
@@ -687,7 +759,8 @@ export default function EasyModePage() {
   // 请求体与「新建快捷会话」完全同源 (POST /api/issues/:id/sessions + 首条消息启动).
   const submitWelcomePrompt = async () => {
     const prompt = welcomePrompt.trim()
-    if (!prompt || welcomeCreating) return
+    if ((!prompt && !welcomeAttachmentsReady) || welcomeCreating || welcomeAttachmentsUploading) return
+    const finalPrompt = appendAttachmentsToDesc(prompt || '请查看附件', welcomeAttachments)
     const {
       createProject,
       projectId,
@@ -716,7 +789,7 @@ export default function EasyModePage() {
           method: 'POST',
           body: JSON.stringify({
             name: projectName.trim(),
-            description: prompt,
+            description: finalPrompt,
             bindPath,
             bindPathManual: !!projectPath.trim() && !!welcomeSelection.projectPathManual,
             defaultUseWorktree: false,
@@ -769,7 +842,7 @@ export default function EasyModePage() {
         method: 'POST',
         body: JSON.stringify({
           name,
-          description: prompt,
+          description: finalPrompt,
           model,
           language,
           excluded_skill_ids: keepsSelectedContext ? excludedSkills : [],
@@ -782,7 +855,7 @@ export default function EasyModePage() {
         const requestId = `easy-welcome-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         api(`/api/sessions/${session.session_id}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ content: [name, prompt].filter(Boolean).join('\n\n'), request_id: requestId }),
+          body: JSON.stringify({ content: [name, finalPrompt].filter(Boolean).join('\n\n'), request_id: requestId }),
         }).catch(() => {})
       }
       // 新建会话同样是「提交问题」: 1s 后再拉一次, 让左栏立刻显示该会话已在执行。
@@ -795,6 +868,7 @@ export default function EasyModePage() {
         issue_title: session?.issue_title || targetIssue.title,
       })
       setWelcomePrompt('')
+      clearWelcomeAttachments()
     } catch (err: any) {
       setCreateErrorToast({ message: err?.message || '会话创建失败，请稍后重试' })
     } finally {
@@ -1108,11 +1182,27 @@ export default function EasyModePage() {
               <h1>{timeGreeting(user?.display_name)}<br />您需要莫比乌斯执行什么任务？</h1>
               <EasySessionModeTabs selection={welcomeSelection} onChange={setWelcomeSelection} />
               <div id="easy-welcome-composer" role="tabpanel" aria-labelledby={`easy-welcome-mode-${welcomeSelection.createProject ? 1 : 0}`}>
+                <input
+                  ref={welcomeFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={event => {
+                    if (event.target.files?.length) enqueueWelcomeFiles(event.target.files)
+                    event.target.value = ''
+                  }}
+                />
                 <EasySessionChatInput
                   mode="create_session_mode"
                   input={welcomePrompt}
                   inputPlaceholder="描述你想让莫比乌斯完成的任务…"
                   theme={theme}
+                  attachments={welcomeAttachments}
+                  anyUploading={welcomeAttachmentsUploading}
+                  hasReadyAttachments={welcomeAttachmentsReady}
+                  onUpload={() => welcomeFileInputRef.current?.click()}
+                  onPaste={handleWelcomePaste}
+                  onRemoveAttachment={removeWelcomeAttachment}
                   onChange={event => setWelcomePrompt(event.target.value)}
                   onSend={submitWelcomePrompt}
                   submitDisabled={welcomeCreating || (welcomeSelection.createProject && !welcomeSelection.projectName.trim())}

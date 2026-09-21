@@ -2,6 +2,7 @@ import { useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, ty
 import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
+import type { Attachment } from './attachments'
 
 /**
  * create_session_mode: 欢迎页还没有会话，输入框只负责收集任务描述，提交后进入完整的新建会话配置。
@@ -26,6 +27,12 @@ type CreateSessionModeProps = EasySessionChatInputCommonProps & {
   /** 欢迎页在选齐项目和任务前不能提交 */
   submitDisabled?: boolean
   submitTooltip?: string
+  attachments: Attachment[]
+  anyUploading: boolean
+  hasReadyAttachments: boolean
+  onUpload: () => void
+  onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
+  onRemoveAttachment: (id: string) => void
 }
 
 type FollowSessionModeProps = EasySessionChatInputCommonProps & {
@@ -65,7 +72,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const submitBlocked = props.mode === 'create_session_mode' && !!props.submitDisabled
   const disabled = follow
     ? (!input.trim() && !follow.hasReadyAttachments) || follow.anyUploading || follow.hasPendingSend || follow.messageSubmitting || follow.voiceBusy || !follow.modelAvailable
-    : !input.trim() || submitBlocked
+    : (!input.trim() && !props.hasReadyAttachments) || props.anyUploading || submitBlocked
   const sendBg = disabled ? (theme !== 'light' ? '#374151' : '#e5e7eb') : (theme !== 'light' ? '#ffffff' : '#111827')
   const sendFg = disabled ? (theme !== 'light' ? '#6b7280' : '#9ca3af') : (theme !== 'light' ? '#111827' : '#ffffff')
   const border = theme !== 'light' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'
@@ -100,7 +107,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         backdropFilter: 'blur(22px)',
         WebkitBackdropFilter: 'blur(22px)',
       } as CSSProperties}
-      onPaste={follow?.onPaste}
+      onPaste={follow ? follow.onPaste : props.onPaste}
       onFocusCapture={follow ? follow.onFocus : () => setStandaloneFocused(true)}
       onBlurCapture={follow ? follow.onBlur : (event) => {
         const nextTarget = event.relatedTarget as Node | null
@@ -108,6 +115,18 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         setStandaloneFocused(false)
       }}
     >
+      {props.mode === 'create_session_mode' && props.attachments.length > 0 && (
+        <div className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
+          {props.attachments.map(attachment => (
+            <div key={attachment.id} className="group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} title={attachment.error || attachment.name}>
+              {attachment.kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} className="h-7 w-7 rounded object-cover" /> : <Paperclip className="h-3 w-3 flex-shrink-0" />}
+              <span className="max-w-[150px] truncate">{attachment.name}</span>
+              {attachment.status === 'uploading' ? <RefreshCw className="h-3 w-3 animate-spin" /> : attachment.status === 'error' ? <span className="text-red-400">失败</span> : null}
+              <button type="button" onClick={() => props.onRemoveAttachment(attachment.id)} className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[11px] opacity-70 hover:bg-red-500/20 hover:text-red-300" aria-label={`移除附件 ${attachment.name}`}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="px-3 pt-3 pb-2.5">
         {follow && !input && (
           <div className="pointer-events-none absolute inset-x-3 top-3 z-10 grid min-w-0 grid-cols-2 gap-x-3 text-[11px] leading-[1.35] ml-[1%] mr-[50%]" style={{ color: 'var(--placeholder-color)' }}>
@@ -137,6 +156,19 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             <span className="truncate">提交后可配置项目、任务、模型和上下文</span>
           </span>
         ) : null}
+        {props.mode === 'create_session_mode' && (
+          <AdvancedInteractionBtn
+            onClick={props.onUpload}
+            label="上传文件"
+            tooltip="上传文件"
+            accent="blue"
+            motion="breathe"
+            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
+            iconClassName="h-[17px] w-[17px]"
+            style={{ color: '#d1d5db' }}
+            icon={<Paperclip className="h-[17px] w-[17px]" />}
+          />
+        )}
         {/* 上传附件: 标准模式把它收在「更多输入功能」菜单里, 简易模式只留这一个入口, 直接放在行内.
             样式与同一行其它按钮一致 (无边框圆形, 见 Unify easy-mode chat input toolbar buttons). */}
         {follow && (
