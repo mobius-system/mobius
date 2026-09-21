@@ -39,7 +39,7 @@ import {
   type ProjectHierarchyHit,
   type ProjectHierarchySearchResponse,
 } from '../services/project-hierarchy-search'
-import { ChatArea } from '../components/chat'
+import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { EasySessionChatInput } from '../components/easy-session-chat-input'
 import {
   EasySessionConfigBar,
@@ -47,16 +47,32 @@ import {
   EMPTY_EASY_SESSION_SELECTION,
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
-import { ConfirmModal, RenameSessionModal, randomProjectBindPath, formatDefaultSessionName } from '../components/modals'
-import { GlobalCreateRoot, type CreateKind } from '../components/global-create'
-import { MemoriesManager } from '../components/memories'
+import { randomProjectBindPath, formatDefaultSessionName } from '../services/session-naming'
+import type { CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
-import { SkillsManager } from '../components/skills'
 import { ToastCard } from '../components/toast-card'
 import { MobiusLogo } from '../components/mobius-logo'
 
 const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
+
+// 会话区按需加载: 简易模式首屏是"欢迎 + 输入框", 没选中会话时不渲染 ChatArea, 而 chat.tsx
+// 会连带拖来 markdown 渲染栈(react-markdown/rehype-highlight/katex)与输入缓存等一大串依赖,
+// 静态 import 等于每次打开简易模式都先付这笔钱.
+// The conversation pane loads on demand: the easy-mode landing screen shows only the
+// welcome composer, while chat.tsx drags in the whole markdown stack and session input
+// cache, so a static import makes every easy-mode visit pay for it up front.
+const ChatArea = lazyWithRetry(() => import('../components/chat').then(module => ({ default: module.ChatArea })))
+
+// 首屏只出现"欢迎 + 输入框", 下面这些弹窗/管理面板都要用户点开才可见, 一律按需下载 —
+// 它们所在的模块同时也是全局共用弹窗模块, 静态 import 会让打开简易模式先付整包体积.
+// The landing screen only shows the welcome composer, so every dialog and manager panel
+// below is user-triggered and loads on demand instead of riding along with first paint.
+const ConfirmModal = lazyWithRetry(() => import('../components/modals').then(module => ({ default: module.ConfirmModal })))
+const RenameSessionModal = lazyWithRetry(() => import('../components/modals').then(module => ({ default: module.RenameSessionModal })))
+const GlobalCreateRoot = lazyWithRetry(() => import('../components/global-create').then(module => ({ default: module.GlobalCreateRoot })))
+const MemoriesManager = lazyWithRetry(() => import('../components/memories').then(module => ({ default: module.MemoriesManager })))
+const SkillsManager = lazyWithRetry(() => import('../components/skills').then(module => ({ default: module.SkillsManager })))
 
 type RecentSession = {
   session_id: string
@@ -1065,7 +1081,11 @@ export default function EasyModePage() {
           <main className="easy-content easy-content--context" data-testid="easy-context-panel">
             <div className="easy-content-header"><BrainCircuit className="h-5 w-5" /><div><h1>记忆与技能</h1><p>管理新会话默认可用的个人上下文</p></div></div>
             <div className="easy-context-tabs"><button type="button" className={contextTab === 'skills' ? 'is-active' : ''} onClick={() => setContextTab('skills')}><Sparkles className="h-3.5 w-3.5" />技能</button><button type="button" className={contextTab === 'memories' ? 'is-active' : ''} onClick={() => setContextTab('memories')}><BrainCircuit className="h-3.5 w-3.5" />记忆</button></div>
-            <div className="easy-context-body">{contextTab === 'skills' ? <SkillsManager scope="user" /> : <MemoriesManager scope="user" />}</div>
+            <div className="easy-context-body">
+              <Suspense fallback={<Loading text="正在加载..." />}>
+                {contextTab === 'skills' ? <SkillsManager scope="user" /> : <MemoriesManager scope="user" />}
+              </Suspense>
+            </div>
           </main>
         ) : sessionTransitioning ? (
           <main className="easy-content easy-content--empty" data-testid="easy-session-transition">
@@ -1129,17 +1149,19 @@ export default function EasyModePage() {
             <Loading text="正在加载工作导航..." />
           </main>
         ) : currentSession && contextMatchesProject ? (
-          <ChatArea
-            layout="easy"
-            onMessageSent={scheduleRefreshAfterSend}
-            easyProjectControl={{
-              selectedProjectId: effectiveProject || selectedSession?.project_id || undefined,
-              selectedProjectName: selectedProjectOption?.name || selectedSession?.project_name || projects.find((project: any) => project.id === selectedSession?.project_id)?.name,
-              projects: projectOptions,
-              onSelectProject: selectProjectFilter,
-              onCreateProject: () => setCreateKind('project'),
-            }}
-          />
+          <Suspense fallback={<Loading text="正在加载会话..." />}>
+            <ChatArea
+              layout="easy"
+              onMessageSent={scheduleRefreshAfterSend}
+              easyProjectControl={{
+                selectedProjectId: effectiveProject || selectedSession?.project_id || undefined,
+                selectedProjectName: selectedProjectOption?.name || selectedSession?.project_name || projects.find((project: any) => project.id === selectedSession?.project_id)?.name,
+                projects: projectOptions,
+                onSelectProject: selectProjectFilter,
+                onCreateProject: () => setCreateKind('project'),
+              }}
+            />
+          </Suspense>
         ) : (
           <main className="easy-content easy-content--empty" data-testid="easy-project-empty">
             <FolderKanban className="h-9 w-9" />
@@ -1150,6 +1172,7 @@ export default function EasyModePage() {
         )}
       </div>
       {createKind && (
+        <Suspense fallback={null}>
         <GlobalCreateRoot
           kind={createKind}
           ctx={{ projectId: createDefaultProjectId, issueId: createDefaultIssueId }}
@@ -1169,8 +1192,10 @@ export default function EasyModePage() {
           }}
           onNavigate={navigate}
         />
+        </Suspense>
       )}
       {editingSession && (
+        <Suspense fallback={null}>
         <RenameSessionModal
           session={editingSession}
           onClose={() => setEditingSession(null)}
@@ -1187,8 +1212,10 @@ export default function EasyModePage() {
             setEditingSession(null)
           }}
         />
+        </Suspense>
       )}
       {deletingSession && (
+        <Suspense fallback={null}>
         <ConfirmModal
           title="删除会话"
           message={`确定删除会话「${deletingSession.name || deletingSession.session_id}」？删除后将立即永久删除，不再保留。`}
@@ -1197,6 +1224,7 @@ export default function EasyModePage() {
           confirmText="删除"
           confirmClass="bg-red-500 hover:bg-red-600"
         />
+        </Suspense>
       )}
       {createSuccessToast && (
         <ToastCard

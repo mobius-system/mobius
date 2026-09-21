@@ -12,13 +12,23 @@
 //
 // 不改动 modals.tsx 现有组件 (页面内创建流程零风险), 仅复用其底层 export.
 // =====================================================================
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
-import { ErrBanner, PathPickerModal, PcTaskModeSection, formatDefaultSessionName } from './modals'
+import { ErrBanner } from './error-banner'
+import { PcTaskModeSection } from './pc-task-mode-section'
+import { formatDefaultSessionName } from '../services/session-naming'
+import { lazyWithRetry } from '../services/handle-stale-chunk'
+
+// 路径选择弹窗只在点"浏览"时出现, 按需加载: 静态 import 会把整个 modals 模块(连同 markdown
+// 渲染栈)拖进引用本模块的页面 —— 简易模式欢迎页的配置条就引用本模块.
+// The path picker only appears after clicking "browse" and loads on demand; a static import
+// would drag the whole modals module (plus the markdown stack) into every page that imports
+// this file, including the easy-mode welcome config bar.
+const PathPickerModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.PathPickerModal })))
 import { ToggleSwitch } from './toggle-switch'
 import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
 import { SessionModelPicker } from './session-model-picker'
@@ -1051,8 +1061,10 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       )}
       {err && <ErrBanner>{err}</ErrBanner>}
       {pickerOpen && (
-        <PathPickerModal initialPath={user?.work_dir} onClose={() => setPickerOpen(false)}
-          onPick={(_abs, rel, manual) => { setBindPath(rel || _abs); setBindPathManual(!!manual); setPickerOpen(false) }} />
+        <Suspense fallback={null}>
+          <PathPickerModal initialPath={user?.work_dir} onClose={() => setPickerOpen(false)}
+            onPick={(_abs, rel, manual) => { setBindPath(rel || _abs); setBindPathManual(!!manual); setPickerOpen(false) }} />
+        </Suspense>
       )}
       {permissionSettingsModal}
     </CreateModalShell>

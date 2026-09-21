@@ -8,12 +8,18 @@
 //   语言   : 默认中文
 //   记忆和技能: 复用 SkillMemoryPicker 的单入口弹窗形态, 默认排除集取任务级 context-preview
 // =====================================================================
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Brain, CircleDot, FolderKanban, FolderOpen, Languages, Type } from 'lucide-react'
 import { api } from '../store'
 import { createPortal } from 'react-dom'
-import { PathPickerModal } from './modals'
+import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+
+// 路径选择弹窗只有点"浏览"才出现, 按需加载 — 否则欢迎页配置条会把整个 modals 模块
+// (连带 markdown 渲染栈)算进简易模式首屏.
+// The path picker only appears after clicking "browse", so it loads on demand; a static
+// import would make the welcome config bar pull the whole modals module into first paint.
+const PathPickerModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.PathPickerModal })))
 import {
   DropdownSelect,
   SkillMemoryPicker,
@@ -299,13 +305,15 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
             <FolderOpen className="h-3.5 w-3.5" />
           </button>
           {pathPickerOpen && createPortal(
-            <PathPickerModal initialPath={selection.projectPath || undefined}
-              onClose={() => setPathPickerOpen(false)}
-              onPick={(abs, _rel, manual) => {
-                const { selection: latest, onChange: emit } = latestRef.current
-                emit({ ...latest, projectPath: abs, projectPathManual: !!manual })
-                setPathPickerOpen(false)
-              }} />, document.body)}
+            <Suspense fallback={null}>
+              <PathPickerModal initialPath={selection.projectPath || undefined}
+                onClose={() => setPathPickerOpen(false)}
+                onPick={(abs, _rel, manual) => {
+                  const { selection: latest, onChange: emit } = latestRef.current
+                  emit({ ...latest, projectPath: abs, projectPathManual: !!manual })
+                  setPathPickerOpen(false)
+                }} />
+            </Suspense>, document.body)}
         </>
       ) : (
         <>

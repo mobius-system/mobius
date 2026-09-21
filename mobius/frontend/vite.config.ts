@@ -20,6 +20,14 @@ const buildOutDir = process.env.MOBIUS_FRONTEND_OUT_DIR || '../public'
 
 function manualChunks(id: string) {
   const normalizedId = id.replace(/\\/g, '/')
+  // React 运行时必须独占一个 vendor chunk: 否则下面把 @uiw/@codemirror 强制分包时,
+  // Rollup 会把 react/react-dom 这些 CJS 共享模块并进 codemirror chunk, 于是入口
+  // chunk 为了几个 kB 的 react 静态 import 整个 400+ kB 的编辑器 chunk, 每个页面
+  // 首屏都白拉一份 CodeMirror.
+  // React must own a vendor chunk: otherwise the forced @uiw/@codemirror split below
+  // drags react/react-dom into the codemirror chunk, so the entry chunk statically
+  // imports 400+ kB of editor code on every first paint.
+  if (/^.*\/node_modules\/(react|react-dom|scheduler)\//.test(normalizedId)) return 'react-vendor'
   const threeSrcMarker = '/node_modules/three/src/'
   const threeSrcIndex = normalizedId.indexOf(threeSrcMarker)
   if (threeSrcIndex !== -1) {
@@ -27,6 +35,16 @@ function manualChunks(id: string) {
     if (rel.startsWith('renderers/')) return 'three-renderers'
   }
   if (normalizedId.includes('/node_modules/three/build/')) return 'three'
+  // Markdown 渲染栈里的两个大件单独成 chunk: 它们只在渲染到公式/代码块时才真正用到,
+  // 拆开后可各自缓存, 也让首屏无关的 markdown chunk 不再顶到 600 kB 告警线.
+  // Two heavy Markdown-runtime libraries get their own chunks so they cache independently and
+  // the markdown chunk stops tripping the 600 kB warning; none of them is on the first paint.
+  // 注意排除 .css: main.tsx 全局引了 katex.min.css, 若把它也归进 katex chunk, 入口就会为了
+  // 一个样式文件静态 import 整个 500 kB 的 katex JS —— 与上面 React 被 codemirror 吞掉同款事故.
+  // Exclude CSS: main.tsx imports katex.min.css globally, and folding it into the katex chunk
+  // would make the entry statically import 500 kB of katex JS just for a stylesheet.
+  if (normalizedId.includes('/node_modules/katex/') && !normalizedId.endsWith('.css')) return 'katex'
+  if (normalizedId.includes('/node_modules/highlight.js/')) return 'highlight'
   // CodeMirror 编辑器核心 (view/state/language/commands/autocomplete/search/theme-one-dark + @uiw):
   // 抽成独立可缓存 vendor chunk, 让 code-conversation 业务代码 chunk 保持极小, 且跨部署可缓存.
   // 语言包仍然不进核心 chunk; 但统一收敛到 codemirror-langs 这个 lazy chunk, 避免每种语言

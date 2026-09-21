@@ -50,6 +50,7 @@ import {
   functionOutputTextBody,
   isFunctionCallOutputPayload,
   extractPlanCard,
+  extractTaskToolCalls,
   extractMcpToolResult,
   isAimuxCommandToolUse,
   isAimuxRemoteApplyPatchToolUse,
@@ -84,6 +85,7 @@ import { ImageOutputPanel } from './ImageOutput'
 import { CompactPlainTextFallback } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
 import { RemoteAimuxMcpIcon } from '../aimux-link-indicator'
+import { isCardModeAvailable, pickCardMode, resolveDesiredOpen, type CardModeAvailability } from './card-mode'
 import type { AnyEntry, CardMode, BashToolResult, PlanUpdate } from './types'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
@@ -130,39 +132,6 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
       />
     </span>
   )
-}
-
-/**
- * 单卡 open 的"系统期望值" — 所有展开/折叠条件合并到此一处判定, 优先级 (高 → 低):
- *   ① 字段模式       始终默认折叠 — 字段树不能被任何自动展开信号掀开.
- *   ② forceOpen       搜索命中        — 用户显式查看, 压过 parentOrderedCollapse.
- *   ③ parentOrderedCollapse    上下文折叠规则 (forgotten-flag / 加密 reasoning) — 默认折叠; 压过本地展开条件.
- *   ④ 本地展开条件     patch_apply / 计划(canPlan) / 纯文本卡(可精简·可图片·error 类型, 且非代码卡).
- *   ⑤ toolError       工具失败        — "折叠不藏错误"; 被 ①抑制.
- *   ⑥ 兜底            折叠.
- * 这是"系统期望"的单向判定; 实际 open 还受用户手动 onToggle 锁定 (见下方 userToggledRef).
- * 自动信号只"掀开"(ratchet, 不自动折回) — 字段模式保持折叠, 其它折叠仅来自初值 ③ 或用户手动.
- */
-function resolveDesiredOpen(opts: {
-  mode: CardMode
-  forceOpen: boolean
-  parentOrderedCollapse: boolean
-  isPatchApply: boolean
-  canPlan: boolean
-  canInitial: boolean
-  canCode: boolean
-  canCompact: boolean
-  canImage: boolean
-  isErrorType: boolean
-  toolError: boolean
-}): boolean {
-  if (opts.forceOpen) return true       // 搜索命中是显式查看, 压过字段模式与其它折叠规则
-  if (opts.mode === 'field') return false       // 字段模式永远不自动展开
-  if (opts.parentOrderedCollapse) return false   // ② 上下文折叠规则
-  // ③ 本地展开条件: patch_apply / 计划 / 初始 / 纯文本卡(可精简·可图片·error 类型, 且非代码卡)
-  if (opts.isPatchApply || opts.canPlan || opts.canInitial || (!opts.canCode && (opts.canCompact || opts.canImage || opts.isErrorType))) return true
-  if (opts.toolError) return true       // ④ 工具失败
-  return false                          // ⑤ 兜底折叠
 }
 
 /**
@@ -252,6 +221,12 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0 || readCalls.length > 0
   // canPlan 覆盖计划视图: update_plan function_call 走可视化步骤卡片.
   const canPlan = !!planUpdate
+  // 任务工具卡 (TaskCreate/TaskUpdate) 的价值全在计划视图: 计划被簇去重摘走后, 这张卡只剩
+  // 一行 tool_use JSON 摘要, 没有自动铺开的必要 → 默认收起 (用户仍可手动展开).
+  const taskToolCardWithoutPlan = useMemo(
+    () => !canPlan && extractTaskToolCalls(renderEntry).length > 0,
+    [canPlan, renderEntry],
+  )
   // canInitial 覆盖初始视图: 首轮注入上下文消息走分块手风琴卡片.
   const canInitial = !!initialContext
   const isPatchApplyEvent = entry?.type === 'event_msg' && String(entry?.payload?.type || '').startsWith('patch_apply')
@@ -304,8 +279,13 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
+  // 各专属视图的数据是否在手: plan 来自顶层 taskPlans 映射 (会被任务推进簇去重摘走), 其余来自本卡自身解析.
+  const modeAvailability = useMemo<CardModeAvailability>(
+    () => ({ plan: canPlan, initial: canInitial, code: canCode, image: canImage, compact: canCompact }),
+    [canPlan, canInitial, canCode, canImage, canCompact],
+  )
   // 展开后默认: 可计划 → 计划模式; 可初始 → 初始模式; 可代码 → 代码模式; 可图片 → 图片模式; 可精简 → 精简模式; 其它 → 字段模式
-  const [mode, setMode] = useState<CardMode>(canPlan ? 'plan' : canInitial ? 'initial' : canCode ? 'code' : canImage ? 'image' : canCompact ? 'compact' : 'field')
+  const [mode, setMode] = useState<CardMode>(() => pickCardMode(modeAvailability))
   // 入场动画只播给 SSE 新到的条目 (挂载时消费一次性标记; ② 历史加载与滚动复挂不播).
   const [isSseFresh] = useState(() => consumeFreshEntry(entry))
 
@@ -330,9 +310,10 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
     canImage,
     isErrorType: type === 'error',
     toolError: toolStatus === 'error',
+    taskToolCardWithoutPlan,
   })
 
-  // 用户是否手动点过折叠/展开: 一旦手动操作, 自动展开就不再强制掀开 (字段模式除外).
+  // 用户是否手动点过折叠/展开 (或卡片已按"数据被摘走"自动回落): 一旦置位, 自动展开不再强制掀开.
   const userToggledRef = useRef(false)
   const [open, setOpen] = useState<boolean>(desiredOpen)
 
@@ -344,6 +325,17 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
     if (!userToggledRef.current && desiredOpen) setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceOpen, desiredOpen])
+
+  // 专属视图的数据被上游摘走时主动回落 (典型: 任务推进簇去重把计划卡移到簇尾那张,
+  // 先到货的卡计划被摘走): 卡在 'plan' 且计划为空会一路跌到最后的原始 JSON 字段树.
+  // 回落到首选链 (通常是精简摘要) 并折叠收起 —— 回落后这张卡只剩"这条调用做了什么",
+  // 不该继续占屏展开. 置 userToggledRef 让自动展开不再掀开, 搜索 forceOpen 仍可掀开.
+  useEffect(() => {
+    if (isCardModeAvailable(mode, modeAvailability)) return
+    setMode(pickCardMode(modeAvailability))
+    userToggledRef.current = true
+    setOpen(false)
+  }, [mode, modeAvailability])
 
   // 精简/字段模式复制按钮反馈: 点击后短暂切换为 Check 图标再还原.
   const [copied, setCopied] = useState<boolean>(false)

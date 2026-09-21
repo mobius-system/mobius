@@ -292,9 +292,26 @@ export default function IssuePage() {
 
   const onSelectSession = (s: any) => goToSession(s.session_id)
 
+  // 当前会话的 agent_status 由 ChatArea 的 /status 轮询 (2s) 实时维护并写回 store, 比
+  // /api/tasks/recent 的库值新; 这里把它盖到近期会话行上, 侧栏状态徽章就不会慢几秒才跟上
+  // 会话标题栏 (点"终止"后立刻回落到"空闲"同理). 其余会话仍用 recent 列表的库值.
+  // The open session's agent_status is kept live by ChatArea's /status poll and written back to
+  // the store, fresher than the DB value inside /api/tasks/recent. Overlaying it onto the recent
+  // list keeps the sidebar badge in step with the chat header instead of lagging a few seconds.
+  const liveRecentSessions = useMemo(() => {
+    const liveId = currentSession?.session_id
+    const liveStatus = currentSession?.agent_status
+    if (!liveId || !liveStatus) return recentSessions
+    const stale = recentSessions.some(session => session.session_id === liveId && session.agent_status !== liveStatus)
+    if (!stale) return recentSessions
+    return recentSessions.map(session => (
+      session.session_id === liveId ? { ...session, agent_status: liveStatus } : session
+    ))
+  }, [recentSessions, currentSession?.session_id, currentSession?.agent_status])
+
   const recentSessionGroups = useMemo(
-    () => buildRecentSessionTreeGroups(recentSessions),
-    [recentSessions],
+    () => buildRecentSessionTreeGroups(liveRecentSessions),
+    [liveRecentSessions],
   )
 
   const toggleRecentGroup = (groupKey: string) => {

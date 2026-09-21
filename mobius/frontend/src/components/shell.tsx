@@ -1,14 +1,12 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { useStore, api } from '../store'
-import { ChangePasswordModal, AimuxGuideModal, DesktopDownloadModal, MobileDownloadModal, TerminalInstallModal } from './modals'
-import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
-import { SearchModal } from './search-modal'
+import { GlobalCreateMenu, type CreateKind } from './global-create'
 import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
-import { AdminPanel, type AdminPanelTab } from './panels'
+import type { AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
-import { CustomThemePalette } from './custom-theme-palette'
 import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
@@ -1550,23 +1548,30 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
       </div>
 
-      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
-      {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
-      {showDesktopDownload && <DesktopDownloadModal onClose={() => setShowDesktopDownload(false)} />}
-      {showTerminalInstall && <TerminalInstallModal onClose={() => setShowTerminalInstall(false)} />}
-      {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
-      {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
-      {showSearch && (
-        <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
-      )}
-      {createKind && (
-        <GlobalCreateRoot
-          kind={createKind}
-          ctx={{ projectId: projectParam, issueId: issueParam, researchId: researchParam }}
-          onClose={() => setCreateKind(null)}
-          onNavigate={navigate}
-        />
-      )}
+      {/* 弹层全部按需下载: 它们都只在用户点开后才渲染, 静态引入等于把弹窗代码(含 markdown
+          渲染栈与全局创建面板)算进每个页面的首屏体积. */}
+      {/* Every overlay downloads on demand: each one renders only after a user action, so a
+          static import would count dialog code (markdown stack, global create panel) as
+          first-paint weight on every page. */}
+      <Suspense fallback={null}>
+        {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+        {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
+        {showDesktopDownload && <DesktopDownloadModal onClose={() => setShowDesktopDownload(false)} />}
+        {showTerminalInstall && <TerminalInstallModal onClose={() => setShowTerminalInstall(false)} />}
+        {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
+        {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
+        {showSearch && (
+          <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
+        )}
+        {createKind && (
+          <GlobalCreateRoot
+            kind={createKind}
+            ctx={{ projectId: projectParam, issueId: issueParam, researchId: researchParam }}
+            onClose={() => setCreateKind(null)}
+            onNavigate={navigate}
+          />
+        )}
+      </Suspense>
       <OverlayPanels />
     </>
   )
@@ -1577,6 +1582,25 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 // 通过 store 上挂载的方法触发；这种"弹层"覆盖在主内容上
 // =====================================================================
 type OverlayKind = 'admin' | null
+
+// 管理中心整包按需加载: 它是首屏无关的重弹层(panels.tsx 体积最大), 静态 import 会把它
+// 拖进每个页面的首屏闭包; 这里跟随其它路由页一样走 lazyWithRetry, 打开弹层时才下载.
+// The whole admin center loads on demand: it is the heaviest overlay and is irrelevant
+// to first paint, so it uses lazyWithRetry like the routed pages instead of a static import.
+const AdminPanel = lazyWithRetry(() => import('./panels').then(module => ({ default: module.AdminPanel })))
+// 其余"点了才出现"的弹层同理: 首屏不渲染它们, 静默 import 只是替用户提前付流量.
+// 新建下拉 (GlobalCreateMenu) 不在此列 —— 它在常规模式首屏就可见, 延后会出现按钮后到的跳动.
+// The other click-to-open overlays load on demand for the same reason. The "+新建" dropdown
+// is deliberately excluded: it is visible on the normal-mode first paint, and deferring it
+// would make the top-bar button pop in late.
+const ChangePasswordModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.ChangePasswordModal })))
+const AimuxGuideModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.AimuxGuideModal })))
+const DesktopDownloadModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.DesktopDownloadModal })))
+const MobileDownloadModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.MobileDownloadModal })))
+const TerminalInstallModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.TerminalInstallModal })))
+const GlobalCreateRoot = lazyWithRetry(() => import('./global-create').then(module => ({ default: module.GlobalCreateRoot })))
+const SearchModal = lazyWithRetry(() => import('./search-modal').then(module => ({ default: module.SearchModal })))
+const CustomThemePalette = lazyWithRetry(() => import('./custom-theme-palette').then(module => ({ default: module.CustomThemePalette })))
 
 // 全局打开 overlay 的函数 (供外部按钮触发, 如「监控」「配置」入口直接落到对应 tab).
 // 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
@@ -1603,7 +1627,11 @@ function OverlayPanels() {
   _pendingAdminTab = null
   return (
     <div className="fixed inset-0 z-40 flex" style={{ background: 'var(--bg-secondary)' }}>
-      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} initialTab={initialTab ?? undefined} />}
+      {overlay === 'admin' && (
+        <Suspense fallback={<Loading text="正在加载管理中心..." />}>
+          <AdminPanel onClose={() => setOverlay(null)} initialTab={initialTab ?? undefined} />
+        </Suspense>
+      )}
     </div>
   )
 }
