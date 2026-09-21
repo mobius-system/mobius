@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Loader2, MonitorPlay, Plus, RefreshCw, X } from 'lucide-react'
 import { api } from '../store'
 import { pollRecursive } from '../services/polling'
-import { openAimuxForwardPort, type DevPortEntry } from './project-files'
+import { openAimuxForwardPort, ProjectPortEntryButton, type DevPortEntry } from './project-files'
 
 // kind → 中文标签. 仅当端口条目没有自定义 label 时使用.
 const KIND_LABELS: Record<string, string> = {
@@ -28,6 +28,8 @@ function entryLabel(entry: DevPortEntry): string {
 
 type DevPortsBarProps = {
   projectId?: string | null
+  subPath?: string | null
+  onRequestRunProject?: (mainProjectPortPath: string) => void
   className?: string
   variant?: 'bar' | 'panel'
 }
@@ -41,7 +43,7 @@ type DevPortsBarProps = {
  * 端口来源二选一: ① AI 启动服务后按协议写入 ports.json, 本组件低频轮询自动浮现;
  * ② 用户点 "+" 手动登记 (AI 用自然语言报告了端口、但没写文件时, 即时可用).
  */
-export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsBarProps) {
+export function DevPortsBar({ projectId, subPath, onRequestRunProject, className, variant = 'bar' }: DevPortsBarProps) {
   const [ports, setPorts] = useState<DevPortEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -172,6 +174,13 @@ export function DevPortsBar({ projectId, className, variant = 'bar' }: DevPortsB
               {ports.length}
             </span>
           </div>
+          <ProjectPortEntryButton
+            projectId={projectId}
+            subPath={subPath}
+            label="进入项目端口"
+            triggerVariant="advanced"
+            onRequestRunProject={onRequestRunProject}
+          />
           <button
             type="button"
             onClick={() => setShowAddForm(value => !value)}

@@ -758,6 +758,8 @@ export function SessionSkillMemoryEditor({
   onOpenKnowledge,
   onSessionSearchHits,
   leadingControls,
+  vscodeSubPath,
+  onRequestRunProject,
   visibilityOptions = [],
 }: {
   sessionId?: string
@@ -767,6 +769,8 @@ export function SessionSkillMemoryEditor({
   onOpenKnowledge?: () => void
   onSessionSearchHits?: (hits: SessionSearchHit[], selectedIndex: number) => void
   leadingControls?: ReactNode
+  vscodeSubPath?: string | null
+  onRequestRunProject?: (mainProjectPortPath: string) => void
   visibilityOptions?: VisibilityOption[]
 }) {
   const [memories, setMemories] = useState<EditorItem[]>([])
@@ -1161,7 +1165,14 @@ export function SessionSkillMemoryEditor({
               )}
               {skillActive ? renderList(skills, '暂无 Skill', 'skill')
                 : memActive ? renderList(memories, '暂无 Memory', 'memory')
-                  : portsActive ? <DevPortsBar projectId={projectId} variant="panel" />
+                  : portsActive ? (
+                    <DevPortsBar
+                      projectId={projectId}
+                      subPath={vscodeSubPath}
+                      onRequestRunProject={onRequestRunProject}
+                      variant="panel"
+                    />
+                  )
                     : timeActive ? (
                       <Suspense fallback={<div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
                         <TimeConsumePanel sessionId={sessionId} />

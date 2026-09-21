@@ -298,7 +298,7 @@ export default function IssuePage() {
   // The open session's agent_status is kept live by ChatArea's /status poll and written back to
   // the store, fresher than the DB value inside /api/tasks/recent. Overlaying it onto the recent
   // list keeps the sidebar badge in step with the chat header instead of lagging a few seconds.
-  const liveRecentSessions = useMemo(() => {
+  const recentWithLiveStatus = useMemo(() => {
     const liveId = currentSession?.session_id
     const liveStatus = currentSession?.agent_status
     if (!liveId || !liveStatus) return recentSessions
@@ -309,10 +309,52 @@ export default function IssuePage() {
     ))
   }, [recentSessions, currentSession?.session_id, currentSession?.agent_status])
 
-  const recentSessionGroups = useMemo(
-    () => buildRecentSessionTreeGroups(liveRecentSessions),
-    [liveRecentSessions],
+  // 当前会话可能压根不在 /api/tasks/recent 里 (50 条上限把它挤掉, 或太久没动被过滤掉), 这时补一条,
+  // 保证「近期会话」永远能列出用户正打开的这个会话. 项目名/任务名取本页已加载的, 跨项目会话留空回落 id.
+  // The open session may be missing from /api/tasks/recent entirely (crowded out by its 50-row limit),
+  // so backfill one row — the sidebar must always list the session the user is actually in.
+  const currentSessionEntry = useMemo<RecentSession | null>(() => {
+    const session: any = currentSession
+    if (!session?.session_id) return null
+    if (recentSessions.some(item => item.session_id === session.session_id)) return null
+    const isResearch = session.scope_type === 'research'
+    return {
+      session_id: session.session_id,
+      name: session.name,
+      project_id: session.project_id ?? null,
+      project_name: session.project_id && session.project_id === projectId ? project?.name ?? null : null,
+      issue_id: session.issue_id ?? null,
+      issue_title: !isResearch && session.issue_id === issueId ? issue?.title ?? null : null,
+      research_id: session.research_id ?? null,
+      research_title: null,
+      scope_type: isResearch ? 'research' : 'issue',
+      agent_status: session.agent_status,
+      message_count: session.message_count,
+      last_active: session.last_active,
+      status: session.status,
+    }
+  }, [currentSession, recentSessions, projectId, issueId, project?.name, issue?.title])
+
+  const liveRecentSessions = useMemo(
+    () => (currentSessionEntry ? [...recentWithLiveStatus, currentSessionEntry] : recentWithLiveStatus),
+    [recentWithLiveStatus, currentSessionEntry],
   )
+
+  // 补进来的当前会话 last_active 最旧, 按活动排序会沉到列表最底等于没显示: 提到组内首位, 所属分组提到最前.
+  // The backfilled row has the oldest last_active, so hoist it and its group to the top of the tree.
+  const recentSessionGroups = useMemo(() => {
+    const groups = buildRecentSessionTreeGroups(liveRecentSessions)
+    const pinnedId = currentSessionEntry?.session_id
+    if (!pinnedId) return groups
+    const index = groups.findIndex(group => group.sessions.some(session => session.session_id === pinnedId))
+    if (index < 0) return groups
+    const pinned = groups[index]
+    return [
+      { ...pinned, sessions: [...pinned.sessions].sort((a, b) => Number(b.session_id === pinnedId) - Number(a.session_id === pinnedId)) },
+      ...groups.slice(0, index),
+      ...groups.slice(index + 1),
+    ]
+  }, [liveRecentSessions, currentSessionEntry])
 
   const toggleRecentGroup = (groupKey: string) => {
     setCollapsedRecentGroups(current => {
@@ -560,7 +602,7 @@ export default function IssuePage() {
                   重新加载
                 </button>
               </div>
-            ) : recentSessions.length === 0 ? (
+            ) : liveRecentSessions.length === 0 ? (
               <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
             ) : (
               <div aria-label="按项目与任务分组的近期会话" data-testid="issue-recent-session-tree">

@@ -68,7 +68,6 @@ const SESSION_TOOL_VISIBILITY_OPTIONS: VisibilityOption[] = [
   { id: 'bash-commands', label: '查看运行命令' },
   { id: 'input-replay', label: '回放输入' },
   { id: 'jsonl-meta', label: '显示时间与序号' },
-  { id: 'project-port', label: '进入项目端口' },
   { id: 'terminal', label: '打开终端' },
   { id: 'cooperable-pc', label: '可合作计算机' },
   { id: 'knowledge', label: '查看当前项目知识/任务知识' },
@@ -4101,7 +4100,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           projectId={currentProjectId}
           issueId={currentIssueId}
           researchId={(currentSession as any)?.research_id}
-          vscodeSubPath={currentVscodeSubPath}
           jsonlEntryCount={jsonlEntryCount}
           showJsonlMeta={showJsonlMeta}
           connectionReady={connectionStatus === 'connected'}
@@ -4110,7 +4108,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           onOpenBashCommands={() => setBashCommandsOpen(true)}
           onOpenInputReplay={() => setInputReplayOpen(true)}
           onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
-          onRequestRunProject={sendRunProjectPortPrompt}
           onOpenTerminal={() => setTerminalChoiceOpen(true)}
           onOpenCooperablePc={() => setCooperablePcOpen(true)}
           onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
@@ -4148,6 +4145,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         persistActivePanel={opts.persistActivePanel}
         onSessionSearchHits={applySessionSearchHits}
         leadingControls={renderAdvancedSessionActions(opts.variant)}
+        vscodeSubPath={currentVscodeSubPath}
+        onRequestRunProject={sendRunProjectPortPrompt}
         onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
         visibilityOptions={SESSION_TOOL_VISIBILITY_OPTIONS}
       />
