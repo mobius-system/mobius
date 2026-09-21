@@ -292,7 +292,13 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
     return () => window.clearTimeout(timer)
   }, [easyMode, openVisual])
 
-  const toggle = () => onUserToggle()
+  // 简易模式只保留"展开"入口: 展开后整个控件隐藏, 且不再接受用户手动收起 (自动收起仍由状态机接管).
+  // Easy mode keeps only the expand affordance: the control hides once open and manual collapse is blocked; auto rules still apply.
+  const easyTriggerHidden = easyMode && openVisual
+  const toggle = () => {
+    if (easyMode && openVisual) return
+    onUserToggle()
+  }
 
   const openerItem = easyMode ? round.items.find((item) => isRoundOpenerEntry(item.entry)) : undefined
   const userItem = openerItem || round.items[0]
@@ -399,63 +405,65 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
     <div className={`mb-1${easyMode ? ' easy-round-group' : ''}`}>
       {collapsedOpener}
       {collapsedSummaryOpener}
-      <button
-        type="button"
-        onClick={onlyGroup ? undefined : toggle}
-        disabled={onlyGroup}
-        data-round-header-palette={headerPalette.id}
-        aria-expanded={openVisual}
-        aria-keyshortcuts="Control+Shift+K"
-        title={`轮次背景：${headerPalette.name} · Ctrl+Shift+K 切换`}
-        data-search-hit-group={searchHighlighted ? 'true' : undefined}
-        className={`${easyMode ? 'easy-round-group-trigger' : 'round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border'} text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
-        style={{
-          '--round-header-background': headerPalette.background,
-          '--round-header-background-size': headerPalette.backgroundSize,
-          // round-group-trigger 的基础 CSS 会从这些变量写入 border-color；命中态
-          // 用变量覆盖而不是只依赖 Tailwind border 类，确保不会被基础样式盖掉。
-          '--round-header-border': searchHighlighted ? 'rgba(239,68,68,0.95)' : headerPalette.border,
-          '--round-header-border-hover': searchHighlighted ? 'rgba(248,113,113,1)' : headerPalette.borderHover,
-          '--round-header-accent': searchHighlighted ? 'rgba(239,68,68,1)' : headerPalette.accent,
-          boxShadow: searchHighlighted
-            ? 'inset 3px 0 0 rgba(239,68,68,1), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(239,68,68,0.24), 0 0 22px rgba(239,68,68,0.3)'
-            : undefined,
-        } as CSSProperties}
-      >
-        {easyMode ? (
-          <>
-            <span className="easy-round-group-trigger__label">{openVisual ? '点击收起' : '点击展开'}</span>
-            <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
-          </>
-        ) : (
-          <>
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
-            <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
-              {headerTitle ?? `第 ${round.roundNum} 轮`}
-            </span>
-            <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
-              {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
-              {openVisual ? '' : (userSummary || '(空)')}
-            </span>
-            {searchHighlighted && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
-                <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
-                搜索命中
+      {!easyTriggerHidden && (
+        <button
+          type="button"
+          onClick={onlyGroup ? undefined : toggle}
+          disabled={onlyGroup}
+          data-round-header-palette={headerPalette.id}
+          aria-expanded={openVisual}
+          aria-keyshortcuts="Control+Shift+K"
+          title={`轮次背景：${headerPalette.name} · Ctrl+Shift+K 切换`}
+          data-search-hit-group={searchHighlighted ? 'true' : undefined}
+          className={`${easyMode ? 'easy-round-group-trigger' : 'round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border'} text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
+          style={{
+            '--round-header-background': headerPalette.background,
+            '--round-header-background-size': headerPalette.backgroundSize,
+            // round-group-trigger 的基础 CSS 会从这些变量写入 border-color；命中态
+            // 用变量覆盖而不是只依赖 Tailwind border 类，确保不会被基础样式盖掉。
+            '--round-header-border': searchHighlighted ? 'rgba(239,68,68,0.95)' : headerPalette.border,
+            '--round-header-border-hover': searchHighlighted ? 'rgba(248,113,113,1)' : headerPalette.borderHover,
+            '--round-header-accent': searchHighlighted ? 'rgba(239,68,68,1)' : headerPalette.accent,
+            boxShadow: searchHighlighted
+              ? 'inset 3px 0 0 rgba(239,68,68,1), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 3px rgba(239,68,68,0.24), 0 0 22px rgba(239,68,68,0.3)'
+              : undefined,
+          } as CSSProperties}
+        >
+          {easyMode ? (
+            <>
+              <span className="easy-round-group-trigger__label">{openVisual ? '点击收起' : '点击展开'}</span>
+              <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
+            </>
+          ) : (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
+              <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
+                {headerTitle ?? `第 ${round.roundNum} 轮`}
               </span>
-            )}
-            {!openVisual && agentCount > 0 && (
-              <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
-                +{agentCount}
+              <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
+                {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
+                {openVisual ? '' : (userSummary || '(空)')}
               </span>
-            )}
-            {!onlyGroup && (
-              <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
-                {openVisual ? '▲' : '▼'}
-              </span>
-            )}
-          </>
-        )}
-      </button>
+              {searchHighlighted && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
+                  <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+                  搜索命中
+                </span>
+              )}
+              {!openVisual && agentCount > 0 && (
+                <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
+                  +{agentCount}
+                </span>
+              )}
+              {!onlyGroup && (
+                <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+                  {openVisual ? '▲' : '▼'}
+                </span>
+              )}
+            </>
+          )}
+        </button>
+      )}
 
       {collapsedFinal}
 
@@ -522,8 +530,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             }
             const item = ri.item
             const isUserItem = easyMode ? (isRoundOpenerEntry(item.entry) || item.relIdx === 0) : item.relIdx === 0
-            // 简易模式把 opener 提到 group 操作行之前，避免“点击收起”跑到用户气泡上方。
-            // Easy mode renders the opener before the group control so “collapse” stays below the bubble.
+            // 简易模式把 opener 提到 group 操作行之前，保证用户气泡始终是这一轮的第一眼内容。
+            // Easy mode renders the opener before the group control so the user bubble always leads the round.
             if (easyMode && openVisual && openerRenderItem && item.lineNo === openerRenderItem.lineNo) return null
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
