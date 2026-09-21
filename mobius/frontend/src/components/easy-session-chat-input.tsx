@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
@@ -32,6 +32,7 @@ type CreateSessionModeProps = EasySessionChatInputCommonProps & {
   hasReadyAttachments: boolean
   onUpload: () => void
   onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
+  onDrop: (event: DragEvent<HTMLDivElement>) => void
   onRemoveAttachment: (id: string) => void
 }
 
@@ -90,15 +91,18 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
     onSend()
   }
 
+  const hasCreateAttachments = props.mode === 'create_session_mode' && props.attachments.length > 0
+  const inputHeight = hasCreateAttachments ? 132 : 96
+
   return (
     <div
       data-tour="session-chat-input"
       data-mode={props.mode}
       className="easy-session-chat-input relative min-w-0 w-full overflow-hidden rounded-[22px] transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
       style={{
-        height: 96,
+        height: inputHeight,
         minHeight: 0,
-        maxHeight: 96,
+        maxHeight: inputHeight,
         background: 'color-mix(in srgb, var(--bg-secondary) 94%, transparent)',
         border: `1px solid ${border}`,
         boxShadow: inputFocused
@@ -108,6 +112,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         WebkitBackdropFilter: 'blur(22px)',
       } as CSSProperties}
       onPaste={follow ? follow.onPaste : props.onPaste}
+      onDragOver={props.mode === 'create_session_mode' ? event => event.preventDefault() : undefined}
+      onDrop={props.mode === 'create_session_mode' ? props.onDrop : undefined}
       onFocusCapture={follow ? follow.onFocus : () => setStandaloneFocused(true)}
       onBlurCapture={follow ? follow.onBlur : (event) => {
         const nextTarget = event.relatedTarget as Node | null

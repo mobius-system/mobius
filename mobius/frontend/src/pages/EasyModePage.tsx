@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Bot,
@@ -713,6 +713,11 @@ export default function EasyModePage() {
     }
   }, [enqueueWelcomeFiles])
 
+  const handleWelcomeDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (event.dataTransfer.files?.length) enqueueWelcomeFiles(event.dataTransfer.files)
+  }, [enqueueWelcomeFiles])
+
   const removeWelcomeAttachment = useCallback((id: string) => {
     setWelcomeAttachments(current => {
       const target = current.find(item => item.id === id)
@@ -1202,6 +1207,7 @@ export default function EasyModePage() {
                   hasReadyAttachments={welcomeAttachmentsReady}
                   onUpload={() => welcomeFileInputRef.current?.click()}
                   onPaste={handleWelcomePaste}
+                  onDrop={handleWelcomeDrop}
                   onRemoveAttachment={removeWelcomeAttachment}
                   onChange={event => setWelcomePrompt(event.target.value)}
                   onSend={submitWelcomePrompt}
