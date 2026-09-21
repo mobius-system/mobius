@@ -21,6 +21,7 @@ import { audit } from '../repositories/audit';
 import { writeSessionTransferBundle } from '../services/session-transfer';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
+import { MOBIUS_KIND } from '../services/mobius-kinds';
 import {
   safeRemoveRunningFlag,
 } from '../utils/session-flags';
@@ -219,6 +220,7 @@ async function createStartedResearchSession(input: {
       hasInputText: true,
       requestId,
       source: 'http.research_team.provision',
+      kind: MOBIUS_KIND.user,   // 人在研究页配置并启动该成员, 等同用户提问: 必须开新轮
       logger: console,
     } as any);
   } catch (error) {
@@ -1162,6 +1164,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
           requestId: `continue-${sourceSession.session_id}-${Date.now()}` as any,
           mentions: pendingMentions,
           source: 'http.research_session.continue_with_model',
+          kind: MOBIUS_KIND.user,   // 换模型后自动重开会话: 等同人在会话页继续, 开新轮
           logger: console,
         } as any);
         if (pendingMentions.length > 0) SessionPendingMentions.clear(sessionId);

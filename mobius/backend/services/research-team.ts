@@ -6,6 +6,8 @@ import { Messages } from '../repositories/messages';
 import { resolveSessionWorkspace } from './workspace';
 // @ts-ignore — service 仍是 .js
 import modelRegistry from './model-registry';
+import { MOBIUS_KIND } from './mobius-kinds';
+import { buildMobiusPromptRecord } from './mobius-agent-history';
 import agents from '../agents';
 
 const MAX_RESEARCH_ASSISTANTS = 12;
@@ -195,6 +197,7 @@ async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: st
   const backend = agents.get(modelLaunchOptions.backend);
   const workspace = resolveSessionWorkspace(user, session.session_id);
   if (workspace.error) throw Object.assign(new Error(workspace.error), { status: 400, code: 'workspace' });
+  const turn = (Messages.maxTurnFor(session.session_id) || 0) + 1;
   await backend.noPauseCurrentAndQueueQueryAtSession({
     sessionId: session.session_id,
     prompt,
@@ -204,8 +207,17 @@ async function queueResearchTeamSystemPrompt(session: any, user: any, prompt: st
     modelLaunchOptions: modelLaunchOptions,
     displayName: session.name || undefined,
     agentSessionId: session.agent_session_id || undefined,
+    // 团队系统提示进 mobius 轨: kind=mobius-blackboard 只记来源, 不开新轮
+    // The team system prompt joins the mobius track: mobius-blackboard records it, opens no round
+    mobiusPromptRecord: buildMobiusPromptRecord({
+      source: 'research.team_prompt',
+      kind: MOBIUS_KIND.blackboard,
+      content: prompt,
+      inputText: prompt,
+      turnNumber: turn,
+      userId: session.user_id,
+    }),
   });
-  const turn = (Messages.maxTurnFor(session.session_id) || 0) + 1;
   Messages.insertSystem(session.session_id, prompt, turn, summary);
 }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, useStore } from '../store'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { MARKDOWN_COMPONENTS } from '../components/markdown-components'
 
 interface FileEntry {
   name: string
@@ -198,7 +199,7 @@ export default function FileManager({ onClose, onSendToChat }: {
                       {viewFile.content
                         ? (() => {
                             try {
-                              return <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{viewFile.content}</ReactMarkdown>
+                              return <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{viewFile.content}</ReactMarkdown>
                             } catch {
                               return <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{viewFile.content}</pre>
                             }

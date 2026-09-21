@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentPropsWithoutRef, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { getMermaidSource, MermaidCodeBlock } from './markdown-components'
 import { AlertTriangle, Archive, BookOpen, Check, ChevronsLeft, ChevronsRight, Copy, Eraser, ExternalLink, FilePlus2, Maximize2, Mic, Minimize2, RefreshCw, SendHorizontal, Settings, Square, Trash2, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
 import { api, useStore } from '../store'
 import { AssistantPresetModal } from './assistant-preset-modal'
@@ -272,7 +273,7 @@ function MarkdownAnchor({ href, children, node: _node, ...props }: ComponentProp
 // 代码块(```...```) 渲染器: 右上角叠一个复制按钮.
 // 外层包 position:relative 的 .prose-pre-wrap 托住按钮, 这样代码长行水平滚动时按钮不跟着滚走;
 // 复制内容取内层 pre 的 textContent(button 在 pre 外, 不含按钮自身文本), 兼容桌面端 clipboard 不可用时回退 execCommand.
-const CodePre = ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) => {
+const CopyableCodePre = ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) => {
   const preRef = useRef<HTMLPreElement>(null)
   const [copied, setCopied] = useState(false)
   const handleCopy = useCallback(async () => {
@@ -307,6 +308,12 @@ const CodePre = ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'
       <pre ref={preRef} {...props}>{children}</pre>
     </div>
   )
+}
+
+const CodePre = (props: ComponentPropsWithoutRef<'pre'> & { node?: unknown }) => {
+  const source = getMermaidSource(props.children)
+  if (source !== null) return <MermaidCodeBlock source={source} />
+  return <CopyableCodePre {...props} />
 }
 
 const AssistantMarkdown = memo(function AssistantMarkdown({ content }: { content: string }) {

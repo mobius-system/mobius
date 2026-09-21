@@ -56,7 +56,8 @@
     "test:easy-in-session-density": "node frontend/tests/easy-in-session-density.test.mjs",
     "test:easy-workspace-keepalive": "node frontend/tests/easy-workspace-keepalive.test.mjs",
     "test:easy-toggle-entry": "node frontend/tests/easy-toggle-entry.test.mjs",
-    "test:easy-route-state": "npx tsx frontend/tests/easy-route-state.test.mjs"
+    "test:easy-route-state": "npx tsx frontend/tests/easy-route-state.test.mjs",
+    "test:display-dedup-priority": "node frontend/tests/display-dedup-priority.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

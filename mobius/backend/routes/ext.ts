@@ -30,6 +30,7 @@ import { invokeHandler } from '../services/extension-invoker';
 import * as buildPipeline from '../services/extension-build-pipeline';
 // @ts-ignore — service 仍是 .js
 import { runSessionMessage } from '../services/session-message-runner';
+import { MOBIUS_KIND } from '../services/mobius-kinds';
 import { buildDesignerEyeLoaderInjection } from '../services/designer-eye-loader';
 
 // ===== meta router =====
@@ -336,6 +337,7 @@ async function runPostActions(value: any, req: express.Request): Promise<any> {
         hasInputText,
         requestId: typeof action.request_id === 'string' ? action.request_id : null,
         source: typeof action.source === 'string' ? action.source : 'extension.post_action.session_message',
+        kind: MOBIUS_KIND.extension,   // 扩展常拿它发新会话的第一条消息 (先建空 session 再投): 必须开轮
         logger: console,
       } as any);
       const publicResult = {

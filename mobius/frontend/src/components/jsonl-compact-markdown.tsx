@@ -2,6 +2,7 @@ import { useContext, useState, type ComponentPropsWithoutRef, type ReactNode } f
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
 import { VSCodeOpenContext, isLikelyFilesystemPath, resolveMediaSrc } from './jsonl-vscode-link'
+import { MarkdownPre } from './markdown-components'
 
 function MarkdownAnchor({ href, children }: { href?: string; children?: ReactNode }) {
   const ctx = useContext(VSCodeOpenContext)
@@ -68,6 +69,7 @@ export default function JsonlCompactMarkdown({ text, variant = 'compact' }: { te
             a: MarkdownAnchor as any,
             table: MarkdownTable as any,
             img: MarkdownImage as any,
+            pre: MarkdownPre as any,
           }}>
           {text}
         </ReactMarkdown>
@@ -83,6 +85,7 @@ export default function JsonlCompactMarkdown({ text, variant = 'compact' }: { te
           a: MarkdownAnchor as any,
           table: MarkdownTable as any,
           img: MarkdownImage as any,
+          pre: MarkdownPre as any,
         }}>
         {text}
       </ReactMarkdown>

@@ -11,6 +11,7 @@
  */
 import { Sessions } from '../repositories/sessions';
 import { runSessionMessage } from './session-message-runner';
+import { MOBIUS_KIND } from './mobius-kinds';
 import { db } from '../../db';
 
 const LINK_TTL_HOURS = 48;
@@ -154,6 +155,7 @@ export async function deliverMultiagentMessage(args: {
       sessionId: targetSessionId,
       content: wrapped,
       source: 'service.multiagent_communication',
+      kind: MOBIUS_KIND.multiagent,   // 跨智能体通讯: 一次投递一轮 (此前靠默认值隐式开轮)
       logger: console,
     });
     db.prepare(`

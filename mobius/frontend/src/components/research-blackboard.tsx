@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { MarkdownPre } from './markdown-components'
 import { ErrBanner } from './modals'
 import { timeAgoPrecise } from './shell'
 import { HIDDEN_FOLDER_NAME } from '../store'
@@ -261,7 +262,7 @@ export default function ResearchBlackboard({ researchId }: { researchId: string 
                     <ReactMarkdown
                       remarkPlugins={MARKDOWN_REMARK_PLUGINS}
                       rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-                      components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}
+                      components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>, pre: MarkdownPre as any }}
                     >
                       {r.content || '_(无正文)_'}
                     </ReactMarkdown>

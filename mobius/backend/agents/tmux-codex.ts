@@ -36,6 +36,7 @@ const {
   writeMobiusCoreEntry,
   flushPendingOpeners,
 } = require('../services/mobius-agent-history')
+import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -708,7 +709,7 @@ interface CodexDispatchOpts {
   displayName?: string | null
   agentSessionId?: string | null
   isInitialContextPrompt?: boolean
-  mobiusPromptRecord?: Record<string, unknown> | null
+  mobiusPromptRecord?: MobiusPromptRecord | null
   suppressRunningFlag?: boolean
   urgent?: boolean
   aimuxRemoteName?: string
@@ -1155,7 +1156,7 @@ class TmuxCodexBackend extends AgentBackend {
   // file involved). The runtime need not have a bound jsonl path: the call site moved up to the
   // dispatch entry, so a round must open during a new session's spawn even with an unknown path;
   // the path stays null and the first sync claims it.
-  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined, cwdHint?: string) {
+  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: MobiusPromptRecord | null | undefined, cwdHint?: string) {
     if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     try {

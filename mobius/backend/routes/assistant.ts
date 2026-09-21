@@ -28,6 +28,8 @@ import {
 import { aimuxRemoteNameFromMeta } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
 import { syncSkillsToWorkspace } from '../services/session-skills-sync';
+import { sessionPromptKind } from '../services/mobius-kinds';
+import { buildMobiusPromptRecord } from '../services/mobius-agent-history';
 // @ts-ignore — service 仍是 .js
 import {
   ASSISTANT_SESSION_KEY_PREFIX,
@@ -1179,17 +1181,16 @@ async function startAssistantSession(req: express.Request, session: any, questio
   Messages.insertUser(session.session_id, displayContent, turnNumber);
   Sessions.touchActive(session.session_id);
 
-  const mobiusPromptRecord = {
+  const mobiusPromptRecord = buildMobiusPromptRecord({
     source: 'assistant.question',
-    kind: String(questionText || '').trim().startsWith('/compact') ? 'compact' : 'user_input',
+    kind: sessionPromptKind(displayContent),  // 与小莫身份无关: 按正文推导, 与会话页同一套
     content: displayContent,
     inputText: questionText,
     attachments,
     requestId,
     turnNumber,
     userId: user.id,
-    timestamp: new Date().toISOString(),
-  };
+  });
 
   if (!isCompactCommand && Messages.countUserMessagesFor(session.session_id) <= 1) {
     const ctx = buildSessionContext(user, session.session_id);

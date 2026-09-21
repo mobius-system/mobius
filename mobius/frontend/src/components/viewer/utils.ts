@@ -6,6 +6,20 @@
  * 的 entry-extract / header-summary 等文件里, 不堆在这里.
  */
 import type { UnifiedHunkHeader } from './types'
+import { kindOpensRound } from '../../../../backend/services/mobius-kinds'
+
+/*
+ * True when this card is the user prompt that opened its round. The kind decides: only a session
+ * prompt and one 小莫 asks itself open a round, every other kind joins the round in progress.
+ */
+export function isRoundOpenerEntry(entry: any): boolean {
+  // 只认 Mobius 自己写的 user 卡，agent 侧的原生副本没有 mobius 块
+  // Only Mobius-authored user cards count, the agent's own copies carry no mobius block
+  if (entry?.type !== 'user') return false
+  // 判定与后端同源 (mobius-kinds.ts), 老会话的旧 kind 也认
+  // Shares the backend's rule from mobius-kinds.ts, legacy kinds included
+  return kindOpensRound(entry?.mobius?.kind)
+}
 
 export function lineCount(text: string): number {
   if (!text) return 0

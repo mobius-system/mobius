@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { MARKDOWN_COMPONENTS } from './markdown-components'
 import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, Search, Clock, Sparkles, Download } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
@@ -290,21 +291,31 @@ type RawJsonlRenderWindow = {
   truncated: boolean
 }
 
-// 逐条累加, 超出条数或字符预算即停; 最后一条允许按字符截断 (保留恰好用满预算的部分).
+/*
+ * Builds the body of the "raw JSONL" modal: one pretty-printed block per entry, accumulated until
+ * either the entry-count or the character budget runs out. The last block may be cut mid-way so the
+ * budget is used exactly; a truncated window is reported back so the UI can point at the download.
+ */
 function buildRawJsonlRenderWindow(entries: any[]): RawJsonlRenderWindow {
   const blocks: string[] = []
   let used = 0
   let shownCount = 0
   let truncated = false
   for (let i = 0; i < entries.length; i++) {
+    // 条数预算先到就停，避免超长会话把 DOM 撑爆
+    // Stop once the entry budget is hit so a long session cannot blow up the DOM
     if (shownCount >= RAW_JSONL_RENDER_MAX_ENTRIES) { truncated = true; break }
     const block = `// #${i + 1}\n${JSON.stringify(entries[i], null, 2)}`
     const remain = RAW_JSONL_RENDER_MAX_CHARS - used
+    // 字符预算不够放下整块时，截断后收工（剩余空间为 0 就整块丢弃）
+    // When the block does not fit, cut it to the remaining budget and stop (nothing left = drop it)
     if (block.length > remain) {
       if (remain > 0) { blocks.push(block.slice(0, remain)); shownCount++ }
       truncated = true
       break
     }
+    // ✨ 核心：拼进渲染窗口并累计已用字符数
+    // ✨ Core: append the block to the window and account for the characters it used
     blocks.push(block)
     used += block.length
     shownCount++
@@ -1749,7 +1760,7 @@ export function MessageBubble({
       return (
         <>
           <div className="border-l-2 border-[var(--text-dimmed)] pl-3 mb-2 text-[12px] italic line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{quoted}</div>
-          <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{rest}</ReactMarkdown></div>
+          <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{rest}</ReactMarkdown></div>
         </>
       )
     }
@@ -1767,7 +1778,7 @@ export function MessageBubble({
       }
       return <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{content}</p>
     }
-    return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS}>{content}</ReactMarkdown></div>
+    return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{content}</ReactMarkdown></div>
   }
 
   return (

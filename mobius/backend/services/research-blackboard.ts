@@ -8,6 +8,8 @@ import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 import { BACKEND_WORKER_LOG_DIR, HIDDEN_FOLDER_NAME } from '../config';
 import modelRegistry from './model-registry';
+import { MOBIUS_KIND } from './mobius-kinds';
+import { buildMobiusPromptRecord } from './mobius-agent-history';
 import { resolveSessionWorkspace } from './workspace';
 import agents from '../agents';
 
@@ -326,6 +328,7 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
   const backend = agents.get(modelLaunchOptions.backend);
   const prompt = buildNotifyPrompt(records, session.session_id);
   const { cwd, flagRoot } = resolveDeliveryWorkspace(session, researchId);
+  const turnNum = (Messages.maxTurnFor(session.session_id) || 0) + 1;
 
   await backend.noPauseCurrentAndQueueQueryAtSession({
     sessionId: session.session_id,
@@ -336,10 +339,19 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
     modelLaunchOptions: modelLaunchOptions,
     displayName: session.name || undefined,
     agentSessionId: session.agent_session_id || undefined,
+    // 黑板提醒进 mobius 轨: kind=mobius-blackboard 只记来源, 不开新轮
+    // The blackboard notice joins the mobius track: kind=mobius-blackboard records it, opens no round
+    mobiusPromptRecord: buildMobiusPromptRecord({
+      source: 'research.blackboard',
+      kind: MOBIUS_KIND.blackboard,
+      content: prompt,
+      inputText: prompt,
+      turnNumber: turnNum,
+      userId: session.user_id,
+    }),
   });
 
   try {
-    const turnNum = (Messages.maxTurnFor(session.session_id) || 0) + 1;
     Messages.insertSystem(
       session.session_id,
       `[Research Blackboard 更新提醒] 已自动向本会话发送提醒消息:\n\n${prompt}`,

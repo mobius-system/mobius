@@ -13,6 +13,8 @@ import { Messages } from '../repositories/messages';
 import { buildSessionContext, wrapUserMessage } from './session-context';
 import modelRegistry from './model-registry';
 import agents from '../agents';
+import { sessionPromptKind } from './mobius-kinds';
+import { buildMobiusPromptRecord } from './mobius-agent-history';
 import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
@@ -71,10 +73,6 @@ function findSessionOperable(id: any, user: any): any {
   return session && canOperateSession(user, session) ? session : null;
 }
 
-function mobiusPromptKind(content: any): string {
-  return String(content || '').trim().startsWith('/compact') ? 'compact' : 'user_input';
-}
-
 // 首轮专属的 prompt 拼装: memory/skill/项目上下文 + 转移文件引用, 把原文变成发给 agent 的完整初始 prompt.
 function assembleInitialPrompt({ user, sessionId, workDir, content, logger }: {
   user: any;
@@ -122,6 +120,7 @@ async function runSessionMessage({
   attachments = [],
   mentions = [],
   source = 'service.session.messages',
+  kind = '',
   logger = console,
   urgent = false,
 }: {
@@ -134,6 +133,11 @@ async function runSessionMessage({
   attachments?: any[];
   mentions?: any[];
   source?: string;
+  // 卡片 kind 覆盖. 留空 = 按会话页正文推导 (user / user-sp-command) —— 这两个都开新轮,
+  // 所以**非会话页的调用方必须显式传自己的 kind**, 否则会被当成用户提问而开轮.
+  // Kind override. Empty means "this is a session prompt" (user / user-sp-command), and both
+  // open a round — so any non-session caller MUST pass its own kind.
+  kind?: string;
   logger?: any;
   urgent?: boolean;
 } = {}): Promise<any> {
@@ -239,19 +243,18 @@ async function runSessionMessage({
 
   try {
     // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 harnessWriteMobiusCoreEntry 把它写进 agent-history-store 库 (开新轮)
-    const mobiusPromptRecord = {
-      source,                                              // 谁发的 (默认 service.session.messages=会话页; 小莫提问=assistant.question; 生命周期催促=assistant.lifecycle-callback)
-      kind: mobiusPromptKind(displayContent),
-      content: displayContent,                             // 成品: 正式提交、展示/落库、写成 .mobius.jsonl 输入卡的文本 (可含前端加的标题头等加工)
+    const mobiusPromptRecord = buildMobiusPromptRecord({
+      source,                                              // 谁发的 (默认 service.session.messages=会话页)
+      kind: kind || sessionPromptKind(displayContent),     // 决定开不开新轮: 会话页提问, /compact 单列
+      content: displayContent,                             // 成品: 正式提交、展示/落库、写进输入卡的文本 (可含前端加的标题头等加工)
       inputText: hasInputText ? normalizedInputText : null, // 原料: 用户在输入框亲手敲的原文, 供前端 ↑"回放输入"召回; 多数路径与 content 相同或为 null
       finalPrompt: finalContent !== displayContent ? finalContent : null, // 拼装后的完整下发 prompt (首轮上下文包装等已并入); 与 content 相同时不重复存
       requestId: normalizedRequestId,
       turnNumber: turnNum,
-      userId: user?.id || null,
+      userId: user?.id,                                    // kind 由构造器按正文推导 (/compact → compact)
       attachments: normalizedAttachments,
       mentions: normalizedMentions,
-      timestamp: new Date().toISOString(),
-    };
+    });
 
     const dispatchOpts = {
       sessionId: normalizedSessionId,

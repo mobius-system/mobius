@@ -11,6 +11,7 @@ const {
   writeMobiusCoreEntry,
   flushPendingOpeners,
 } = require('../services/mobius-agent-history')
+import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -132,7 +133,7 @@ interface HarnessStartOpts {
   harnessRequestTimeoutMs?: number | string
   useProxy?: boolean
   systemPrompt?: string
-  mobiusPromptRecord?: Record<string, unknown> | null
+  mobiusPromptRecord?: MobiusPromptRecord | null
   suppressRunningFlag?: boolean
   spawn?: unknown
   [key: string]: unknown
@@ -192,7 +193,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
 
   // The send path writes a user_input/compact card, which opens a new round. It goes into
   // agent-history-store rather than a file.
-  harnessWriteMobiusCoreEntry(entry: HarnessSessionEntry, mobiusPromptRecord: Record<string, unknown> | null | undefined) {
+  harnessWriteMobiusCoreEntry(entry: HarnessSessionEntry, mobiusPromptRecord: MobiusPromptRecord | null | undefined) {
     if (!entry?.jsonlPath || !mobiusPromptRecord) return false
     try {
       return writeMobiusCoreEntry({

@@ -22,7 +22,7 @@ import { PrepScreen } from '../src/components/PrepScreen.js'
 import { Select, TextInput } from '../src/components/primitives.js'
 import { MobiusClient } from '../src/api.js'
 import { renderMarkdownLines } from '../src/markdown.js'
-import { dedupeUserEntries, viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
+import { dedupeUserEntries, isRoundOpenerEntry, viewsForEntry, toolLabel } from '../src/lib/entry-view.js'
 import { SseConnection } from '../src/sse.js'
 import type { ReadyState } from '../src/components/PrepScreen.js'
 
@@ -342,6 +342,26 @@ function testFirstUserEntryDedupe() {
   ]
   const deduped = dedupeUserEntries(entries as any)
   ok(deduped.length === 1, 'framed and plain first-turn user events render once')
+
+  const authoritativeOpener = {
+    type: 'user', uuid: 'mobius-opener', mobius: { kind: 'user' },
+    message: { role: 'user', content: '同一条权威输入' },
+  }
+  const nativeCopy = {
+    type: 'response_item', uuid: 'agent-copy',
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '同一条权威输入' }] },
+  }
+  const openerWins = dedupeUserEntries([nativeCopy, authoritativeOpener] as any)
+  ok(openerWins.length === 1 && openerWins[0]?.uuid === 'mobius-opener', 'Mobius round opener wins even when the agent copy appears first')
+
+  const repeatedAcrossRounds = dedupeUserEntries([
+    authoritativeOpener,
+    { type: 'assistant', uuid: 'reply-1', message: { role: 'assistant', content: '第一轮完成' } },
+    { ...authoritativeOpener, uuid: 'mobius-opener-2' },
+  ] as any)
+  ok(repeatedAcrossRounds.filter(entry => entry.type === 'user').length === 2, 'same user text in separate rounds remains visible twice')
+
+  ok(!isRoundOpenerEntry({ ...authoritativeOpener, mobius: { kind: 'system' } } as any), 'non-opening Mobius kinds do not claim round-opener priority')
 }
 
 // ════════════════════════════════════════════════════════════════════════════

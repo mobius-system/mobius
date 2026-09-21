@@ -139,7 +139,9 @@ function parseBlocks(body: string, lang: 'zh' | 'en'): { intro: string; blocks: 
 // 辨识 + 解析一条 entry。非初始消息 (或文本形态不符) 返回 null, 调用方回退普通用户卡。
 // mobius 边车的裸输入卡 (未经 context 包装的原文) 直接跳过 —— 即使原文里引用了引导语文案。
 export function extractInitialContext(entry: AnyEntry): InitialContextMatch | null {
-  if (entry?.entrypoint === 'mobius' || entry?.mobius?.kind === 'user_input') return null
+  // 只看 entrypoint: 所有 mobius 卡都是裸输入, kind 具体是哪个来源与"是不是初始消息"无关
+  // Entrypoint alone decides: every mobius card is a bare input, its kind does not affect this
+  if (entry?.entrypoint === 'mobius' || entry?.mobius) return null
   const text = entryUserText(entry)
   if (!text) return null
   const lang = detectLanguage(text)

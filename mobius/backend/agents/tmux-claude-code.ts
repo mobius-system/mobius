@@ -34,6 +34,7 @@ const {
   writeMobiusCoreEntry,
   flushPendingOpeners,
 } = require('../services/mobius-agent-history')
+import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -880,7 +881,7 @@ interface ClaudeDispatchOpts {
   displayName?: string
   agentSessionId?: string | null
   isInitialContextPrompt?: boolean
-  mobiusPromptRecord?: Record<string, unknown> | null
+  mobiusPromptRecord?: MobiusPromptRecord | null
   suppressRunningFlag?: boolean
   urgent?: boolean
   aimuxRemoteName?: string
@@ -1411,7 +1412,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * entry, so a brand-new session has to be able to open its round during spawn, with the path left
    * null for the first sync to claim.
    */
-  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: Record<string, unknown> | null | undefined, cwdHint?: string) {
+  harnessWriteMobiusCoreEntry(sessionId: string, mobiusPromptRecord: MobiusPromptRecord | null | undefined, cwdHint?: string) {
     if (!mobiusPromptRecord) return false
     const entry = this.runtime.get(sessionId)
     try {

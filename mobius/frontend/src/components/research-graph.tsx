@@ -19,6 +19,7 @@ import '@xyflow/react/dist/style.css'
 import dagre from 'dagre'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
+import { MarkdownPre } from './markdown-components'
 import { Settings } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
 
@@ -308,7 +309,7 @@ function GraphNodeCard({ data }: NodeProps<Node<CardData>>) {
         <ReactMarkdown
           remarkPlugins={MARKDOWN_REMARK_PLUGINS}
           rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-          components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}
+          components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>, pre: MarkdownPre as any }}
         >
           {node.main_content || '_(无正文)_'}
         </ReactMarkdown>

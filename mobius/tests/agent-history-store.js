@@ -211,6 +211,21 @@ async function main() {
   assert.strictEqual(snapshot.mobius.anchor_uuid, 'nat-task-1')
   assert.ok(snapshot.mobius.tasks.some((t) => t.subject === '任务甲'))
 
+  // ── H. 旧调用兼容: 显式 legacy kind 仍开轮, null turn 不变成 0 ──────
+  const sidLegacyUser = `test-ahs-legacy-user-${process.pid}`
+  store.writeMobiusCoreEntry({ sessionId: sidLegacyUser, content: '旧插件提问', kind: 'user_input' })
+  assert.strictEqual(store.getGroups(sidLegacyUser).groups.length, 1, 'legacy user_input 仍开轮')
+
+  const sidLegacyCompact = `test-ahs-legacy-compact-${process.pid}`
+  store.writeMobiusCoreEntry({ sessionId: sidLegacyCompact, content: '/compact', kind: 'compact' })
+  assert.strictEqual(store.getGroups(sidLegacyCompact).groups.length, 1, 'legacy compact 仍开轮')
+
+  const nullTurn = store.buildMobiusPromptRecord({ source: 'test', kind: 'user', content: '问题', turnNumber: null })
+  assert.strictEqual(nullTurn.turnNumber, null, '显式 null turn_number 不应被归一化成 0')
+  const sidNullTurn = `test-ahs-null-turn-${process.pid}`
+  store.writeMobiusCoreEntry({ sessionId: sidNullTurn, ...nullTurn })
+  assert.strictEqual(store.getGroupEntries(sidNullTurn, 1).entries[0].mobius.turn_number, null, '落库后 null turn_number 仍保持 null')
+
   // ── G. 删除级联 ──────────────────────────────────────────────────────
   store.deleteSessionData(sidA)
   assert.strictEqual(store.getGroups(sidA).groups.length, 0)

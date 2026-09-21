@@ -28,6 +28,7 @@ import {
   type TaskRecord,
 } from './task-state-reducer';
 import { DB_PATH } from '../config';
+import { MOBIUS_KIND, kindOpensRound } from './mobius-kinds';
 // [legacy-migration] 懒迁移叶子模块 (冻结 .mobius.jsonl → 本库).
 // 全部会话迁移完成后: 删除该文件 + 本文件里 grep [legacy-migration] 的调用点.
 import { loadLegacyBackfill, type LegacyBackfill } from './mobius-agent-history-legacy';
@@ -147,11 +148,15 @@ function summarizeUserText(text: string): string {
   return t.length > 80 ? `${t.slice(0, 80)}…` : t;
 }
 
-function isExcludedSystemReminder(entry: any): boolean {
-  const content = entry?.message?.content;
-  const text = typeof content === 'string' ? content : '';
-  if (!text) return false;
-  return text.includes(BLACKBOARD_MARKER) || text.includes(RUNNING_FLAG_MARKER);
+/*
+ * Keeps the low-level writer compatible with callers that predate the explicit kind field. New
+ * dispatch paths always pass a kind; this fallback is only for direct callers and old plugins.
+ */
+function fallbackPromptKind(content: unknown): string {
+  const text = String(content || '').trim();
+  if (text.includes(BLACKBOARD_MARKER)) return MOBIUS_KIND.blackboard;
+  if (text.includes(RUNNING_FLAG_MARKER)) return MOBIUS_KIND.monitor;
+  return text.startsWith('/compact') ? MOBIUS_KIND.userSpCommand : MOBIUS_KIND.user;
 }
 
 function entryUuidOf(entry: any, json: string): string {
@@ -162,37 +167,77 @@ function entryUuidOf(entry: any, json: string): string {
 
 // ── 条目构造 (从旧 mobius-jsonl.ts 平移; 前端按 entrypoint==='mobius' 识别) ──
 
-function promptKind(content: any, explicitKind?: string): string {
-  if (explicitKind) return explicitKind;
-  const text = String(content || '').trim();
-  return text.startsWith('/compact') ? 'compact' : 'user_input';
+
+/*
+ * The fixed shape a dispatch caller hands to the store: one prompt, one card. Absent values are
+ * built as null rather than omitted, so a caller that forgets a field produces a visibly empty
+ * card instead of a quietly different schema.
+ */
+export interface MobiusPromptRecord {
+  // Who sent it: service.session.messages (session page) / assistant.question / assistant.lifecycle-callback.
+  source: string;
+  // Card kind chosen by the caller, which knows the prompt's provenance.
+  kind: string;
+  // What gets stored and shown: the submitted text, including any header the frontend added.
+  content: string;
+  // The raw text the user typed, kept so the frontend can recall it into the composer.
+  inputText: string | null;
+  // The fully assembled prompt actually dispatched, when it differs from content.
+  finalPrompt: string | null;
+  requestId: string | null;
+  turnNumber: number | null;
+  userId: string | null;
+  attachments: any | null;
+  mentions: any | null;
+  timestamp: string;
 }
 
-export interface MobiusCoreRecord {
-  source?: any;
-  kind?: any;
-  content?: any;
-  inputText?: any;
-  finalPrompt?: any;
-  requestId?: any;
-  turnNumber?: any;
-  userId?: any;
-  attachments?: any;
-  mentions?: any;
-  timestamp?: any;
-  [key: string]: any;
+/*
+ * What a caller supplies to buildMobiusPromptRecord. source, kind and content are required;
+ * everything else defaults to null and the timestamp defaults to "now".
+ */
+export type MobiusPromptInput = Pick<MobiusPromptRecord, 'source' | 'kind' | 'content'> &
+  Partial<Omit<MobiusPromptRecord, 'source' | 'kind' | 'content'>>;
+
+/*
+ * Single entry point for assembling a prompt record, so the dispatch callers (session message,
+ * assistant question, lifecycle callback) cannot drift apart field by field.
+ */
+export function buildMobiusPromptRecord(input: MobiusPromptInput): MobiusPromptRecord {
+  const content = String(input.content || '');
+  return {
+    source: input.source,
+    // kind 由调用方给定, 构造器不推导: 来源是调用方才知道的事实
+    // The kind is the caller's to give, never derived here: only the caller knows where it came from
+    kind: input.kind,
+    content,
+    // 空值一律落成 null，让"忘了传"在卡片上看得见
+    // Absent values land as null so a forgotten field is visible on the card
+    inputText: input.inputText == null ? null : String(input.inputText),
+    finalPrompt: input.finalPrompt || null,
+    requestId: input.requestId || null,
+    turnNumber: input.turnNumber != null && Number.isFinite(Number(input.turnNumber))
+      ? Number(input.turnNumber)
+      : null,
+    userId: input.userId == null ? null : String(input.userId),
+    attachments: input.attachments || null,
+    mentions: input.mentions || null,
+    timestamp: input.timestamp || nowIso(),
+  };
 }
 
 function buildMobiusUserEntry({
   sessionId, agentSessionId, cwd, backendName, content, inputText, finalPrompt,
   requestId, turnNumber, source, userId, kind, timestamp, attachments, mentions,
-}: MobiusCoreRecord & {
+}: Partial<MobiusPromptRecord> & {
   sessionId?: any; agentSessionId?: any; cwd?: any; backendName?: any;
 }): any {
   const ts = timestamp || nowIso();
   const body = String(content || '');
   const typed = inputText == null ? null : String(inputText);
-  const resolvedKind = promptKind(body, kind);
+  // 新链路显式传 kind，旧直写调用按正文恢复原有开轮/提醒语义
+  // New paths pass kind explicitly; legacy direct writes recover the old opener/reminder semantics
+  const resolvedKind = (typeof kind === 'string' && kind) ? kind : fallbackPromptKind(body);
   return {
     parentUuid: null,
     isSidechain: false,
@@ -216,7 +261,7 @@ function buildMobiusUserEntry({
       agent_session_id: agentSessionId || null,
       user_id: userId || null,
       request_id: requestId || null,
-      turn_number: Number.isFinite(Number(turnNumber)) ? Number(turnNumber) : null,
+      turn_number: turnNumber != null && Number.isFinite(Number(turnNumber)) ? Number(turnNumber) : null,
       input_text: typed,
       final_prompt: typeof finalPrompt === 'string' && finalPrompt ? finalPrompt : null,
       attachments: attachments || null,
@@ -250,7 +295,7 @@ function buildMobiusErrorEntry({
     mobius: {
       schema_version: MOBIUS_ENTRY_SCHEMA_VERSION,
       source: 'agent.error_scan',
-      kind: 'recent_error',
+      kind: MOBIUS_KIND.recentError,
       backend: backendName || null,
       session_id: sessionId || null,
       agent_session_id: agentSessionId || null,
@@ -320,7 +365,7 @@ class TaskStateAccumulator {
       mobius: {
         schema_version: MOBIUS_ENTRY_SCHEMA_VERSION,
         source: 'task.reducer',
-        kind: 'task_state',
+        kind: MOBIUS_KIND.taskState,
         anchor_uuid: anchorUuid,
         anchor_tool_use_id: calls[0]?.toolUseId || null,
         tasks,
@@ -391,7 +436,15 @@ function ensureGroupRow(sessionId: string, groupSeq: number): number {
   return 0;
 }
 
+/*
+ * Persists one scanned batch of jsonl rows inside a single transaction and fills the sink so the
+ * caller can broadcast what was committed. A row marked roundOpener (legacy migration only) closes
+ * the current group and opens the next one; every other row lands in the current group. Rows the
+ * store already knew about (INSERT OR IGNORE reports no change) are skipped, so replays are safe.
+ */
 function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number, sink: CommitSink): void {
+  // 没有新行也没有书签推进时无事可做，直接返回
+  // Nothing to do without new rows and without bookmark progress
   if (rows.length === 0 && newBookmark < 0) return;
   const db = openStore();
   const st = S();
@@ -405,6 +458,8 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
 
     for (const row of rows) {
       const uuid = entryUuidOf(row.entry, row.json);
+      // 迁移源的开轮卡走"开新组"分支，其余行归当前组
+      // A migrated opener takes the "open a new group" branch, all other rows join the current one
       if (row.roundOpener) {
         // 迁移源的开轮卡: 先结清上一组的条数 (若本事务动过), 再开新组.
         if (count !== null) st.updateRoundCount.run(count, sessionId, gseq);
@@ -414,6 +469,8 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
         const res = st.insertEntry.run(sessionId, uuid, nextSeq, gseq, 0, 1, row.origin, row.ts, row.json);
         nextSeq++;
         version++;
+        // 只在真的插入了新行时推给前端，重扫不会重复广播
+        // Only a genuinely inserted row is pushed, so a rescan never broadcasts twice
         if (res.changes === 1) {
           sink.newRounds.push({
             id: String(gseq), seq: gseq,
@@ -425,6 +482,8 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
         count = 1;
         continue;
       }
+      // 该组还没建行就补一个空行，避免 pre 组被凭空建出
+      // Materialise the group row on first touch so an empty pre-group is never created
       if (count === null) count = ensureGroupRow(sessionId, gseq);
       const res = st.insertEntry.run(sessionId, uuid, nextSeq, gseq, count, 0, row.origin, row.ts, row.json);
       nextSeq++;
@@ -434,6 +493,8 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
       }
     }
 
+    // ✨ 核心：本批全部落库后一次性写回摄取状态（书签 / 组序 / 版本），事务保证原子
+    // ✨ Core: persist bookmark, group seq and version once per batch, atomically
     if (count !== null) st.updateRoundCount.run(count, sessionId, gseq);
     db.prepare('UPDATE ingest_state SET primary_read_bytes = ?, session_version = ?, last_group_seq = ?, next_seq = ?, last_synced_at = ? WHERE session_id = ?')
       .run(newBookmark, version, gseq, nextSeq, nowIso(), sessionId);
@@ -518,11 +579,19 @@ function* iterateNewLines(filePath: string, startByte: number): Generator<{ text
 //      (防 agent 崩溃后 dequeue 永不出现, pending 永久挂起).
 // 多个 pending 一次性出队只开一组 (group_seq 只 +1); 组元数据取「最后一个」pending.
 
+/*
+ * Turns every parked round opener of a session into a single new group and reports it through the
+ * sink. Rows were written earlier with group_seq = NULL and round_opener = 1; this assigns them
+ * the new group_seq and adopts the LAST opener as the group's summary/opener timestamp.
+ * Returns the new group_seq, or null when there was nothing to flush.
+ */
 function flushPendingOpenersToSink(sessionId: string, sink: CommitSink): number | null {
   const st = S();
   const state = st.getState.get(sessionId) as any;
   if (!state) return null;
   const pending: string[] = JSON.parse(state.pending_round_openers || '[]');
+  // 没有挂起的开轮卡就没有可开的轮，直接返回
+  // No parked opener means no round to open, so nothing to flush
   if (!pending.length) return null;
 
   const db = openStore();
@@ -531,20 +600,27 @@ function flushPendingOpenersToSink(sessionId: string, sink: CommitSink): number 
     const row = db.prepare('SELECT json, ts FROM entries WHERE session_id = ? AND uuid = ?').get(sessionId, uuid) as any;
     if (row) resolved.push({ uuid, json: row.json, ts: row.ts });
   }
+  // 队列里的条目都没了（会话被重建等）→ 只清空队列, 不开组
+  // Every queued entry is gone (session rebuilt) → clear the queue without opening a group
   if (!resolved.length) {
-    // 队列里的条目都没了 → 只清空队列, 不开组.
     db.prepare("UPDATE ingest_state SET pending_round_openers = '[]' WHERE session_id = ?").run(sessionId);
     return null;
   }
 
+  // 组元数据取「最后一个」pending：它是这一轮真正在问的问题
+  // The group takes the LAST pending as its opener: that is what the round actually asked
   const last = resolved[resolved.length - 1];
   const lastEntry = safeParseJson(last.json);
   const summary = summarizeUserText(lastEntry?.message?.content);
 
+  // ✨ 核心：一个事务里开新组、把所有 pending 条目挂到该组、并清空队列
+  // ✨ Core: one transaction opens the group, files every pending row into it and empties the queue
   const tx = db.transaction((): number => {
     const cur = st.getState.get(sessionId) as any;
     const gseq = (cur.last_group_seq || 0) + 1;
     st.insertRound.run(sessionId, gseq, last.uuid, last.ts, summary, resolved.length, nowIso());
+    // 多条 pending 一次性出队只开一组，seq_in_group 按队列顺序落位
+    // Several pending rows flushed at once become ONE group, seq_in_group follows queue order
     resolved.forEach((r, i) => st.updateEntryGroup.run(gseq, i, sessionId, r.uuid));
     db.prepare('UPDATE ingest_state SET last_group_seq = ?, pending_round_openers = ?, session_version = ? WHERE session_id = ?')
       .run(gseq, '[]', (cur.session_version || 0) + 1, sessionId);
@@ -600,7 +676,7 @@ function writeMobiusCoreEntry(args: {
   primaryPath?: string | null;
   containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean;
   pendingInputs?: string[];
-} & MobiusCoreRecord): boolean {
+} & MobiusPromptRecord): boolean {
   const sessionId = args.sessionId;
   if (!sessionId) return false;
   const entry = buildMobiusUserEntry(args);
@@ -622,11 +698,13 @@ function writeMobiusCoreEntry(args: {
     }
   }
 
-  const excluded = isExcludedSystemReminder(entry);
+  // 开轮只由 kind 决定: 会话页用户提问与小莫提问开新组, 其余一律归当前组
+  // Only the kind decides: a session/assistant prompt opens a round, everything else joins the current one
+  const opensRound = kindOpensRound(entry?.mobius?.kind);
   const sink: CommitSink = { newRounds: [], rowsByGroup: new Map() };
 
-  if (excluded) {
-    // 系统提醒: 写入但不开轮, 归当前组.
+  if (!opensRound) {
+    // 不开轮的消息 (监控/黑板/系统提醒): 写入但归当前组.
     const tx = db.transaction(() => {
       const state = st.getState.get(sessionId) as any;
       const gseq = state.last_group_seq || 0;
@@ -893,9 +971,15 @@ function getGroups(sessionId: string): { session_version: number; groups: GroupM
   };
 }
 
+/*
+ * One group's full entry list for protocol ② (expanding a round). Entries are shipped verbatim:
+ * the viewer tells a round opener from the card's own mobius.kind, so nothing is tagged here.
+ */
 function getGroupEntries(sessionId: string, groupSeq: number): { group_id: string; version: number; entries: any[] } | null {
   const st = S();
   const round = st.getRound.get(sessionId, groupSeq) as any;
+  // 组行不存在 = 该组已被删除或从未存在，调用方按 404 处理
+  // A missing group row means the group was deleted or never existed, the caller answers 404
   if (!round) return null;
   const rows = st.listGroupEntries.all(sessionId, groupSeq) as any[];
   return {

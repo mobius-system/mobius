@@ -3,6 +3,7 @@ import { auth, authOrQuery } from '../middleware/auth';
 import { Conversations } from '../repositories/conversations';
 import type { MemberInput, MemberType } from '../repositories/conversations';
 import { runSessionMessage } from '../services/session-message-runner';
+import { MOBIUS_KIND } from '../services/mobius-kinds';
 // 群消息推送: 给离线(无 SSE)成员远程推送
 import { pushToUser as pushToUserExt } from '../services/extension-push';
 import { Sessions } from '../repositories/sessions';
@@ -242,6 +243,7 @@ async function triggerAgentMentions(params: {
         inputText: taskPrompt,
         hasInputText: true,
         source: 'group.mention',
+        kind: MOBIUS_KIND.com,   // 群聊 @agent 跑在全新分身 session 里, 是本会话第一条消息: 必须开轮
       } as any);
       watchAgentReply({
         conversationId: params.conversationId,

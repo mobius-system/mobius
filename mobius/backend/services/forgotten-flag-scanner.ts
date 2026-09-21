@@ -61,6 +61,8 @@ import {
   isAssistantSession,
 } from './assistant-session';
 import { markAssistantInternalNotificationPrompt } from './assistant-internal-messages';
+import { MOBIUS_KIND } from './mobius-kinds';
+import { buildMobiusPromptRecord } from './mobius-agent-history';
 import {
   continuousInactiveMs,
   flagKeyForMeta,
@@ -367,16 +369,15 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   const backend = agents.get(modelLaunchOptions.backend);
   const workDir = path.resolve(assistantSession.bind_path || APP_DIR);
   const turnNum = (Messages.maxTurnFor(assistantSession.session_id) || 0) + 1;
-  const mobiusPromptRecord = {
+  const mobiusPromptRecord = buildMobiusPromptRecord({
     source: 'assistant.lifecycle-callback',
-    kind: event.type,
+    kind: MOBIUS_KIND.monitor, // 监控通知: 写入但不开口轮 (具体事件类型见 requestId)
     content: storedPrompt,
     inputText: prompt,
     requestId: `lifecycle:${sourceSession.session_id}:${event.key}`,
     turnNumber: turnNum,
     userId: assistantSession.user_id,
-    timestamp: new Date().toISOString(),
-  };
+  });
 
   await backend.noPauseCurrentAndQueueQueryAtSession({
     sessionId: assistantSession.session_id,
@@ -616,6 +617,8 @@ async function maybeNotify(f: any): Promise<string> {
   } catch {}
   if (!cwd && s.bind_path) { cwd = path.resolve(s.bind_path); flagRoot = cwd; }
 
+  const turnNum = (Messages.maxTurnFor(sid) || 0) + 1;
+
   // 5) 发送: 此时已确认 window 存活, 直接 paste 进现有 TUI. (window 不存活的情况
   //    已在步骤 0 拦截并 skip, 不会走到这里, 故 backend 不会再 spawn 新窗口.)
   try {
@@ -629,6 +632,16 @@ async function maybeNotify(f: any): Promise<string> {
       modelLaunchOptions: modelLaunchOptions,
       displayName: s.session_name || undefined,
       agentSessionId: s.agent_session_id || undefined,
+      // 催办也进 mobius 轨 (此前只有原生轨, 留在库里的卡不带来源/turn): kind=monitor 不开新轮
+      // The nudge joins the mobius track too (it used to be native-only, with no origin/turn recorded)
+      mobiusPromptRecord: buildMobiusPromptRecord({
+        source: 'assistant.forgotten-flag',
+        kind: MOBIUS_KIND.monitor,
+        content: message,
+        inputText: message,
+        turnNumber: turnNum,
+        userId: s.user_id,
+      }),
     });
   } catch (e) {
     return `notify=FAIL (backend 发送失败: ${e.message})`;
@@ -636,7 +649,6 @@ async function maybeNotify(f: any): Promise<string> {
 
   // 6) 记到会话里 (system 消息, 前端可见), 与普通系统提醒同款做法.
   try {
-    const turnNum = (Messages.maxTurnFor(sid) || 0) + 1;
     Messages.insertSystem(
       sid,
       `[自动提醒] 检测到 running.flag 仍存在但 agent 已停工, 已自动向本会话发送提醒消息 (来源: ${msgSrc}):\n\n${message}`,
