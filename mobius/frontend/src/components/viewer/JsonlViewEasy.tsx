@@ -543,6 +543,7 @@ export default function JsonlViewEasy({
         searchActive={block.key === extTarget?.key && extFocusLineNo !== null}
         searchHighlighted={false}
         showMeta={showMeta}
+        easyMode
         toolStatusMap={entries ? toolStatusMapFor(entries) : null}
         collapseLineNos={entries ? collapsedLineNosFor(entries, r.round.items) : undefined}
         focusLineNo={extFocusLineNo}

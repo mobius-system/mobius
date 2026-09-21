@@ -66,8 +66,10 @@ import {
   isCompactDoneEntry,
   isGoalSetEntry,
   isLocalCommandEntry,
+  assistantEntryText,
   jsonEntryTourTarget,
 } from './entry-classify'
+import { isRoundOpenerEntry } from './utils'
 import { buildHeaderSummary, resolveTaskHeaderSummary } from './header-summary'
 import { TOOL_STATUS_META } from './tool-status'
 import type { ToolStatus } from './tool-status'
@@ -137,7 +139,7 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, easyMode = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
   entry: AnyEntry
   lineNo?: number
   // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
@@ -151,6 +153,8 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   // dense: compact surfaces render the shared card with genuinely smaller
   // header classes instead of relying only on a parent CSS override.
   dense?: boolean
+  // easyMode keeps the standard card renderer but changes only its compact presentation.
+  easyMode?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   // 已派生的每卡工具状态 ('running' | 'success' | 'error' | null). 父层 toolStatusOf
@@ -161,6 +165,14 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   taskPlan?: PlanUpdate | null
 }) {
   const type = entry?.type || 'unknown'
+  const easyOpener = easyMode && isRoundOpenerEntry(entry)
+  // 只有真正的助手文本保留完整应答卡；工具调用型 assistant 条目仍按过程行压缩。
+  // Only assistant text keeps the full response card; tool-call assistant entries stay as process rows.
+  const easyResponse = easyMode && assistantEntryText(entry).trim().length > 0
+  const easyConclusion = easyMode && isAssistantEndTurnEntry(entry)
+  const easyInline = easyMode && !easyOpener && !easyResponse && !easyConclusion
+  const easyCompactSummary = easyInline || easyOpener
+  const easyHideType = easyOpener
   // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
   // 截断版只影响"展开态内容渲染", 卡片头部摘要 / 配色 / 折叠态不受影响.
   const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars, imageOutputUrls, imageOutputText } = useMemo(() => {
@@ -315,16 +327,17 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
 
   // 用户是否手动点过折叠/展开 (或卡片已按"数据被摘走"自动回落): 一旦置位, 自动展开不再强制掀开.
   const userToggledRef = useRef(false)
-  const [open, setOpen] = useState<boolean>(desiredOpen)
+  const easyInitialOpen = easyCompactSummary ? false : desiredOpen
+  const [open, setOpen] = useState<boolean>(easyInitialOpen)
 
   // 自动信号跟随 — ratchet (只掀开不折回) + 尊重用户手动:
   //   · forceOpen (搜索): 即使用户曾手动折叠或当前是字段模式也强制掀开 (显式查看优先).
   //   · 其它信号: 用户手动操作过则锁定不动.
   useEffect(() => {
     if (forceOpen) { setOpen(true); return }
-    if (!userToggledRef.current && desiredOpen) setOpen(true)
+    if (!userToggledRef.current && (easyCompactSummary ? false : desiredOpen)) setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceOpen, desiredOpen])
+  }, [forceOpen, desiredOpen, easyInline])
 
   // 专属视图的数据被上游摘走时主动回落 (典型: 任务推进簇去重把计划卡移到簇尾那张,
   // 先到货的卡计划被摘走): 卡在 'plan' 且计划为空会一路跌到最后的原始 JSON 字段树.
@@ -392,10 +405,10 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       data-search-hit={searchHighlighted ? 'true' : undefined}
       aria-label={searchHighlighted ? '搜索命中条目' : undefined}
-      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
-      <summary className={`jsonl-entry-summary cursor-pointer ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
-        {showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
-        {showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
+      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${easyInline ? 'jsonl-entry-card--easy-inline' : ''} ${easyOpener ? 'jsonl-entry-card--easy-opener' : ''} ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
+      <summary className={`jsonl-entry-summary cursor-pointer ${easyOpener ? 'jsonl-entry-summary--easy-opener' : ''} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+        {!easyCompactSummary && showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
+        {!easyCompactSummary && showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
@@ -403,7 +416,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
             <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`}></span>
           </span>
         )}
-        <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>
+        {!easyHideType && <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>}
         {canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
@@ -435,7 +448,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className="jsonl-entry-summary-preview text-[var(--text-muted)] truncate flex-1">{effectiveHeaderSummary.short}</span>}
+        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] truncate flex-1`}>{effectiveHeaderSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">
@@ -578,5 +591,5 @@ function toolResultsEqual(a: BashToolResult[] | undefined, b: BashToolResult[] |
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.searchHighlighted === next.searchHighlighted && contentEqual(prev.taskPlan, next.taskPlan, 4),
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && prev.easyMode === next.easyMode && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.searchHighlighted === next.searchHighlighted && contentEqual(prev.taskPlan, next.taskPlan, 4),
 )

@@ -145,3 +145,11 @@
 - 修法: `IssuePage.tsx` 在 `buildRecentSessionTreeGroups` 之前加 `liveRecentSessions` memo, 把 `currentSession.agent_status`(由 ChatArea 2s 轮询维护)覆盖到同 id 的近期会话行(无变化时原样返回同一引用, 不触发重排)。顺带让分组头的「N 活跃」也实时。
 - 验证(Playwright, 部署产物 :45616 上跑): 伪造 `/api/tasks/recent` 的 agent_status 与 `/status` 相反, 两个方向都断言 元素1 aria-label == 元素2 徽标文字 —— recent=idle + /status=alive&working → 两处均「执行中」; recent=running + /status 死 → 两处均「空闲」。脚本 `/tmp/verify-live-status-sync.mjs`(临时, 未入库)。
 - 未做: `EasyModePage.tsx` 侧栏是同一款徽标 + 10s 轮询, 存在同类滞后, 本次未改(用户只报标准模式侧栏)。
+
+## 先出现的计划卡片回落为 JSON (2026-09-21, 修复 commit 34e1fc0e)
+
+- 现象: 一个轮次组里连发多个任务工具调用时, 先出现的卡片从计划卡变成铺原始 JSON 字段树.
+- 根因两层: ① 计划不在卡片自己手里 —— `EntryCard` 的 `planUpdate = selfPlanUpdate ?? taskPlan` 里的 `taskPlan` 来自 `viewer/task-progress.ts` 的 `buildTaskPlans` 映射, 而它的"任务推进簇去重"(`task-progress.ts:130`)只把计划留给簇尾那张卡 (中间只隔工具回执/快照不切簇, `:85`), 于是后一张卡到货就把前一张的计划摘走; ② `EntryCard` 的 `mode` 是挂载时取的一次性 useState 初值 (`setMode` 只出现在手动切换按钮), 计划被摘走后没有 effect 跟随, 卡在 `'plan'` 的卡片过 `mode === 'plan' && planUpdate` 分支时落空, 一路跌到最后的 `Object.entries(renderEntry)` → 原始 JSON 字段树 (且仍展开). 去重规则由 commit `3591c550` (2026-09-04) 引入; 之前只有"同签名连续段去重", 连发 TaskCreate 签名各异 → 每张都是计划卡。
+- 修法: 新增 `viewer/card-mode.ts` 纯函数 `pickCardMode` / `isCardModeAvailable` / `resolveDesiredOpen`(从 EntryCard 抽出). EntryCard: 可用性 useMemo + 回落 effect(数据被摘走 → 回落到首选链并 `setOpen(false)`, 置 `userToggledRef` 挡住自动掀开, 搜索 forceOpen 仍可掀开); 展开判定新增 `taskToolCardWithoutPlan` —— 无计划可铺的任务工具卡默认收起 (只剩一行 tool_use JSON, 不值得自动展开).
+- 判据: `frontend/tests/card-mode-fallback.test.mjs` (esbuild 打包直测生产模块) 钉住回落链与折叠优先级; `node tests/task-progress-cards.test.mjs` 不受影响。
+- 实测坑: 本机 vite dev (:45618) 的 WebSocket 连不上 (`wss://127.0.0.1/?token=...` 被拒), 会话明细永远停在"正在加载会话…"; 验收要在用户实际使用的静态产物 :45616 上跑, 先 `python3 start.py --only-update-frontend`, 且 Playwright 要先写 localStorage `cc-token` + `layout_mode=normal_mode` (否则卡在"选择你的使用模式").

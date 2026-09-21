@@ -4643,6 +4643,54 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   --jsonl-entry-line-height: 1.25;
   --jsonl-entry-code-line-height: 1.2;
 }
+
+/* 简易模式：过程卡压成可点击的一行，开轮用户输入改为右侧气泡；标准模式不带这些标记。 */
+.jsonl-entry-card--easy-inline {
+  margin-bottom: 4px;
+  border-color: color-mix(in srgb, var(--border-color) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-card) 72%, transparent);
+  box-shadow: none;
+}
+.jsonl-entry-card--easy-inline > summary {
+  min-height: 30px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.jsonl-entry-card--easy-opener {
+  width: fit-content;
+  max-width: min(78%, 760px);
+  margin-left: auto;
+  border-color: transparent;
+  border-radius: 16px;
+  background: var(--bg-card-hover);
+  box-shadow: none;
+}
+.jsonl-entry-card--easy-opener > summary {
+  min-height: 0;
+  padding: 10px 16px;
+  gap: 0;
+}
+.jsonl-entry-card--easy-opener > summary > span:not(.jsonl-entry-summary-preview) {
+  display: none;
+}
+.jsonl-entry-card--easy-opener .jsonl-entry-summary-preview {
+  color: var(--text-primary);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.easy-round-opener-row {
+  justify-content: flex-end;
+}
+.easy-round-opener-row > span:first-child {
+  display: none;
+}
+.easy-round-opener-row > div {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
 .jsonl-entry-summary { font-size: var(--jsonl-entry-summary-font-size); }
 .jsonl-entry-summary-meta { font-size: var(--jsonl-entry-summary-meta-font-size); }
 .jsonl-entry-summary-preview { font-size: var(--jsonl-entry-summary-preview-font-size); }
