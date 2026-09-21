@@ -276,6 +276,16 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   }, [sticky, autoOpen, onlyGroup, forceOpen, searchActive, open, onAutoOpen, onAutoClose])
   // 首帧防闪: store 还没来得及转移时, 按"应展开"先行绘制 (视觉态), effect 随后对齐真实态.
   const openVisual = open || forceOpen || (!sticky && (onlyGroup || autoOpen))
+  const [easyThreadMounted, setEasyThreadMounted] = useState(openVisual)
+  useEffect(() => {
+    if (!easyMode) return
+    if (openVisual) {
+      setEasyThreadMounted(true)
+      return
+    }
+    const timer = window.setTimeout(() => setEasyThreadMounted(false), 320)
+    return () => window.clearTimeout(timer)
+  }, [easyMode, openVisual])
 
   const toggle = () => onUserToggle()
 
@@ -313,9 +323,13 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
       }
       const following = renderSeq[end]
       const followedByFlatText = following?.kind === 'single' && isEasyFlatEntry(following.item.entry)
-      if (run.length > 0 && (!isLast || followedByFlatText)) {
-        easyStepRuns.set(index, run)
-        for (let hidden = index + 1; hidden < end; hidden += 1) easyStepHidden.add(hidden)
+      // 末组长尾过程保留最后五张微缩卡，其余步骤进入折叠组；更早的组则整段折叠。
+      // Keep the last five micro cards visible for a long tail in the last group; older groups fold the whole run.
+      const keepTail = isLast && run.length > 5 ? 5 : 0
+      const collapseCount = keepTail > 0 ? run.length - keepTail : (!isLast || followedByFlatText ? run.length : 0)
+      if (collapseCount > 0) {
+        easyStepRuns.set(index, run.slice(0, collapseCount))
+        for (let hidden = index + 1; hidden < index + collapseCount; hidden += 1) easyStepHidden.add(hidden)
         index = end - 1
       }
     }
@@ -439,8 +453,9 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
 
       {collapsedFinal}
 
-      {openVisual && (
-        <div className="mt-2 jsonl-thread">
+      {(!easyMode ? openVisual : easyThreadMounted) && (
+        <div aria-hidden={easyMode ? !openVisual : undefined} className={`${easyMode ? `easy-round-group__thread${openVisual ? ' is-open' : ''} ` : ''}mt-2 jsonl-thread`}>
+          <div className={easyMode ? 'easy-round-group__thread-content' : undefined}>
           {!resident && (
             <div className="mb-1 flex justify-center">
               {failed ? (
@@ -537,6 +552,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
           {hiddenGaps.slice(gapCursor).map((gap, index) => (
             <HiddenGapRow key={`hidden-gap-tail-${index}-${gap.at}`} count={gap.count} />
           ))}
+          </div>
         </div>
       )}
     </div>
