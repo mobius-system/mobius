@@ -8,7 +8,7 @@
  *    更早的轮在跌出最新两轮时自动折叠, 用户手动操作过的轮尊重用户.
  */
 import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { Search } from 'lucide-react'
+import { ChevronDown, Search } from 'lucide-react'
 import type { AnyEntry, BashToolResult, JsonlViewItem, Round, RoundItem } from './types'
 import type { ToolStatus, ToolStatusMap } from './tool-status'
 import { deriveToolCallStatus } from './tool-status'
@@ -20,6 +20,7 @@ import { DisplayImagesCard } from './DisplayImages'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
 import { ASSISTANT_END_TURN_THEME } from './themes'
+import { isRoundOpenerEntry } from './utils'
 
 // 每卡工具状态 (组级 map 的预派生值): 按 (entry 身份, map 身份) 记忆.
 // 传 primitive 给卡片 → SSE 新数据只换 map 身份, 内容未变的卡拿到同一字符串, memo 保持.
@@ -32,7 +33,7 @@ function toolStatusOf(entry: AnyEntry, map: ToolStatusMap | null | undefined): T
   return status
 }
 
-export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, easyMode = false, toolStatus, taskPlans }: {
+export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResults = [], forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, easyMode = false, easyOpenerOverride = false, toolStatus, taskPlans }: {
   entry: AnyEntry
   lineNo: number
   bashResults?: BashToolResult[]
@@ -45,6 +46,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   showMeta?: boolean
   dense?: boolean
   easyMode?: boolean
+  easyOpenerOverride?: boolean
   // 已派生的每卡工具状态 ('running' | 'success' | 'error' | null), 见 toolStatusOf.
   toolStatus?: ToolStatus | null
   // 任务工具跨条目累积快照 (anchor uuid → PlanUpdate), 按卡片 uuid 取值透传给计划视图.
@@ -63,8 +65,8 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
   const uuid = typeof entry?.uuid === 'string' ? entry.uuid : null
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} searchHighlighted={searchHighlighted} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} easyMode={easyMode} bashResults={bashResults} readResults={readResults} toolStatus={toolStatus} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
-      {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
+      <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} searchHighlighted={searchHighlighted} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} easyMode={easyMode} easyOpenerOverride={easyOpenerOverride} bashResults={bashResults} readResults={readResults} toolStatus={toolStatus} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
+      {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} easyMode={easyMode} />}
     </>
   )
 }
@@ -90,7 +92,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, easyMode = 
     <details
       open={open}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-      className="jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm"
+      className={`jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm${easyMode ? ' easy-explore-group' : ''}`}
     >
       <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
         <Search className={`h-3 w-3 flex-shrink-0 ${hasError ? 'text-red-400' : 'text-sky-400'}`} strokeWidth={2.2} aria-hidden="true" />
@@ -223,8 +225,10 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
 
   const toggle = () => onUserToggle()
 
-  const userItem = round.items[0]
+  const openerItem = easyMode ? round.items.find((item) => isRoundOpenerEntry(item.entry)) : undefined
+  const userItem = openerItem || round.items[0]
   const agentCount = round.items.length - 1
+  const easyCollapsed = easyMode && !openVisual
   // 条目未加载时 (折叠轮零条目驻留), 用调用方给的元数据摘要当轮次标识.
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
@@ -242,17 +246,47 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
     return rows
   }
 
+  const collapsedOpener = easyCollapsed && userItem ? (
+    <div className="easy-collapsed-opener">
+      <div className="easy-round-opener-row">
+        <span aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <EntryCardWithImages
+            entry={userItem.entry}
+            lineNo={userItem.lineNo}
+            bashResults={userItem.bashResults}
+            readResults={userItem.readResults}
+            showMeta={showMeta}
+            easyMode
+            easyOpenerOverride={true}
+            toolStatus={toolStatusOf(userItem.entry, toolStatusMap)}
+            forceOpen={forceOpen && userItem.lineNo === focusLineNo}
+            searchHighlighted={userItem.lineNo === focusLineNo}
+            parentOrderedCollapse={collapseLineNos?.has(userItem.lineNo)}
+            taskPlans={taskPlans}
+          />
+        </div>
+      </div>
+    </div>
+  ) : null
+  const collapsedSummaryOpener = easyCollapsed && !userItem && (headerSummary || userSummary) ? (
+    <div className="easy-user-bubble">{headerSummary || userSummary}</div>
+  ) : null
+
   return (
-    <div className="mb-1">
+    <div className={`mb-1${easyMode ? ' easy-round-group' : ''}`}>
+      {collapsedOpener}
+      {collapsedSummaryOpener}
       <button
         type="button"
         onClick={onlyGroup ? undefined : toggle}
         disabled={onlyGroup}
         data-round-header-palette={headerPalette.id}
+        aria-expanded={openVisual}
         aria-keyshortcuts="Control+Shift+K"
         title={`轮次背景：${headerPalette.name} · Ctrl+Shift+K 切换`}
         data-search-hit-group={searchHighlighted ? 'true' : undefined}
-        className={`round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
+        className={`${easyMode ? 'easy-round-group-trigger' : 'round-group-trigger w-full h-8 min-h-8 flex items-center gap-2 px-2 py-0 rounded-lg border'} text-left group ${onlyGroup ? 'cursor-default' : 'cursor-pointer'} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 bg-red-500/15 shadow-[0_0_0_3px_rgba(239,68,68,0.24),0_0_22px_rgba(239,68,68,0.3)]' : ''}`}
         style={{
           '--round-header-background': headerPalette.background,
           '--round-header-background-size': headerPalette.backgroundSize,
@@ -266,29 +300,38 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             : undefined,
         } as CSSProperties}
       >
-        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
-        <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
-          {headerTitle ?? `第 ${round.roundNum} 轮`}
-        </span>
-        <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
-          {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
-          {openVisual ? '' : (userSummary || '(空)')}
-        </span>
-        {searchHighlighted && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
-            <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
-            搜索命中
-          </span>
-        )}
-        {!openVisual && agentCount > 0 && (
-          <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
-            +{agentCount}
-          </span>
-        )}
-        {!onlyGroup && (
-          <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
-            {openVisual ? '▲' : '▼'}
-          </span>
+        {easyMode ? (
+          <>
+            <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
+            <span className="easy-round-group-trigger__label">{openVisual ? '点击收起' : '点击展开'}</span>
+          </>
+        ) : (
+          <>
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
+            <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
+              {headerTitle ?? `第 ${round.roundNum} 轮`}
+            </span>
+            <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
+              {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
+              {openVisual ? '' : (userSummary || '(空)')}
+            </span>
+            {searchHighlighted && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
+                <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
+                搜索命中
+              </span>
+            )}
+            {!openVisual && agentCount > 0 && (
+              <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
+                +{agentCount}
+              </span>
+            )}
+            {!onlyGroup && (
+              <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+                {openVisual ? '▲' : '▼'}
+              </span>
+            )}
+          </>
         )}
       </button>
 
@@ -325,7 +368,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
               return (
                 <Fragment key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`}>
                   {gapsBefore(ri.items[0]?.relIdx ?? 0)}
-                  <div className="flex items-start gap-1.5">
+                  <div className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}`}>
                     <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                     <div className="flex-1 min-w-0">
                       <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} easyMode={easyMode} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
@@ -335,11 +378,11 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
               )
             }
             const item = ri.item
-            const isUserItem = item.relIdx === 0
+            const isUserItem = easyMode ? (isRoundOpenerEntry(item.entry) || item.relIdx === 0) : item.relIdx === 0
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 {gapsBefore(item.relIdx)}
-                <div className={`flex items-start gap-1.5${easyMode && isUserItem ? ' easy-round-opener-row' : ''}`}>
+                <div className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}${easyMode && isUserItem ? ' easy-round-opener-row' : ''}`}>
                   <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">
                     {/* 编号: 用户问题=轮次号(如 3), AI 回复=轮次号.子序号(如 3.1/3.2) */}
                     {isUserItem ? 'u' : `${item.relIdx}`}
@@ -353,6 +396,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
                       readResults={item.readResults}
                       showMeta={showMeta}
                       easyMode={easyMode}
+                      easyOpenerOverride={easyMode && isUserItem}
                       toolStatus={toolStatusOf(item.entry, toolStatusMap)}
                       forceOpen={forceOpen && item.lineNo === focusLineNo}
                       searchHighlighted={item.lineNo === focusLineNo}

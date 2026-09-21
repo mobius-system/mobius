@@ -4647,14 +4647,150 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 /* 简易模式：过程卡压成可点击的一行，开轮用户输入改为右侧气泡；标准模式不带这些标记。 */
 .jsonl-entry-card--easy-inline {
   margin-bottom: 4px;
-  border-color: color-mix(in srgb, var(--border-color) 55%, transparent);
-  background: color-mix(in srgb, var(--bg-card) 72%, transparent);
+  border-color: transparent !important;
+  background: transparent !important;
   box-shadow: none;
+  transition: color .15s ease, background-color .15s ease;
 }
 .jsonl-entry-card--easy-inline > summary {
   min-height: 30px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  border-radius: 6px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  color: var(--text-muted);
+}
+.jsonl-entry-card--easy-inline > summary:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+}
+.jsonl-entry-card--easy-inline > summary:hover .jsonl-entry-summary-preview,
+.jsonl-entry-card--easy-inline > summary:hover .jsonl-entry-summary-meta {
+  color: var(--text-secondary);
+}
+.jsonl-entry-card--easy-inline[open] {
+  border-left: 2px solid color-mix(in srgb, var(--text-secondary) 42%, transparent) !important;
+  padding-left: 8px;
+}
+.jsonl-entry-card--easy-inline[open] > summary {
+  color: var(--text-primary);
+  background: transparent;
+}
+.jsonl-entry-card--easy-inline > summary .jsonl-entry-summary-preview {
+  color: var(--text-muted);
+}
+.jsonl-entry-card--easy-inline > summary .jsonl-entry-summary-preview,
+.jsonl-entry-card--easy-inline > summary .jsonl-entry-summary-meta {
+  font-size: 11px;
+}
+.jsonl-entry-card--easy-inline > summary > .font-mono {
+  color: var(--text-secondary);
+}
+.jsonl-entry-card--easy-flat {
+  margin: 14px 0 18px;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.jsonl-entry-card--easy-flat > summary {
+  display: none;
+}
+.jsonl-entry-card--easy-flat > div.px-1 {
+  padding: 0;
+}
+.easy-flat-markdown {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.easy-flat-image {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.easy-flat-image > summary {
+  display: none;
+}
+.easy-flat-image > div {
+  padding: 0 0 12px;
+}
+.easy-round-group-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 0 !important;
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--text-muted);
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: color .15s ease, background-color .15s ease;
+}
+.easy-round-group-trigger:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 68%, transparent) !important;
+}
+.easy-round-group-trigger__icon {
+  flex: 0 0 auto;
+  color: currentColor;
+  transition: transform .15s ease;
+}
+.easy-round-group-trigger[aria-expanded="true"] .easy-round-group-trigger__icon {
+  transform: rotate(180deg);
+}
+.easy-round-group-trigger__label {
+  font-size: 11px;
+}
+.easy-collapsed-opener {
+  margin-bottom: 4px;
+}
+.easy-user-bubble {
+  width: fit-content;
+  max-width: min(78%, 760px);
+  margin: 0 0 4px auto;
+  border-radius: 16px;
+  padding: 10px 16px;
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.easy-collapsed-opener .jsonl-entry-card--easy-opener {
+  margin-bottom: 0;
+}
+.easy-round-opener-row {
+  justify-content: flex-end;
+}
+.easy-round-opener-row > span:first-child {
+  display: none;
+}
+.easy-round-opener-row > div {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.easy-round-group .jsonl-thread > .flex > span:first-child,
+.easy-round-group .jsonl-thread > .easy-round-entry-row > span:first-child {
+  display: none;
+}
+.easy-round-group .jsonl-thread > .flex > div,
+.easy-round-group .jsonl-thread > .easy-round-entry-row > div {
+  width: 100%;
+}
+.easy-explore-group {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.easy-explore-group > summary {
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+.easy-explore-group > summary:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 68%, transparent);
 }
 .jsonl-entry-card--easy-opener {
   width: fit-content;
@@ -6192,9 +6328,19 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__state[data-status="pend
   background: #22c55e;
   box-shadow: 0 0 0 2px color-mix(in srgb, #22c55e 13%, transparent);
 }
+/* 状态贴到行最右侧, 悬浮时淡出让位给重命名/删除按钮 */
 body:has([data-page="easy-mode"]) .easy-sidebar-session__status {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
   color: var(--text-muted);
   font-size: 11px;
+  transition: opacity .14s ease;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:hover .easy-sidebar-session__status,
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:focus-within .easy-sidebar-session__status {
+  opacity: 0;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-footer {
   display: grid;

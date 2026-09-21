@@ -187,7 +187,7 @@ export function DisplayImagePreviewModal({ src, onClose }: { src: string; onClos
   )
 }
 
-export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_images' }: { images: string[]; lineNo?: number; sourceLabel?: string }) {
+export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_images', easyMode = false }: { images: string[]; lineNo?: number; sourceLabel?: string; easyMode?: boolean }) {
   const [open, setOpen] = useState<boolean>(true)
   const [previewSrc, setPreviewSrc] = useState<string | null>(null)
   const theme = IMAGES_THEME
@@ -196,7 +196,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
       <details
         open={open}
         onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-        className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg}`}>
+        className={`mb-2 rounded-lg border card-enter ${theme.border} ${theme.bg}${easyMode ? ' easy-flat-image' : ''}`}>
         <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
           {typeof lineNo === 'number' && <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">↳#{lineNo}</span>}
           <span className={`w-1.5 h-1.5 rounded-full ${theme.dot} flex-shrink-0`}></span>

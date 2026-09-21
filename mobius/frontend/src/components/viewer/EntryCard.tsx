@@ -11,7 +11,7 @@
  *  - 超大卡片保护: entry + 工具结果渲染字符总量超 10 万时截断后再渲染, 避免前端卡顿崩溃.
  */
 import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Code2, ListChecks, AlignLeft, Braces, BookOpen, Image as ImageIcon, Check, Loader2, X } from 'lucide-react'
+import { Code2, ListChecks, AlignLeft, Braces, BookOpen, Image as ImageIcon, Check, Loader2, X, CircleDot } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { BLACKBOARD_MARKER } from '../jsonl-round-helpers'
 import {
@@ -97,6 +97,23 @@ const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
 // 阈值 100,000 字符 (约 100KB) — 经验上单卡渲染到这个量级以上就明显卡顿.
 const MAX_CARD_RENDER_CHARS = 100_000
 
+const EASY_MICRO_TITLES: Record<string, string> = {
+  思考: '思考推理',
+  命令: '执行命令',
+  读取: '读取文件',
+  编辑: '修改文件',
+  协作编辑: '协作修改',
+  协作执行: '协作执行',
+  计划: '规划步骤',
+  返回: '工具返回',
+  部署: '部署操作',
+  本地: '本地操作',
+  压缩: '压缩上下文',
+  配置: '配置更新',
+  黑板: '黑板更新',
+  初始: '初始化',
+}
+
 /**
  * 各卡片视图模式对应的图标 (模式切换按钮的文字 → 图标).
  * 按钮显示"点击后将切换到的目标模式"的图标, 与原文字按钮语义一致 (文字时也是显示目标模式名).
@@ -139,7 +156,7 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, easyMode = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
+function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighted = false, parentOrderedCollapse = false, showMeta = true, dense = false, easyMode = false, easyOpenerOverride = false, bashResults = [], readResults = [], toolStatus, taskPlan }: {
   entry: AnyEntry
   lineNo?: number
   // forceOpen: 搜索命中该卡 — 用户显式查看, 优先级最高, 压过 parentOrderedCollapse 与用户曾手动折叠.
@@ -155,6 +172,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   dense?: boolean
   // easyMode keeps the standard card renderer but changes only its compact presentation.
   easyMode?: boolean
+  easyOpenerOverride?: boolean
   bashResults?: BashToolResult[]
   readResults?: BashToolResult[]
   // 已派生的每卡工具状态 ('running' | 'success' | 'error' | null). 父层 toolStatusOf
@@ -165,14 +183,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   taskPlan?: PlanUpdate | null
 }) {
   const type = entry?.type || 'unknown'
-  const easyOpener = easyMode && isRoundOpenerEntry(entry)
-  // 只有真正的助手文本保留完整应答卡；工具调用型 assistant 条目仍按过程行压缩。
-  // Only assistant text keeps the full response card; tool-call assistant entries stay as process rows.
-  const easyResponse = easyMode && assistantEntryText(entry).trim().length > 0
-  const easyConclusion = easyMode && isAssistantEndTurnEntry(entry)
-  const easyInline = easyMode && !easyOpener && !easyResponse && !easyConclusion
-  const easyCompactSummary = easyInline || easyOpener
-  const easyHideType = easyOpener
+  const easyOpener = easyMode && (easyOpenerOverride || isRoundOpenerEntry(entry))
   // 超大卡片保护: entry + 工具结果的渲染字符总量超过 10 万时, 用截断版渲染, 避免前端卡顿崩溃.
   // 截断版只影响"展开态内容渲染", 卡片头部摘要 / 配色 / 折叠态不受影响.
   const { renderEntry, renderBashResults, renderReadResults, oversized, totalChars, imageOutputUrls, imageOutputText } = useMemo(() => {
@@ -288,6 +299,19 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
     : mcpResult
     ? MCP_RESULT_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
+  // 简易模式只有白名单卡片平铺，其余条目统一进入微缩卡片；助手正文视作“应答”白名单。
+  // Easy mode flattens only the whitelist; all other entries use the micro-card treatment.
+  const easyFlat = easyMode && !easyOpener && (
+    theme.label === '应答' ||
+    theme.label === '错误' ||
+    theme.label === '结束' ||
+    theme.label === '图像' ||
+    (assistantEntryText(entry).trim().length > 0 && !canCode)
+  )
+  const easyInline = easyMode && !easyOpener && !easyFlat
+  const easyCompactSummary = easyInline || easyOpener
+  const easyHideType = easyOpener || easyFlat
+  const easyMicroTitle = EASY_MICRO_TITLES[theme.label] || theme.label
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
@@ -327,7 +351,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
 
   // 用户是否手动点过折叠/展开 (或卡片已按"数据被摘走"自动回落): 一旦置位, 自动展开不再强制掀开.
   const userToggledRef = useRef(false)
-  const easyInitialOpen = easyCompactSummary ? false : desiredOpen
+  const easyInitialOpen = easyCompactSummary ? false : easyFlat ? true : desiredOpen
   const [open, setOpen] = useState<boolean>(easyInitialOpen)
 
   // 自动信号跟随 — ratchet (只掀开不折回) + 尊重用户手动:
@@ -335,7 +359,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   //   · 其它信号: 用户手动操作过则锁定不动.
   useEffect(() => {
     if (forceOpen) { setOpen(true); return }
-    if (!userToggledRef.current && (easyCompactSummary ? false : desiredOpen)) setOpen(true)
+    if (!userToggledRef.current && (easyCompactSummary ? false : easyFlat ? true : desiredOpen)) setOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceOpen, desiredOpen, easyInline])
 
@@ -405,18 +429,20 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
       onToggle={(e) => { userToggledRef.current = true; setOpen((e.currentTarget as HTMLDetailsElement).open) }}
       data-search-hit={searchHighlighted ? 'true' : undefined}
       aria-label={searchHighlighted ? '搜索命中条目' : undefined}
-      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${easyInline ? 'jsonl-entry-card--easy-inline' : ''} ${easyOpener ? 'jsonl-entry-card--easy-opener' : ''} ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
+      className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${easyInline ? 'jsonl-entry-card--easy-inline' : ''} ${easyFlat ? 'jsonl-entry-card--easy-flat' : ''} ${easyOpener ? 'jsonl-entry-card--easy-opener' : ''} ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
       <summary className={`jsonl-entry-summary cursor-pointer ${easyOpener ? 'jsonl-entry-summary--easy-opener' : ''} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {!easyCompactSummary && showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {!easyCompactSummary && showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
-        {toolStatus ? (
+        {easyInline ? (
+          toolStatus ? <ToolStatusIcon status={toolStatus} /> : <CircleDot className={theme.text} size={14} strokeWidth={2.2} aria-hidden="true" />
+        ) : toolStatus ? (
           <ToolStatusIcon status={toolStatus} />
         ) : (
           <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
             <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`}></span>
           </span>
         )}
-        {!easyHideType && <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{theme.label}</span>}
+        {!easyHideType && <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{easyMode ? easyMicroTitle : theme.label}</span>}
         {canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
@@ -526,7 +552,15 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
               ⚠ 该条目原始约 {totalChars.toLocaleString()} 字符, 超过 10 万字符渲染上限, 超出部分已截断以避免前端卡顿.
             </div>
           )}
-          {localCommandParts.length > 0 ? (
+          {easyFlat && canImage ? (
+            <ImageOutputPanel imageUrls={imageOutputUrls} textBody={imageOutputText} />
+          ) : easyFlat && !canCode ? (
+            <div className="easy-flat-markdown max-w-none">
+              <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
+                <CompactMarkdown text={headerSummary.full} />
+              </Suspense>
+            </div>
+          ) : localCommandParts.length > 0 ? (
             <JsonEntryLocalCommandBlock parts={localCommandParts} />
           ) : mode === 'code' && codeEdit ? (
             <JsonEntryCodeDiff edit={codeEdit} />
@@ -591,5 +625,5 @@ function toolResultsEqual(a: BashToolResult[] | undefined, b: BashToolResult[] |
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && prev.easyMode === next.easyMode && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.searchHighlighted === next.searchHighlighted && contentEqual(prev.taskPlan, next.taskPlan, 4),
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.dense === next.dense && prev.easyMode === next.easyMode && prev.easyOpenerOverride === next.easyOpenerOverride && toolResultsEqual(prev.bashResults, next.bashResults) && toolResultsEqual(prev.readResults, next.readResults) && prev.toolStatus === next.toolStatus && prev.parentOrderedCollapse === next.parentOrderedCollapse && prev.forceOpen === next.forceOpen && prev.searchHighlighted === next.searchHighlighted && contentEqual(prev.taskPlan, next.taskPlan, 4),
 )
