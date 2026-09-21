@@ -526,6 +526,7 @@ export function JsonlView({
         round={r.round}
         isLast={block.index === rounds.length - 1}
         isSecondLast={block.index === rounds.length - 2}
+        isRecentTail={block.index >= rounds.length - 5}
         onlyGroup={onlyGroup}
         open={r.state !== 'closed'}
         sticky={!!rt?.sticky}

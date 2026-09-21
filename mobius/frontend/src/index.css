@@ -4746,7 +4746,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   gap: 6px;
   border: 0 !important;
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: 3px 0%;
   color: var(--text-muted);
   background: transparent !important;
   box-shadow: none !important;
@@ -4777,8 +4777,8 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   --easy-divider-block: 4px;
   --easy-divider-tile: 12px;
   background-image:
-    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 78%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block)),
-    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 38%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block));
+    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 92%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block)),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 50%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block));
   background-size: var(--easy-divider-tile) var(--easy-divider-block);
   background-position: 0 0, 6px 4px;
   background-repeat: repeat-x, repeat-x;
