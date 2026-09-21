@@ -4936,6 +4936,14 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   outline: 2px solid color-mix(in srgb, var(--text-secondary) 70%, transparent);
   outline-offset: 1px;
 }
+/* 不可展开的步骤行 (超长轮次的"步骤过多"占位): 排版与可展开的步骤行完全一致, 只去掉交互反馈. */
+.easy-step-group__trigger--static {
+  cursor: default;
+}
+.easy-step-group__trigger--static:hover {
+  color: var(--text-muted);
+  background: transparent;
+}
 .easy-step-group__icon {
   flex: 0 0 auto;
   transform: rotate(-90deg);

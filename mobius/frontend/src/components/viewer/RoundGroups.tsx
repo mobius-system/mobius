@@ -135,7 +135,16 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, easyMode = 
 
 // 巨轮窗口跳过中段条目时的提示卡: 不说明白的话, 用户会以为这一轮内容就这么多.
 // 非可展开卡, 配色对齐"结束"卡的金色系统主题 (amber), 在长列表里同样一眼可扫.
-export function HiddenGapCard({ count }: { count: number }) {
+export function HiddenGapCard({ count, easyMode = false }: { count: number; easyMode?: boolean }) {
+  // 简易模式只留一行纯文本, 排版完全沿用"完成了 N 个步骤"那一行, 且不可展开.
+  // Easy mode keeps one plain-text line laid out exactly like the "N steps" row, and never expands.
+  if (easyMode) {
+    return (
+      <div className="easy-step-group">
+        <div className="easy-step-group__trigger easy-step-group__trigger--static">步骤过多，此处隐藏了{count}个步骤</div>
+      </div>
+    )
+  }
   return (
     <div className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm px-3 py-1.5 flex items-center gap-2 ${ASSISTANT_END_TURN_THEME.border} ${ASSISTANT_END_TURN_THEME.bg}`}>
       <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
@@ -149,7 +158,10 @@ export function HiddenGapCard({ count }: { count: number }) {
 }
 
 // 一条提示行 (左侧与普通卡片一致的行号槽 + 卡片本体), 与 RoundGroup 的其它行同构.
-function HiddenGapRow({ count }: { count: number }) {
+function HiddenGapRow({ count, easyMode = false }: { count: number; easyMode?: boolean }) {
+  // 简易模式直接以步骤组同款排版落地, 不再包行号槽 (该槽在简易模式下本就隐藏).
+  // Easy mode renders it bare, in the step-row layout; the gutter slot is hidden in easy mode anyway.
+  if (easyMode) return <HiddenGapCard count={count} easyMode />
   return (
     <div className="flex items-start gap-1.5">
       <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">⋯</span>
@@ -365,7 +377,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
     while (gapCursor < hiddenGaps.length && hiddenGaps[gapCursor].at <= relIdx) {
       const gap = hiddenGaps[gapCursor]
       gapCursor += 1
-      rows.push(<HiddenGapRow key={`hidden-gap-${gapCursor}-${gap.at}`} count={gap.count} />)
+      rows.push(<HiddenGapRow key={`hidden-gap-${gapCursor}-${gap.at}`} count={gap.count} easyMode={easyMode} />)
     }
     return rows
   }
@@ -584,7 +596,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
           })}
           {/* 跳过段落在可见序列末尾 (at === items.length) 时, 提示行走在最后一行之后. */}
           {hiddenGaps.slice(gapCursor).map((gap, index) => (
-            <HiddenGapRow key={`hidden-gap-tail-${index}-${gap.at}`} count={gap.count} />
+            <HiddenGapRow key={`hidden-gap-tail-${index}-${gap.at}`} count={gap.count} easyMode={easyMode} />
           ))}
           </div>
         </div>
