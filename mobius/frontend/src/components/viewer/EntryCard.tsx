@@ -124,6 +124,9 @@ export function isEasyFlatEntry(entry: AnyEntry): boolean {
     || extractBashCalls(entry).length > 0
     || extractReadCalls(entry).length > 0
   if (canCode) return false
+  // 仅思考卡即使携带 end_turn 也仍是微缩步骤，不应被当作最终平铺回答打断步骤串
+  // Thinking-only cards remain micro steps even with end_turn and must not split the run
+  if (isThinkingOnlyAssistantEntry(entry)) return false
   if (entry.type === 'error' || isAssistantEndTurnEntry(entry)) return true
   if (entry.type === 'response_item' && isFunctionCallOutputPayload(entry.payload)) {
     if (functionOutputImageUrls(entry.payload?.output).length > 0) return true
