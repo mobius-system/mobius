@@ -328,9 +328,10 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
       }
       const following = renderSeq[end]
       const followedByFlatText = following?.kind === 'single' && isEasyFlatEntry(following.item.entry)
-      // 末组长尾过程保留最后五张微缩卡，其余步骤进入折叠组；更早的组则整段折叠。
-      // Keep the last five micro cards visible for a long tail in the last group; older groups fold the whole run.
-      const keepTail = isLast && run.length > 5 ? 5 : 0
+      // 仅末组最后一串无后续卡片时保留最后五张微缩卡；中间步骤仍按整串折叠。
+      // Keep five cards only for the final card-less tail run of the last group; fold intermediate runs as a whole.
+      const isTrailingRun = end === renderSeq.length
+      const keepTail = isLast && isTrailingRun && run.length > 5 ? 5 : 0
       const collapseCount = keepTail > 0 ? run.length - keepTail : (!isLast || followedByFlatText ? run.length : 0)
       if (collapseCount > 0) {
         easyStepRuns.set(index, run.slice(0, collapseCount))

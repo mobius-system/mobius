@@ -4799,16 +4799,18 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   flex: 0 1 auto;
   max-width: 100%;
 }
+/* 简易模式会话区去掉左侧行号槽: 卡号/探索点/折叠省略号一律不显示 */
+/* Easy mode drops the left gutter: step numbers, explore dots and fold marks stay hidden */
 .easy-round-group .jsonl-thread > .flex > span:first-child,
 .easy-round-group .jsonl-thread > .easy-round-entry-row > span:first-child,
-.easy-round-group .jsonl-thread-content > .flex > span:first-child,
-.easy-round-group .jsonl-thread-content > .easy-round-entry-row > span:first-child {
+.easy-round-group .jsonl-thread > .easy-round-group__thread-content > .flex > span:first-child,
+.easy-round-group .jsonl-thread > .easy-round-group__thread-content > .easy-round-entry-row > span:first-child {
   display: none;
 }
 .easy-round-group .jsonl-thread > .flex > div,
 .easy-round-group .jsonl-thread > .easy-round-entry-row > div,
-.easy-round-group .jsonl-thread-content > .flex > div,
-.easy-round-group .jsonl-thread-content > .easy-round-entry-row > div {
+.easy-round-group .jsonl-thread > .easy-round-group__thread-content > .flex > div,
+.easy-round-group .jsonl-thread > .easy-round-group__thread-content > .easy-round-entry-row > div {
   width: 100%;
 }
 .easy-round-group .jsonl-thread {
