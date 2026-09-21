@@ -283,6 +283,12 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   const userItem = openerItem || round.items[0]
   const essentialOpener = easyMode ? round.essential_dict?.opener || null : null
   const essentialFinal = easyMode ? round.essential_dict?.final || null : null
+  // 简易模式始终以 essential opener 为用户气泡的权威来源，避免首轮初始上下文卡抢占 opener。
+  // Easy mode always uses the essential opener as the bubble source, so initial-context cards cannot replace it.
+  const canonicalOpenerItem = easyMode && essentialOpener
+    ? round.items.find((item) => item.entry?.uuid && item.entry.uuid === essentialOpener.uuid)
+    : undefined
+  const openerRenderItem = canonicalOpenerItem || userItem
   const agentCount = round.items.length - 1
   const easyCollapsed = easyMode && !openVisual
   // 条目未加载时 (折叠轮零条目驻留), 用调用方给的元数据摘要当轮次标识.
@@ -328,8 +334,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
 
   // 折叠态和展开态必须复用同一张 opener 卡片；不能用摘要 div 替换它，否则内容截断和高度都会漂移。
   // The opener must use one card in both states; swapping in a summary div changes truncation and height.
-  const openerEntry = userItem?.entry || essentialOpener
-  const openerLineNo = userItem?.lineNo ?? 0
+  const openerEntry = easyMode ? (essentialOpener || openerRenderItem?.entry) : openerRenderItem?.entry
+  const openerLineNo = openerRenderItem?.lineNo ?? 0
   const collapsedOpener = easyMode && openerEntry ? (
     <div className="easy-collapsed-opener">
       <div className="easy-round-opener-row">
@@ -338,8 +344,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
           <EntryCardWithImages
             entry={openerEntry}
             lineNo={openerLineNo}
-            bashResults={userItem?.bashResults}
-            readResults={userItem?.readResults}
+            bashResults={openerRenderItem?.bashResults}
+            readResults={openerRenderItem?.readResults}
             showMeta={showMeta}
             easyMode
             easyOpenerOverride={true}
@@ -353,7 +359,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
       </div>
     </div>
   ) : null
-  const collapsedSummaryOpener = easyCollapsed && !userItem && (headerSummary || userSummary) ? (
+  const collapsedSummaryOpener = easyCollapsed && !openerEntry && (headerSummary || userSummary) ? (
     <div className="easy-user-bubble">{headerSummary || userSummary}</div>
   ) : null
   const collapsedFinal = easyMode && easyCollapsed && essentialFinal ? (
@@ -496,7 +502,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             const isUserItem = easyMode ? (isRoundOpenerEntry(item.entry) || item.relIdx === 0) : item.relIdx === 0
             // 简易模式把 opener 提到 group 操作行之前，避免“点击收起”跑到用户气泡上方。
             // Easy mode renders the opener before the group control so “collapse” stays below the bubble.
-            if (easyMode && openVisual && userItem && item.lineNo === userItem.lineNo) return null
+            if (easyMode && openVisual && openerRenderItem && item.lineNo === openerRenderItem.lineNo) return null
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 {gapsBefore(item.relIdx)}
