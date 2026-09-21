@@ -114,6 +114,27 @@ const EASY_MICRO_TITLES: Record<string, string> = {
   初始: '初始化',
 }
 
+/*
+ * Classify cards for easy mode's flat-text and micro-step presentation.
+ */
+export function isEasyFlatEntry(entry: AnyEntry): boolean {
+  if (!entry || typeof entry !== 'object') return false
+  const canCode = !!extractCodeEdit(entry)
+    || !!extractWriteToolCall(entry)
+    || extractBashCalls(entry).length > 0
+    || extractReadCalls(entry).length > 0
+  if (canCode) return false
+  if (entry.type === 'error' || isAssistantEndTurnEntry(entry)) return true
+  if (entry.type === 'response_item' && isFunctionCallOutputPayload(entry.payload)) {
+    if (functionOutputImageUrls(entry.payload?.output).length > 0) return true
+  }
+  return assistantEntryText(entry).trim().length > 0
+}
+
+export function isEasyMicroEntry(entry: AnyEntry): boolean {
+  return !isRoundOpenerEntry(entry) && !isEasyFlatEntry(entry)
+}
+
 /**
  * 各卡片视图模式对应的图标 (模式切换按钮的文字 → 图标).
  * 按钮显示"点击后将切换到的目标模式"的图标, 与原文字按钮语义一致 (文字时也是显示目标模式名).
@@ -390,7 +411,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
 
   // 模式切换图标按钮: 计算点击后将切换到的目标模式 + 悬停说明.
   // (原为文字按钮显示目标模式名, 现改为图标按钮, 文字说明收进 title.)
-  const modeToggle = (canCompact || canCode || canImage || canPlan || canInitial)
+  const modeToggle = !easyMode && (canCompact || canCode || canImage || canPlan || canInitial)
     ? (() => {
         let target: CardMode
         let title: string
@@ -430,7 +451,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
       data-search-hit={searchHighlighted ? 'true' : undefined}
       aria-label={searchHighlighted ? '搜索命中条目' : undefined}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${easyInline ? 'jsonl-entry-card--easy-inline' : ''} ${easyFlat ? 'jsonl-entry-card--easy-flat' : ''} ${easyOpener ? 'jsonl-entry-card--easy-opener' : ''} ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
-      <summary className={`jsonl-entry-summary cursor-pointer ${easyOpener ? 'jsonl-entry-summary--easy-opener' : ''} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+      <summary onClick={easyOpener ? (e) => e.preventDefault() : undefined} className={`jsonl-entry-summary ${easyOpener ? 'jsonl-entry-summary--easy-opener cursor-text' : 'cursor-pointer'} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {!easyCompactSummary && showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {!easyCompactSummary && showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {easyInline ? (
@@ -443,7 +464,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
           </span>
         )}
         {!easyHideType && <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>{easyMode ? easyMicroTitle : theme.label}</span>}
-        {canCode && (
+        {!easyMode && canCode && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
             title={theme === AIMUX_COMMAND_THEME ? '协作执行 — 点击展开查看远程协作设备上的命令与读取结果' : '代码模式 — 点击展开查看 diff / 文件 / 命令 / 读取结果'}
@@ -454,7 +475,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
               : <Code2 className="h-3 w-3" strokeWidth={2.2} aria-hidden="true" />}
           </span>
         )}
-        {canPlan && (
+        {!easyMode && canPlan && (
           <span
             className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-current/30 ${theme.text}`}
             title="计划模式 — 点击展开查看分步计划"
@@ -474,7 +495,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {effectiveHeaderSummary.short && !(open && mode === 'compact') && <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] truncate flex-1`}>{effectiveHeaderSummary.short}</span>}
+        {(easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short) && !(open && mode === 'compact') && <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] ${easyOpener ? 'flex-1' : 'truncate flex-1'}`}>{easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short}</span>}
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">

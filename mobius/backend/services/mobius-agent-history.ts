@@ -952,22 +952,73 @@ interface GroupMeta {
   user_summary: string;
   version: number;
   entry_count: number;
+  essential_dict?: { opener: any | null; final: any | null };
 }
 
-function getGroups(sessionId: string): { session_version: number; groups: GroupMeta[] } {
+function isEssentialFinalEntry(entry: any): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.type === 'assistant' && entry.message?.stop_reason === 'end_turn') return true;
+  if (entry.type === 'assistant') {
+    const content = entry.message?.content;
+    return typeof content === 'string' && content.trim().length > 0
+      || Array.isArray(content) && content.some((block: any) =>
+        (block?.type === 'text' || block?.type === 'output_text') && typeof block?.text === 'string' && block.text.trim().length > 0,
+      );
+  }
+  if (entry.type === 'response_item' && entry.payload?.type === 'message' && entry.payload?.role === 'assistant') {
+    const content = entry.payload?.content;
+    return typeof content === 'string' && content.trim().length > 0
+      || Array.isArray(content) && content.some((block: any) =>
+        (block?.type === 'text' || block?.type === 'output_text') && typeof block?.text === 'string' && block.text.trim().length > 0,
+      );
+  }
+  return false;
+}
+
+function essentialDictForRound(sessionId: string, round: any): { opener: any | null; final: any | null } {
+  const st = S();
+  const rows = st.listGroupEntries.all(sessionId, round.group_seq) as any[];
+  let opener: any | null = null;
+  if (round.round_opener_uuid) {
+    const openerRow = rows.find((row) => {
+      const entry = safeParseJson(row.json);
+      return entry?.uuid === round.round_opener_uuid;
+    });
+    opener = openerRow ? safeParseJson(openerRow.json) : null;
+  }
+  if (!opener) {
+    const openerRow = rows.find((row) => Number(row.round_opener) === 1);
+    opener = openerRow ? safeParseJson(openerRow.json) : null;
+  }
+  let final: any | null = null;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const entry = safeParseJson(rows[index].json);
+    if (isEssentialFinalEntry(entry)) {
+      final = entry;
+      break;
+    }
+  }
+  return { opener, final };
+}
+
+function getGroups(sessionId: string, withEssential = false): { session_version: number; groups: GroupMeta[] } {
   const st = S();
   const state = st.getState.get(sessionId) as any;
   const rounds = st.listRounds.all(sessionId) as any[];
   return {
     session_version: state ? (state.session_version || 0) : 0,
-    groups: rounds.map((r) => ({
-      id: String(r.group_seq),
-      seq: r.group_seq,
-      opener_ts: r.round_opener_ts != null ? new Date(r.round_opener_ts).toISOString() : null,
-      user_summary: r.user_summary || '',
-      version: r.entry_count || 0,
-      entry_count: r.entry_count || 0,
-    })),
+    groups: rounds.map((r) => {
+      const group: GroupMeta = {
+        id: String(r.group_seq),
+        seq: r.group_seq,
+        opener_ts: r.round_opener_ts != null ? new Date(r.round_opener_ts).toISOString() : null,
+        user_summary: r.user_summary || '',
+        version: r.entry_count || 0,
+        entry_count: r.entry_count || 0,
+      };
+      if (withEssential) group.essential_dict = essentialDictForRound(sessionId, r);
+      return group;
+    }),
   };
 }
 

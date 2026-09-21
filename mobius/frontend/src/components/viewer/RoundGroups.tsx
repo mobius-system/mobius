@@ -15,7 +15,7 @@ import { deriveToolCallStatus } from './tool-status'
 import { groupExploreItems, type ExploreRenderItem } from './explore-group'
 import { entryDisplayImages, entryReadImagePaths, entryUserAttachmentImages } from './entry-extract'
 import { buildHeaderSummary } from './header-summary'
-import { JsonEntryCard } from './EntryCard'
+import { isEasyFlatEntry, isEasyMicroEntry, JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
@@ -161,37 +161,35 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   const firstSummary = items[0] ? buildHeaderSummary(items[0].entry).short : ''
 
   return (
-    <div className="mb-1">
+    <div className={`mb-1${easyMode ? ' easy-round-group' : ''}`}>
       <button
         type="button"
         onClick={onlyGroup ? undefined : () => setOpen(o => !o)}
         disabled={onlyGroup}
-        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl border border-amber-500/15 transition-colors text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)] hover:border-amber-500/30'}`}
+        aria-expanded={open}
+        className={`${easyMode ? 'easy-round-group-trigger' : 'w-full flex items-center gap-2 px-2 py-1.5 rounded-xl border border-amber-500/15 transition-colors'} text-left group ${onlyGroup ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)] hover:border-amber-500/30'}`}
       >
-        <span className="font-mono text-[10px] font-bold text-amber-400/75 flex-shrink-0 w-8">
-          ...
-        </span>
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-        <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
-          上文续接{firstSummary ? ` · ${firstSummary}` : ''}
-        </span>
-        <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
-          +{items.length}
-        </span>
-        {!onlyGroup && (
-          <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
-            {open ? '▲' : '▼'}
-          </span>
+        {easyMode ? (
+          <>
+            <span className="easy-round-group-trigger__label">{open ? '点击收起上文' : '点击展开上文'}</span>
+            <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
+          </>
+        ) : (
+          <>
+            <span className="font-mono text-[10px] font-bold text-amber-400/75 flex-shrink-0 w-8">...</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+            <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">上文续接{firstSummary ? ` · ${firstSummary}` : ''}</span>
+            <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">+{items.length}</span>
+            {!onlyGroup && <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">{open ? '▲' : '▼'}</span>}
+          </>
         )}
       </button>
 
       {open && (
         <div className="mt-2">
           {items.map(({ entry, lineNo, bashResults, readResults }) => (
-            <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className="flex items-start gap-1.5">
-              <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">
-                ...
-              </span>
+            <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}`}>
+              {!easyMode && <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">...</span>}
               <div className="flex-1 min-w-0">
                 <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} easyMode={easyMode} toolStatus={toolStatusOf(entry, toolStatusMap)} forceOpen={lineNo === focusLineNo} parentOrderedCollapse={collapseLineNos?.has(lineNo)} taskPlans={taskPlans} />
               </div>
@@ -199,6 +197,62 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/*
+ * Render a consecutive easy-mode micro-step run with an animated disclosure row.
+ */
+function EasyMicroStepGroup({ items, showMeta, toolStatusMap, collapseLineNos, focusLineNo, forceFocusOpen, taskPlans }: {
+  items: RoundItem[]
+  showMeta: boolean
+  toolStatusMap?: ToolStatusMap | null
+  collapseLineNos?: Set<number>
+  focusLineNo?: number | null
+  forceFocusOpen?: boolean
+  taskPlans?: TaskPlanByUuid | null
+}) {
+  const containsFocus = !!forceFocusOpen && typeof focusLineNo === 'number' && items.some((item) => item.lineNo === focusLineNo)
+  const [expanded, setExpanded] = useState(containsFocus)
+  useEffect(() => { if (containsFocus) setExpanded(true) }, [containsFocus])
+  const count = items.length
+  return (
+    <div className={`easy-step-group${expanded ? ' is-expanded' : ''}`}>
+      <button
+        type="button"
+        className="easy-step-group__trigger"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="easy-step-group__label">
+          {expanded ? `收起${count}个步骤` : `完成了${count}个步骤，点击查看`}
+        </span>
+        <ChevronDown className="easy-step-group__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
+      </button>
+      <div className="easy-step-group__collapse" aria-hidden={!expanded}>
+        <div className="easy-step-group__content">
+          {items.map((item) => (
+            <div key={(item.entry?.uuid || item.entry?.id || '') + '#' + item.lineNo} className="easy-round-entry-row">
+              <div className="flex-1 min-w-0">
+                <EntryCardWithImages
+                  entry={item.entry}
+                  lineNo={item.lineNo}
+                  bashResults={item.bashResults}
+                  readResults={item.readResults}
+                  showMeta={showMeta}
+                  easyMode
+                  toolStatus={toolStatusOf(item.entry, toolStatusMap)}
+                  forceOpen={!!forceFocusOpen && item.lineNo === focusLineNo}
+                  searchHighlighted={item.lineNo === focusLineNo}
+                  parentOrderedCollapse={collapseLineNos?.has(item.lineNo)}
+                  taskPlans={taskPlans}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -227,12 +281,38 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
 
   const openerItem = easyMode ? round.items.find((item) => isRoundOpenerEntry(item.entry)) : undefined
   const userItem = openerItem || round.items[0]
+  const essentialOpener = easyMode ? round.essential_dict?.opener || null : null
+  const essentialFinal = easyMode ? round.essential_dict?.final || null : null
   const agentCount = round.items.length - 1
   const easyCollapsed = easyMode && !openVisual
   // 条目未加载时 (折叠轮零条目驻留), 用调用方给的元数据摘要当轮次标识.
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
   const renderSeq: ExploreRenderItem[] = groupExploreItems(round.items, toolStatusMap)
+  // 简易模式只折叠“连续微缩卡 → 紧邻平铺文本卡”的步骤串，避免把没有结论的尾部过程藏起来。
+  // Easy mode collapses only a consecutive micro-card run immediately followed by flat text.
+  const easyStepRuns = new Map<number, RoundItem[]>()
+  const easyStepHidden = new Set<number>()
+  if (easyMode) {
+    for (let index = 0; index < renderSeq.length; index += 1) {
+      const current = renderSeq[index]
+      if (current.kind !== 'single' || !isEasyMicroEntry(current.item.entry)) continue
+      const run: RoundItem[] = [current.item]
+      let end = index + 1
+      while (end < renderSeq.length) {
+        const next = renderSeq[end]
+        if (next.kind !== 'single' || !isEasyMicroEntry(next.item.entry)) break
+        run.push(next.item)
+        end += 1
+      }
+      const following = renderSeq[end]
+      if (run.length > 0 && following?.kind === 'single' && isEasyFlatEntry(following.item.entry)) {
+        easyStepRuns.set(index, run)
+        for (let hidden = index + 1; hidden < end; hidden += 1) easyStepHidden.add(hidden)
+        index = end - 1
+      }
+    }
+  }
   // 巨轮被窗口跳过的中段: 在对应位置插提示行 (游标按 renderSeq 顺序推进, 与 items 下标单调对应).
   const hiddenGaps = round.hiddenGaps || []
   let gapCursor = 0
@@ -246,16 +326,20 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
     return rows
   }
 
-  const collapsedOpener = easyCollapsed && userItem ? (
+  // 折叠态和展开态必须复用同一张 opener 卡片；不能用摘要 div 替换它，否则内容截断和高度都会漂移。
+  // The opener must use one card in both states; swapping in a summary div changes truncation and height.
+  const openerEntry = userItem?.entry || essentialOpener
+  const openerLineNo = userItem?.lineNo ?? 0
+  const collapsedOpener = easyMode && openerEntry ? (
     <div className="easy-collapsed-opener">
       <div className="easy-round-opener-row">
         <span aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <EntryCardWithImages
-            entry={userItem.entry}
-            lineNo={userItem.lineNo}
-            bashResults={userItem.bashResults}
-            readResults={userItem.readResults}
+            entry={openerEntry}
+            lineNo={openerLineNo}
+            bashResults={userItem?.bashResults}
+            readResults={userItem?.readResults}
             showMeta={showMeta}
             easyMode
             easyOpenerOverride={true}
@@ -271,6 +355,17 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   ) : null
   const collapsedSummaryOpener = easyCollapsed && !userItem && (headerSummary || userSummary) ? (
     <div className="easy-user-bubble">{headerSummary || userSummary}</div>
+  ) : null
+  const collapsedFinal = easyMode && easyCollapsed && essentialFinal ? (
+    <div className="easy-essential-final" data-essential="final">
+      <EntryCardWithImages
+        entry={essentialFinal}
+        lineNo={0}
+        showMeta={false}
+        easyMode
+        forceOpen
+      />
+    </div>
   ) : null
 
   return (
@@ -302,8 +397,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
       >
         {easyMode ? (
           <>
-            <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
             <span className="easy-round-group-trigger__label">{openVisual ? '点击收起' : '点击展开'}</span>
+            <ChevronDown className="easy-round-group-trigger__icon" size={14} strokeWidth={2.2} aria-hidden="true" />
           </>
         ) : (
           <>
@@ -335,6 +430,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
         )}
       </button>
 
+      {collapsedFinal}
+
       {openVisual && (
         <div className="mt-2 jsonl-thread">
           {!resident && (
@@ -364,6 +461,24 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             </div>
           )}
           {renderSeq.map((ri, idx) => {
+            const easyStepRun = easyStepRuns.get(idx)
+            if (easyStepRun) {
+              return (
+                <Fragment key={`easy-steps-${easyStepRun[0]?.lineNo ?? idx}`}>
+                  {gapsBefore(easyStepRun[0]?.relIdx ?? 0)}
+                  <EasyMicroStepGroup
+                    items={easyStepRun}
+                    showMeta={showMeta}
+                    toolStatusMap={toolStatusMap}
+                    collapseLineNos={collapseLineNos}
+                    focusLineNo={focusLineNo}
+                    forceFocusOpen={forceOpen}
+                    taskPlans={taskPlans}
+                  />
+                </Fragment>
+              )
+            }
+            if (easyStepHidden.has(idx)) return null
             if (ri.kind === 'explore') {
               return (
                 <Fragment key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`}>
@@ -379,6 +494,9 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             }
             const item = ri.item
             const isUserItem = easyMode ? (isRoundOpenerEntry(item.entry) || item.relIdx === 0) : item.relIdx === 0
+            // 简易模式把 opener 提到 group 操作行之前，避免“点击收起”跑到用户气泡上方。
+            // Easy mode renders the opener before the group control so “collapse” stays below the bubble.
+            if (easyMode && openVisual && userItem && item.lineNo === userItem.lineNo) return null
             return (
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 {gapsBefore(item.relIdx)}

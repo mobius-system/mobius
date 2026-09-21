@@ -313,6 +313,11 @@ export default function JsonlViewEasy({
   // 排队卡片闪电按钮: 打断当前 turn 并出队下一条排队指令.
   onPauseToDequeue?: () => void
 }) {
+  useEffect(() => {
+    // 简易模式只请求轻量 essential 投影，折叠组无需下载整组 entries。
+    void store?.ensureEssentialGroups()
+  }, [store, snapshot.groups.length])
+
   const groups = snapshot.groups
   const [roundHeaderPaletteIndex, setRoundHeaderPaletteIndex] = useState(readRoundHeaderPaletteIndex)
   const [roundHeaderPaletteAnnouncement, setRoundHeaderPaletteAnnouncement] = useState('')
@@ -351,7 +356,7 @@ export default function JsonlViewEasy({
       const state = (snapshot.groupRuntime.get(meta.id)?.state) || 'closed'
       let round: Round
       if (entries.length === 0) {
-        round = { roundNum: meta.seq, items: [] as any[] }
+        round = { roundNum: meta.seq, items: [] as any[], essential_dict: meta.essential_dict }
       } else {
         const hit = roundByEntries.get(entries)
         if (hit && hit.seq === meta.seq && hit.base === baseLineNo && hit.targetKey === targetKey) {
@@ -359,6 +364,9 @@ export default function JsonlViewEasy({
         } else {
           round = buildRoundFromEntries(entries, meta.seq, baseLineNo, scrollToEntryUuid, scrollToMatchTs)
           roundByEntries.set(entries, { seq: meta.seq, base: baseLineNo, targetKey, round })
+        }
+        if (meta.essential_dict && round.essential_dict !== meta.essential_dict) {
+          round = { ...round, essential_dict: meta.essential_dict }
         }
       }
       baseLineNo += entries.length

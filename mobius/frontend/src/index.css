@@ -1139,6 +1139,27 @@ button {
   z-index: 1;
 }
 
+/* 简易模式的 LIVE 卡复用微缩步骤卡的无边框单行外观，同时保留呼吸点和流光提示。
+   Easy-mode LIVE reuses the borderless single-row micro-step style while keeping its pulse and sweep. */
+.jsonl-live-tail-card--easy {
+  margin-bottom: 4px;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none;
+  min-height: 30px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  color: var(--text-muted);
+  transition: color .15s ease, background-color .15s ease;
+}
+.jsonl-live-tail-card--easy:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 68%, transparent) !important;
+}
+.jsonl-live-tail-card--easy::before {
+  opacity: .55;
+}
+
 
 /* ===== Driver.js 引导气泡 ===== */
 .driver-active .driver-active-element {
@@ -4668,8 +4689,8 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   color: var(--text-secondary);
 }
 .jsonl-entry-card--easy-inline[open] {
-  border-left: 2px solid color-mix(in srgb, var(--text-secondary) 42%, transparent) !important;
-  padding-left: 8px;
+  border-left: 0 !important;
+  padding-left: 0;
 }
 .jsonl-entry-card--easy-inline[open] > summary {
   color: var(--text-primary);
@@ -4701,6 +4722,10 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   color: var(--text-primary);
   font-size: 13px;
   line-height: 1.7;
+}
+.jsonl-entry-card--easy-flat .jsonl-compact-md {
+  background: transparent !important;
+  padding: 0 !important;
 }
 .easy-flat-image {
   border: 0 !important;
@@ -4736,8 +4761,11 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   color: currentColor;
   transition: transform .15s ease;
 }
+.easy-round-group-trigger[aria-expanded="false"] .easy-round-group-trigger__icon {
+  transform: rotate(-90deg);
+}
 .easy-round-group-trigger[aria-expanded="true"] .easy-round-group-trigger__icon {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
 }
 .easy-round-group-trigger__label {
   font-size: 11px;
@@ -4779,6 +4807,65 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .easy-round-group .jsonl-thread > .easy-round-entry-row > div {
   width: 100%;
 }
+.easy-round-group .jsonl-thread {
+  background-image: none;
+}
+.easy-step-group {
+  margin: 2px 0 6px;
+}
+.easy-step-group__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color .15s ease, background-color .15s ease;
+}
+.easy-step-group__trigger:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-hover) 68%, transparent);
+}
+.easy-step-group__trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--text-secondary) 70%, transparent);
+  outline-offset: 1px;
+}
+.easy-step-group__icon {
+  flex: 0 0 auto;
+  transform: rotate(-90deg);
+  transition: transform .28s ease;
+}
+.easy-step-group.is-expanded .easy-step-group__icon {
+  transform: rotate(0deg);
+}
+.easy-step-group__collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: .72;
+  transition: grid-template-rows .28s ease, opacity .2s ease;
+}
+.easy-step-group.is-expanded .easy-step-group__collapse {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.easy-step-group__content {
+  min-height: 0;
+  overflow: hidden;
+  margin: 2px 0 2px 12px;
+  padding: 1px 0 1px 24px;
+  border-left: 2px solid color-mix(in srgb, var(--text-muted) 24%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .easy-step-group__icon,
+  .easy-step-group__collapse {
+    transition: none;
+  }
+}
 .easy-explore-group {
   border: 0 !important;
   background: transparent !important;
@@ -4805,6 +4892,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   min-height: 0;
   padding: 10px 16px;
   gap: 0;
+  cursor: text;
 }
 .jsonl-entry-card--easy-opener > summary > span:not(.jsonl-entry-summary-preview) {
   display: none;
@@ -7126,3 +7214,8 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   --initial-question-bg: rgba(234, 88, 12, 0.035);
 }
 .light .jsonl-entry-card > summary .text-orange-300 { color: var(--initial-accent-text); }
+
+/* 简易模式内容统一限制字体上限，避免历史 Markdown 或卡片组件放大主体排版。 */
+.mobius-chat-body.mobius-chat-body--easy * {
+  font-size: min(13px, 1em) !important;
+}

@@ -994,7 +994,8 @@ router.get('/:id/groups', auth, (req: express.Request, res: express.Response) =>
       res.status(502).json({ error: synced.error || 'history store sync failed' });
       return;
     }
-    const { session_version, groups } = getHistoryGroups(id);
+    const withEssential = req.query.with_essential === '1' || req.query.with_essential === 'true';
+    const { session_version, groups } = getHistoryGroups(id, withEssential);
     const etag = String(session_version);
     const inm = String(req.headers['if-none-match'] || '').replace(/^W\//, '').replace(/^"|"$/g, '');
     if (inm && inm === etag) {

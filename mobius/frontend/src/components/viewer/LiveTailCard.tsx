@@ -7,6 +7,7 @@
  *   30~120s 琥珀 沉默较久, API 可能长尾
  *   120s+   红  长时间没输出, 建议终止重试
  * optimistic=true 时 (刚提交问题, 后端还没报 working) 固定按绿色"等待响应"渲染, 不判沉默.
+ * easyMode=true 时使用简易模式微缩步骤卡的紧凑外观.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -50,7 +51,7 @@ function LegacyLiveText({ text }: { text: string }) {
   )
 }
 
-export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenText, optimistic = false }: { lastTimestamp: string | null | undefined; pid: number | null | undefined; realTimeInfo?: string | null; liveTokenText?: string | null; optimistic?: boolean }) {
+export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenText, optimistic = false, easyMode = false }: { lastTimestamp: string | null | undefined; pid: number | null | undefined; realTimeInfo?: string | null; liveTokenText?: string | null; optimistic?: boolean; easyMode?: boolean }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -100,7 +101,7 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenT
 
   return (
     <div
-      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-live-tail-card--easy' : ''} ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}
       style={{ ['--live-accent' as string]: theme.accent } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className={`absolute inset-0 rounded-full ${theme.dot} animate-ping opacity-75`} />

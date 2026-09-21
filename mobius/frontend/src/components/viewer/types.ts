@@ -153,6 +153,11 @@ export interface RoundHiddenGap {
 export interface Round {
   roundNum: number  // 可见窗口内 1-based 编号
   items: RoundItem[]
+  // 折叠态轻量投影: 完整 opener 与最后一条应答/结论, 展开后由整组条目接管.
+  essential_dict?: {
+    opener: AnyEntry | null
+    final: AnyEntry | null
+  }
   // 条目数超过渲染窗口上限时, 被窗口跳过的中段会在这里留下标记 (没有跳过则缺省).
   hiddenGaps?: RoundHiddenGap[]
 }
