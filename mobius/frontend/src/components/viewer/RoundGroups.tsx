@@ -343,10 +343,10 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
             showMeta={showMeta}
             easyMode
             easyOpenerOverride={true}
-            toolStatus={toolStatusOf(userItem.entry, toolStatusMap)}
-            forceOpen={forceOpen && userItem.lineNo === focusLineNo}
-            searchHighlighted={userItem.lineNo === focusLineNo}
-            parentOrderedCollapse={collapseLineNos?.has(userItem.lineNo)}
+            toolStatus={toolStatusOf(openerEntry, toolStatusMap)}
+            forceOpen={forceOpen && openerLineNo === focusLineNo}
+            searchHighlighted={openerLineNo === focusLineNo}
+            parentOrderedCollapse={collapseLineNos?.has(openerLineNo)}
             taskPlans={taskPlans}
           />
         </div>
