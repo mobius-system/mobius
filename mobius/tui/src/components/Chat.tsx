@@ -157,7 +157,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   // the indicator falls back to the normal Working label for every turn.
   const firstQueryInFlight = !resumeSessionId && !chat.entries.some(isAssistantOutput)
 
-  // 用户输入去重 (对齐 web viewer/rounds.ts buildRounds): codex 同一提问的 3 形态
+  // 用户输入去重 (对齐 web viewer/display-dedup.ts): codex 同一提问的 3 形态
   // (type:user / response_item.message[user] / event_msg.user_message) 合并成 1 条,
   // 避免在累积视图里把同一条提问显示多次.
   const dedupedEntries = useMemo(() => dedupeUserEntries(chat.entries), [chat.entries])

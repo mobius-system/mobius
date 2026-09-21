@@ -9,7 +9,6 @@
  *   - viewer/entry-classify.ts   entry 布尔谓词 + tour target
  *   - viewer/header-summary.ts   卡片标题栏摘要
  *   - viewer/oversized.ts        超大卡片渲染截断保护
- *   - viewer/rounds.ts           对话轮次分组逻辑
  *   - viewer/KeyNode.tsx         JSON 树递归节点
  *   - viewer/text-preview.tsx    行号文本预览 / markdown 占位
  *   - viewer/CodeDiff.tsx        Edit 代码差异

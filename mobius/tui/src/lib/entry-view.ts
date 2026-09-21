@@ -679,7 +679,7 @@ export function toolLabel(name: string): string {
   return TOOL_LABEL[n] ?? n
 }
 
-// ── 用户输入去重 (对齐 web viewer/rounds.ts buildRounds) ──────────────────────
+// ── 用户输入去重 (对齐 web viewer/display-dedup.ts) ──────────────────────────
 // codex 一次用户输入在 jsonl 里以 3 种形态出现 (type:user / response_item.message[role=user]
 // / event_msg.user_message), 文本相同. 若与上一条用户输入文本相同, 且之间还没出现任何
 // agent 输出, 则视为同一次输入的重复入口 → 丢弃, 避免 TUI 把同一条提问显示多次.
