@@ -245,7 +245,7 @@ export const ChiefSection = defineSection({
         - 当前 Assistant limit: ${c.research.assistant_limit || 3}（Chief 不占名额，且你不能修改 limit）
         - 只有在用户明确授权后才能招募 Assistant；能由现有成员完成时不要扩编。
         - 招募前必须说明现有团队为什么无法完成、缺少什么能力、预期产出是什么。
-        - 删除 Agent 必须提供删除理由和未完成任务交接；你不能创建或删除 Chief。
+        - 删除 Agent 必须提供删除理由；你不能创建或删除 Chief。
         - 查询团队: GET ${teamUrl}
         - 创建 Assistant: POST ${teamUrl}/agents
         - 移除 Assistant: DELETE ${teamUrl}/agents/<session_id>
@@ -260,7 +260,7 @@ export const ChiefSection = defineSection({
         ${t.en}
         - Current Assistant limit: ${c.research.assistant_limit || 3}; the Chief does not count and cannot change it.
         - Recruit only after explicit user authorization and record why the current team cannot do the work.
-        - Removing an Agent requires a reason and unfinished-work handoff. You cannot create or remove a Chief.
+        - Removing an Agent requires a reason. You cannot create or remove a Chief.
         - Team state: GET ${teamUrl}
         - Recruit Assistant: POST ${teamUrl}/agents
         - Remove Assistant: DELETE ${teamUrl}/agents/<session_id>

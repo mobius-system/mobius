@@ -814,12 +814,6 @@ router.delete('/:id/team/agents/:sessionId', async (req: express.Request, res: e
     }
     const requestId = requiredText(req.body?.request_id, 'request_id');
     const removeReason = requiredText(req.body?.remove_reason, '删除理由', 10);
-    const handoffSummary = requiredText(req.body?.handoff_summary, '未完成任务交接', target.agent_status === 'running' ? 10 : 1);
-    const handoffTarget = String(req.body?.handoff_target || chief.session_id).trim();
-    const handoffSession = Sessions.findById(handoffTarget) as any;
-    if (!handoffSession || handoffSession.research_id !== researchId || handoffSession.session_id === target.session_id) {
-      throw Object.assign(new Error('handoff_target 必须是当前 Research 中接手任务的其他 Agent'), { status: 400, code: 'invalid_handoff_target' });
-    }
     const recruitAction: any = db.prepare(`
       SELECT * FROM research_team_actions
       WHERE research_id = ? AND target_session_id = ? AND action_type = 'recruit'
@@ -829,8 +823,6 @@ router.delete('/:id/team/agents/:sessionId', async (req: express.Request, res: e
     try { recruitPayload = JSON.parse(recruitAction?.payload_json || '{}'); } catch {}
     const payload = {
       remove_reason: removeReason,
-      handoff_summary: handoffSummary,
-      handoff_target: handoffTarget,
       was_running: target.agent_status === 'running',
       fingerprint: teamFingerprint(Object.keys(recruitPayload).length > 0 ? recruitPayload : {
         purpose: target.description,
@@ -854,7 +846,7 @@ router.delete('/:id/team/agents/:sessionId', async (req: express.Request, res: e
       const requested = appendBlackboardRecord({
         researchId,
         author: 'HR',
-        content: `Research Agent「${target.name}」即将离开团队。\n删除理由: ${removeReason}\n未完成任务与交接: ${handoffSummary}`,
+        content: `Research Agent「${target.name}」即将离开团队。\n删除理由: ${removeReason}`,
         metadata: {
           event: 'agent_removal_requested',
           session_id: target.session_id,
@@ -869,14 +861,13 @@ router.delete('/:id/team/agents/:sessionId', async (req: express.Request, res: e
       const left = appendBlackboardRecord({
         researchId,
         author: 'HR',
-        content: `Research Agent「${target.name}」已离开团队，名额已经释放。\n交接: ${handoffSummary}`,
+        content: `Research Agent「${target.name}」已离开团队，名额已经释放。`,
         metadata: {
           event: 'session_left',
           session_id: target.session_id,
           role: 'research_assistant',
           request_id: requestId,
           remove_reason: removeReason,
-          handoff_summary: handoffSummary,
           background_was_working: closed.wasWorking,
         },
       });

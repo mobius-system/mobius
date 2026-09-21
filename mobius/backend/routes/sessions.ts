@@ -601,15 +601,14 @@ function researchSessionLeftContent(session: AnySession): string {
   return `Research Agent「${session.name || session.session_id}」已离开团队。session_id=${session.session_id}, role=${role}`;
 }
 
-function appendResearchSessionLeftNotice(session: AnySession, userId: string, handoffInput?: any): any {
+function appendResearchSessionLeftNotice(session: AnySession, userId: string, noticeInput?: any): any {
   if (session.scope_type !== 'research' || !session.research_id) return null;
   const role = session.research_role === 'chief_researcher' ? 'chief_researcher' : 'research_assistant';
-  const removeReason = String(handoffInput?.remove_reason || '用户手工移除').trim();
-  const handoffSummary = String(handoffInput?.handoff_summary || session.description || '未提供明确交接内容，请 Chief 检查该 Agent 最近任务').trim();
+  const removeReason = String(noticeInput?.remove_reason || '用户手工移除').trim();
   return appendBlackboardRecord({
     researchId: session.research_id,
     author: 'HR',
-    content: `${researchSessionLeftContent(session)}\n删除理由: ${removeReason}\n未完成任务与交接: ${handoffSummary}`,
+    content: `${researchSessionLeftContent(session)}\n删除理由: ${removeReason}`,
     metadata: {
       event: 'session_left',
       session_id: session.session_id,
@@ -617,8 +616,6 @@ function appendResearchSessionLeftNotice(session: AnySession, userId: string, ha
       name: session.name || '',
       deleted_by: userId || null,
       remove_reason: removeReason,
-      handoff_summary: handoffSummary,
-      handoff_auto_derived: !handoffInput?.handoff_summary,
     },
   });
 }
