@@ -4976,19 +4976,6 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
     transition: none;
   }
 }
-.easy-explore-group {
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-.easy-explore-group > summary {
-  border-radius: 6px;
-  color: var(--text-muted);
-}
-.easy-explore-group > summary:hover {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-hover) 68%, transparent);
-}
 .jsonl-entry-card--easy-opener {
   width: fit-content;
   max-width: min(78%, 760px);

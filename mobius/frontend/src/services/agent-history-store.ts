@@ -414,7 +414,15 @@ export class SessionHistoryStore {
             this.groupVersions.delete(gid)
           }
         }
-        this.groups = serverGroups
+        // ① 只带元数据, essential 投影 (opener/final) 是另一次请求合并进来的; 整体替换会把它抹掉,
+        // 简易模式的用户气泡随即退回群组摘要兜底 —— 这就是"首轮泡泡在长短两种之间随机跳"的根因.
+        // ① carries metadata only; replacing wholesale drops the separately merged essential projection,
+        // which makes the easy-mode opener bubble fall back to the terse group summary at random.
+        const carriedEssentials = new Map(this.groups.map((g) => [String(g.id), g.essential_dict]))
+        this.groups = serverGroups.map((g) => {
+          const carried = carriedEssentials.get(String(g.id))
+          return carried ? { ...g, essential_dict: carried } : g
+        })
         this.pending = Array.isArray(data.pending) ? data.pending : []
         this.sessionVersion = Number(data.session_version) || 0
         if (typeof data.jsonl_path === 'string') this.jsonlPath = data.jsonl_path

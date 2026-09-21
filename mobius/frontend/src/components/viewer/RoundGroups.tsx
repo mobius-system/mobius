@@ -80,11 +80,10 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
 
 // 探索类工具聚合容器: 把连续的只读/搜索调用折叠成 "已探索 N 个工具" 一行 (Cursor 式).
 // 含失败调用时默认展开并标红, 摘要行带错误标记 (折叠也不能藏起错误); 展开后逐条渲染子卡片.
-export function ExploreGroupCard({ items, hasError, showMeta = true, easyMode = false, toolStatusMap, collapseLineNos, focusLineNo, forceFocusOpen = false, taskPlans }: {
+export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusMap, collapseLineNos, focusLineNo, forceFocusOpen = false, taskPlans }: {
   items: RoundItem[]
   hasError: boolean
   showMeta?: boolean
-  easyMode?: boolean
   toolStatusMap?: ToolStatusMap | null
   collapseLineNos?: Set<number>
   // 搜索命中卡可能被聚合在“探索”组内；组本身也必须打开，子卡才有机会展开/滚到。
@@ -99,7 +98,7 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, easyMode = 
     <details
       open={open}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-      className={`jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm${easyMode ? ' easy-explore-group' : ''}`}
+      className="jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm"
     >
       <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
         <Search className={`h-3 w-3 flex-shrink-0 ${hasError ? 'text-red-400' : 'text-sky-400'}`} strokeWidth={2.2} aria-hidden="true" />
@@ -119,7 +118,6 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, easyMode = 
               bashResults={item.bashResults}
               readResults={item.readResults}
               showMeta={showMeta}
-              easyMode={easyMode}
               toolStatus={toolStatusOf(item.entry, toolStatusMap)}
               forceOpen={forceFocusOpen && item.lineNo === focusLineNo}
               searchHighlighted={item.lineNo === focusLineNo}
@@ -338,7 +336,11 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
   // 条目未加载时 (折叠轮零条目驻留), 用调用方给的元数据摘要当轮次标识.
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
-  const renderSeq: ExploreRenderItem[] = groupExploreItems(round.items, toolStatusMap)
+  // 简易模式不做聚合: 每个只读/搜索调用各自成一步, 由微缩步骤串负责折叠.
+  // Easy mode skips the aggregation: each read/search call is its own step, folded by the micro-step runs.
+  const renderSeq: ExploreRenderItem[] = easyMode
+    ? round.items.map((item) => ({ kind: 'single' as const, item }))
+    : groupExploreItems(round.items, toolStatusMap)
   // 简易模式末组折叠平铺文本前的微缩串，或把无后续卡片且超过五张的末尾微缩串裁成最后五张；历史组整段折叠。
   // Easy mode folds runs before flat text, trims an overlong card-less tail to five, and folds every run in older groups.
   const easyStepRuns = new Map<number, RoundItem[]>()
@@ -551,10 +553,12 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
               return (
                 <Fragment key={`explore-${idx}-${ri.items[0]?.lineNo ?? ''}`}>
                   {gapsBefore(ri.items[0]?.relIdx ?? 0)}
-                  <div className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}`}>
+                  {/* 简易模式已关闭探索聚合, 这里只会出现在详细模式. */}
+                  {/* Easy mode no longer aggregates, so this branch is detailed mode only. */}
+                  <div className="flex items-start gap-1.5">
                     <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                     <div className="flex-1 min-w-0">
-                      <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} easyMode={easyMode} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
+                      <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
                     </div>
                   </div>
                 </Fragment>

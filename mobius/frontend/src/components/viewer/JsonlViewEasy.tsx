@@ -315,8 +315,11 @@ export default function JsonlViewEasy({
 }) {
   useEffect(() => {
     // 简易模式只请求轻量 essential 投影，折叠组无需下载整组 entries。
+    // 轮次数量或会话 version 变化都要重取：新轮要拿投影，活跃组的 final 也会随新条目变化。
+    // Refetch when the round count or the session version moves: new rounds need the projection,
+    // and the live group's `final` changes as entries arrive.
     void store?.ensureEssentialGroups()
-  }, [store, snapshot.groups.length])
+  }, [store, snapshot.groups.length, snapshot.sessionVersion])
 
   const groups = snapshot.groups
   const [roundHeaderPaletteIndex, setRoundHeaderPaletteIndex] = useState(readRoundHeaderPaletteIndex)
