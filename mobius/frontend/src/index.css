@@ -4800,18 +4800,39 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .easy-round-group-trigger__label {
   font-size: 11px;
 }
-/* 时髦像素风分割线: 4px 方块上下交错, 标记新 group 从这里开始. */
+/* 用户气泡上方的分组分割线: 两侧渐隐细线夹住居中的 opener 时间. */
 .easy-round-divider {
-  height: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   margin: 22px 0 12px;
-  --easy-divider-block: 4px;
-  --easy-divider-tile: 12px;
-  background-image:
-    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 92%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block)),
-    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 50%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block));
-  background-size: var(--easy-divider-tile) var(--easy-divider-block);
-  background-position: 0 0, 6px 4px;
-  background-repeat: repeat-x, repeat-x;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+}
+/* 两侧细线由伪元素撑开, 内容天然居中; 靠近标签一端最实, 向页面两端渐隐. */
+.easy-round-divider::before,
+.easy-round-divider::after {
+  content: '';
+  flex: 1 1 0;
+  height: 1px;
+}
+/* 两端用同一 hue 的不同 alpha 做渐变: 直接写 transparent 会混入黑色, 浅色主题下会发脏. */
+.easy-round-divider::before {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--text-muted) 12%, transparent),
+    color-mix(in srgb, var(--text-muted) 60%, transparent));
+}
+.easy-round-divider::after {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--text-muted) 60%, transparent),
+    color-mix(in srgb, var(--text-muted) 12%, transparent));
+}
+.easy-round-divider__label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .easy-collapsed-opener {
   margin-bottom: 4px;
@@ -4828,6 +4849,22 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* 用户输入泡泡封顶 300px, 超长问题在泡泡内部滚动, 不把整轮撑高 */
+/* User bubble caps at 300px; longer questions scroll inside instead of stretching the round */
+.easy-user-bubble,
+.jsonl-entry-card--easy-opener > summary {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.easy-user-bubble::-webkit-scrollbar,
+.jsonl-entry-card--easy-opener > summary::-webkit-scrollbar {
+  width: 6px;
+}
+.easy-user-bubble::-webkit-scrollbar-thumb,
+.jsonl-entry-card--easy-opener > summary::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 42%, transparent);
 }
 .easy-collapsed-opener .jsonl-entry-card--easy-opener {
   margin-bottom: 0;
@@ -4882,7 +4919,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   align-items: center;
   gap: 5px;
   min-height: 28px;
-  padding: 3px 8px;
+  padding: 3px 0px;
   border: 0;
   border-radius: 6px;
   color: var(--text-muted);

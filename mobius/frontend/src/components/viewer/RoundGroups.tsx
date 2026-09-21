@@ -20,7 +20,14 @@ import { DisplayImagesCard } from './DisplayImages'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
 import { ASSISTANT_END_TURN_THEME } from './themes'
-import { isRoundOpenerEntry } from './utils'
+import { formatTs, isRoundOpenerEntry } from './utils'
+
+// opener 的本地时间 (MM-DD HH:MM:SS), 缺失或非法返回 null; 字段回退链与查看器其它处一致.
+// Local time of the opener (MM-DD HH:MM:SS), null when missing or invalid; same field fallbacks as the rest of the viewer.
+function openerTimeOf(entry: AnyEntry | null | undefined): string | null {
+  const raw = entry?.timestamp || entry?.created_at || entry?.message?.created_at || entry?.payload?.timestamp
+  return formatTs(raw)
+}
 
 // 每卡工具状态 (组级 map 的预派生值): 按 (entry 身份, map 身份) 记忆.
 // 传 primitive 给卡片 → SSE 新数据只换 map 身份, 内容未变的卡拿到同一字符串, memo 保持.
@@ -393,10 +400,13 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
   const collapsedSummaryOpener = easyCollapsed && !openerEntry && (headerSummary || userSummary) ? (
     <div className="easy-user-bubble">{headerSummary || userSummary}</div>
   ) : null
-  // 每个用户气泡上方压一条像素风分割线, 标记新 group 从这里开始; 会话第一个气泡不加.
-  // A pixel-style rule sits above every user bubble to mark a new group; the first bubble is exempt.
+  // 每个用户气泡上方压一条分割线, 中间标注 opener 时间, 标记新 group 从这里开始; 会话第一个气泡不加.
+  // A rule sits above every user bubble with the opener time in the middle to mark a new group; the first bubble is exempt.
+  const easyOpenerTime = easyMode ? openerTimeOf(openerEntry) : null
   const easyGroupDivider = easyMode && showGroupDivider && (collapsedOpener || collapsedSummaryOpener) ? (
-    <div className="easy-round-divider" aria-hidden="true" />
+    <div className="easy-round-divider" aria-hidden="true">
+      {easyOpenerTime ? <span className="easy-round-divider__label">{easyOpenerTime}</span> : null}
+    </div>
   ) : null
   const collapsedFinal = easyMode && easyCollapsed && essentialFinal ? (
     <div className="easy-essential-final" data-essential="final">
