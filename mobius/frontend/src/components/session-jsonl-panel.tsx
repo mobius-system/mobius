@@ -12,6 +12,13 @@ const LIVE_TOKEN_MAX_BUFFER_CHARS = 3200
 const LIVE_TOKEN_MAX_CHARS_PER_SECOND = 60
 const LIVE_TOKEN_TICK_MS = 50
 
+// 显示 buffer 满了的缩容策略: 一次性删除前 2/3、保留后 1/3，腾出空间继续追加,
+// 避免每次追加都 slice(-MAX) 做 O(n) 拷贝 (每 tick 反复触发).
+function trimLiveBuffer(text: string): string {
+  if (text.length <= LIVE_TOKEN_MAX_BUFFER_CHARS) return text
+  return text.slice(Math.floor(text.length * 2 / 3))
+}
+
 // ── 最新可解析时间戳 (LIVE 卡锚点 / 诊断用). 从尾部向前找, 跳过无时间戳的元数据条目. ──
 // 从 chat.tsx 迁入 (Chat 不再订阅快照, 摊平条目的派生消费集中到本面板).
 function parseDebugTimestamp(value: unknown): number | null {
@@ -207,7 +214,7 @@ function SessionJsonlPanelInner({
       // joining two non-adjacent fragments (which looks like reordered text).
       const combined = liveTokenBufferRef.current + normalizedText
       if (combined.length > LIVE_TOKEN_MAX_BUFFER_CHARS) {
-        liveTokenDisplayRef.current = (liveTokenDisplayRef.current + combined).slice(-LIVE_TOKEN_MAX_BUFFER_CHARS)
+        liveTokenDisplayRef.current = trimLiveBuffer(liveTokenDisplayRef.current + combined)
         liveTokenBufferRef.current = ''
         setLiveTokenText(liveTokenDisplayRef.current)
       } else {
@@ -232,7 +239,7 @@ function SessionJsonlPanelInner({
       if (!pending) return
       const next = pending.slice(0, charsPerTick)
       liveTokenBufferRef.current = pending.slice(next.length)
-      liveTokenDisplayRef.current = (liveTokenDisplayRef.current + next).slice(-LIVE_TOKEN_MAX_BUFFER_CHARS)
+      liveTokenDisplayRef.current = trimLiveBuffer(liveTokenDisplayRef.current + next)
       setLiveTokenText(liveTokenDisplayRef.current)
     }, LIVE_TOKEN_TICK_MS)
 

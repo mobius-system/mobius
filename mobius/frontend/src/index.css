@@ -4770,6 +4770,19 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .easy-round-group-trigger__label {
   font-size: 11px;
 }
+/* 时髦像素风分割线: 4px 方块上下交错, 标记新 group 从这里开始. */
+.easy-round-divider {
+  height: 8px;
+  margin: 22px 0 12px;
+  --easy-divider-block: 4px;
+  --easy-divider-tile: 12px;
+  background-image:
+    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 78%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block)),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 38%, transparent) 0 var(--easy-divider-block), transparent var(--easy-divider-block));
+  background-size: var(--easy-divider-tile) var(--easy-divider-block);
+  background-position: 0 0, 6px 4px;
+  background-repeat: repeat-x, repeat-x;
+}
 .easy-collapsed-opener {
   margin-bottom: 4px;
 }

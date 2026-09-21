@@ -534,6 +534,7 @@ export default function JsonlViewEasy({
         round={r.round}
         isLast={block.index === rounds.length - 1}
         isSecondLast={block.index === rounds.length - 2}
+        isRecentTail={block.index >= rounds.length - 5}
         onlyGroup={onlyGroup}
         open={r.state !== 'closed'}
         sticky={!!rt?.sticky}
@@ -552,6 +553,9 @@ export default function JsonlViewEasy({
         searchHighlighted={false}
         showMeta={showMeta}
         easyMode
+        // 会话首个气泡上方不画分割线，其余每个用户气泡都用一个 group 起始标记.
+        // The first bubble of the session carries no rule; every later user bubble opens with one.
+        showGroupDivider={block.index > 0}
         toolStatusMap={entries ? toolStatusMapFor(entries) : null}
         collapseLineNos={entries ? collapsedLineNosFor(entries, r.round.items) : undefined}
         focusLineNo={extFocusLineNo}
