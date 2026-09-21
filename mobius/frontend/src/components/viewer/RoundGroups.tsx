@@ -316,8 +316,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
   const renderSeq: ExploreRenderItem[] = groupExploreItems(round.items, toolStatusMap)
-  // 简易模式末组只折叠“连续微缩卡 → 紧邻平铺文本卡”；历史组即使以微缩卡结尾也折叠。
-  // Easy mode requires flat text after the run only for the last group; older groups also fold trailing micro cards.
+  // 简易模式末组折叠平铺文本前的微缩串，或把无后续卡片且超过五张的末尾微缩串裁成最后五张；历史组整段折叠。
+  // Easy mode folds runs before flat text, trims an overlong card-less tail to five, and folds every run in older groups.
   const easyStepRuns = new Map<number, RoundItem[]>()
   const easyStepHidden = new Set<number>()
   if (easyMode) {

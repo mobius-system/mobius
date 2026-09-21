@@ -104,6 +104,8 @@ type EasyPanel = 'sessions' | 'overview' | 'extensions' | 'devices' | 'context'
 type SessionListMode = 'grouped' | 'flat'
 
 const RECENT_SESSION_LIMIT = 50
+/* Keep the tail of the visible group list open so the last five groups are always discoverable. */
+const ALWAYS_EXPANDED_SESSION_GROUP_COUNT = 5
 // 提交问题后延迟这么久补拉一次近期会话: 会话启动/状态翻转要立刻反映到左栏,
 // 不必等下一轮 10s 轮询 (也不能立即拉, 后端此刻往往还没把状态刷成执行中)。
 const MESSAGE_SENT_REFRESH_DELAY_MS = 1000
@@ -1020,12 +1022,13 @@ export default function EasyModePage() {
               </div>
             ) : (
               <div className="easy-sidebar-groups" aria-label="按项目与任务分组的近期工作">
-                {visibleSessionGroups.map(group => {
-                  const collapsed = collapsedSessionGroups.has(group.key)
+                {visibleSessionGroups.map((group, index) => {
+                  const alwaysExpanded = index >= Math.max(0, visibleSessionGroups.length - ALWAYS_EXPANDED_SESSION_GROUP_COUNT)
+                  const collapsed = !alwaysExpanded && collapsedSessionGroups.has(group.key)
                   const current = group.sessions.some(session => session.session_id === sessionParam)
                   return (
                     <section key={group.key} className={`easy-sidebar-group ${current ? 'is-current' : ''}`}>
-                      <button type="button" className="easy-sidebar-group__header" onClick={() => toggleSessionGroup(group.key)} aria-expanded={!collapsed}>
+                      <button type="button" className="easy-sidebar-group__header" onClick={() => { if (!alwaysExpanded) toggleSessionGroup(group.key) }} aria-expanded={!collapsed}>
                         {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         <CircleDot className="h-3.5 w-3.5" />
                         <span className="min-w-0 flex-1 truncate">{group.subjectTitle} · {group.projectName}</span>
