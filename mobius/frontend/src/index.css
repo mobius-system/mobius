@@ -6341,12 +6341,20 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session {
   color: var(--text-secondary);
   text-align: left;
   font-size: 11px;
-  transition: background .14s ease, color .14s ease;
+  transition: background .14s ease, color .14s ease, padding-right .14s ease;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session-row {
   position: relative;
 }
-body:has([data-page="easy-mode"]) .easy-sidebar-session-row .easy-sidebar-session {
+/* 运行状态标签常显, 仍然需要给它留位 */
+/* The run-status label stays visible, so it keeps its own gutter */
+body:has([data-page="easy-mode"]) .easy-sidebar-session:has(.easy-sidebar-session__status) {
+  padding-right: 44px;
+}
+/* 隐藏的按钮不留占位, 悬浮/聚焦时才让出右侧空间 */
+/* Hidden buttons reserve no gutter; the gutter appears on hover/focus only */
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:hover .easy-sidebar-session,
+body:has([data-page="easy-mode"]) .easy-sidebar-session-row:focus-within .easy-sidebar-session {
   padding-right: 48px;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session__actions {

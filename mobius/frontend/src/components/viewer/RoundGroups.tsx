@@ -295,8 +295,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   const userSummary = userItem ? buildHeaderSummary(userItem.entry).short : (headerSummary || '')
   // 探索类聚合: 连续只读/搜索调用合并为 "已探索 N 个工具".
   const renderSeq: ExploreRenderItem[] = groupExploreItems(round.items, toolStatusMap)
-  // 简易模式只折叠“连续微缩卡 → 紧邻平铺文本卡”的步骤串，避免把没有结论的尾部过程藏起来。
-  // Easy mode collapses only a consecutive micro-card run immediately followed by flat text.
+  // 简易模式末组只折叠“连续微缩卡 → 紧邻平铺文本卡”；历史组即使以微缩卡结尾也折叠。
+  // Easy mode requires flat text after the run only for the last group; older groups also fold trailing micro cards.
   const easyStepRuns = new Map<number, RoundItem[]>()
   const easyStepHidden = new Set<number>()
   if (easyMode) {
@@ -312,7 +312,8 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
         end += 1
       }
       const following = renderSeq[end]
-      if (run.length > 0 && following?.kind === 'single' && isEasyFlatEntry(following.item.entry)) {
+      const followedByFlatText = following?.kind === 'single' && isEasyFlatEntry(following.item.entry)
+      if (run.length > 0 && (!isLast || followedByFlatText)) {
         easyStepRuns.set(index, run)
         for (let hidden = index + 1; hidden < end; hidden += 1) easyStepHidden.add(hidden)
         index = end - 1
