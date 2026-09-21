@@ -43,7 +43,7 @@ const BLOCK_META: Record<string, { icon: LucideIcon; label: string }> = {
   skills: { icon: Wrench, label: '必要技能' },
   worktree: { icon: GitBranch, label: 'Git 工作区' },
   completionFlag: { icon: Flag, label: '完成标记' },
-  issue: { icon: CircleDot, label: 'Issue' },
+  issue: { icon: CircleDot, label: '任务' },
   session: { icon: MessagesSquare, label: '会话信息' },
   pcTaskMode: { icon: Monitor, label: 'PC 任务模式' },
 }
