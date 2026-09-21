@@ -277,12 +277,17 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
   // 首帧防闪: store 还没来得及转移时, 按"应展开"先行绘制 (视觉态), effect 随后对齐真实态.
   const openVisual = open || forceOpen || (!sticky && (onlyGroup || autoOpen))
   const [easyThreadMounted, setEasyThreadMounted] = useState(openVisual)
+  const [easyThreadOpen, setEasyThreadOpen] = useState(openVisual)
   useEffect(() => {
     if (!easyMode) return
     if (openVisual) {
       setEasyThreadMounted(true)
-      return
+      // 先挂载收起态，再在下一帧切换到展开态，确保打开也能播放完整缓冲动画。
+      // Mount the collapsed state first, then open on the next frame for a complete expand transition.
+      const frame = window.requestAnimationFrame(() => setEasyThreadOpen(true))
+      return () => window.cancelAnimationFrame(frame)
     }
+    setEasyThreadOpen(false)
     const timer = window.setTimeout(() => setEasyThreadMounted(false), 320)
     return () => window.clearTimeout(timer)
   }, [easyMode, openVisual])
@@ -454,7 +459,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, onlyGroup, open, sticky 
       {collapsedFinal}
 
       {(!easyMode ? openVisual : easyThreadMounted) && (
-        <div aria-hidden={easyMode ? !openVisual : undefined} className={`${easyMode ? `easy-round-group__thread${openVisual ? ' is-open' : ''} ` : ''}mt-2 jsonl-thread`}>
+        <div aria-hidden={easyMode ? !openVisual : undefined} className={`${easyMode ? `easy-round-group__thread${easyThreadOpen ? ' is-open' : ''} ` : ''}mt-2 jsonl-thread`}>
           <div className={easyMode ? 'easy-round-group__thread-content' : undefined}>
           {!resident && (
             <div className="mb-1 flex justify-center">
