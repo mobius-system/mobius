@@ -101,7 +101,9 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenT
 
   return (
     <div
-      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-live-tail-card--easy' : ''} ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}
+      // 简易模式 LIVE 卡左右内边距和图标间距各放宽一档，标准模式保持紧凑
+      // Easy mode widens the LIVE card's horizontal padding and gap one step, standard stays compact
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-live-tail-card--easy px-4 gap-3' : 'px-3 gap-2'} py-2 flex items-center text-[12px]`}
       style={{ ['--live-accent' as string]: theme.accent } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className={`absolute inset-0 rounded-full ${theme.dot} animate-ping opacity-75`} />
