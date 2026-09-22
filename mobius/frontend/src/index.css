@@ -1149,6 +1149,11 @@ button {
   min-height: 30px;
   padding-top: 5px;
   padding-bottom: 5px;
+  /* 简易模式 LIVE 卡左右留白与图标间距比常规模式各放宽一档 (等价 px-4 / gap-3)
+     Easy mode widens the LIVE card's horizontal padding and gap one step (same as px-4 / gap-3) */
+  padding-left: 16px;
+  padding-right: 16px;
+  gap: 12px;
   color: var(--text-muted);
   transition: color .15s ease, background-color .15s ease;
 }
