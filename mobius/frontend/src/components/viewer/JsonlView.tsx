@@ -9,7 +9,7 @@
  *  - 前端不再分组: buildRounds 退役, 组结构完全来自后端.
  *  - lineNo 是跨组唯一的全局序号 (组基址 + 组内序), 搜索跳转/强制展开靠它精确定位.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { VirtualizedBlockList } from '../jsonl-virtual-list'
 import type { AnyEntry, JsonlViewItem, JsonlRenderBlock, Round, RoundHiddenGap } from './types'
 import { mergeBashToolResultItems } from './entry-extract'
@@ -21,6 +21,7 @@ import { filterDisplayDuplicates } from './display-dedup'
 import { computeCollapsedByForgottenFlag } from './fold-rules'
 import { hideRepeatedEncryptedReasoning } from './visibility-rules'
 import { buildTaskPlans } from './task-progress'
+import { PendingQueueCard } from './PendingQueueCard'
 import type { HistorySnapshot, SessionHistoryStore } from '../../services/agent-history-store'
 
 // 逐组状态机转移回调 (身份稳定, 供 RoundGroup memo 判等).
@@ -482,38 +483,7 @@ export function JsonlView({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'pending') {
-      // 与 LIVE 卡保持同一形态 (rounded-lg + 呼吸点 + mono 标签 + 单行截断 + 流光),
-      // 只显示最后一条待处理消息并给出总数 (等 N 条指令), 不再整卡铺开全部 pending 列表.
-      const last = block.pending[block.pending.length - 1]
-      const count = block.pending.length
-      return (
-        <div
-          className="mb-2 rounded-lg border card-enter jsonl-live-sweep border-amber-500/15 bg-amber-500/[0.05] px-3 py-2 flex items-center gap-2 text-[12px]"
-          style={{ ['--live-accent' as string]: '#fbbf24' } as CSSProperties}>
-          <span className="relative inline-flex w-2 h-2 flex-shrink-0">
-            <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />
-            <span className="relative inline-flex rounded-full w-2 h-2 bg-amber-400" />
-          </span>
-          <span className="font-mono font-semibold text-amber-300 flex-shrink-0">排队</span>
-          <span className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={last?.user_summary || undefined}>
-            {last?.user_summary || '(无内容)'}
-          </span>
-          <span className="text-[10px] text-amber-300/80 font-mono flex-shrink-0">等 {count} 条指令</span>
-          {onPauseToDequeue && (
-            <button
-              type="button"
-              onClick={onPauseToDequeue}
-              title="打断当前并出队下一条指令"
-              aria-label="打断当前并出队下一条指令"
-              className="flex-shrink-0 p-0.5 rounded text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            </button>
-          )}
-        </div>
-      )
+      return <PendingQueueCard pending={block.pending} onPauseToDequeue={onPauseToDequeue} />
     }
     if (block.kind !== 'round') return null
     const r = rounds[block.index]

@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
 import { JsonlLiveTailCard, JsonlView } from './jsonl-view'
 import { VSCodeOpenProvider } from './jsonl-vscode-link'
+import { PendingQueueCard } from './viewer/PendingQueueCard'
 import type { SessionHistoryStore } from '../services/agent-history-store'
 import { useHistorySnapshotOf } from '../services/agent-history-store'
 import { scrollDebug } from './scroll-debug'
@@ -366,6 +367,8 @@ function SessionJsonlPanelInner({
                     searchNavigationRequested={!!(scrollToEntryUuid || scrollToMatchTs)}
                     onScrollResolved={onMatchScrollResolved}
                     onPauseToDequeue={onPauseToDequeue}
+                    // 简易模式队列卡不在视图内渲染, 改由本面板排在 LIVE 卡之下.
+                    suppressPending
                   />
                 </Suspense>
               ) : (
@@ -392,6 +395,11 @@ function SessionJsonlPanelInner({
                   optimistic={liveCardMode === 'on'}
                   easyMode={variant === 'easy'}
                 />
+              )}
+              {/* 简易模式: 排队卡排在 LIVE 卡之下 (标准模式仍在视图内, 位于列表末尾). */}
+              {/* Easy mode: the queue card sits below the LIVE card. */}
+              {variant === 'easy' && (
+                <PendingQueueCard pending={historySnapshot.pending} onPauseToDequeue={onPauseToDequeue} />
               )}
               <div ref={endRef} />
             </VSCodeOpenProvider>
