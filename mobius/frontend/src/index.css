@@ -6784,7 +6784,8 @@ body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; 
 }
 [data-page="easy-mode"] .easy-selection-notice {
   position: absolute;
-  top: calc(100% - 8px);
+  /* 在原有 -8px 基础上再下移 10px */
+  top: calc(100% + 2px);
   left: 8px;
   z-index: 3;
   width: fit-content;
