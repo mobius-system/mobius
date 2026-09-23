@@ -5000,17 +5000,21 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 }
 .jsonl-entry-card--easy-opener > summary {
   min-height: 0;
+  min-width: 0;
   padding: 10px 16px;
   gap: 0;
   cursor: text;
+  overflow-x: hidden;
 }
 .jsonl-entry-card--easy-opener > summary > span:not(.jsonl-entry-summary-preview) {
   display: none;
 }
 .jsonl-entry-card--easy-opener .jsonl-entry-summary-preview {
+  min-width: 0;
   color: var(--text-primary);
   white-space: normal;
   overflow: visible;
+  overflow-wrap: anywhere;
   text-overflow: clip;
   font-size: 15px;
   line-height: 1.45;
