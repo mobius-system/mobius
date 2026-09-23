@@ -1239,7 +1239,6 @@ export default function EasyModePage() {
                   </div>
                 ) : null}
               </div>
-              <div className="easy-welcome-suggestions"><span>钉钉办公</span><span>文档创作</span><span>数据分析</span><span>多人工作台</span><span>创意设计</span><span>深度调研</span></div>
             </div>
           </main>
         ) : loading ? (

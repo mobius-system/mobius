@@ -18,6 +18,7 @@ import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { readListCache, writeListCache } from '../services/list-swr-cache'
+import { PROJECTS_SCOPE, issuesScope, researchesScope } from '../services/warm-create-lists'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner } from './error-banner'
 import { PcTaskModeSection } from './pc-task-mode-section'
@@ -1121,7 +1122,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: PROJECTS_SCOPE, userId: user?.id })
   const selectedProject = projects.list.find((p: any) => p.id === projectId) || (storeProjects || []).find((p: any) => p.id === projectId)
   const parentVisibility: Visibility =
     selectedProject?.visibility === 'team' || selectedProject?.visibility === 'public' || selectedProject?.visibility === 'allowlist'
@@ -1368,10 +1369,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     })
   }, [])
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: PROJECTS_SCOPE, userId: user?.id })
   // 二级联动: 选 project 后拉 issues. 缓存 scope 单列 (菜单只取 active, 与项目页的全量 issues 列表区分开)
   // Separate cache scope: this menu only lists active issues, unlike the project page's full list
-  const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId], projectId ? { scope: `issues-active:${projectId}`, userId: user?.id } : undefined)
+  const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId], projectId ? { scope: issuesScope(projectId), userId: user?.id } : undefined)
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
 
@@ -1570,46 +1571,50 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   return (
     <CreateModalShell title="新建快捷会话" onClose={onClose} dark={dark} width={600} headerExtra={headerExtra}
       footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId} />}>
-      <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
-        <DropdownSelect
-          value={projectId}
-          onChange={v => { setProjectId(v); setIssueId(''); setErr('') }}
-          dark={dark}
-          placeholder="— 选择项目 —"
-          emptyText="暂无可用项目"
-          options={[
-            { value: '', label: '— 选择项目 —', description: '取消选择' },
-            ...projects.list.map((p: any) => ({
-              value: String(p.id),
-              label: String(p.name),
-              description: p.description ? String(p.description) : undefined,
-              badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
-            })),
-          ]}
-        />
-      </SelectShell>
-      <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
-        <DropdownSelect
-          value={issueId}
-          onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
-          disabled={!projectId}
-          dark={dark}
-          placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
-          emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
-          panelAction={projectId ? {
-            label: '在当前项目新建任务',
-            onClick: () => setCreateIssueOpen(true),
-          } : undefined}
-          options={[
-            { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
-            ...issues.list.map((i: any) => ({
-              value: String(i.id),
-              label: String(i.title),
-              description: i.description ? String(i.description) : undefined,
-            })),
-          ]}
-        />
-      </SelectShell>
+      {/* 目标项目 / 目标任务 并排一行省高度; 窄屏 (手机) 仍退回上下两行
+          Project + task sit on one row to save vertical space; they stack again on narrow screens */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3.5">
+        <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
+          <DropdownSelect
+            value={projectId}
+            onChange={v => { setProjectId(v); setIssueId(''); setErr('') }}
+            dark={dark}
+            placeholder="— 选择项目 —"
+            emptyText="暂无可用项目"
+            options={[
+              { value: '', label: '— 选择项目 —', description: '取消选择' },
+              ...projects.list.map((p: any) => ({
+                value: String(p.id),
+                label: String(p.name),
+                description: p.description ? String(p.description) : undefined,
+                badge: p.research_enabled ? { text: '研究', color: '#10b981', bg: 'rgba(16,185,129,0.15)' } : undefined,
+              })),
+            ]}
+          />
+        </SelectShell>
+        <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
+          <DropdownSelect
+            value={issueId}
+            onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
+            disabled={!projectId}
+            dark={dark}
+            placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
+            emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
+            panelAction={projectId ? {
+              label: '在当前项目新建任务',
+              onClick: () => setCreateIssueOpen(true),
+            } : undefined}
+            options={[
+              { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
+              ...issues.list.map((i: any) => ({
+                value: String(i.id),
+                label: String(i.title),
+                description: i.description ? String(i.description) : undefined,
+              })),
+            ]}
+          />
+        </SelectShell>
+      </div>
       <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个会话完成什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       <SessionMentionPicker
         value={desc}
@@ -1725,7 +1730,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: PROJECTS_SCOPE, userId: user?.id })
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const researchEnabled = !!selectedProject?.research_enabled
   // 项目级默认模型偏好 (default_model).
@@ -1742,7 +1747,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     if (modelUserTouchedRef.current) return
     setModel(resolveDefaultModelKey({ scopeLastModel, projectDefaultModel, globalDefaultModel, fallback: GLOBAL_DEFAULT_MODEL }))
   }, [scopeLastModel, projectDefaultModel, globalDefaultModel])
-  const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId], projectId ? { scope: `researches-active:${projectId}`, userId: user?.id } : undefined)
+  const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId], projectId ? { scope: researchesScope(projectId), userId: user?.id } : undefined)
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
 
   // 选 project 后, 若未启用 Research → 置灰提交 + 提示

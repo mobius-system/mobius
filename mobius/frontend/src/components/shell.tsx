@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
+import { warmCreateMenuListsOnIdle } from '../services/warm-create-lists'
 import { useStore, api } from '../store'
 import { GlobalCreateMenu, type CreateKind } from './global-create'
 import { AimuxStatusBadge } from './aimux-status-badge'
@@ -912,6 +913,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     document.addEventListener('click', closeSwitcher)
     return () => document.removeEventListener('click', closeSwitcher)
   }, [openSwitcher])
+
+  // 空闲时预热「+」新建菜单的项目/任务列表: 首次打开也能秒出下拉, 而不是转圈等接口.
+  // Idle-time warm so the create menu's dropdowns are ready on the very first open.
+  useEffect(() => warmCreateMenuListsOnIdle(user?.id, projectParam), [user?.id, projectParam])
 
   // Tab 标题: 项目内显示「<项目名> - 莫比乌斯AI」, 非项目内沿用 branding.systemNameZh.
   // projectName 未异步加载时 fallback 到 projectParam(项目 ID), 保证 tab 不闪空白.
