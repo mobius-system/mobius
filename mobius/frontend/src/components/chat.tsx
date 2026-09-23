@@ -3902,7 +3902,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     // ③ 终止当前 agent (await 确认终止完成)
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
-    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。】`
+    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })

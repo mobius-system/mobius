@@ -6357,6 +6357,9 @@ body:has([data-page="easy-mode"]) .easy-sidebar-list {
   padding: 6px 6px 10px;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  /* 列表内的会话/分组/搜索文字统一 12px */
+  /* Session, group and search text inside the list all use 12px */
+  font-size: 12px;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-list::-webkit-scrollbar,
 body:has([data-page="easy-mode"]) .easy-context-body::-webkit-scrollbar {
@@ -6372,13 +6375,13 @@ body:has([data-page="easy-mode"]) .easy-context-body::-webkit-scrollbar-thumb {
 body:has([data-page="easy-mode"]) .easy-sidebar-list__meta {
   padding: 1px 5px 5px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-empty {
   padding: 20px 10px;
   color: var(--text-muted);
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-group {
@@ -6394,7 +6397,7 @@ body:has([data-page="easy-mode"]) .easy-sidebar-group__header {
   padding: 4px 6px;
   color: var(--text-secondary);
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 580;
   transition: background .14s ease, color .14s ease;
 }
@@ -6416,7 +6419,7 @@ body:has([data-page="easy-mode"]) .easy-sidebar-group__running {
   background: color-mix(in srgb, var(--text-muted) 13%, transparent);
   color: var(--text-secondary);
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-group__sessions {
@@ -6442,7 +6445,7 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session {
   padding: 4px 6px;
   color: var(--text-secondary);
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   transition: background .14s ease, color .14s ease, padding-right .14s ease;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session-row {
@@ -6533,7 +6536,7 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__status {
   right: 5px;
   transform: translateY(-50%);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   transition: opacity .14s ease;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session-row:hover .easy-sidebar-session__status,
@@ -6560,7 +6563,7 @@ body:has([data-page="easy-mode"]) .easy-search-group__title {
   gap: 4px;
   padding: 4px 6px;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 body:has([data-page="easy-mode"]) .easy-search-hit {
@@ -6575,8 +6578,8 @@ body:has([data-page="easy-mode"]) .easy-search-hit {
   text-align: left;
 }
 body:has([data-page="easy-mode"]) .easy-search-hit:hover { background: var(--bg-hover); }
-body:has([data-page="easy-mode"]) .easy-search-hit > span { color: var(--text-muted); font-size: 11px; }
-body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; }
+body:has([data-page="easy-mode"]) .easy-search-hit > span { color: var(--text-muted); font-size: 12px; }
+body:has([data-page="easy-mode"]) .easy-search-hit > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
 
 [data-page="easy-mode"] .easy-content {
   min-width: 0;
