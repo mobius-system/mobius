@@ -7,17 +7,20 @@
  */
 import type { CSSProperties } from 'react'
 
-export function PendingQueueCard({ pending, onPauseToDequeue }: {
+export function PendingQueueCard({ pending, onPauseToDequeue, easyMode = false }: {
   pending: Array<{ id: string; user_summary?: string }>
   // 闪电按钮: 打断当前 turn 并出队下一条排队指令.
   onPauseToDequeue?: () => void
+  // 简易模式下左右留白与图标间距放宽一档, 与 LIVE 卡对齐 (具体数值见 index.css)
+  // In easy mode the horizontal padding and gap widen one step to match the LIVE card (see index.css)
+  easyMode?: boolean
 }) {
   if (pending.length === 0) return null
   const last = pending[pending.length - 1]
   const count = pending.length
   return (
     <div
-      className="mb-2 rounded-lg border card-enter jsonl-live-sweep border-amber-500/15 bg-amber-500/[0.05] px-3 py-2 flex items-center gap-2 text-[12px]"
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-pending-queue-card--easy' : ''} border-amber-500/15 bg-amber-500/[0.05] px-3 py-2 flex items-center gap-2 text-[12px]`}
       style={{ ['--live-accent' as string]: '#fbbf24' } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />

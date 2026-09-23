@@ -399,7 +399,7 @@ function SessionJsonlPanelInner({
               {/* 简易模式: 排队卡排在 LIVE 卡之下 (标准模式仍在视图内, 位于列表末尾). */}
               {/* Easy mode: the queue card sits below the LIVE card. */}
               {variant === 'easy' && (
-                <PendingQueueCard pending={historySnapshot.pending} onPauseToDequeue={onPauseToDequeue} />
+                <PendingQueueCard pending={historySnapshot.pending} onPauseToDequeue={onPauseToDequeue} easyMode />
               )}
               <div ref={endRef} />
             </VSCodeOpenProvider>

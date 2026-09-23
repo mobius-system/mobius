@@ -29,7 +29,8 @@ function SessionStatusChipInner({
   else if (pending) { label = '启动中'; tone = 'amber'; pulse = true }
   else if (working) { label = '执行中'; tone = 'green'; pulse = true }
   else if (waiting) { label = '待命中'; tone = 'sky' }
-  else if (done) { label = '已结束'; tone = 'emerald' }
+  // 已结束与"空闲"同为灰 (任务收尾后不该再用高饱和的绿抢注意力)
+  else if (done) { label = '已结束'; tone = 'gray' }
 
   const toneMap: Record<Tone, { text: string; hoverBg: string; hoverBorder: string; dot: string }> = {
     gray:    { text: 'text-gray-400',    hoverBg: 'hover:bg-gray-500/10',    hoverBorder: 'hover:border-gray-500/20',    dot: 'bg-gray-400' },

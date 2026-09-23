@@ -502,7 +502,7 @@ export default function JsonlViewEasy({
 
   const renderBlock = (block: JsonlRenderBlock) => {
     if (block.kind === 'pending') {
-      return <PendingQueueCard pending={block.pending} onPauseToDequeue={onPauseToDequeue} />
+      return <PendingQueueCard pending={block.pending} onPauseToDequeue={onPauseToDequeue} easyMode />
     }
     if (block.kind !== 'round') return null
     const r = rounds[block.index]

@@ -1165,6 +1165,14 @@ button {
   opacity: .55;
 }
 
+/* 简易模式的排队卡与 LIVE 卡左右对齐, 留白和图标间距同样放宽一档 (等价 px-4 / gap-3)。
+   Easy-mode queue card aligns with the LIVE card: same wider padding and gap (px-4 / gap-3). */
+.jsonl-pending-queue-card--easy {
+  padding-left: 16px;
+  padding-right: 16px;
+  gap: 12px;
+}
+
 
 /* ===== Driver.js 引导气泡 ===== */
 .driver-active .driver-active-element {
