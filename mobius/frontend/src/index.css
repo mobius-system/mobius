@@ -5001,6 +5001,7 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
 .jsonl-entry-card--easy-opener > summary {
   min-height: 0;
   min-width: 0;
+  align-items: flex-start;
   padding: 10px 16px;
   gap: 0;
   cursor: text;
