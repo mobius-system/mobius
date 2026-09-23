@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { registerDiagProbe, px } from '../services/scroll-diagnostics'
 
 export type VirtualListBlock = { key: string }
 
@@ -79,6 +80,7 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   onScrollToKeyDone,
   onScrollToEntryDone,
   onNavigationCancel,
+  diagLabel,
 }: {
   blocks: TBlock[]
   renderBlock: (block: TBlock) => ReactNode
@@ -96,6 +98,8 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
   onScrollToEntryDone?: () => void
   // 用户主动滚动、触摸或按下指针时停止自动定位，把视野控制权立即还给用户。
   onNavigationCancel?: () => void
+  // 诊断浮窗里的区块标题 (多份列表共存时用于区分); 不传则不注册探针.
+  diagLabel?: string
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   // scrollToKey 的滚动用 root: 两条渲染路径 (虚拟/非虚拟) 都挂这个 ref, 使跳转逻辑统一.
@@ -277,6 +281,41 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     const tm = setTimeout(() => { onScrollToKeyDoneRef.current?.() }, 3000)
     return () => clearTimeout(tm)
   }, [scrollToKey])
+
+  // 浮窗探针: 列表用的是虚拟化还是全量渲染 —— 两条路径的"内容总高"来源不同, 追底追赶时
+  // 它是估算值还是真实值直接决定落点会不会漂.
+  // Panel probe: which render path is active, since the two derive total height differently.
+  const listDiagRef = useRef({ blocks: 0, total: 0, measured: 0, from: 0, to: 0, virtual: false })
+  listDiagRef.current = {
+    blocks: blocks.length,
+    total: layout.total,
+    measured: heightsRef.current.size,
+    from: visibleRange.start,
+    to: visibleRange.end,
+    virtual: blocks.length > minBlocks,
+  }
+  useEffect(() => {
+    if (!diagLabel) return
+    return registerDiagProbe(() => {
+      const diag = listDiagRef.current
+      const root = scrollRootRef.current
+      return {
+        key: `virtual-list:${diagLabel}`,
+        title: `列表渲染 (${diagLabel})`,
+        subtitle: diag.virtual ? '虚拟化' : '全量渲染',
+        rows: [
+          { label: '渲染路径', value: diag.virtual ? `虚拟化 (> ${minBlocks} 块)` : `全量渲染 (≤ ${minBlocks} 块)` },
+          { label: '块数', value: String(diag.blocks) },
+          { label: '估算总高', value: px(diag.total) },
+          { label: '实际根高', value: root ? px(root.getBoundingClientRect().height) : '—' },
+          { label: '已量高块数', value: `${diag.measured} / ${diag.blocks}` },
+          { label: '可见窗口', value: `${diag.from} ~ ${diag.to}` },
+          { label: 'contentVersion', value: String(contentVersion) },
+          { label: 'heightVersion', value: String(heightVersion) },
+        ],
+      }
+    })
+  }, [diagLabel, minBlocks, contentVersion, heightVersion])
 
   if (blocks.length <= minBlocks) {
     // 兜底 (非虚拟化) 路径: 每个 block 包一层带 data-block-key 的 div, 供 scrollToKey 查询.

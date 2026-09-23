@@ -572,6 +572,7 @@ export function JsonlView({
       <VirtualizedBlockList
         blocks={renderBlocks}
         renderBlock={renderBlock}
+        diagLabel="标准视图"
         scrollToKey={activeTarget?.key ?? null}
         scrollToEntryLineNo={searchNavigationActive ? extFocusLineNo : null}
         scrollOffset={activeTarget?.offset ?? 0}

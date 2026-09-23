@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
@@ -93,22 +93,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   }
 
   const hasCreateAttachments = props.mode === 'create_session_mode' && props.attachments.length > 0
-  const baseInputHeight = hasCreateAttachments ? 132 : 96
-  const maxInputHeight = baseInputHeight * 3
-  const [textAreaHeight, setTextAreaHeight] = useState(42)
+  // 固定高度: 输入框不随内容增高, 多行文本在 textarea 内部滚动 (index.css 的 !important 规则再钉一层)
+  const inputHeight = hasCreateAttachments ? 132 : 96
   const textAreaRef = follow?.inputRef ?? standaloneInputRef
-
-  useEffect(() => {
-    const textarea = textAreaRef.current
-    if (!textarea) return
-    // 先收回高度再测量内容，确保删除文本时输入框也能同步变矮
-    // Reset before measuring so deleting text shrinks the input as well
-    textarea.style.height = '42px'
-    const maxTextAreaHeight = maxInputHeight - 54
-    setTextAreaHeight(Math.min(Math.max(textarea.scrollHeight, 42), maxTextAreaHeight))
-  }, [input, maxInputHeight, textAreaRef])
-
-  const inputHeight = Math.min(maxInputHeight, Math.max(baseInputHeight, textAreaHeight + 54))
 
   return (
     <div
@@ -165,8 +152,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           onChange={onChange}
           onKeyDown={handleKeyDown}
           placeholder={follow && !input ? undefined : inputPlaceholder}
-          className="min-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[15px] leading-[1.6] focus:outline-none"
-          style={{ color: 'var(--text-primary)', height: textAreaHeight, maxHeight: maxInputHeight - 54 }}
+          className="h-[42px] min-h-[42px] max-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[15px] leading-[1.6] focus:outline-none"
+          style={{ color: 'var(--text-primary)' }}
         />
       </div>
       <div className="absolute bottom-0 left-0 right-0 flex h-9 min-w-0 items-center justify-end gap-2 overflow-hidden px-3 pb-1">

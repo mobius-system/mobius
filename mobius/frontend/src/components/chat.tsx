@@ -14,6 +14,7 @@ import { OpenInVSCodeButton } from './project-files'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { scrollDebug } from './scroll-debug'
+import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
 import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
@@ -166,9 +167,12 @@ const LERP_FOLLOW_K = 0.06
 function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighlightActiveRef, userScrolledUpRef, onBlocked }: {
   store: SessionHistoryStore | null
   containerRef: React.RefObject<HTMLDivElement | null>
-  matchActiveRef: React.RefObject<boolean>
-  searchHighlightActiveRef: React.RefObject<boolean>
-  userScrolledUpRef: React.RefObject<boolean>
+  // 用 MutableRefObject (而非 RefObject): 后者在 React 18 类型里 .current 是 T | null,
+  // 与本组件"同步可变 ref"的实际语义不符.
+  // MutableRefObject, because RefObject<boolean>.current is boolean | null in React 18 types.
+  matchActiveRef: React.MutableRefObject<boolean>
+  searchHighlightActiveRef: React.MutableRefObject<boolean>
+  userScrolledUpRef: React.MutableRefObject<boolean>
   onBlocked: () => void
 }) {
   const count = useLoadedEntryCount(store)
@@ -180,19 +184,32 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
   // 没追平 (delta > 0.5px) 就自续下一帧, 追平即停 — 两个触发源共用一个环.
   const rafRef = useRef(0)
   const chaseFrameRef = useRef(0)
+  // 诊断计数 (只写 ref, 不触发重渲染): 供 debug_panel 浮窗判断环是否已死.
+  // Diagnostic counters written to a ref only, so the panel can tell a dead loop from an idle one.
+  const diagRef = useRef({ mountAt: Date.now(), frames: 0, lastFrameAt: 0, scheduleAttempts: 0, scheduleBlocked: 0, lastStop: '—' })
+  const countRef = useRef(count)
+  countRef.current = count
   const chase = () => {
     rafRef.current = 0
     // userScrolledUpRef 是同步可变 ref (事件处理器里直接改它), 追底每帧直接读,
     // 不用等 React 重渲染, 避免"第一次 wheel 上滚仍被拽回一帧".
     if (matchActiveRef.current || searchHighlightActiveRef.current) {
+      diagRef.current.lastStop = '搜索定位/命中高亮进行中'
       scrollDebug('chase: skip (search navigation/highlight active)')
       return
     }
-    if (userScrolledUpRef.current) { scrollDebug('chase: STOP (userScrolledUp=true)'); return }
+    if (userScrolledUpRef.current) {
+      diagRef.current.lastStop = 'userScrolledUp=true (用户接管)'
+      scrollDebug('chase: STOP (userScrolledUp=true)')
+      return
+    }
     const el = containerRef.current
-    if (!el) return
+    if (!el) { diagRef.current.lastStop = '滚动容器不存在'; return }
     const delta = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (delta <= 0.5) { scrollDebug('chase: done (delta<=0.5)'); return }
+    if (delta <= 0.5) { diagRef.current.lastStop = '已在底部 (delta<=0.5)'; scrollDebug('chase: done (delta<=0.5)'); return }
+    diagRef.current.frames += 1
+    diagRef.current.lastFrameAt = Date.now()
+    diagRef.current.lastStop = '追赶中'
     if (chaseFrameRef.current % 30 === 0) {
       scrollDebug('chase: lerp', { delta: delta.toFixed(1), scrollTop: Math.round(el.scrollTop), scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, userScrolledUp: userScrolledUpRef.current })
     }
@@ -200,8 +217,53 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     el.scrollTop += delta * LERP_FOLLOW_K
     rafRef.current = requestAnimationFrame(chase)
   }
-  const schedulePin = () => { if (!rafRef.current) rafRef.current = requestAnimationFrame(chase) }
+  const schedulePin = () => {
+    const diag = diagRef.current
+    diag.scheduleAttempts += 1
+    // 被守卫挡下 = rafRef 非 0. 若它永远非 0 而一帧都没跑过, 环就是死了 (见浮窗"因 A").
+    // Blocked by the guard means rafRef is non-zero; if it never runs a frame, the loop is dead.
+    if (rafRef.current) { diag.scheduleBlocked += 1; return }
+    rafRef.current = requestAnimationFrame(chase)
+  }
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // 浮窗探针: 读实时 DOM + 计数器, 给出"环是否还活着"和"被谁挡住"的结论.
+  // Panel probe: reads live DOM plus the counters to say whether the loop is alive and what blocks it.
+  useEffect(() => registerDiagProbe(() => {
+    const el = containerRef.current
+    const diag = diagRef.current
+    const now = Date.now()
+    const idleSince = diag.lastFrameAt || diag.mountAt
+    // rafRef 非 0 却长时间没有帧跑出来 = 排的帧被取消但句柄没归零 (StrictMode 双调用踩中)
+    const loopDead = diag.frames === 0 && rafRef.current !== 0 && now - diag.mountAt > 3000
+    const dist = el ? el.scrollHeight - el.scrollTop - el.clientHeight : null
+    const contentRoot = el?.firstElementChild
+    return {
+      key: 'chase',
+      title: '追底环 (EntriesAutoScroll)',
+      tone: loopDead ? 'bad' : 'ok',
+      rows: [
+        { label: '环状态', value: loopDead ? `已死 — 排帧被取消后 rafRef 未归零 (距今 ${ms(now - idleSince)})` : diag.lastStop, tone: loopDead ? 'bad' : undefined },
+        { label: '已执行帧数', value: String(diag.frames), tone: diag.frames === 0 && now - diag.mountAt > 3000 ? 'bad' : undefined },
+        { label: '上次执行', value: diag.lastFrameAt ? `${ms(now - diag.lastFrameAt)} 前` : '从未执行' },
+        { label: '排帧次数', value: `${diag.scheduleAttempts} 次, 被守卫挡下 ${diag.scheduleBlocked} 次` },
+        { label: 'rafRef 句柄', value: rafRef.current ? `${rafRef.current} (待执行)` : '0 (空闲)' },
+        { label: 'lerp 系数', value: String(LERP_FOLLOW_K) },
+        { label: '已加载条目数', value: String(countRef.current) },
+        { label: '容器 scrollTop', value: el ? px(el.scrollTop) : '容器不存在' },
+        { label: '容器 scrollHeight', value: el ? px(el.scrollHeight) : '—' },
+        { label: '容器 clientHeight', value: el ? px(el.clientHeight) : '—' },
+        { label: '距底 delta', value: dist == null ? '—' : px(dist), tone: dist != null && dist > 0.5 ? 'warn' : 'ok' },
+        { label: '内容根高度', value: contentRoot instanceof HTMLElement ? px(contentRoot.getBoundingClientRect().height) : '—' },
+      ],
+      flags: [
+        { key: 'chase.loop-dead', label: '环已死', active: loopDead, blocking: true, detail: '因 A: 排帧被取消但 rafRef 未归零 (vite dev 的 StrictMode 双调用必现)' },
+        { key: 'chase.blocked.search', label: '搜索定位中', active: !!(matchActiveRef.current || searchHighlightActiveRef.current), blocking: true, detail: '因 B: URL 命中参数或未清除的红框仍生效' },
+        { key: 'chase.blocked.user', label: '用户接管', active: userScrolledUpRef.current, blocking: true, detail: '因 C: 该标志为真时追底与"新消息"按钮的判定都停在这里' },
+        { key: 'chase.at-bottom', label: '已在底部', active: dist != null && dist <= 0.5 },
+      ],
+    }
+  }), [containerRef, matchActiveRef, searchHighlightActiveRef, userScrolledUpRef])
 
   // 触发源 1: 条数变化 (新条目到达). 用户已上滚 → 亮"新消息"按钮, 不抢滚条.
   useEffect(() => {
@@ -3092,7 +3154,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   // userScrolledUp 的唯一状态源是同步 ref (不是 React state): 追底 RAF 与消息滚底回调在
   // 触发瞬间直接读它, 避免 setState 的重渲染延迟让"第一次上滚"仍被拽回一帧; 无 UI 依赖它.
   const userScrolledUpRef = useRef(false)
+  // 追底接管态的变更史 (浮窗用): 谁在什么时候把它置真的 —— 因 C 就是靠这个定位的.
+  // Change history of the takeover flag: who set it and when, which is how cause C shows up.
+  const flagDiagRef = useRef<{ at: number; next: boolean; reason: string; count: number }>({ at: 0, next: false, reason: '初始', count: 0 })
   const [hasNewMessages, setHasNewMessages] = useState(false)
+  // 探针闭包只读 ref, 避免把 state 捕获成旧值 (探针不随渲染重建)
+  // The probe closure reads a ref so it never captures a stale state value
+  const hasNewMessagesRef = useRef(false)
+  hasNewMessagesRef.current = hasNewMessages
   const [replyTo, setReplyTo] = useState<any>(null)
   const [editingMsg, setEditingMsg] = useState<any>(null)
   const [runProjectPrompt, setRunProjectPrompt] = useState('')
@@ -3655,6 +3724,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     // 滚动接管态属于"上一个会话": ChatArea 切会话不重挂, 残留的 userScrolledUp 会让新会话
     // 永不自动追底, 并在对话还没撑满屏时亮出"新消息"按钮.
     userScrolledUpRef.current = false
+    flagDiagRef.current = { at: Date.now(), next: false, reason: '切换会话时复位', count: flagDiagRef.current.count }
     setHasNewMessages(false)
     loadHistory()
     connectEventStream(sid)
@@ -3690,11 +3760,15 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, streamContent, isTyping])
 
-  const handleJsonlScrollPositionChange = useCallback((nextUserScrolledUp: boolean) => {
+  // reason 由调用点给出 (wheel / touchmove / keydown / onScroll / 切会话), 浮窗据此指认触发源.
+  // The call site supplies the reason, so the panel can name what actually flipped the flag.
+  const handleJsonlScrollPositionChange = useCallback((nextUserScrolledUp: boolean, reason = '未知来源') => {
     // 同步改 ref, 让正在跑的追底 RAF 下一帧立刻停下.
     const prev = userScrolledUpRef.current
     if (prev !== nextUserScrolledUp) {
-      scrollDebug(`flag: ${prev} → ${nextUserScrolledUp}`)
+      scrollDebug(`flag: ${prev} → ${nextUserScrolledUp} (${reason})`)
+      const diag = flagDiagRef.current
+      flagDiagRef.current = { at: Date.now(), next: nextUserScrolledUp, reason, count: diag.count + 1 }
     }
     userScrolledUpRef.current = nextUserScrolledUp
     if (!nextUserScrolledUp) setHasNewMessages(false)
@@ -3703,10 +3777,41 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const jumpToJsonlBottom = useCallback(() => {
     scrollDebug('jumpToBottom: flag → false, 滚到 scrollHeight')
     userScrolledUpRef.current = false
+    flagDiagRef.current = { at: Date.now(), next: false, reason: '点击「新消息」按钮', count: flagDiagRef.current.count }
     const el = chatContainerRef.current
     if (el) el.scrollTop = el.scrollHeight
     setHasNewMessages(false)
   }, [])
+
+  // 浮窗探针: 会话级追底开关 + 接管态变更史 (因 B / 因 C 的现场).
+  // Panel probe: the session-level gates plus the takeover flag's change history.
+  useEffect(() => registerDiagProbe(() => {
+    const diag = flagDiagRef.current
+    const now = Date.now()
+    const blockedBySearch = matchTargetActiveRef.current || searchHighlightActiveRef.current
+    const highlight = searchHighlightTargetRef.current
+    return {
+      key: 'session-flags',
+      title: '会话追底开关',
+      subtitle: sessionIdForSearchHits || '未选中会话',
+      tone: blockedBySearch || userScrolledUpRef.current ? 'bad' : 'ok',
+      rows: [
+        { label: '布局模式', value: layout === 'easy' ? '简易模式' : layout === 'stacked' ? '纵向堆叠' : '常规分栏' },
+        { label: 'URL 命中参数', value: matchUuid || matchTs ? `match=${matchUuid || '—'} ts=${matchTs || '—'}` : '无' },
+        { label: '搜索高亮生效', value: bool(searchHighlightActiveRef.current, '是 (追底被静音)', '否'), tone: searchHighlightActiveRef.current ? 'bad' : 'ok' },
+        { label: '保留的命中目标', value: highlight ? `${highlight.uuid || '—'} / ${highlight.ts || '—'}` : '无' },
+        { label: '用户接管 (userScrolledUp)', value: bool(userScrolledUpRef.current, '真 (追底被静音)', '假'), tone: userScrolledUpRef.current ? 'bad' : 'ok' },
+        { label: '接管态变更次数', value: String(diag.count) },
+        { label: '上次变更', value: diag.at ? `${ms(now - diag.at)} 前 → ${diag.next ? '真' : '假'}，来源: ${diag.reason}` : '—', tone: diag.next ? 'warn' : 'ok' },
+        { label: '「新消息」按钮', value: bool(hasNewMessagesRef.current, '已亮 (前提: 有可滚动余量)', '未亮') },
+      ],
+      flags: [
+        { key: 'flags.match-url', label: 'URL 命中参数未清', active: matchTargetActiveRef.current, blocking: true, detail: '搜索跳转进行中, 追底让位给 scrollToKey' },
+        { key: 'flags.highlight-sticky', label: '命中红框未清除', active: searchHighlightActiveRef.current, blocking: true, detail: '因 B: 只要没点「清除搜索结果」, 追底与「新消息」按钮会一直静音' },
+        { key: 'flags.user-scrolled-up', label: '用户接管中', active: userScrolledUpRef.current, blocking: true, detail: `来源: ${diag.reason}` },
+      ],
+    }
+  }), [layout, matchUuid, matchTs, sessionIdForSearchHits])
 
   // 排队卡片闪电按钮: 打断当前 turn, 让 agent 出队消费下一条排队指令.
   const handlePauseToDequeue = useCallback(() => {

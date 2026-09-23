@@ -578,6 +578,7 @@ export default function JsonlViewEasy({
       <VirtualizedBlockList
         blocks={renderBlocks}
         renderBlock={renderBlock}
+        diagLabel="简易视图"
         scrollToKey={activeTarget?.key ?? null}
         scrollToEntryLineNo={searchNavigationActive ? extFocusLineNo : null}
         scrollOffset={activeTarget?.offset ?? 0}

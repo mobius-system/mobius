@@ -5,6 +5,7 @@ import { PendingQueueCard } from './viewer/PendingQueueCard'
 import type { SessionHistoryStore } from '../services/agent-history-store'
 import { useHistorySnapshotOf } from '../services/agent-history-store'
 import { scrollDebug } from './scroll-debug'
+import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 
 const JsonlViewEasy = lazy(() => import('./viewer/JsonlViewEasy'))
 
@@ -73,7 +74,8 @@ type SessionJsonlPanelProps = {
   backendPid: number | null
   realTimeInfo?: string
   hasNewMessages: boolean
-  onScrollPositionChange: (userScrolledUp: boolean) => void
+  // reason 是给诊断浮窗看的触发源描述 (wheel/keydown/onScroll/切会话), 业务逻辑不读它.
+  onScrollPositionChange: (userScrolledUp: boolean, reason?: string) => void
   onJumpToBottom: () => void
   // 排队卡片闪电按钮: 打断当前 turn 并出队下一条排队指令.
   onPauseToDequeue?: () => void
@@ -281,6 +283,11 @@ function SessionJsonlPanelInner({
   // 绕开"程序滚动 vs 用户滚动"的来源识别; 恢复钉底仍由 onScroll 的 dist < 4 负责.
   // 不监听 pointerdown: 点按卡片/代码/选中文字等非滚动点击也会触发它, 会把 userScrolledUp
   // 误置 true 从而永久停掉追底 ("不追底"); 滚动条拖拽仍由 onScroll 的 movedUp 方向判定兜底.
+  // 最后一次用户滚动意图 (浮窗用): 因 C 的现场 —— "接管态是刚才那一下 wheel 置的, 而它
+  // 发生在卡片内部的嵌套滚动区里, 对话本身根本没动".
+  // Last user scroll intent, the crime scene for cause C.
+  const lastIntentRef = useRef<{ at: number; text: string }>({ at: 0, text: '—' })
+
   useEffect(() => {
     const el = chatContainerRef.current
     if (!el) return
@@ -288,10 +295,27 @@ function SessionJsonlPanelInner({
     // 内容没撑满视口时"上滚"不会产生任何位移, 不代表用户在看历史: 记成解除钉底会让
     // 追底永久停摆 (连新会话都不再自动滚), 还会在底部亮出无意义的"新消息"按钮.
     const roomToScroll = () => el.scrollHeight - el.clientHeight > 4
+    // 卡片内部的嵌套滚动区 (bash/diff/read 输出等): 在里面滚动不会移动对话, 不该算用户接管.
+    // A nested scroller inside a card: scrolling there cannot move the conversation.
+    const inNestedScroller = (target: EventTarget | null) => {
+      let node = target instanceof Element ? target : null
+      while (node && node !== el) {
+        const style = window.getComputedStyle(node)
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && node.scrollHeight - node.clientHeight > 1) return true
+        node = node.parentElement
+      }
+      return false
+    }
+    const noteIntent = (text: string) => { lastIntentRef.current = { at: Date.now(), text } }
     // wheel 上滚 (deltaY<0) 才算向上翻; 向下滚留 onScroll 贴底判定恢复钉底.
     const onWheel = (e: WheelEvent) => {
-      scrollDebug('wheel event: deltaY=', e.deltaY, e.deltaY < 0 ? '(上滚→flag true)' : '(下滚, 交给 onScroll)')
-      if (e.deltaY < 0 && roomToScroll()) onScrollPositionChange(true)
+      const nested = inNestedScroller(e.target)
+      scrollDebug('wheel event: deltaY=', e.deltaY, e.deltaY < 0 ? '(上滚→flag true)' : '(下滚, 交给 onScroll)', nested ? '[卡片内滚动区]' : '[对话区]')
+      if (e.deltaY < 0 && roomToScroll()) {
+        const reason = nested ? 'wheel↑ 卡片内滚动区 (疑似误判)' : 'wheel↑ 对话区'
+        noteIntent(reason)
+        onScrollPositionChange(true, reason)
+      }
     }
     // 手指下移 (clientY 增大) = 内容上滚 (向上翻); 反之回底部交给 onScroll 恢复.
     let lastTouchY: number | null = null
@@ -300,7 +324,8 @@ function SessionJsonlPanelInner({
       if (!t) return
       if (lastTouchY !== null && t.clientY > lastTouchY && roomToScroll()) {
         scrollDebug('touchmove: 手指下移(内容上翻) → flag true')
-        onScrollPositionChange(true)
+        noteIntent('touchmove 上翻')
+        onScrollPositionChange(true, 'touchmove 上翻')
       }
       lastTouchY = t.clientY
     }
@@ -308,7 +333,8 @@ function SessionJsonlPanelInner({
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') && roomToScroll()) {
         scrollDebug('keydown:', e.key, '→ flag true')
-        onScrollPositionChange(true)
+        noteIntent(`keydown ${e.key}`)
+        onScrollPositionChange(true, `keydown ${e.key}`)
       }
     }
 
@@ -321,6 +347,41 @@ function SessionJsonlPanelInner({
       el.removeEventListener('keydown', onKeyDown)
     }
   }, [chatContainerRef, onScrollPositionChange])
+
+  // 浮窗探针: 面板自身的滚动现场. 响应式值走 mirror ref, 探针只注册一次.
+  // Panel probe: the scroll container's live state, mirrored through a ref so the probe registers once.
+  const panelMirrorRef = useRef({ hasScrollRoom: false, liveCardMounted: false, hitCount: 0 })
+  panelMirrorRef.current = { hasScrollRoom, liveCardMounted, hitCount: searchHits.length }
+  useEffect(() => registerDiagProbe(() => {
+    const el = chatContainerRef.current
+    const mirror = panelMirrorRef.current
+    const intent = lastIntentRef.current
+    const dist = el ? el.scrollHeight - el.scrollTop - el.clientHeight : null
+    const intentText = intent.at
+      ? `${ms(Date.now() - intent.at)} 前 — ${intent.text}`
+      : '暂无'
+    return {
+      key: 'jsonl-panel',
+      title: 'JSONL 面板',
+      subtitle: variant === 'easy' ? '简易模式' : '标准模式',
+      tone: el ? undefined : 'bad',
+      rows: [
+        { label: '滚动容器', value: el ? '已挂载' : '未挂载 (面板未渲染)', tone: el ? undefined : 'bad' },
+        { label: 'scrollTop', value: el ? px(el.scrollTop) : '—' },
+        { label: 'scrollHeight', value: el ? px(el.scrollHeight) : '—' },
+        { label: 'clientHeight', value: el ? px(el.clientHeight) : '—' },
+        { label: '距底', value: dist == null ? '—' : px(dist), tone: dist != null && dist > 0.5 ? 'warn' : 'ok' },
+        { label: '有可滚动余量', value: bool(mirror.hasScrollRoom) },
+        { label: '上一帧 scrollTop', value: lastScrollTopRef.current == null ? '—' : px(lastScrollTopRef.current) },
+        { label: '最近用户滚动意图', value: intentText, tone: intent.at ? 'warn' : undefined },
+        { label: 'LIVE 尾部卡', value: bool(mirror.liveCardMounted, '显示中', '未显示') },
+        { label: '搜索命中数', value: String(mirror.hitCount) },
+      ],
+      flags: [
+        { key: 'panel.no-container', label: '滚动容器未挂载', active: !el, blocking: true, detail: '面板还没渲染出来, 任何追底都无处可滚' },
+      ],
+    }
+  }), [chatContainerRef, variant])
 
   return (
     <div data-tour="session-jsonl-view" className="mobius-chat-history flex min-w-0 flex-1 flex-col">
@@ -340,10 +401,10 @@ function SessionJsonlPanelInner({
           const movedUp = prev !== null && prev - el.scrollTop > 2 && !clampedToEdge
           if (movedUp && dist > 200) {
             scrollDebug('onScroll: movedUp=true, dist=', dist, '>200 → flag true')
-            onScrollPositionChange(true)
+            onScrollPositionChange(true, `onScroll 向上滚 ${Math.round(prev - el.scrollTop)}px (dist=${Math.round(dist)})`)
           } else if (dist < 4) {
             scrollDebug('onScroll: dist=', dist.toFixed(1), '<4 → flag false (恢复钉底)')
-            onScrollPositionChange(false)
+            onScrollPositionChange(false, 'onScroll 贴底 (dist<4)')
           }
         }}
       >

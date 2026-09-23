@@ -3328,6 +3328,16 @@ function sessionAimuxBridgeDevice(req: express.Request, sessionId: unknown): { a
   return { aimuxId, localPath: localPath || '.' };
 }
 
+// 「远程」模式下用户手动更改的根目录 (可选): 空值表示沿用项目注册的 remote_path。
+// 只做基本格式校验 (非空/无控制字符/无 . 与 .. 段), 具体存在性交给 aimux 报错。
+function remoteRootOverride(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  if (!text) return '';
+  if (text.length > 1000 || /[\r\n\0]/.test(text)) throw new Error('远程目录格式非法');
+  if (text.split(/[\\/]/).some((part) => part === '.' || part === '..')) throw new Error('远程目录不能包含 . 或 ..');
+  return text;
+}
+
 function projectRemoteFileSource(project: any, rawName: unknown, bridge: { aimuxId: string; localPath: string } | null): any | null {
   const name = typeof rawName === 'string' ? rawName.trim() : '';
   if (!name) return null;
@@ -3372,7 +3382,10 @@ router.get('/:id/remote-files', auth, async (req: express.Request, res: express.
   const remote = projectRemoteFileSource(project, req.query.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
-    res.json(await aimuxRemote.listRemoteFiles(remote.name, remote.remote_path, req.query.path || '/'));
+    // ✨ 「远程」模式可带 ?root= 覆盖根目录 (用户在文件浏览器里更改目录), 缺省用项目注册的 remote_path
+    // ✨ Optional ?root= overrides the browse root in remote mode; defaults to the project's registered remote_path
+    const root = remoteRootOverride(req.query.root) || remote.remote_path;
+    res.json(await aimuxRemote.listRemoteFiles(remote.name, root, req.query.path || '/'));
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || '加载远程文件失败' });
   }
@@ -3385,7 +3398,10 @@ router.get('/:id/remote-file', auth, async (req: express.Request, res: express.R
   const remote = projectRemoteFileSource(project, req.query.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
-    res.json(await aimuxRemote.readRemoteFile(remote.name, remote.remote_path, req.query.path || '/'));
+    // 根目录同列表接口: 与 listRemoteFiles 用同一覆盖值, 相对路径才能对齐
+    // Same root override as the listing API so relative paths stay aligned
+    const root = remoteRootOverride(req.query.root) || remote.remote_path;
+    res.json(await aimuxRemote.readRemoteFile(remote.name, root, req.query.path || '/'));
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || '读取远程文件失败' });
   }
@@ -3398,7 +3414,10 @@ router.post('/:id/remote-file', auth, async (req: express.Request, res: express.
   const remote = projectRemoteFileSource(project, req.body?.remote, bridge);
   if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
-    res.json(await aimuxRemote.writeRemoteFile(remote.name, remote.remote_path, req.body?.path || '/', req.body?.content));
+    // 根目录同列表接口 (写入也必须对齐, 否则会写错机器上的路径)
+    // Same root override as the listing API, otherwise the write lands on the wrong path
+    const root = remoteRootOverride(req.body?.root) || remote.remote_path;
+    res.json(await aimuxRemote.writeRemoteFile(remote.name, root, req.body?.path || '/', req.body?.content));
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || '保存远程文件失败' });
   }
