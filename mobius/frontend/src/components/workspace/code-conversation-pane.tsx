@@ -108,6 +108,7 @@ function loadRemoteMachine(projectId: string): string {
 }
 
 // 「远程」模式下用户手动更改的根目录覆盖值 (按 项目+远程机器 记忆)。空 = 用项目注册的 remote_path。
+// Browse-root override typed in remote mode, remembered per project + remote machine; empty = use remote_path
 function remoteRootStorageKey(projectId: string, remoteName: string) {
   return `mobius:ui:cc-remote-root:${projectId}:${remoteName}`
 }
@@ -285,6 +286,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   }, [projectId, remoteSourcesVersion, sessionId])
 
   // 切换远程机器时换用该机器记住的根目录覆盖值 (按 项目+机器 隔离), 并退出编辑态。
+  // Switching remote machines swaps in that machine's remembered root and leaves edit mode
   useEffect(() => {
     setRemoteRoot(remoteName ? loadRemoteRoot(projectId, remoteName) : '')
     setRemoteRootEditing(false)
@@ -292,9 +294,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   }, [projectId, remoteName])
 
   // 远端接口统一带上用户覆盖的根目录 (空则不传, 后端回落项目注册的 remote_path)。
+  // Every remote API call carries the overridden root; when empty the backend falls back to remote_path
   const remoteRootParam = remoteRoot ? `&root=${encodeURIComponent(remoteRoot)}` : ''
 
   // 提交用户输入的远程目录: 留空 = 恢复默认 (项目注册的 remote_path)。
+  // Commit the typed remote dir; an empty value restores the project's registered remote_path
   const commitRemoteRoot = useCallback(() => {
     const next = remoteRootDraft.trim()
     if (next.split(/[\\/]/).some(part => part === '.' || part === '..')) {
@@ -303,6 +307,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     }
     if (next === remoteRoot) { setRemoteRootEditing(false); setRemoteRootError(''); return }
     // 换目录会重建文件树并丢弃当前编辑, 有未保存修改时先确认
+    // Changing the dir rebuilds the tree and drops the open editor, so confirm unsaved edits first
     if (dirty && selected && !window.confirm(`「${selected.name}」有未保存的修改，更改远程目录将丢弃。确定更改？`)) return
     setRemoteRoot(next)
     try {

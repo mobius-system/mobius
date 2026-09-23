@@ -3328,8 +3328,11 @@ function sessionAimuxBridgeDevice(req: express.Request, sessionId: unknown): { a
   return { aimuxId, localPath: localPath || '.' };
 }
 
-// 「远程」模式下用户手动更改的根目录 (可选): 空值表示沿用项目注册的 remote_path。
-// 只做基本格式校验 (非空/无控制字符/无 . 与 .. 段), 具体存在性交给 aimux 报错。
+/*
+ * Normalize the optional browse-root the user typed in the remote file browser.
+ * An empty result means "keep the project's registered remote_path"; only the format is
+ * checked here (control chars, "." and ".." segments) — existence is left to aimux.
+ */
 function remoteRootOverride(raw: unknown): string {
   const text = typeof raw === 'string' ? raw.trim() : '';
   if (!text) return '';

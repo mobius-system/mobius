@@ -1,5 +1,13 @@
 # Issue Knowledge
 
+## 远程模式可改工作目录 (2026-09-23, commit 7924fff8)
+
+- 元素: 代码对话左栏 `data-tour="workspace-file-source-tabs"` 内那行路径显示 div (原只读)。改后「远程」源在路径右侧多一个「选择/更改」按钮, 点开是内联输入框 (回车/确定提交, Esc 取消, 留空回车=恢复默认)。
+- 前端 `components/workspace/code-conversation-pane.tsx`: 新 state `remoteRoot/remoteRootEditing/remoteRootDraft/remoteRootError` + localStorage `mobius:ui:cc-remote-root:<projectId>:<remoteName>` (按 项目+机器 记忆); `activeRootPath`、`fileSource` 的 root、loadDir/读文件/存文件三处请求都改用该覆盖值, 空值回落项目注册的 `remote_path`。
+- 后端 `routes/projects.ts`: 三个 remote 接口 (`GET /remote-files`、`GET/POST /remote-file`) 新增可选 `root` (GET 走 query, POST 走 body), 经 `remoteRootOverride()` 校验 (非空/≤1000/无控制字符/无 `.` `..` 段) 后覆盖 `remote.remote_path`。必须三处同源, 否则 rel_path 与列表不对齐会读错文件。
+- 远程无法用系统目录选择器 (本地模式走 Electron pickDirectory), 故用文本输入; 会话绑定的 aimux bridge 设备同样适用 (它的 remote_path 来自 pc_metadata.local_path)。
+- 验证脚本 `.imac/tmp/remote-root-change-check.js` (Playwright, 支持 BASE/TAG 环境变量): 断言路径/按钮文案、文件树按新目录重载、请求带 root=、刷新后记住、留空恢复默认。坑: ①必须先 `localStorage.layout_mode='normal_mode'`, 否则首屏被"选择使用模式"弹窗挡住; ②布局模式存 `mobius:ui:workspace-layout-by-session`; ③文本脱敏强制开启, 截图里 /home/fuqingxu 显示成 /home/Arnold (规则来自 /api/admin/text-redaction/global), 别当成 bug。
+
 ## 会话端口入口合并 (2026-09-21, commit 51ed34cc)
 
 - 元素1 `button[aria-label="进入项目端口"]` 的源头是 `AdvancedSessionActions` 调用 `ProjectPortEntryButton`；元素2 `button[aria-label="端口"]` 是 `SessionSkillMemoryEditor` 的 `ResourceTabButton`，展开 `DevPortsBar`。
@@ -161,3 +169,13 @@
 - 因B — 生产也有: 任何一次搜索命中跳转后 `searchHighlightActiveRef.current = true` (`chat.tsx:2029`), `session-jsonl-panel.tsx` 再用 `highlightTargetRef` 把它贴住, 只有点「清除搜索结果」或离开会话才复位。它同时挡住 chase 和 count effect, **且 count effect 是在 `onBlocked()` 之前 return 的** —— 连「新消息」按钮都不亮, 用户看不到任何提示。实测 prod: 带 `?match=` 进页面 → `chase: skip (search navigation/highlight active)`。
 - 因C — 生产也有, 随「上次在哪滚的」时好时坏: wheel/touchmove/keydown 监听挂最外层滚动容器, 而卡片内部有大量嵌套滚动区 (bash/diff/read 卡 `max-h-[34rem] overflow-auto`、KeyNode 的 `<pre>` 等)。在卡片里上滚被 `onWheel` 判成「用户接管」; 外层容器本身没动, `onScroll` 的 `dist<4` 复位永远不会触发 → 只能靠「新消息」按钮或手动滚回底部复位。实测 prod (向嵌套区派发一次 `deltaY=-120`): `flag: false → true`, 随后内容长高 400px → `chase: STOP (userScrolledUp=true)`, 停在离底 400px。
 - 复现手法: Playwright + `POST /api/auth/login`(fuqingxu/fuqingxu) 写 localStorage `cc-token` + `layout_mode=normal_mode`; 用真实大会话 `ff37923a` (`/u/fuqingxu/p/9a533442/i/dca1dadf`, 157 轮 > 80 走虚拟化); `void window.debug_scroll` 开日志; 触发追底用「往内容根 append 一个 400px div」精确复刻 ResizeObserver 那条触发源, 不依赖真实 agent 输出。会话/轮次数据在 `.deploy_data/data/agent-history-store.db` (`rounds` / `entries`); 注意 `sessions` 表是旧数据, 现役会话在 `sessions_v2`。
+
+## 追底诊断浮窗 debug_panel (2026-09-23, commit 7924fff8)
+
+- 用法: F12 控制台输入 `debug_panel` 唤出隐藏浮窗 (可拖拽), `debug_panel = false` 关闭; 原有 `debug_scroll` 仍只负责 console 日志。浮窗走动态 import + 独立 React root (挂 body), 不进 App 树, 未打开时零开销。
+- 三段结构: ① 顶部结论行 —— 环死了优先报「因 A」, 否则列出当前所有阻塞追底的开关; ② 各组件区块 (追底环 / 会话追底开关 / JSONL 面板 / 列表渲染), 每块是若干「标签: 值」行 + 彩色 flag 胶囊 (红=阻塞); ③ 事件流 (最新在上, 环形缓冲 300 条, 常驻记录不看 `debug_scroll` 是否开)。
+- 数据层 `services/scroll-diagnostics.ts`: `registerDiagProbe(probe)` 注册只读探针 (组件 effect 里 return 注销), 浮窗 250ms 轮询; `DiagSection.rows` + `.flags[].blocking` 是唯一约定 —— blocking 为真即「只要它为真追底必不发生」。探针抛错只丢自己。
+- 因 A 的判定: `chase.loop-dead` = `frames===0 && rafRef.current!==0 && 挂载已超 3s`, 配合「排帧 N 次, 被守卫挡下 M 次」直接指认 StrictMode 双调用后 ref 未归零。实测对比: dev(:45618) 报「追底环已死, 已执行帧数 0, 排帧 15 次被挡 14 次」, prod(:45616) 报「追赶中, 已执行 171 帧」。
+- 因 C 的判定: `session-jsonl-panel` 的 wheel/touchmove/keydown 现在带 reason, 且 wheel 会用 `inNestedScroller(target)` 沿 DOM 上溯判断事件是否落在卡片内部的嵌套滚动区 → 来源文案写成「wheel↑ 卡片内滚动区 (疑似误判)」。实测 prod 向嵌套区派发一次 `deltaY=-120` 后, 结论行变成「追底已停 — 用户接管」。
+- 顺带发现的新线索: dev 实测中出现过一次「来源: onScroll 向上滚 30px (dist=7118)」—— 外层容器自己向上移了 30px 而用户没滚, 疑似浏览器 scroll anchoring 在内容变化时的补偿, 也会误置接管态 (待单独确认)。
+- 类型坑: `React.RefObject<T>.current` 在 React 18 类型里是 `T | null`, 会把 `DiagFlag.active` 推成 `boolean | null`; 组件内凡是「同步可变 ref」的 prop 一律标 `React.MutableRefObject<boolean>`。另: 本仓 tsconfig 未引 `vite/client`, 不能用 `import.meta.env`, 判断 dev/prod 改为运行时看 `window.$RefreshReg$` / `script[src="/@vite/client"]`。
