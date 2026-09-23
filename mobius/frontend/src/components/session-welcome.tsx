@@ -369,13 +369,17 @@ function ensureSkillFrontmatter(name: string, body: string): string {
 //   - skill: ① 粘贴 SKILL.md (name + 正文, 可含 frontmatter) 或上传 .md/.zip
 //            ② 从 GitHub 装 (owner/repo -> 后端 npx skills add)
 //   - memory: 写一条 (name + 正文) 或上传 .md/.zip (memory 无 GitHub 分发概念)
-// 默认装到"用户级" (baseUrl 不带 projectId), 对当前用户所有任务可用.
+// 装到"当前项目"级 (项目内所有会话共享); 无项目上下文时回退用户级.
 // 成功后调 onAdded() 触发外层重新拉取 selection-snapshot, 新条目立刻出现在下方列表,
 // 用户再点"追加/强调"即可注入当前会话 (对后续对话回合生效).
 // =====================================================================
-function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdded: () => void }) {
+function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memory'; projectId?: string; onAdded: () => void }) {
   const isSkill = kind === 'skill'
-  const baseUrl = isSkill ? '/api/skills' : '/api/memories'
+  // 有项目上下文时走项目级路由, 否则回退用户级
+  // Prefer the project-scoped route when a project is in context, else user scope
+  const scopedProjectId = (projectId || '').trim()
+  const resourcePath = isSkill ? 'skills' : 'memories'
+  const baseUrl = scopedProjectId ? `/api/projects/${scopedProjectId}/${resourcePath}` : `/api/${resourcePath}`
   const accent = isSkill ? '#60a5fa' : '#22d3ee'
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<'manual' | 'github'>('manual')
@@ -491,7 +495,7 @@ function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdde
             <div className="break-words text-[9.5px] leading-snug" style={{ color: '#fbbf24' }}>{ghHint}</div>
           )}
           <div className="text-[9.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-            后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为用户级 Skill.
+            后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为{scopedProjectId ? '项目级' : '用户级'} Skill.
           </div>
         </>
       ) : (
@@ -546,7 +550,9 @@ function AddSkillMemoryBar({ kind, onAdded }: { kind: 'skill' | 'memory'; onAdde
         </button>
       </div>
       <div className="text-[9px] leading-snug" style={{ color: 'var(--text-muted)' }}>
-        作为用户级添加 (对你所有任务可用). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.
+        {scopedProjectId
+          ? '添加到当前项目 (项目内所有会话共享). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.'
+          : '作为用户级添加 (对你所有任务可用). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.'}
       </div>
     </div>
   )
@@ -1150,7 +1156,7 @@ export function SessionSkillMemoryEditor({
                 风格统一(虚线 border 区分其为操作入口, 其余为数据项). 添加成功后 reload() 立即
                 把新条目刷进下方列表, 用户可点"追加/强调"注入当前会话 (对后续对话生效). */}
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-              {resourceKind && <AddSkillMemoryBar kind={resourceKind} onAdded={reload} />}
+              {resourceKind && <AddSkillMemoryBar kind={resourceKind} projectId={projectId} onAdded={reload} />}
               {memActive && onOpenKnowledge && (
                 <button
                   type="button"

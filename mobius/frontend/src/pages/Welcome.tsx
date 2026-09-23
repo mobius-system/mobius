@@ -949,7 +949,10 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
   error?: string
   busyProjectId?: string
 }) {
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
+  const { user } = useStore()
+  // 项目列表走 localStorage 缓存秒开, 后台刷新 (与顶栏新建菜单共用 'projects-all' 缓存)
+  // Cached project list renders instantly, then revalidates in the background
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
   const [q, setQ] = useState('')
 
   const sorted = [...projects.list].sort((a, b) => {

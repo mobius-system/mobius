@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
+import { readListCache, writeListCache } from '../services/list-swr-cache'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner } from './error-banner'
 import { PcTaskModeSection } from './pc-task-mode-section'
@@ -182,16 +183,43 @@ export function LanguageSelect({ value, onChange }: { value: SessionLanguage; on
   )
 }
 
-// 通用项目/issue/research 下拉选择 — 支持动态刷新 (需求: 中途新建的数据可被读到)
-export function useAsyncList<T>(fetcher: () => Promise<T[]>, deps: any[]): { list: T[]; loading: boolean; refresh: () => void } {
-  const [list, setList] = useState<T[]>([])
+// 列表级 SWR 缓存约定: scope 走 services/list-swr-cache 的 key 命名 (按用户隔离), 与页面级列表共用同一份 localStorage 缓存.
+// 命中缓存时下拉首帧就有数据可选, 网络回来后无感覆盖 —— 不再"打开新建菜单必须先等接口加载完".
+export type ListCacheSpec = { scope: string; userId?: string }
+
+// 通用项目/issue/research 下拉选择 — 支持动态刷新 (需求: 中途新建的数据可被读到) + 本地缓存秒开
+export function useAsyncList<T>(fetcher: () => Promise<T[]>, deps: any[], cache?: ListCacheSpec): { list: T[]; loading: boolean; refresh: () => void } {
+  const scope = cache?.scope
+  const userId = cache?.userId
+  // 同一份缓存的标识: scope 或用户变化都要重新取种 (未登录时 userId 为空 → 登录后 key 变更)
+  const cacheKey = scope ? `${scope}|${userId || ''}` : ''
+  // 首帧同步读缓存, 避免"先空列表再跳变"
+  // Seed from the cache synchronously so options exist on the first paint
+  const [list, setList] = useState<T[]>(() => (scope ? (readListCache<T>(scope, userId)?.list || []) : []))
   const [loading, setLoading] = useState(false)
+  const lastKeyRef = useRef(cacheKey)
   const load = useCallback(() => {
     setLoading(true)
-    fetcher().then(setList).catch(() => setList([])).finally(() => setLoading(false))
+    fetcher()
+      .then(next => {
+        setList(next)
+        if (scope) writeListCache(scope, userId, next)
+      })
+      // 刷新失败保留缓存旧列表 (清空会让本来可选的瞬时清空)
+      // Keep the cached list when the refresh fails instead of clearing the dropdown
+      .catch(() => { if (!scope) setList([]) })
+      .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  useEffect(() => { load() }, [load])
+  }, [cacheKey, ...deps])
+  useEffect(() => {
+    // 缓存标识变化 (如切换项目): 先用新 key 的缓存顶替上一份列表, 再后台刷新
+    // Cache key change: swap in the new key's cache before the refresh lands
+    if (lastKeyRef.current !== cacheKey) {
+      lastKeyRef.current = cacheKey
+      setList(scope ? (readListCache<T>(scope, userId)?.list || []) : [])
+    }
+    load()
+  }, [load, cacheKey, scope, userId])
   return { list, loading, refresh: load }
 }
 
@@ -1093,7 +1121,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
   const selectedProject = projects.list.find((p: any) => p.id === projectId) || (storeProjects || []).find((p: any) => p.id === projectId)
   const parentVisibility: Visibility =
     selectedProject?.visibility === 'team' || selectedProject?.visibility === 'public' || selectedProject?.visibility === 'allowlist'
@@ -1340,9 +1368,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     })
   }, [])
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
-  // 二级联动: 选 project 后拉 issues
-  const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId])
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
+  // 二级联动: 选 project 后拉 issues. 缓存 scope 单列 (菜单只取 active, 与项目页的全量 issues 列表区分开)
+  // Separate cache scope: this menu only lists active issues, unlike the project page's full list
+  const issues = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId], projectId ? { scope: `issues-active:${projectId}`, userId: user?.id } : undefined)
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const selectedIssue = issues.list.find((i: any) => i.id === issueId)
 
@@ -1696,7 +1725,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
 
-  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: 'projects-all', userId: user?.id })
   const selectedProject = projects.list.find((p: any) => p.id === projectId)
   const researchEnabled = !!selectedProject?.research_enabled
   // 项目级默认模型偏好 (default_model).
@@ -1713,7 +1742,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
     if (modelUserTouchedRef.current) return
     setModel(resolveDefaultModelKey({ scopeLastModel, projectDefaultModel, globalDefaultModel, fallback: GLOBAL_DEFAULT_MODEL }))
   }, [scopeLastModel, projectDefaultModel, globalDefaultModel])
-  const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
+  const researches = useAsyncList<any>(() => projectId ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId], projectId ? { scope: `researches-active:${projectId}`, userId: user?.id } : undefined)
   const selectedResearch = researches.list.find((r: any) => r.id === researchId)
 
   // 选 project 后, 若未启用 Research → 置灰提交 + 提示
