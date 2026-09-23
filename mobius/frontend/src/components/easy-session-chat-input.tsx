@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
@@ -93,9 +93,28 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   }
 
   const hasCreateAttachments = props.mode === 'create_session_mode' && props.attachments.length > 0
-  // 固定高度: 输入框不随内容增高, 多行文本在 textarea 内部滚动 (index.css 的 !important 规则再钉一层)
-  const inputHeight = hasCreateAttachments ? 132 : 96
+  // 输入框随内容长高, 封顶 = 初始高度的 3 倍 (会话内 96→288, 欢迎页 144→432), 超出后 textarea 内部滚动
+  const isCreateMode = props.mode === 'create_session_mode'
+  const baseInputHeight = isCreateMode ? 144 : 96
+  const baseTextAreaHeight = isCreateMode ? 63 : 42
+  const chromeHeight = baseInputHeight - baseTextAreaHeight
+  const maxInputHeight = baseInputHeight * 3
+  const [textAreaHeight, setTextAreaHeight] = useState(baseTextAreaHeight)
   const textAreaRef = follow?.inputRef ?? standaloneInputRef
+  // 测高必须用组件私有 ref: chat.tsx 里标准模式的 textarea (easy 布局下仅 hidden 仍挂载)
+  // 晚于本组件挂载并抢占同一个 inputRef, 若用它测量, display:none 元素 scrollHeight 恒 0, 输入框永远不长高。
+  const measureRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const textarea = measureRef.current
+    if (!textarea) return
+    // 先收回高度再测量内容，确保删除文本时输入框也能同步变矮
+    // Reset before measuring so deleting text shrinks the input as well
+    textarea.style.height = `${baseTextAreaHeight}px`
+    setTextAreaHeight(Math.min(Math.max(textarea.scrollHeight, baseTextAreaHeight), maxInputHeight - chromeHeight))
+  }, [input, baseTextAreaHeight, maxInputHeight, chromeHeight])
+
+  const inputHeight = Math.min(maxInputHeight, Math.max(baseInputHeight, textAreaHeight + chromeHeight))
 
   return (
     <div
@@ -147,13 +166,16 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           </div>
         )}
         <textarea
-          ref={textAreaRef}
+          ref={el => {
+            measureRef.current = el
+            ;(textAreaRef as { current: HTMLTextAreaElement | null }).current = el
+          }}
           value={input}
           onChange={onChange}
           onKeyDown={handleKeyDown}
           placeholder={follow && !input ? undefined : inputPlaceholder}
-          className="h-[42px] min-h-[42px] max-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[15px] leading-[1.6] focus:outline-none"
-          style={{ color: 'var(--text-primary)' }}
+          className="min-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[15px] leading-[1.6] focus:outline-none"
+          style={{ color: 'var(--text-primary)', height: textAreaHeight, maxHeight: maxInputHeight - chromeHeight }}
         />
       </div>
       <div className="absolute bottom-0 left-0 right-0 flex h-9 min-w-0 items-center justify-end gap-2 overflow-hidden px-3 pb-1">
