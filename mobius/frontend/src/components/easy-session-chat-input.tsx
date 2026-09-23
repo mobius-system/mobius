@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import type { VoiceInputState } from '../services/assistant-voice'
@@ -65,7 +65,6 @@ export type EasySessionChatInputProps = CreateSessionModeProps | FollowSessionMo
 /** 欢迎页与会话内共用同一个输入框，只有 mode 决定哪些交互可用。 */
 export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const { input, inputPlaceholder, theme, onChange, onKeyDown, onSend } = props
-  const standaloneInputRef = useRef<HTMLTextAreaElement>(null)
   // 欢迎页没有会话上下文，focus 状态留在组件内部，调用方只需要传 mode。
   const [standaloneFocused, setStandaloneFocused] = useState(false)
   const follow = props.mode === 'follow_session_mode' ? props : null
@@ -100,18 +99,22 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const chromeHeight = baseInputHeight - baseTextAreaHeight
   const maxInputHeight = baseInputHeight * 3
   const [textAreaHeight, setTextAreaHeight] = useState(baseTextAreaHeight)
-  const textAreaRef = follow?.inputRef ?? standaloneInputRef
-  // 测高必须用组件私有 ref: chat.tsx 里标准模式的 textarea (easy 布局下仅 hidden 仍挂载)
-  // 晚于本组件挂载并抢占同一个 inputRef, 若用它测量, display:none 元素 scrollHeight 恒 0, 输入框永远不长高。
+  // 测高必须用组件私有 ref, 且绝不能再写回外部 inputRef:
+  // chat.tsx 的标准输入框 auto-grow effect (上限 70vh) 通过 inputRef.current 找元素,
+  // 若本组件渲染时把 inputRef.current 指到 easy textarea, 父 effect 会在子 effect 之后
+  // 用 70vh 上限直接改写 DOM 高度 (React 察觉不到), 3x 封顶被击穿 → 文字溢出卡片。
   const measureRef = useRef<HTMLTextAreaElement | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const textarea = measureRef.current
     if (!textarea) return
-    // 先收回高度再测量内容，确保删除文本时输入框也能同步变矮
-    // Reset before measuring so deleting text shrinks the input as well
-    textarea.style.height = `${baseTextAreaHeight}px`
-    setTextAreaHeight(Math.min(Math.max(textarea.scrollHeight, baseTextAreaHeight), maxInputHeight - chromeHeight))
+    // 先收回高度让内容自然撑开再测量; 量完必须把目标值直接写回 DOM ——
+    // 若只 setState, 当新值与旧 state 相同 (React bail out 不重渲染) 时,
+    // 上面收回高度的 DOM 修改不会被 React 修正, textarea 会卡在 base 高度。
+    textarea.style.height = 'auto'
+    const next = Math.min(Math.max(textarea.scrollHeight, baseTextAreaHeight), maxInputHeight - chromeHeight)
+    textarea.style.height = `${next}px`
+    setTextAreaHeight(next)
   }, [input, baseTextAreaHeight, maxInputHeight, chromeHeight])
 
   const inputHeight = Math.min(maxInputHeight, Math.max(baseInputHeight, textAreaHeight + chromeHeight))
@@ -166,10 +169,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           </div>
         )}
         <textarea
-          ref={el => {
-            measureRef.current = el
-            ;(textAreaRef as { current: HTMLTextAreaElement | null }).current = el
-          }}
+          ref={measureRef}
           value={input}
           onChange={onChange}
           onKeyDown={handleKeyDown}
