@@ -286,6 +286,7 @@ function buildSupervisor(): AimuxSupervisor | null {
       saveCreds(creds);
       return r.jwt;
     },
+    runtimePath: join(app.getPath("userData"), "aimux-runtime", `${Buffer.from(`${os.userInfo().username}:${process.cwd()}`).toString("hex").slice(0, 24)}.json`),
   });
 }
 

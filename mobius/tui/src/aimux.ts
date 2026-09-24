@@ -558,7 +558,7 @@ export class AimuxSupervisor {
       if (this.stopping) return
       const current = await readRuntime(this.hash)
       const pid = current?.pid ?? null
-      if (current && pid !== null && pidAlive(pid) && current.need_external_restart !== true) {
+      if (current && pid !== null && pidAlive(pid) && (current.need_external_restart !== true || current.realtime_healthy_display === undefined)) {
         const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier, 1500))
         const connected = typeof raw === 'boolean' ? raw : raw.connected
         if (connected) {
@@ -585,7 +585,7 @@ export class AimuxSupervisor {
       // Re-check under the lock — another TUI may have spawned while we waited.
       const current = await readRuntime(this.hash)
       const pid = current?.pid ?? null
-      if (pid !== null && pidAlive(pid) && current?.need_external_restart !== true) { await touchLease(this.hash); return }
+      if (pid !== null && pidAlive(pid) && (current?.need_external_restart !== true || current?.realtime_healthy_display === undefined)) { await touchLease(this.hash); return }
       const { server, token, identifier, onStatus } = this.opts
       onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
       const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token, process.platform, null, runtimePath(this.hash)))
