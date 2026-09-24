@@ -323,9 +323,9 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
 // 三张项目类型卡片的悬浮强调色, 各自对齐图标颜色以便一眼区分
 // Per-kind hover accent for the three project-kind cards, matching each icon color
 const PROJECT_KIND_HOVER: Record<NewProjectKind, string> = {
-  default: 'hover:border-blue-500/45 hover:bg-blue-500/10 hover:shadow-[0_14px_32px_-14px_rgba(59,130,246,0.75)]',
-  research: 'hover:border-emerald-500/45 hover:bg-emerald-500/10 hover:shadow-[0_14px_32px_-14px_rgba(52,211,153,0.75)]',
-  extension: 'hover:border-violet-500/45 hover:bg-violet-500/10 hover:shadow-[0_14px_32px_-14px_rgba(167,139,250,0.75)]',
+  default: 'hover:border-blue-500/45 hover:bg-blue-500/10',
+  research: 'hover:border-emerald-500/45 hover:bg-emerald-500/10',
+  extension: 'hover:border-violet-500/45 hover:bg-violet-500/10',
 }
 
 export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: any) => void }) {
@@ -602,7 +602,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                     disabled={disabled}
                     onClick={() => chooseProjectKind(opt.kind)}
                     data-tour={`project-kind-${opt.kind}`}
-                    className={`group flex w-full items-start gap-3 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] p-3 text-left transition-[transform,border-color,box-shadow,background-color] duration-300 ease-out disabled:cursor-not-allowed disabled:opacity-45 ${disabled ? '' : 'hover:-translate-y-0.5 ' + PROJECT_KIND_HOVER[opt.kind]}`}
+                    className={`group flex w-full items-start gap-3 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] p-3 text-left transition-[transform,border-color,background-color] duration-300 ease-out disabled:cursor-not-allowed disabled:opacity-45 ${disabled ? '' : 'hover:-translate-y-0.5 ' + PROJECT_KIND_HOVER[opt.kind]}`}
                     style={{ color: 'var(--text-primary)' }}>
                     <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-transform duration-300 ease-out group-hover:scale-110"
                       style={{ color: opt.kind === 'research' ? '#34d399' : opt.kind === 'extension' ? '#a78bfa' : '#60a5fa', borderColor: 'var(--input-border)', background: 'rgba(255,255,255,0.03)' }}>

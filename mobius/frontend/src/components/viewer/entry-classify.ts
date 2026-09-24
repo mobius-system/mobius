@@ -209,6 +209,7 @@ export function isEventMessageEntry(entry: AnyEntry): boolean {
 //   - empty thinking-only : assistant 仅含空 thinking 块 (摘要显示“思考内容被隐藏”)
 //   - no_response_requested: Claude Code 合成占位 assistant 消息 ("No response requested.",
 //                            model "<synthetic>", 本地生成非模型输出; 同源的 API Error 卡保留)
+//   - blank response_item  : response_item.message[role=assistant] 正文全空白 (output_text:" ")
 export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
   return (
     !MAJOR_JSONL_TYPES.has(entry?.type as string) ||
@@ -231,7 +232,8 @@ export function isHiddenJsonlNoiseEntry(entry: AnyEntry): boolean {
     isTaskStateCarrierEntry(entry) ||
     isEmptyTaskReminderAttachment(entry) ||
     isEmptyThinkingOnlyAssistantEntry(entry) ||
-    isNoResponseRequestedEntry(entry)
+    isNoResponseRequestedEntry(entry) ||
+    isBlankTextResponseItemEntry(entry)
   )
 }
 
@@ -266,6 +268,21 @@ export function isUnreadableEncryptedReasoningEntry(entry: AnyEntry): boolean {
   if (entry?.type !== 'response_item' || entry?.payload?.type !== 'reasoning') return false
   const encryptedContent = entry?.payload?.encrypted_content
   return typeof encryptedContent === 'string' && encryptedContent.length > 0 && reasoningText(entry.payload).length === 0
+}
+
+// response_item.message 只有空白正文的卡片 (如闭源模型落盘 output_text:" " 的空响应,
+// metadata 的 content_item_kinds 也是 "unknown"): 所有 content 块均为 output_text/text 且
+// trim 后无字符 (或 content 为空数组/空白字符串). 卡片无可读内容, 整卡过滤隐藏;
+// 含图片等非文本块的卡片不命中, 仍保留展示.
+export function isBlankTextResponseItemEntry(entry: AnyEntry): boolean {
+  if (entry?.type !== 'response_item') return false
+  const payload = entry?.payload
+  if (payload?.type !== 'message' || payload?.role !== 'assistant') return false
+  const c = payload?.content
+  if (typeof c === 'string') return c.trim().length === 0
+  if (!Array.isArray(c)) return false
+  if (c.length === 0) return true
+  return c.every((b: any) => (b?.type === 'output_text' || b?.type === 'text') && String(b?.text ?? '').trim() === '')
 }
 
 export function assistantResponseText(content: any): string {
