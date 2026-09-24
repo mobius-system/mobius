@@ -37,7 +37,6 @@ const BLOCK_META: Record<string, { icon: LucideIcon; label: string }> = {
   project: { icon: FolderKanban, label: '项目' },
   research: { icon: FlaskConical, label: 'Research' },
   blackboard: { icon: ClipboardList, label: '研究黑板' },
-  chief: { icon: Users, label: '团队管理' },
   peers: { icon: Users, label: '研究会话' },
   memory: { icon: Brain, label: '持久记忆' },
   skills: { icon: Wrench, label: '必要技能' },

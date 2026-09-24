@@ -174,8 +174,6 @@ export interface ResearchRawRow {
   last_active: string;
   message_count: number;
   pinned: number;
-  mode: 'custom' | 'chief_led';
-  assistant_limit: number;
   visibility: 'inherit' | 'private' | 'team' | 'public' | 'allowlist';
 }
 

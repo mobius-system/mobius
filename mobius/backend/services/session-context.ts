@@ -21,10 +21,6 @@ import { isAssistantSession } from './assistant-session';
 import { readIssueKnowledgeShape } from './project-knowledge';
 import { BUILTIN_MEMORIES } from './builtin-memories';
 import { pcClientRequiresAimuxSkill, pcTaskModePrompt } from './pc-client-context';
-import {
-  createChiefTeamToken,
-  TEAM_TOKEN_HEADER,
-} from './research-team';
 import { SESSION_SECTIONS, QuestionTitle, type SectionCtx } from './session-context-sections';
 
 // =====================================================================
@@ -38,23 +34,19 @@ function normalizeLanguage(value: any): 'zh' | 'en' {
 }
 
 interface FormatDeps {
-  createChiefTeamToken: (researchId: string, chiefSessionId: string) => string;
   isGitRepoRoot: (root: string) => boolean;
   isAssistantSession: (session: any) => boolean;
   pcTaskModePrompt: (raw: unknown, language: 'zh' | 'en') => string;
   builtinMemories: any[];
   env: { port: any; hiddenFolderName: string; skillsSubdir: string };
-  teamTokenHeader: string;
 }
 
 const REAL_FORMAT_DEPS: FormatDeps = {
-  createChiefTeamToken,
   isGitRepoRoot,
   isAssistantSession,
   pcTaskModePrompt,
   builtinMemories: BUILTIN_MEMORIES,
   env: { port: PORT, hiddenFolderName: HIDDEN_FOLDER_NAME, skillsSubdir: SKILLS_SUBDIR },
-  teamTokenHeader: TEAM_TOKEN_HEADER,
 };
 
 // 把服务端能力预计算成纯数据注入 ctx, 让 sections 的 build 保持纯函数 (同 ctx → 同文本)。
@@ -68,8 +60,6 @@ function buildSectionCtx(sources: any, D: FormatDeps): SectionCtx {
     ...sources,
     env: D.env,
     builtin_memories: D.builtinMemories,
-    chief_team_token: (research && research.id && session?.session_id) ? D.createChiefTeamToken(research.id, session.session_id) : '',
-    team_token_header: D.teamTokenHeader,
     worktree_is_repo_root: wtApplies ? D.isGitRepoRoot(sources.project.bind_path) : false,
     pc_task_mode_prompt_zh: D.pcTaskModePrompt(session?.pc_client_metadata, 'zh'),
     pc_task_mode_prompt_en: D.pcTaskModePrompt(session?.pc_client_metadata, 'en'),
@@ -493,8 +483,6 @@ function gatherResearchSources(user: any, research: any, sessionExclusions: any)
       description: research.description || '',
       status: research.status,
       project_id: research.project_id,
-      mode: research.mode || 'custom',
-      assistant_limit: research.assistant_limit || 3,
     } : null,
     skills: effectiveSkills,
     memories: effectiveMemories,

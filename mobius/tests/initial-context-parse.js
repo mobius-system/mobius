@@ -62,7 +62,6 @@ const enSources = {
   language: 'en',
 }
 const stubDeps = {
-  createChiefTeamToken: (r, s) => `C<${r}|${s}>`,
   isGitRepoRoot: () => false,
   isAssistantSession: () => false,
   pcTaskModePrompt: () => '',

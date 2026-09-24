@@ -9,8 +9,6 @@ export interface LegacyDeps {
   PORT: number;
   HIDDEN_FOLDER_NAME: string;
   SKILLS_SUBDIR: string;
-  createChiefTeamToken: (researchId: string, chiefSessionId: string) => string;
-  TEAM_TOKEN_HEADER: string;
   isGitRepoRoot: (root: string) => boolean;
   isAssistantSession: (session: any, user?: any) => boolean;
   pcTaskModePrompt: (raw: unknown, language: 'zh' | 'en') => string;
@@ -21,8 +19,6 @@ export function makeLegacyFormatBody(D: LegacyDeps) {
   const PORT = D.PORT;
   const HIDDEN_FOLDER_NAME = D.HIDDEN_FOLDER_NAME;
   const SKILLS_SUBDIR = D.SKILLS_SUBDIR;
-  const createChiefTeamToken = D.createChiefTeamToken;
-  const TEAM_TOKEN_HEADER = D.TEAM_TOKEN_HEADER;
   const isGitRepoRoot = D.isGitRepoRoot;
   const isAssistantSession = D.isAssistantSession;
   const pcTaskModePrompt = D.pcTaskModePrompt;
@@ -134,21 +130,6 @@ function zh_add_research_blackboard_info(lines: string[], research: any, session
   lines.push(`- 写入：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "研究进展或需要同步的信息"\``);
   lines.push(`- 写入（定向）（不建议使用，除非用户强烈要求）：\`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} --limit-receiver --receiver=<receiver_id> "研究进展或需要同步的信息"\``);
   lines.push('');
-  if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
-    const capability = createChiefTeamToken(research.id, session.session_id);
-    const teamUrl = `http://localhost:${PORT}/api/researches/${research.id}/team`;
-    lines.push('## Chief 团队管理能力');
-    lines.push(`- 当前 Assistant limit: ${research.assistant_limit || 3}（Chief 不占名额，且你不能修改 limit）`);
-    lines.push('- 只有在用户明确授权后才能招募 Assistant；能由现有成员完成时不要扩编。');
-    lines.push('- 招募前必须说明现有团队为什么无法完成、缺少什么能力、预期产出是什么。');
-    lines.push('- 删除 Agent 必须提供删除理由和未完成任务交接；你不能创建或删除 Chief。');
-    lines.push(`- 查询团队: GET ${teamUrl}`);
-    lines.push(`- 创建 Assistant: POST ${teamUrl}/agents`);
-    lines.push(`- 移除 Assistant: DELETE ${teamUrl}/agents/<session_id>`);
-    lines.push(`- 请求头: ${TEAM_TOKEN_HEADER}: ${capability}`);
-    lines.push('- 创建请求必填: name, purpose, model, skill_ids, memory_ids, memory_selection_confirmed=true, initial_prompt, recruit_reason, expected_outcome, request_id，以及按钮 authorization_id 或自然语言 authorization_quote。');
-    lines.push('');
-  }
 }
 
 function zh_add_research_peer_info(lines: string[], peers: any[]): void {
@@ -348,19 +329,6 @@ function en_add_research_blackboard_info(lines: string[], research: any, session
   lines.push(`- Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} "progress or findings to share"\``);
   lines.push(`- Targeted write (discouraged unless the user strongly requires it): \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${research.id} --limit-receiver --receiver=<receiver_id> "progress or findings to share"\``);
   lines.push('');
-  if (session?.research_role === 'chief_researcher' && session?.session_id && research?.mode === 'chief_led') {
-    const capability = createChiefTeamToken(research.id, session.session_id);
-    const teamUrl = `http://localhost:${PORT}/api/researches/${research.id}/team`;
-    lines.push('## Chief team-management capability');
-    lines.push(`- Current Assistant limit: ${research.assistant_limit || 3}; the Chief does not count and cannot change it.`);
-    lines.push('- Recruit only after explicit user authorization and record why the current team cannot do the work.');
-    lines.push('- Removing an Agent requires a reason and unfinished-work handoff. You cannot create or remove a Chief.');
-    lines.push(`- Team state: GET ${teamUrl}`);
-    lines.push(`- Recruit Assistant: POST ${teamUrl}/agents`);
-    lines.push(`- Remove Assistant: DELETE ${teamUrl}/agents/<session_id>`);
-    lines.push(`- Header: ${TEAM_TOKEN_HEADER}: ${capability}`);
-    lines.push('');
-  }
 }
 
 function en_add_research_peer_info(lines: string[], peers: any[]): void {

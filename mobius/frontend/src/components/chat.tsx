@@ -1582,7 +1582,9 @@ const HEADER_ACTION_TONE_CLASS: Record<HeaderActionTone, string> = {
   emerald: 'border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10',
   violet:  'border-violet-500/25 text-violet-400 hover:bg-violet-500/10',
   blue:    'border-blue-500/20 text-blue-400 hover:bg-blue-500/10',
-  neutral: 'border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]',
+  // neutral 仅用于顶栏「…」按钮: 去描边只留底色, 底色与悬停见 index.css .session-more-button
+  // neutral is used only by the header "…" button: borderless fill, colors live in .session-more-button
+  neutral: 'text-[var(--text-secondary)]',
 }
 
 type HeaderActionButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
@@ -1650,11 +1652,15 @@ function ChatHeaderOverflowMenu({
   const itemClass = "w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center justify-between gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
   return (
     <div className="relative">
+      {/* 去描边只留底色; iconOnly 已是固定 22x22, 去掉边框不影响尺寸.
+          Borderless fill only; the iconOnly box is a fixed 22x22 so dropping the border costs no size. */}
       <HeaderActionButton
         tone="neutral"
         iconOnly
         title="更多操作"
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v) }}
+        style={{ borderWidth: 0 }}
+        className="session-more-button"
         icon={<MoreHorizontal className="w-4 h-4" strokeWidth={1.75} />}
       />
       {open && (
@@ -4432,13 +4438,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Stop: 终止当前 turn — 独立于发送按钮, 保持常驻可见. */}
+          {/* Stop: 终止当前 turn — 独立于发送按钮, 保持常驻可见.
+              去描边只留红底, 上下 padding 补回 1px 边框的占位以保持与相邻按钮等高.
+              Borderless red fill only; the extra vertical padding replaces the 1px border so the pill keeps its height. */}
           <HeaderActionButton
             tone="red"
             title="终止当前智能体正在执行的操作"
             disabled={!sessionId}
             aria-live="polite"
             onClick={handleStopSession}
+            style={{ borderWidth: 0, paddingTop: 3, paddingBottom: 3 }}
             className={`session-stop-button hidden md:inline-flex ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
             {stopFeedbackActive && (
               <>
@@ -4479,7 +4488,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               projectId={currentProjectId}
               subPath={currentVscodeSubPath}
               showWorktreeOption={!!currentVscodeSubPath}
-              className="text-[length:var(--fs-sm)] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[length:var(--fs-sm)] rounded-full px-2.5 py-[3px] bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
           {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目" 收纳进来 (计数槽自取条数) */}

@@ -77,8 +77,6 @@ export interface SectionCtx {
   language?: 'zh' | 'en';
   env?: SectionEnv;
   builtin_memories?: any[];
-  chief_team_token?: string;
-  team_token_header?: string;
   worktree_is_repo_root?: boolean;
   pc_task_mode_prompt_zh?: string;
   pc_task_mode_prompt_en?: string;
@@ -228,43 +226,6 @@ export const BlackboardSection = defineSection({
         - Read: \`research_blackboard_read --from=${sessionId || '<self_id>'} --research=${c.research.id}\` (do not poll; the system notifies you when there are updates)
         - Write: \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} "progress or findings to share"\`
         - Targeted write (discouraged unless the user strongly requires it): \`research_blackboard_write --from=${sessionId || '<self_id>'} --research=${c.research.id} --limit-receiver --receiver=<receiver_id> "progress or findings to share"\`
-      `;
-    },
-  },
-});
-
-export const ChiefSection = defineSection({
-  key: 'chief',
-  title: { zh: '## Chief 团队管理能力', en: '## Chief team-management capability' },
-  build: {
-    zh: (c, t) => {
-      if (!(c.research && c.research.id && c.session?.research_role === 'chief_researcher' && c.session?.session_id && c.research?.mode === 'chief_led')) return null;
-      const teamUrl = `http://localhost:${c.env?.port}/api/researches/${c.research.id}/team`;
-      return md`
-        ${t.zh}
-        - 当前 Assistant limit: ${c.research.assistant_limit || 3}（Chief 不占名额，且你不能修改 limit）
-        - 只有在用户明确授权后才能招募 Assistant；能由现有成员完成时不要扩编。
-        - 招募前必须说明现有团队为什么无法完成、缺少什么能力、预期产出是什么。
-        - 删除 Agent 必须提供删除理由；你不能创建或删除 Chief。
-        - 查询团队: GET ${teamUrl}
-        - 创建 Assistant: POST ${teamUrl}/agents
-        - 移除 Assistant: DELETE ${teamUrl}/agents/<session_id>
-        - 请求头: ${c.team_token_header}: ${c.chief_team_token}
-        - 创建请求必填: name, purpose, model, skill_ids, memory_ids, memory_selection_confirmed=true, initial_prompt, recruit_reason, expected_outcome, request_id，以及按钮 authorization_id 或自然语言 authorization_quote。
-      `;
-    },
-    en: (c, t) => {
-      if (!(c.research && c.research.id && c.session?.research_role === 'chief_researcher' && c.session?.session_id && c.research?.mode === 'chief_led')) return null;
-      const teamUrl = `http://localhost:${c.env?.port}/api/researches/${c.research.id}/team`;
-      return md`
-        ${t.en}
-        - Current Assistant limit: ${c.research.assistant_limit || 3}; the Chief does not count and cannot change it.
-        - Recruit only after explicit user authorization and record why the current team cannot do the work.
-        - Removing an Agent requires a reason. You cannot create or remove a Chief.
-        - Team state: GET ${teamUrl}
-        - Recruit Assistant: POST ${teamUrl}/agents
-        - Remove Assistant: DELETE ${teamUrl}/agents/<session_id>
-        - Header: ${c.team_token_header}: ${c.chief_team_token}
       `;
     },
   },
@@ -590,7 +551,6 @@ export const SESSION_SECTIONS: SectionDef[] = [
   ProjectSection,
   ResearchSection,
   BlackboardSection,
-  ChiefSection,
   PeersSection,
   MemorySection,
   SkillsSection,

@@ -5219,6 +5219,14 @@ body:has(.assistant-panel) .assistant-fab .mo-avatar__particle {
   animation-delay: .16s;
   border-color: rgba(248, 113, 113, .72);
 }
+
+/* ===== 顶栏「…」按钮: 去描边, 只留中性底色 (随主题变量走, 亮暗皆可见) ===== */
+.session-more-button {
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+.session-more-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 13%, transparent);
+}
 .session-stop-toast {
   transform-origin: 50% 0;
   animation: session-stop-toast-in 1.8s cubic-bezier(.2, 1, .2, 1) forwards;

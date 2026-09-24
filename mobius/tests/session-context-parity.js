@@ -17,8 +17,6 @@ const stubDeps = {
   PORT: 45616,
   HIDDEN_FOLDER_NAME: '.imac',
   SKILLS_SUBDIR: 'skills-sub',
-  createChiefTeamToken: (r, s) => `CHIEF-TOK<${r}|${s}>`,
-  TEAM_TOKEN_HEADER: 'x-test-team-token',
   isGitRepoRoot: (root) => String(root || '').startsWith('/repo'),
   isAssistantSession: (session) => !!session && typeof session.session_key === 'string' && session.session_key.startsWith('assistant-question:'),
   pcTaskModePrompt: (raw, lang) => (raw && raw.work_mode && ['hub', 'pc', 'dual'].includes(raw.work_mode) && raw.aimux_id)
@@ -28,13 +26,11 @@ const stubDeps = {
 }
 
 const newFormatDeps = {
-  createChiefTeamToken: stubDeps.createChiefTeamToken,
   isGitRepoRoot: stubDeps.isGitRepoRoot,
   isAssistantSession: stubDeps.isAssistantSession,
   pcTaskModePrompt: stubDeps.pcTaskModePrompt,
   builtinMemories: stubDeps.BUILTIN_MEMORIES,
   env: { port: stubDeps.PORT, hiddenFolderName: stubDeps.HIDDEN_FOLDER_NAME, skillsSubdir: stubDeps.SKILLS_SUBDIR },
-  teamTokenHeader: stubDeps.TEAM_TOKEN_HEADER,
 }
 
 const legacyFormatBody = makeLegacyFormatBody(stubDeps)
@@ -50,8 +46,8 @@ const SESSION = { session_id: 'c1524307', name: '前端修改（9月） 2026-09-
 const SESSION_PC = { ...SESSION, session_id: 'pc123', pc_client_metadata: { work_mode: 'dual', aimux_id: 'aimux-9' } }
 const SESSION_ASSISTANT = { ...SESSION, session_id: 'asst1', session_key: 'assistant-question:mobius:x1' }
 const SESSION_DRAFT = { ...SESSION, session_id: '(待创建)' }
-const RESEARCH = { id: '3b782686', title: '深度研究', description: '多智能体协作', status: 'active', mode: 'chief_led', assistant_limit: 5 }
-const RESEARCH_CUSTOM = { id: '9017cdba', title: 'Custom Research', description: '', status: 'active', mode: 'custom' }
+const RESEARCH = { id: '3b782686', title: '深度研究', description: '多智能体协作', status: 'active' }
+const RESEARCH_CUSTOM = { id: '9017cdba', title: 'Custom Research', description: '', status: 'active' }
 const SKILLS = [
   { name: 'mobius-self-iter', dirName: 'mobius-self-iter', description: 'What to do after self iter' },
   { name: '裸skill', dirName: '', description: '' },
@@ -197,8 +193,6 @@ const probeCtx = {
   ...CASES[2][1],
   env: newFormatDeps.env,
   builtin_memories: newFormatDeps.builtinMemories,
-  chief_team_token: 'CHIEF-TOK<x>',
-  team_token_header: newFormatDeps.teamTokenHeader,
   worktree_is_repo_root: false,
   pc_task_mode_prompt_zh: 'PC',
   pc_task_mode_prompt_en: 'PC',
