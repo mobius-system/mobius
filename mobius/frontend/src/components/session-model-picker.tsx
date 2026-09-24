@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../store'
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 
-type SessionModelOption = {
+export type SessionModelOption = {
   key: string
   value?: string
   model?: string
@@ -91,19 +91,11 @@ function useResponsiveModelColumns() {
   return columns
 }
 
-export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true, collapsedRows = 3 }: {
-  value: string
-  onChange: (key: string) => void
-  dark: boolean
-  /** preset 模式不禁用超额模型 (对齐传统 isPresetMode 行为); 默认启用配额拦截 */
-  quotaEnabled?: boolean
-  /** 折叠态保留几行 (1 = 顶栏快捷菜单只显一行, 其余收进"展开剩余"; 默认 3 对齐传统 NewSessionModal). */
-  collapsedRows?: number
-}) {
+// 模型选项 + 配额统计的拉取: grid 卡片 (SessionModelPicker) 与下拉形态 (SessionModelDropdown) 共用一份数据源.
+// Shared data source for both the grid picker and the dropdown variant.
+export function useSessionModelOptions(): { options: SessionModelOption[]; stats: PromptStats | null } {
   const [options, setOptions] = useState<SessionModelOption[]>(FALLBACK_OPTIONS)
   const [stats, setStats] = useState<PromptStats | null>(null)
-  const [manuallyExpanded, setManuallyExpanded] = useState(false)
-  const responsiveColumns = useResponsiveModelColumns()
 
   useEffect(() => {
     let alive = true
@@ -120,6 +112,22 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
       .catch(() => { /* 失败就不显示配额徽标, 不影响创建流程 */ })
     return () => { alive = false }
   }, [])
+
+  return { options, stats }
+}
+
+export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true, collapsedRows = 3 }: {
+  value: string
+  onChange: (key: string) => void
+  dark: boolean
+  /** preset 模式不禁用超额模型 (对齐传统 isPresetMode 行为); 默认启用配额拦截 */
+  quotaEnabled?: boolean
+  /** 折叠态保留几行 (1 = 顶栏快捷菜单只显一行, 其余收进"展开剩余"; 默认 3 对齐传统 NewSessionModal). */
+  collapsedRows?: number
+}) {
+  const { options, stats } = useSessionModelOptions()
+  const [manuallyExpanded, setManuallyExpanded] = useState(false)
+  const responsiveColumns = useResponsiveModelColumns()
 
   const selected = options.find(o => o.key === value) || null
   const collapsedVisibleCount = responsiveColumns * collapsedRows
@@ -139,7 +147,7 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
 
   return (
     <div>
-      <div className="text-[12px] mb-1.5" style={{ color: dark ? '#9ca3af' : '#64748b' }}>模型（创建后不可更改）</div>
+      <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: dark ? '#9ca3af' : '#64748b' }}>模型（创建后不可更改）</div>
       <div
         className="grid grid-cols-2 gap-2 overflow-hidden transition-[max-height] duration-200 sm:grid-cols-3"
         style={{ maxHeight: modelGridExpanded ? 'none' : collapsedMaxH }}
@@ -171,8 +179,8 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
                 color: dark ? '#f1f5f9' : '#1e293b',
                 opacity: quotaBlocked ? 0.58 : 1,
               }}>
-              <div className="text-[13px] font-medium truncate">{opt.title || opt.label}</div>
-              <div className="text-[11px] flex items-baseline gap-1.5 min-w-0" style={{ color: dark ? '#9ca3af' : '#64748b' }}>
+              <div className="text-[length:var(--fs-lg)] font-medium truncate">{opt.title || opt.label}</div>
+              <div className="text-[length:var(--fs-sm)] flex items-baseline gap-1.5 min-w-0" style={{ color: dark ? '#9ca3af' : '#64748b' }}>
                 <span className="truncate">{opt.sub}</span>
                 {!quotaBlocked && usage?.limit != null && (
                   <span className="font-medium whitespace-nowrap" style={{ color: dark ? '#93c5fd' : '#2563eb' }}>
@@ -196,7 +204,7 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
       </div>
       {hasCollapsedOverflow && !expandedForSelection && (
         <button type="button" onClick={() => setManuallyExpanded(v => !v)}
-          className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+          className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)]"
           style={{
             borderColor: 'var(--input-border)',
             color: dark ? '#9ca3af' : '#64748b',
@@ -207,7 +215,7 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
         </button>
       )}
       {selectedUsage?.limit != null && (
-        <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px]"
+        <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[length:var(--fs-md)]"
           style={{
             background: selectedUsage.blocked ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)',
             borderColor: selectedUsage.blocked ? 'rgba(239,68,68,0.32)' : 'rgba(59,130,246,0.25)',
@@ -221,7 +229,7 @@ export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true,
         </div>
       )}
       {stats && (
-        <div className="mt-2 text-[12px] font-medium" style={{ color: selectedTmuxWarning ? '#f59e0b' : '#16a34a' }}>
+        <div className="mt-2 text-[length:var(--fs-md)] font-medium" style={{ color: selectedTmuxWarning ? '#f59e0b' : '#16a34a' }}>
           {selectedTmux?.limit != null
             ? selectedTmuxWarning
               ? `${selected?.label || selectedBackendLabel} tmux 窗口达到软提醒阈值（当前 ${selectedTmux.count} / ${selectedTmux.limit}），仍可创建。`

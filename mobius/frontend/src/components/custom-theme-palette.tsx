@@ -212,7 +212,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
             <PaletteIcon className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            <h3 className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+            <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
               {mode === 'list' ? '自定义主题' : (edit.id ? '编辑主题' : '新建主题')}
             </h3>
           </div>
@@ -256,7 +256,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
         <div className="flex items-center gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           {mode === 'list' ? (
             <>
-              <div className="flex-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="flex-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                 {activeTheme
                   ? <>当前: <span style={{ color: 'var(--text-primary)' }}>{activeTheme.name}</span> · 基于「{getBaseOption(activeTheme.base).label}」</>
                   : '当前未启用自定义主题, 跟随下方基础主题。'}
@@ -264,7 +264,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
               <button
                 type="button"
                 onClick={handleNew}
-                className="h-8 px-3 rounded-lg text-[12px] font-medium flex items-center gap-1.5 transition-colors"
+                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] font-medium flex items-center gap-1.5 transition-colors"
                 style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -274,7 +274,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
           ) : (
             <>
               {err && (
-                <div className="flex-1 flex items-center gap-1.5 text-[11px] text-red-300">
+                <div className="flex-1 flex items-center gap-1.5 text-[length:var(--fs-sm)] text-red-300">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   {err}
                 </div>
@@ -283,7 +283,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                className="h-8 px-3 rounded-lg text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)]"
                 style={{ color: 'var(--text-secondary)', border: '1px solid var(--input-border)' }}
               >
                 取消
@@ -291,7 +291,7 @@ export function CustomThemePalette({ onClose, onApplied }: Props) {
               <button
                 type="button"
                 onClick={handleSave}
-                className="h-8 px-3 rounded-lg text-[12px] font-medium transition-colors"
+                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors"
                 style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
               >
                 保存
@@ -330,7 +330,7 @@ function ListView({
         <button
           type="button"
           onClick={onReset}
-          className="w-full rounded-xl px-3 py-2 text-[12px] flex items-center gap-2 transition-colors border"
+          className="w-full rounded-xl px-3 py-2 text-[length:var(--fs-md)] flex items-center gap-2 transition-colors border"
           style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: isDark ? '#94a3b8' : '#475569' }}
         >
           <RotateCcw className="w-3.5 h-3.5" />
@@ -339,7 +339,7 @@ function ListView({
       )}
 
       {themes.length === 0 ? (
-        <div className="py-10 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="py-10 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
           还没有保存的自定义主题。点击下方"新建主题"开始调色。
         </div>
       ) : (
@@ -362,13 +362,13 @@ function ListView({
                   <span className="flex-1" style={{ background: accent }} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{t.name}</div>
-                  <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-[length:var(--fs-lg)] font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{t.name}</div>
+                  <div className="text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }}>
                     基于「{getBaseOption(t.base).label}」 · {Object.keys(t.overrides).length} 个覆写
                   </div>
                 </div>
                 {selected ? (
-                  <span className="flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium"
+                  <span className="flex h-6 items-center gap-1 rounded-md px-2 text-[length:var(--fs-sm)] font-medium"
                     style={{ background: 'var(--accent-primary)', color: '#0b1220' }}>
                     <Check className="w-3 h-3" />使用中
                   </span>
@@ -376,7 +376,7 @@ function ListView({
                   <button
                     type="button"
                     onClick={() => onApply(t)}
-                    className="h-7 px-2.5 rounded-md text-[12px] font-medium transition-colors"
+                    className="h-7 px-2.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors"
                     style={{ background: 'var(--accent-primary)', color: '#0b1220' }}
                   >
                     使用
@@ -445,21 +445,21 @@ function EditView({
     <div className="p-5 space-y-4">
       {/* 名称 */}
       <div>
-        <label className="block text-[11px] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>主题名称</label>
+        <label className="block text-[length:var(--fs-sm)] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>主题名称</label>
         <input
           type="text"
           value={edit.name}
           onChange={e => onSetName(e.target.value)}
           placeholder="例如: 我的深紫"
           maxLength={24}
-          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-[var(--accent-primary)]"
+          className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-[var(--accent-primary)]"
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }}
         />
       </div>
 
       {/* 基础主题选择 */}
       <div>
-        <label className="block text-[11px] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>基于基础主题</label>
+        <label className="block text-[length:var(--fs-sm)] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>基于基础主题</label>
         <div className="grid grid-cols-7 gap-1.5">
           {THEME_OPTIONS.map(opt => {
             const selected = opt.name === edit.base
@@ -478,19 +478,19 @@ function EditView({
                 <span className="flex h-4 w-7 overflow-hidden rounded border" style={{ borderColor: 'var(--border-color-strong)' }}>
                   {opt.swatches.map((c, i) => <span key={i} className="flex-1" style={{ background: c }} />)}
                 </span>
-                <span className="text-[10px] truncate w-full text-center" style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{opt.label}</span>
+                <span className="text-[length:var(--fs-xs)] truncate w-full text-center" style={{ color: selected ? 'var(--text-primary)' : 'var(--text-muted)' }}>{opt.label}</span>
               </button>
             )
           })}
         </div>
-        <div className="mt-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="mt-1.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
           切换基础主题会清空当前覆写, 因为不同 base 的"非颜色"装饰 (渐变、阴影) 差异较大, 一起混用效果通常不理想。
         </div>
       </div>
 
       {/* 颜色覆写 */}
       <div>
-        <label className="block text-[11px] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>颜色覆写</label>
+        <label className="block text-[length:var(--fs-sm)] font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>颜色覆写</label>
         <div className="space-y-1.5">
           {PALETTE_VARIABLES.map(v => {
             const current = readVar(v.key)
@@ -511,17 +511,17 @@ function EditView({
                   aria-label={v.label}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                  <div className="text-[length:var(--fs-md)] font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                     {v.label}
-                    {overridden && <span className="ml-1.5 text-[10px] font-normal" style={{ color: 'var(--accent-primary)' }}>已覆写</span>}
+                    {overridden && <span className="ml-1.5 text-[length:var(--fs-xs)] font-normal" style={{ color: 'var(--accent-primary)' }}>已覆写</span>}
                   </div>
-                  <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{v.description}</div>
+                  <div className="text-[length:var(--fs-xs)] truncate" style={{ color: 'var(--text-muted)' }}>{v.description}</div>
                 </div>
                 <input
                   type="text"
                   value={current}
                   onChange={e => onOverride(v.key, e.target.value)}
-                  className="w-[110px] h-7 px-2 rounded-md text-[11px] font-mono focus:outline-none focus:border-[var(--accent-primary)]"
+                  className="w-[110px] h-7 px-2 rounded-md text-[length:var(--fs-sm)] font-mono focus:outline-none focus:border-[var(--accent-primary)]"
                   style={{ background: 'var(--bg-primary)', border: '1px solid var(--input-border)', color: isDark ? '#cbd5e1' : '#334155' }}
                   placeholder="#rrggbb"
                 />
@@ -549,7 +549,7 @@ function EditView({
               onClick={() => {
                 for (const v of PALETTE_VARIABLES) onClearOverride(v.key)
               }}
-              className="h-7 px-2.5 rounded-md text-[11px] flex items-center gap-1.5 transition-colors hover:bg-[var(--bg-hover)]"
+              className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] flex items-center gap-1.5 transition-colors hover:bg-[var(--bg-hover)]"
               style={{ color: 'var(--text-secondary)', border: '1px solid var(--input-border)' }}
             >
               <RotateCcw className="w-3 h-3" />

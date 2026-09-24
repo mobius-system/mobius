@@ -49,7 +49,7 @@ export function ProjectTabButton({
   return (
     <button
       type={type}
-      className={`h-7 px-3 rounded-md text-[12px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`h-7 px-3 rounded-md text-[length:var(--fs-md)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
         active ? activeClassName : 'hover:bg-[var(--bg-card-hover)]'
       } ${className}`}
       style={active ? style : { color: inactiveColor, ...style }}

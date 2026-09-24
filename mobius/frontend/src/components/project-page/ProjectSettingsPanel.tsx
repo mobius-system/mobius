@@ -208,14 +208,14 @@ function GitTrackingPanel({
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>版本追踪</h3>
+            <h3 className="text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>版本追踪</h3>
             {data?.available && (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${data.dirty ? 'text-amber-400 bg-amber-500/10 border-amber-500/25' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'}`}>
+              <span className={`text-[length:var(--fs-sm)] px-2 py-0.5 rounded-full border ${data.dirty ? 'text-amber-400 bg-amber-500/10 border-amber-500/25' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'}`}>
                 {statusText}
               </span>
             )}
           </div>
-          <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+          <div className="mt-1 text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }}>
             {data?.available
               ? `${data.repo_path || ''}${data.branch ? ` · ${data.branch}` : ''}${data.head ? ` · ${data.head}` : ''}`
               : (data?.reason || error || '绑定路径下未检测到 Git 仓库')}
@@ -223,7 +223,7 @@ function GitTrackingPanel({
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
           <button type="button" onClick={onRefresh} disabled={loading}
-            className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50">
+            className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50">
             {loading ? '刷新中...' : '刷新'}
           </button>
           {showGitActionMenu && (
@@ -259,14 +259,14 @@ function GitTrackingPanel({
                           setGitMenuOpen(false)
                           onGitAction?.(item.key)
                         }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-55"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-55"
                         style={{ color: 'var(--text-primary)' }}>
                         {item.key === 'pull' ? <Download className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} /> : null}
                         {item.key === 'push' ? <Upload className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.8} /> : null}
                         {item.key === 'stage' ? <Plus className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.8} /> : null}
                         <span className="min-w-0 flex-1">
                           <span className="block font-medium">{runningThisAction ? `${item.label}中...` : item.label}</span>
-                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.description}</span>
+                          <span className="block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{item.description}</span>
                         </span>
                       </button>
                     )
@@ -279,43 +279,43 @@ function GitTrackingPanel({
       </div>
 
       {loading && !data && (
-        <div className="text-[12px] px-3 py-8 rounded-lg border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+        <div className="text-[length:var(--fs-md)] px-3 py-8 rounded-lg border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
           正在检测绑定路径中的 Git 仓库...
         </div>
       )}
 
       {!loading && error && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {error}
         </div>
       )}
 
       {deployMessage && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
           {deployMessage}
         </div>
       )}
 
       {deployError && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {deployError}
         </div>
       )}
 
       {gitActionMessage && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
           {gitActionMessage}
         </div>
       )}
 
       {gitActionError && (
-        <div className="whitespace-pre-wrap text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
+        <div className="whitespace-pre-wrap text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {gitActionError}
         </div>
       )}
 
       {!loading && data && !data.available && (
-        <div className="text-[12px] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+        <div className="text-[length:var(--fs-md)] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
           {data.reason || '绑定路径下未检测到 Git 仓库'}
         </div>
       )}
@@ -324,40 +324,40 @@ function GitTrackingPanel({
         <>
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>分支</div>
-              <div className="text-[12px] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.branch || 'HEAD'}</div>
+              <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>分支</div>
+              <div className="text-[length:var(--fs-md)] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.branch || 'HEAD'}</div>
             </div>
             <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>当前 HEAD</div>
-              <div className="text-[12px] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.head || '--'}</div>
+              <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>当前 HEAD</div>
+              <div className="text-[length:var(--fs-md)] truncate font-mono" style={{ color: 'var(--text-primary)' }}>{data.head || '--'}</div>
             </div>
             <div className="rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>未提交</div>
-              <div className="text-[12px] truncate" style={{ color: data.dirty ? '#f59e0b' : 'var(--text-primary)' }}>
+              <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>未提交</div>
+              <div className="text-[length:var(--fs-md)] truncate" style={{ color: data.dirty ? '#f59e0b' : 'var(--text-primary)' }}>
                 {data.dirty_count || 0} 个文件
               </div>
             </div>
           </div>
 
           {data.remote && (
-            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={data.remote}>
+            <div className="text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }} title={data.remote}>
               origin: {data.remote}
             </div>
           )}
 
           {data.log_error && (
-            <div className="text-[12px] px-3 py-2 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-400">
+            <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-400">
               {data.log_error}
             </div>
           )}
 
           {commits.length === 0 ? (
-            <div className="text-[12px] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+            <div className="text-[length:var(--fs-md)] px-3 py-8 rounded-lg border border-dashed text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
               当前仓库还没有提交记录
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>近期 commits</div>
+              <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>近期 commits</div>
               {commits.map((commit) => {
                 const isCurrentVersion = !!isSelfDevelop && !!currentCommitHash && commit.hash === currentCommitHash
                 const canRollbackToCommit = !!isSelfDevelop && !!currentCommitHash && !isCurrentVersion && !!canDeployVersion && !!onDeployVersion
@@ -376,13 +376,13 @@ function GitTrackingPanel({
                   }}>
                   <div className="flex flex-col items-start gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <code className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border font-mono"
+                      <code className="shrink-0 text-[length:var(--fs-sm)] px-1.5 py-0.5 rounded border font-mono"
                         style={{ color: '#60a5fa', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
                         title={commit.hash}>
                         {commit.short_hash}
                       </code>
                       {isCurrentVersion && (
-                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border font-medium"
+                        <span className="shrink-0 text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded-full border font-medium"
                           style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.38)', background: 'rgba(251,191,36,0.14)' }}>
                           当前版本
                         </span>
@@ -392,7 +392,7 @@ function GitTrackingPanel({
                           type="button"
                           disabled={versionActionInProgress}
                           onClick={() => onDeployVersion?.(commit)}
-                          className="h-7 px-2.5 rounded-md text-[11px] border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/18 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/18 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                           {deployingThisCommit ? '正在回退...' : '回退到此版本'}
                         </button>
                       )}
@@ -401,16 +401,16 @@ function GitTrackingPanel({
                           type="button"
                           disabled={versionActionInProgress}
                           onClick={() => onHardResetVersion?.(commit)}
-                          className="h-7 px-2.5 rounded-md text-[11px] border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                           {hardResettingThisCommit ? '正在硬回退...' : '回退并撤销未来更改'}
                         </button>
                       )}
                     </div>
                     <div className="min-w-0 w-full">
-                      <div className="text-[13px] leading-5 break-words" style={{ color: 'var(--text-primary)' }}>
+                      <div className="text-[length:var(--fs-lg)] leading-5 break-words" style={{ color: 'var(--text-primary)' }}>
                         {commit.subject || '(无提交信息)'}
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                         <span className="truncate max-w-[220px]" title={commit.author_email}>{commit.author_name || 'unknown'}</span>
                         <span>·</span>
                         <span>{formatCommitDate(commit.date) || commit.relative_date}</span>
@@ -437,7 +437,7 @@ function SettingsCard({ title, hint, children }: { title: string; hint?: string;
     <section className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
       <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          <h3 className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
           {hint && <HelpHint text={hint} />}
         </div>
       </div>
@@ -484,19 +484,19 @@ function LocalPcPathRow({ projectId }: { projectId: string }) {
   }
   return (
     <div>
-      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>本机工作路径（桌面端 · aimux 调度本机时使用）</label>
+      <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>本机工作路径（桌面端 · aimux 调度本机时使用）</label>
       <div className="flex min-w-0 flex-nowrap items-center gap-2">
       <input value={path} readOnly placeholder="未绑定"
-        className="flex-1 min-w-0 max-w-[20rem] h-9 px-3 rounded-lg text-[13px] font-mono truncate"
+        className="flex-1 min-w-0 max-w-[20rem] h-9 px-3 rounded-lg text-[length:var(--fs-lg)] font-mono truncate"
         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
       <button type="button" onClick={copy} disabled={!path}
         title={copied ? '已复制' : '复制路径'} aria-label={copied ? '已复制' : '复制路径'}
-        className="h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] transition-colors border flex items-center justify-center disabled:opacity-40"
+        className="h-9 w-9 flex-shrink-0 rounded-lg text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] transition-colors border flex items-center justify-center disabled:opacity-40"
         style={{ color: copied ? '#34d399' : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-        {copied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
+        {copied ? <span className="text-[length:var(--fs-sm)] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
       </button>
       <button type="button" onClick={edit} disabled={busy}
-        className="h-9 flex-shrink-0 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
+        className="h-9 flex-shrink-0 px-3 rounded-lg text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40">
         <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
         <span>{busy ? '…' : path ? '更改' : '选择'}</span>
       </button>
@@ -815,7 +815,7 @@ export function ProjectSettingsPanel({
       )}
 
       {project.kind === 'extension' && (
-        <div className="px-5 py-3 border mt-3 rounded-lg text-[12px]"
+        <div className="px-5 py-3 border mt-3 rounded-lg text-[length:var(--fs-md)]"
           style={{ borderColor: 'var(--border-color)', background: 'rgba(167,139,250,0.06)', color: '#a78bfa' }}>
           这是一个特殊拓展项目, 由 <code style={{ background: 'rgba(0,0,0,0.2)', padding: '0 4px', borderRadius: 3 }}>mobius/extension/{project.extension_name}</code> 自动同步.
           名称 / 描述 / 路径 / worktree / Research 由 manifest 锁定, 不可在此修改.
@@ -849,7 +849,7 @@ export function ProjectSettingsPanel({
               {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
                   与主页「编辑项目」弹窗 modals.tsx 共用同一个 ProjectTeamPanel. */}
               <div className="mt-4">
-                <div className="mb-2 text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>项目成员</div>
+                <div className="mb-2 text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-secondary)' }}>项目成员</div>
                 <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
               </div>
             </SettingsCard>
@@ -893,7 +893,7 @@ export function ProjectSettingsPanel({
         ) : (
         <div className="w-full min-w-0 p-3 space-y-4">
           {!canManageProject && (
-            <div className="rounded-lg border px-3 py-2 text-[12px] leading-5"
+            <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)] leading-5"
               style={{ borderColor: 'rgba(59,130,246,0.28)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)' }}>
               当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
             </div>
@@ -906,32 +906,32 @@ export function ProjectSettingsPanel({
                   命中后整框 filter:blur(5px) 不可读 (脱敏默认开启). 拥有者编辑面需可读. */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" data-text-redaction-ignore="true">
                 <div>
-                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>名称</label>
+                  <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>名称</label>
                   <textarea value={editName} disabled={!canManageProject} onChange={e => setEditName(normalizeSingleLineText(e.target.value))}
                     onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
                     rows={2}
-                    className="w-full h-20 px-3 py-2 rounded-lg text-left text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                    className="w-full h-20 px-3 py-2 rounded-lg text-left text-[length:var(--fs-lg)] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>描述</label>
+                  <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>描述</label>
                   <ExpandableTextarea value={editDesc} disabled={!canManageProject} onValueChange={setEditDesc} rows={2}
                     overlayTitle="编辑项目描述"
-                    className="w-full h-20 px-3 py-2 rounded-lg text-[13px] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                    className="w-full h-20 px-3 py-2 rounded-lg text-[length:var(--fs-lg)] leading-5 resize-none overflow-hidden focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </div>
                 <div className="xl:col-span-2">
-                  <label htmlFor={`project-bind-path-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
+                  <label htmlFor={`project-bind-path-${project.id}`} className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
                   <div
                     className="flex min-w-0 flex-wrap items-center gap-2 leading-[normal]"
                     data-design-id="project-bind-path-actions"
                   >
                     <input id={`project-bind-path-${project.id}`} value={editBindPath} readOnly disabled={!canManageProject} placeholder="未绑定（限家目录下）"
                       onClick={() => { if (canManageProject) onOpenPathPicker() }}
-                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[13px] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
+                      className="h-9 min-w-[240px] flex-[1_1_420px] px-3 rounded-lg text-[length:var(--fs-lg)] cursor-pointer focus:outline-none focus:border-blue-500/30 disabled:cursor-default disabled:opacity-60 truncate"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     <button type="button" onClick={onOpenPathPicker} disabled={!canManageProject}
-                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[length:var(--fs-md)] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/25 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
                       <FolderOpen className="h-4 w-4" strokeWidth={1.8} />
                       <span>选择路径</span>
                     </button>
@@ -941,7 +941,7 @@ export function ProjectSettingsPanel({
                         projectId={project.id}
                         mode="direct"
                         showWorktreeOption={false}
-                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[12px] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-blue-500/10 hover:text-blue-400 transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
+                        className="h-9 flex-shrink-0 px-2.5 sm:px-3 rounded-lg text-[length:var(--fs-md)] text-[var(--text-secondary)] bg-[var(--bg-card-hover)] hover:bg-blue-500/10 hover:text-blue-400 transition-colors border border-[var(--input-border)] flex items-center gap-1.5 whitespace-nowrap"
                       />
                     )}
                     {editBindPath && (
@@ -954,7 +954,7 @@ export function ProjectSettingsPanel({
                           setBindPathCopied(false)
                         }
                       }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
-                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
+                        className={`h-9 w-9 flex-shrink-0 rounded-lg text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
                         style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                         {bindPathCopied ? <Check className="h-4 w-4" strokeWidth={2} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
                       </button>
@@ -968,7 +968,7 @@ export function ProjectSettingsPanel({
           {project.kind === 'extension' ? null : (
             <SettingsCard title="默认模型偏好" hint="本项目新建执行会话时默认套用的模型；不指定则跟随系统默认。">
               <div>
-                <label htmlFor={`project-default-model-${project.id}`} className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
+                <label htmlFor={`project-default-model-${project.id}`} className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>默认模型</label>
                 <select
                   id={`project-default-model-${project.id}`}
                   value={editDefaultModel}
@@ -976,7 +976,7 @@ export function ProjectSettingsPanel({
                   data-text-redaction-ignore="true"
                   data-design-id="project-default-model-select"
                   onChange={e => setEditDefaultModel(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                  className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
                 >
                   <option value="">未指定（跟随系统默认）</option>
@@ -995,9 +995,9 @@ export function ProjectSettingsPanel({
             </SettingsCard>
           )}
 
-          {metaErr && <div className="text-[12px] text-red-400">{metaErr}</div>}
-          {/* <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            <span className="text-[11px]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
+          {metaErr && <div className="text-[length:var(--fs-md)] text-red-400">{metaErr}</div>}
+          {/* <div className="flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: metaSaveStatusColor }}>{metaSaveStatus}</span>
           </div> */}
 
           {/* 项目级 Skill/Memory 管理器已移至「记忆技能」独立页 (见 activePane === 'context' 分支). */}
@@ -1012,11 +1012,11 @@ export function ProjectSettingsPanel({
                   checked={!editResearchEnabled && editDefaultUseWorktree}
                   disabled={editResearchEnabled || !canManageProject}
                   onChange={setEditDefaultUseWorktree}
-                  className="flex items-center gap-3 text-[13px]"
+                  className="flex items-center gap-3 text-[length:var(--fs-lg)]"
                   style={{ color: 'var(--text-primary)' }}>
                   默认使用 git worktree
                 </ToggleSwitch>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>
                   {editResearchEnabled
                     ? '已启用研究系统，本项目强制禁用 worktree'
                     : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
@@ -1030,25 +1030,25 @@ export function ProjectSettingsPanel({
                     setEditResearchEnabled(enabled)
                     if (enabled) setEditDefaultUseWorktree(false)
                   }}
-                  className="flex items-center gap-3 text-[13px]"
+                  className="flex items-center gap-3 text-[length:var(--fs-lg)]"
                   style={{ color: 'var(--text-primary)' }}>
                   启用 Research 系统
                 </ToggleSwitch>
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
+                <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
               </div>
               <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="flex items-center justify-between mb-2 gap-2">
-                  <label className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>Git 仓库（可添加多个）</label>
+                  <label className="block text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>Git 仓库（可添加多个）</label>
                   <button type="button"
                     disabled={!canManageProject}
                     onClick={() => setEditGitRepos([...editGitRepos, { url: '', name: '' }])}
-                    className="h-7 px-2.5 rounded-md text-[11px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                     <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
                     添加仓库
                   </button>
                 </div>
                 {editGitRepos.length === 0 ? (
-                  <div className="text-[11px] px-3 py-2 rounded-lg border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                  <div className="text-[length:var(--fs-sm)] px-3 py-2 rounded-lg border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                     暂无仓库，点击右上方"添加仓库"
                   </div>
                 ) : (
@@ -1059,20 +1059,20 @@ export function ProjectSettingsPanel({
                           disabled={!canManageProject}
                           onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
                           placeholder="别名（可选）"
-                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                          className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                         <input value={repo.url}
                           disabled={!canManageProject}
                           onChange={e => setEditGitRepos(editGitRepos.map((r, i) => i === idx ? { ...r, url: e.target.value } : r))}
                           placeholder="git@github.com:org/repo.git 或 https://..."
-                          className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                          className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                         <button type="button"
                           disabled={!canManageProject}
                           onClick={() => setEditGitRepos(editGitRepos.filter((_, i) => i !== idx))}
                           title="删除仓库"
                           aria-label="删除仓库"
-                          className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-red-500/10 hover:text-red-400 transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                          className="h-9 w-9 rounded-lg text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] hover:bg-red-500/10 hover:text-red-400 transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
                           style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                           <X className="h-3.5 w-3.5" strokeWidth={1.9} />
                         </button>
@@ -1086,81 +1086,81 @@ export function ProjectSettingsPanel({
 
           <SettingsCard title="巡检设置 - Agent鞭策设置" hint="后台每 60s 巡检；当某会话 Agent 已停工却未清理 running.flag 时，按下方策略自动发送此消息，鞭策其继续工作。">
             <div>
-              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
+              <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>Agent偷懒时的自动提醒消息</label>
               <ExpandableTextarea value={editForgottenFlagMessage} disabled={!canManageProject} onValueChange={setEditForgottenFlagMessage} rows={4}
                 overlayTitle="编辑自动提醒消息"
-                className="w-full px-3 py-2 rounded-lg text-[13px] resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                className="w-full px-3 py-2 rounded-lg text-[length:var(--fs-lg)] resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
             <div>
-              <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
+              <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
               <div className="space-y-3">
                 <div>
-                  <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
+                  <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
                       <input type="number" min={1} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
                         value={editForgottenFlagIssueInit}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssueInit(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
                       <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
                         value={editForgottenFlagIssueBackoff}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssueBackoff(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
                       <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
                         value={editForgottenFlagIssuePatience}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagIssuePatience(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
+                  <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
                       <input type="number" min={30} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
                         value={editForgottenFlagResearchInit}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchInit(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
                       <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
                         value={editForgottenFlagResearchBackoff}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchBackoff(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                     <div>
-                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                      <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
                       <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
                         value={editForgottenFlagResearchPatience}
                         disabled={!canManageProject}
                         onChange={e => setEditForgottenFlagResearchPatience(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
+                        className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 disabled:opacity-60"
                         style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                     </div>
                   </div>
                 </div>
               </div>
-              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
+              <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
             </div>
           </SettingsCard>
 
@@ -1168,13 +1168,13 @@ export function ProjectSettingsPanel({
             <section className="rounded-lg border overflow-hidden"
               style={{ borderColor: 'rgba(239,68,68,0.38)', background: 'var(--bg-secondary)' }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(239,68,68,0.25)' }}>
-                <h3 className="text-[13px] font-semibold text-red-400">危险操作</h3>
+                <h3 className="text-[length:var(--fs-lg)] font-semibold text-red-400">危险操作</h3>
               </div>
               <div className="p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>删除项目</div>
-                    <p className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                    <div className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-primary)' }}>删除项目</div>
+                    <p className="mt-1 text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
                       删除后，该项目及其全部 Issue、执行会话、项目知识与绑定目录资料将无法恢复。点击后需要完成多重确认。
                     </p>
                   </div>
@@ -1188,7 +1188,7 @@ export function ProjectSettingsPanel({
                     }}
                     title={canDeleteProject ? '删除项目（需要多重确认）' : '查看删除限制'}
                     data-tour="project-delete"
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-red-500/45 bg-red-500/10 px-3 text-[length:var(--fs-md)] font-medium text-red-400 transition-colors hover:bg-red-500 hover:text-white">
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                     删除项目
                   </button>
@@ -1196,7 +1196,7 @@ export function ProjectSettingsPanel({
                 {showDeletePermissionNotice && !canDeleteProject && (
                   <div
                     role="alert"
-                    className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] leading-5"
+                    className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[length:var(--fs-md)] leading-5"
                     style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
                     <span>{deletePolicy?.denial_reason || '当前账号没有删除此项目的权限。请联系项目创建者或系统管理员处理。'}</span>

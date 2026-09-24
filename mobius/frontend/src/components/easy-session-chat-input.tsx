@@ -149,18 +149,18 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
       {props.mode === 'create_session_mode' && props.attachments.length > 0 && (
         <div className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
           {props.attachments.map(attachment => (
-            <div key={attachment.id} className="group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} title={attachment.error || attachment.name}>
+            <div key={attachment.id} className="group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} title={attachment.error || attachment.name}>
               {attachment.kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} className="h-7 w-7 rounded object-cover" /> : <Paperclip className="h-3 w-3 flex-shrink-0" />}
               <span className="max-w-[150px] truncate">{attachment.name}</span>
               {attachment.status === 'uploading' ? <RefreshCw className="h-3 w-3 animate-spin" /> : attachment.status === 'error' ? <span className="text-red-400">失败</span> : null}
-              <button type="button" onClick={() => props.onRemoveAttachment(attachment.id)} className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[11px] opacity-70 hover:bg-red-500/20 hover:text-red-300" aria-label={`移除附件 ${attachment.name}`}>×</button>
+              <button type="button" onClick={() => props.onRemoveAttachment(attachment.id)} className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[length:var(--fs-sm)] opacity-70 hover:bg-red-500/20 hover:text-red-300" aria-label={`移除附件 ${attachment.name}`}>×</button>
             </div>
           ))}
         </div>
       )}
       <div className="px-3 pt-3 pb-2.5">
         {follow && !input && (
-          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 grid min-w-0 grid-cols-2 gap-x-3 text-[11px] leading-[1.35] ml-[1%] mr-[50%]" style={{ color: 'var(--placeholder-color)' }}>
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 grid min-w-0 grid-cols-2 gap-x-3 text-[length:var(--fs-sm)] leading-[1.35] ml-[1%] mr-[50%]" style={{ color: 'var(--placeholder-color)' }}>
             <span className="col-span-2 min-w-0 truncate">发送指令：</span>
             <span className="min-w-0 truncate">· Shift+Enter 换行</span>
             <span className="min-w-0 truncate">· Ctrl/⌘+V 粘贴文件/截图</span>
@@ -174,7 +174,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           onChange={onChange}
           onKeyDown={handleKeyDown}
           placeholder={follow && !input ? undefined : inputPlaceholder}
-          className="min-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[15px] leading-[1.6] focus:outline-none"
+          className="min-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[length:var(--fs-2xl)] leading-[1.6] focus:outline-none"
           style={{ color: 'var(--text-primary)', height: textAreaHeight, maxHeight: maxInputHeight - chromeHeight }}
         />
       </div>
@@ -182,7 +182,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         {props.toolbar ? (
           <div className={`mr-auto flex min-w-0 items-center gap-1.5 overflow-hidden ${follow ? 'easy-session-tool-bar' : 'easy-session-config-bar'}`}>{props.toolbar}</div>
         ) : !follow ? (
-          <span className="mr-auto flex min-w-0 items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="mr-auto flex min-w-0 items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="truncate">提交后可配置项目、任务、模型和上下文</span>
           </span>

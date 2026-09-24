@@ -9,7 +9,7 @@ export function ListLoadingHint({ text = '加载中...', compact = false }: { te
       style={{ color: 'var(--text-muted)' }}
     >
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      <span className="text-[12px]">{text}</span>
+      <span className="text-[length:var(--fs-md)]">{text}</span>
     </div>
   )
 }

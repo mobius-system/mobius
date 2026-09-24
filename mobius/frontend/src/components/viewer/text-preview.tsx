@@ -32,11 +32,11 @@ export function ResultTextPreview({ text, startLine = 1 }: { text: string; start
   const restLines = lines.slice(WRITE_PREVIEW_LINE_LIMIT)
   if (!text) return null
   return (
-    <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+    <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
       <CodePreviewRows lines={previewLines} startLine={startLine} />
       {restLines.length > 0 && (
         <details className="border-t border-[var(--border-color)]/60">
-          <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+          <summary className="cursor-pointer px-2 py-1.5 text-[length:var(--fs-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
             展开剩余 {restLines.length} 行
           </summary>
           <CodePreviewRows lines={restLines} startLine={startLine + WRITE_PREVIEW_LINE_LIMIT} />
@@ -48,6 +48,6 @@ export function ResultTextPreview({ text, startLine = 1 }: { text: string; start
 
 export function CompactPlainTextFallback({ text }: { text: string }) {
   return (
-    <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-primary)] select-text">{text}</pre>
+    <pre className="text-[length:var(--fs-sm)] leading-relaxed whitespace-pre-wrap break-words font-mono px-2 py-1.5 rounded bg-[var(--prose-bg)] text-[var(--text-primary)] select-text">{text}</pre>
   )
 }

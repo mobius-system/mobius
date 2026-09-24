@@ -125,7 +125,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
 
   const countFor = (key: 'all' | ProjectMemberRole): number => (key === 'all' ? value.length : counts[key] || 0)
 
-  const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11 }
+  const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 'var(--fs-sm)' }
   const tdStyle: React.CSSProperties = { padding: '10px', verticalAlign: 'middle' }
 
   return (
@@ -136,7 +136,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
           const active = filterRole === tab.key
           return (
             <button key={tab.key} type="button" onClick={() => setFilterRole(tab.key)} disabled={disabled}
-              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[length:var(--fs-sm)] border transition-colors disabled:opacity-50"
               style={active
                 ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
                 : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -153,11 +153,11 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="搜索成员姓名或账号..."
-          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
+          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
           style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
         />
         <button type="button" onClick={() => setShowAdd((s) => !s)} disabled={disabled}
-          className="h-8 px-3 rounded-md text-[12px] btn-primary transition-colors disabled:opacity-50">
+          className="h-8 px-3 rounded-md text-[length:var(--fs-md)] btn-primary transition-colors disabled:opacity-50">
           {showAdd ? '收起添加' : '+ 添加成员'}
         </button>
       </div>
@@ -180,7 +180,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
               onChange={(e) => setBatchRole(e.target.value as ProjectMemberRole)}
               disabled={disabled}
               title="新加入成员的默认角色"
-              className="h-9 px-2 rounded-lg text-[12px] border flex-shrink-0"
+              className="h-9 px-2 rounded-lg text-[length:var(--fs-md)] border flex-shrink-0"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
             >
               {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -189,7 +189,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <button type="button" onClick={toggleGroups} disabled={disabled}
-                className="h-8 px-3 rounded-lg text-[12px] border transition-colors"
+                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] border transition-colors"
                 style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)', background: 'var(--modal-bg)' }}>
                 + 按员工群组加入
               </button>
@@ -199,10 +199,10 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                   <div className="absolute z-50 mt-1 w-64 max-h-60 overflow-auto rounded-lg border shadow-lg"
                     style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)' }}>
                     {groups.length === 0 ? (
-                      <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
+                      <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
                     ) : groups.map((g) => (
                       <button key={g.id} type="button" onClick={() => addGroup(g.id)}
-                        className="block w-full text-left px-3 py-2 text-[12px] hover:bg-[var(--bg-card-hover)] transition-colors"
+                        className="block w-full text-left px-3 py-2 text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)] transition-colors"
                         style={{ color: 'var(--text-secondary)' }}>
                         {g.name} <span style={{ color: 'var(--text-muted)' }}>· {g.active_user_count} 位启用成员</span>
                       </button>
@@ -211,19 +211,19 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                 </>
               )}
             </div>
-            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>选中即加入下方列表</span>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>选中即加入下方列表</span>
           </div>
         </div>
       )}
 
       {/* 待添加成员表格: 成员 / 角色 / 操作 */}
       {filtered.length === 0 ? (
-        <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
           {value.length === 0 ? '暂未添加成员（创建者自动成为项目负责人）' : '没有匹配的成员'}
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
-          <table className="w-full border-collapse text-left text-[12px]">
+          <table className="w-full border-collapse text-left text-[length:var(--fs-md)]">
             <thead>
               <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                 <th style={thStyle}>成员</th>
@@ -237,8 +237,8 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                 return (
                   <tr key={m.user_id} className="border-b last:border-b-0" style={{ borderColor: 'var(--input-border)' }}>
                     <td style={tdStyle}>
-                      <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[m.user_id] || m.user_id}</div>
-                      <div className="mt-0.5 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{m.user_id}</div>
+                      <div className="text-[length:var(--fs-lg)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[m.user_id] || m.user_id}</div>
+                      <div className="mt-0.5 text-[length:var(--fs-sm)] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{m.user_id}</div>
                     </td>
                     <td style={tdStyle}>
                       <select
@@ -246,7 +246,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                         onChange={(e) => setRole(m.user_id, e.target.value)}
                         disabled={disabled}
                         title={roleOpt.hint}
-                        className="h-7 px-1.5 rounded-md text-[11px] border"
+                        className="h-7 px-1.5 rounded-md text-[length:var(--fs-sm)] border"
                         style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                       >
                         {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -254,7 +254,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       <button type="button" onClick={() => remove(m.user_id)} disabled={disabled}
-                        className="h-7 px-2 rounded-md text-[11px] border transition-colors"
+                        className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border transition-colors"
                         style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
                         移除
                       </button>
@@ -267,7 +267,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
         </div>
       )}
 
-      <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
         创建者自动成为项目负责人。项目成员可读可写、项目管理员可管理成员、项目访客只读；创建后可在项目设置中调整。
       </p>
     </div>

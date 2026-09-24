@@ -119,14 +119,14 @@ export function ProjectItemsPanel({
           style={{ borderColor: 'rgba(99,102,241,0.28)', background: 'rgba(99,102,241,0.07)' }}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                 拓展应用入口
               </div>
-              <div className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-1 text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>
                 打开应用用于使用这个拓展；继续开发代码请进入原来的开发 Issue。
               </div>
               {developmentLink && (
-                <div className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1 text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
                   {developmentLink.description}
                 </div>
               )}
@@ -137,7 +137,7 @@ export function ProjectItemsPanel({
                 onClick={runExtension}
                 disabled={!canRunExtension}
                 data-tour="project-extension-open"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[length:var(--fs-md)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                 style={{ color: '#c4b5fd', borderColor: 'rgba(167,139,250,0.34)', background: 'rgba(167,139,250,0.12)' }}
                 title={canRunExtension ? `打开 ${project.name}` : '拓展目录已删除或入口不可用'}
               >
@@ -148,7 +148,7 @@ export function ProjectItemsPanel({
                 <button
                   type="button"
                   onClick={openDevelopmentLink}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/15 px-3 text-[12px] font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/15 px-3 text-[length:var(--fs-md)] font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
                   title={developmentLink.description}
                 >
                   <Wrench className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -216,7 +216,7 @@ export function ProjectItemsPanel({
               onClick={() => onDensityChange('detailed')}
               aria-pressed={!listView}
               title="卡片显示"
-              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[length:var(--fs-sm)] transition-colors"
               style={{ color: !listView ? '#60a5fa' : 'var(--text-muted)', background: !listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
               <LayoutList className="h-3.5 w-3.5" strokeWidth={1.8} />
               详情
@@ -226,7 +226,7 @@ export function ProjectItemsPanel({
               onClick={() => onDensityChange('list')}
               aria-pressed={listView}
               title="详情列表显示"
-              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors"
+              className="inline-flex h-6 items-center gap-1 rounded px-2 text-[length:var(--fs-sm)] transition-colors"
               style={{ color: listView ? '#60a5fa' : 'var(--text-muted)', background: listView ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
               <Rows3 className="h-3.5 w-3.5" strokeWidth={1.8} />
               列表
@@ -266,7 +266,7 @@ export function ProjectItemsPanel({
         />
       ) : !project.research_enabled ? (
         <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
             请先在项目设置中勾选「启用研究系统」
           </div>
         </div>
@@ -344,13 +344,13 @@ function IssueList({
     const showQuickPlanning = !search.trim() && filter === 'all' && !!onCreatePlanningIssue
     return (
       <div className="space-y-3">
-        <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-center text-[length:var(--fs-md)]" role="status" style={{ color: 'var(--text-muted)' }}>
           {emptyMessage}
         </div>
         <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
           {showQuickPlanning && (
             <button onClick={onCreatePlanningIssue} disabled={!canCreateIssue}
-              className={`rounded-lg border border-dashed text-[13px] text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${listView ? 'h-12 px-4' : 'h-[220px]'}`}
+              className={`rounded-lg border border-dashed text-[length:var(--fs-lg)] text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${listView ? 'h-12 px-4' : 'h-[220px]'}`}
               style={{ borderColor: 'var(--border-color)' }}>
               创建交互式系统宏观规划
             </button>
@@ -411,10 +411,10 @@ function ProjectPaginationControls({ pagination, compact = false, itemLabel }: P
   const goToPage = (page: number) => pagination.onPageChange(Math.min(Math.max(page, 1), pagination.totalPages))
 
   // 上一页/下一页作为文字按钮内联到页码信息后 (与通用 PaginationControls 的 inlinePageSwitch 同款).
-  const inlineButtonClass = 'align-baseline text-[11px] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)]'
+  const inlineButtonClass = 'align-baseline text-[length:var(--fs-sm)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)]'
 
   return (
-    <div className={`flex items-center gap-1.5 text-[11px] tabular-nums flex-wrap ${compact ? 'pt-1' : ''}`} style={{ color: 'var(--text-muted)' }}>
+    <div className={`flex items-center gap-1.5 text-[length:var(--fs-sm)] tabular-nums flex-wrap ${compact ? 'pt-1' : ''}`} style={{ color: 'var(--text-muted)' }}>
       <span>显示 {pageStart}-{pageEnd} / {pagination.totalItems} 个{itemLabel}</span>
       <span>·</span>
       <span>第 {pagination.page} / {pagination.totalPages} 页</span>
@@ -486,7 +486,7 @@ function ResearchList({
     }
     return (
       <div className="space-y-3">
-        <div className="text-center text-[12px]" role="status" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-center text-[length:var(--fs-md)]" role="status" style={{ color: 'var(--text-muted)' }}>
           {search.trim() || filter !== 'all' ? '没有匹配的研究或智能体' : '暂无研究'}
         </div>
         <div className={listView ? 'flex flex-col gap-2' : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3'}>
@@ -571,7 +571,7 @@ function CreateItemCard({ kind, listView, disabled, onClick, dataTour }: CreateI
           <Plus className="h-4 w-4" strokeWidth={2} />
         </span>
       )}
-      <span className={`${listView ? 'text-[12px]' : 'text-[13px]'} font-medium`}>{label}</span>
+      <span className={`${listView ? 'text-[length:var(--fs-md)]' : 'text-[length:var(--fs-lg)]'} font-medium`}>{label}</span>
     </button>
   )
 }

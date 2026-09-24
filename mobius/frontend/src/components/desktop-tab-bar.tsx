@@ -82,7 +82,7 @@ export function DesktopTabBar() {
             title={shortLabel(t)}
           >
             <span
-              className="truncate text-xs font-medium"
+              className="truncate text-[length:var(--fs-md)] font-medium"
               style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)', maxWidth: 140 }}
             >
               {shortLabel(t)}

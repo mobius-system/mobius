@@ -45,9 +45,9 @@ export function EditorPane({ projectName, bindPath, vscodeWebUrl, className, lea
     return (
       <div className={`flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center ${className || ''}`} style={{ color: 'var(--text-muted)' }}>
         <TerminalSquare className="w-8 h-8" />
-        <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>当前项目未配置 Web 编辑器</div>
-        <div className="text-[11px]">需要后端配置 <code>VSCODE_WEB_URL</code> 并绑定项目路径</div>
-        {bindPath && <div className="mt-1 text-[11px] font-mono break-all">{bindPath}</div>}
+        <div className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-secondary)' }}>当前项目未配置 Web 编辑器</div>
+        <div className="text-[length:var(--fs-sm)]">需要后端配置 <code>VSCODE_WEB_URL</code> 并绑定项目路径</div>
+        {bindPath && <div className="mt-1 text-[length:var(--fs-sm)] font-mono break-all">{bindPath}</div>}
       </div>
     )
   }
@@ -57,9 +57,9 @@ export function EditorPane({ projectName, bindPath, vscodeWebUrl, className, lea
       {/* 工具栏 */}
       {/* <div className="flex h-8 flex-shrink-0 items-center gap-1 border-b px-2" style={{ borderColor: 'var(--border-color)' }}>
         {leading}
-        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={projectName}>{projectName}</span>
+        <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={projectName}>{projectName}</span>
         <div className="flex-1" />
-        <span className="hidden text-[10px] lg:inline" style={{ color: 'var(--text-muted)' }} title="在编辑器中按 Ctrl+` 打开/收起集成终端">终端: Ctrl+`</span>
+        <span className="hidden text-[length:var(--fs-xs)] lg:inline" style={{ color: 'var(--text-muted)' }} title="在编辑器中按 Ctrl+` 打开/收起集成终端">终端: Ctrl+`</span>
         <button type="button" onClick={reload} title="重新加载编辑器" aria-label="重新加载编辑器" className="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
           <RotateCw className="w-3.5 h-3.5" />
         </button>
@@ -73,14 +73,14 @@ export function EditorPane({ projectName, bindPath, vscodeWebUrl, className, lea
         {loadState !== 'ready' && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }} data-tour="editor-pane-loading">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <div className="text-[12px]">{loadState === 'error' ? '编辑器加载失败' : slow ? '编辑器仍在启动，请稍候…' : '正在启动编辑器…'}</div>
+            <div className="text-[length:var(--fs-md)]">{loadState === 'error' ? '编辑器加载失败' : slow ? '编辑器仍在启动，请稍候…' : '正在启动编辑器…'}</div>
             <div className="mt-1 flex items-center gap-2">
               {loadState === 'error' && (
-                <button type="button" onClick={reload} className="inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+                <button type="button" onClick={reload} className="inline-flex h-7 items-center gap-1 rounded border px-2 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
                   <RotateCw className="w-3 h-3" />重试
                 </button>
               )}
-              <button type="button" onClick={openInNewWindow} className="inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              <button type="button" onClick={openInNewWindow} className="inline-flex h-7 items-center gap-1 rounded border px-2 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
                 <ExternalLink className="w-3 h-3" />在新窗口打开
               </button>
             </div>

@@ -81,16 +81,16 @@ function WhitelistGroup({
             onEnabledChange(nextEnabled)
             if (nextEnabled && selected.size === 0) setAll()
           }}
-          className="flex min-w-0 items-center gap-3 text-[13px]"
+          className="flex min-w-0 items-center gap-3 text-[length:var(--fs-lg)]"
           style={{ color: 'var(--text-primary)' }}>
           <span className="min-w-0">
             <span className="block">{title}</span>
-            <span className="mt-0.5 block text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>
+            <span className="mt-0.5 block text-[length:var(--fs-xs)] font-normal" style={{ color: 'var(--text-muted)' }}>
               开启限制后，仅注入下方勾选的条目
             </span>
           </span>
         </ToggleSwitch>
-        <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="ml-auto text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
           {enabled ? `${selectedCount}/${items.length} 允许注入` : `${items.length} 项全部可用`}
         </span>
       </div>
@@ -99,15 +99,15 @@ function WhitelistGroup({
         <>
           <div className="flex gap-1.5 mb-2">
             <button type="button" onClick={setAll}
-              className="text-[10px] px-2 py-0.5 rounded border"
+              className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全选</button>
             <button type="button" onClick={setNone}
-              className="text-[10px] px-2 py-0.5 rounded border"
+              className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>全不选</button>
           </div>
 
           {items.length === 0 ? (
-            <div className="text-[12px] py-3 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+            <div className="text-[length:var(--fs-md)] py-3 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
           ) : (
             <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
               {items.map(item => {
@@ -119,13 +119,13 @@ function WhitelistGroup({
                       className="mt-0.5 accent-blue-500 cursor-pointer" />
                     <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
                       <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
-                        <span className="shrink-0 text-[10px]" style={{ color: checked ? '#22c55e' : 'var(--text-muted)' }}>
+                        <div className="min-w-0 flex-1 truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+                        <span className="shrink-0 text-[length:var(--fs-xs)]" style={{ color: checked ? '#22c55e' : 'var(--text-muted)' }}>
                           {checked ? '允许注入' : '已屏蔽'}
                         </span>
                       </div>
                       {item.description && (
-                        <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{item.description}</div>
+                        <div className="text-[length:var(--fs-xs)] truncate" style={{ color: 'var(--text-muted)' }}>{item.description}</div>
                       )}
                     </div>
                   </label>
@@ -239,17 +239,17 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Skill与Memory过滤</h3>
+            <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>Skill与Memory过滤</h3>
             <HelpHint text="控制哪些全局 Skill 与 Memory 可用于本项目的会话。关闭限制时全部可用；开启限制后，只注入勾选的条目。项目级条目不受影响。" />
           </div>
         </div>
         <button type="button" onClick={refresh} disabled={loading || saving}
-          className="h-7 px-2.5 rounded text-[11px] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
+          className="h-7 px-2.5 rounded text-[length:var(--fs-sm)] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
           style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>刷新</button>
       </div>
 
       {loading ? (
-        <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       ) : (
         <div className="space-y-3">
           <WhitelistGroup
@@ -278,8 +278,8 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
             onSelectedChange={setMemoryIds}
           />
 
-          {err && <div className="text-[12px] text-red-400">{err}</div>}
-          {info && <div className="text-[12px] text-emerald-400">{info}</div>}
+          {err && <div className="text-[length:var(--fs-md)] text-red-400">{err}</div>}
+          {info && <div className="text-[length:var(--fs-md)] text-emerald-400">{info}</div>}
 
           <div className="flex items-center justify-end gap-2">
             <button type="button" onClick={() => {
@@ -291,10 +291,10 @@ export function ProjectUserContextWhitelist({ projectId }: { projectId: string }
               setMemoryIds(new Set())
             }}
               disabled={saving || (!skillEnabled && !builtinSkillEnabled && !memoryEnabled && skillIds.size === 0 && builtinSkillIds.size === 0 && memoryIds.size === 0)}
-              className="h-8 px-3 rounded-lg text-[12px] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
+              className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>恢复默认</button>
             <button type="button" onClick={save} disabled={saving || !dirty}
-              className="h-7 px-2.5 rounded-md text-[11px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+              className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
               {saving ? '保存中...' : '保存过滤设置'}
             </button>
           </div>

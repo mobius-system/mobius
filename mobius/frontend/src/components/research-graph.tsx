@@ -361,7 +361,7 @@ function ImageNodeCard({ id, data }: NodeProps<Node<ImageCardData>>) {
         onResizeEnd={(_e, p) => onResize(id, p.width, p.height)}
       />
       <Handle type="target" position={handleLeft ? Position.Left : Position.Right} isConnectable={false} style={{ background: 'var(--text-muted)', width: 8, height: 8 }} />
-      <div className="px-2 py-1 text-[10px] flex-shrink-0 border-b flex items-center gap-1" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+      <div className="px-2 py-1 text-[length:var(--fs-xs)] flex-shrink-0 border-b flex items-center gap-1" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
         <span>节点 {ownerId} · 图像 ({images.length})</span>
       </div>
       <div
@@ -657,21 +657,21 @@ function GraphInner({ researchId }: { researchId: string }) {
   }, [edges, replaying, revealedCount])
 
   if (state.loading) {
-    return <div className="flex items-center justify-center h-full text-[13px]" style={{ color: 'var(--text-muted)' }}>正在加载研究图谱...</div>
+    return <div className="flex items-center justify-center h-full text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>正在加载研究图谱...</div>
   }
   if (state.error) {
-    return <div className="flex items-center justify-center h-full text-[13px] text-red-400">{state.error}</div>
+    return <div className="flex items-center justify-center h-full text-[length:var(--fs-lg)] text-red-400">{state.error}</div>
   }
   if (!state.exists || nodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
-        <div className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[length:var(--fs-xl)]" style={{ color: 'var(--text-muted)' }}>
           {state.exists ? 'research-graph.yml 中暂无有效节点' : '当前研究尚未创建 research-graph.yml'}
         </div>
-        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
           文件位置: <code>{HIDDEN_FOLDER_NAME}/blackboard/{researchId}/research-graph.yml</code>
         </div>
-        <button onClick={fetchGraph} className="h-8 px-3 rounded-md text-[12px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors">
+        <button onClick={fetchGraph} className="h-8 px-3 rounded-md text-[length:var(--fs-md)] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 transition-colors">
           重新加载
         </button>
       </div>
@@ -683,7 +683,7 @@ function GraphInner({ researchId }: { researchId: string }) {
       <style>{REPLAY_CSS}</style>
       <div className="absolute top-3 right-3 z-10 flex gap-2">
         <button onClick={replaying ? stopReplay : startReplay} title="从头逐个回放节点出现过程"
-          className="h-7 px-2.5 rounded-md text-[11px] border transition-colors"
+          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] border transition-colors"
           style={{
             borderColor: replaying ? 'rgba(239,68,68,0.5)' : '#10b981',
             color: replaying ? '#f87171' : '#10b981',
@@ -692,22 +692,22 @@ function GraphInner({ researchId }: { researchId: string }) {
           {replaying ? '■ 停止' : '▶ 回放'}
         </button>
         <button onClick={() => setShowReplaySettings((v) => !v)} title="图表设置: 回放 / 普通节点"
-          className="h-7 px-2 inline-flex items-center justify-center rounded-md text-[11px] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
+          className="h-7 px-2 inline-flex items-center justify-center rounded-md text-[length:var(--fs-sm)] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
           <Settings className="w-3.5 h-3.5" strokeWidth={1.75} />
         </button>
         <button onClick={toggleLayout} title="切换布局: 拓扑方格网 / 层级"
-          className="h-7 px-2.5 rounded-md text-[11px] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
+          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
           {layoutMode === 'grid' ? '布局: 方格' : '布局: 层级'}
         </button>
         <button onClick={fetchGraph} title="重新从 yml 加载"
-          className="h-7 px-2.5 rounded-md text-[11px] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
+          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
           刷新
         </button>
         <button onClick={resetLayout} title="清除本地拖拽位置, 重新自动布局"
-          className="h-7 px-2.5 rounded-md text-[11px] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
+          className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] bg-[var(--bg-primary)] border hover:bg-[var(--bg-hover)] transition-colors"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
           重置布局
         </button>
@@ -715,12 +715,12 @@ function GraphInner({ researchId }: { researchId: string }) {
       {showReplaySettings && (
         <div className="absolute top-12 right-3 z-20 w-64 p-3 rounded-md border shadow-xl flex flex-col gap-3"
           style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-          <label className="flex items-center justify-between text-[11px] cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          <label className="flex items-center justify-between text-[length:var(--fs-sm)] cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
             <span>跟踪新卡片 (居中, 不变缩放)</span>
             <input type="checkbox" checked={tracking} onChange={(e) => setTracking(e.target.checked)} className="accent-emerald-500" />
           </label>
           <div>
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
+            <div className="flex items-center justify-between text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-secondary)' }}>
               <span>速度 (每张间隔)</span>
               <span style={{ color: 'var(--text-muted)' }}>{speedMs}ms</span>
             </div>
@@ -728,7 +728,7 @@ function GraphInner({ researchId }: { researchId: string }) {
               onChange={(e) => setSpeedMs(Number(e.target.value))} className="w-full accent-emerald-500" />
           </div>
           <div>
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
+            <div className="flex items-center justify-between text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-secondary)' }}>
               <span>节点宽度</span>
               <span style={{ color: 'var(--text-muted)' }}>{textNodeWidth}px</span>
             </div>
@@ -741,7 +741,7 @@ function GraphInner({ researchId }: { researchId: string }) {
               className="w-full accent-emerald-500" />
           </div>
           <div>
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
+            <div className="flex items-center justify-between text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-secondary)' }}>
               <span>节点高度</span>
               <span style={{ color: 'var(--text-muted)' }}>{textNodeHeight}px</span>
             </div>
@@ -754,7 +754,7 @@ function GraphInner({ researchId }: { researchId: string }) {
               className="w-full accent-emerald-500" />
           </div>
           <div>
-            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>
+            <div className="flex items-center justify-between text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-secondary)' }}>
               <span>字体大小</span>
               <span style={{ color: 'var(--text-muted)' }}>{textNodeFontSize}px</span>
             </div>
@@ -767,11 +767,11 @@ function GraphInner({ researchId }: { researchId: string }) {
               className="w-full accent-emerald-500" />
           </div>
           <div>
-            <div className="text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>入场特效</div>
+            <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-secondary)' }}>入场特效</div>
             <div className="flex flex-wrap gap-1">
               {REPLAY_EFFECTS.map((ef) => (
                 <button key={ef.value} onClick={() => setEffect(ef.value)}
-                  className="px-2 py-1 rounded text-[11px] border transition-colors"
+                  className="px-2 py-1 rounded text-[length:var(--fs-sm)] border transition-colors"
                   style={{
                     borderColor: effect === ef.value ? '#10b981' : 'var(--border-color)',
                     color: effect === ef.value ? '#10b981' : 'var(--text-secondary)',

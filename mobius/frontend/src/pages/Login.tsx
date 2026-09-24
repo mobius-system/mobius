@@ -87,13 +87,13 @@ export default function Login() {
             </div>
           )}
           {branding.systemNameEn && (
-            <h1 className="text-[28px] font-semibold tracking-tight mb-2"
+            <h1 className="text-[length:var(--fs-2xl)] font-semibold tracking-tight mb-2"
               style={{ color: theme !== 'light' ? '#ffffff' : '#1e293b' }}>
               {branding.systemNameEn}
             </h1>
           )}
           {branding.systemNameZh && (
-            <p className="text-[13px]" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
+            <p className="text-[length:var(--fs-lg)]" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
               {branding.systemNameZh}
             </p>
           )}
@@ -115,7 +115,7 @@ export default function Login() {
                 if (passwordRequired) document.getElementById('pw-input')?.focus()
                 else login()
               }}
-              className="login-input w-full h-[52px] pl-12 pr-4 rounded-[14px] text-[15px] text-white placeholder-gray-600 outline-none transition-all duration-300"
+              className="login-input w-full h-[52px] pl-12 pr-4 rounded-[14px] text-[length:var(--fs-2xl)] text-white placeholder-gray-600 outline-none transition-all duration-300"
             />
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gray-400 transition-colors">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -136,7 +136,7 @@ export default function Login() {
               autoComplete="current-password"
               onChange={e => { setPassword(e.target.value); setErr('') }}
               onKeyDown={e => e.key === 'Enter' && login()}
-              className="login-input w-full h-[52px] pl-12 pr-12 rounded-[14px] text-[15px] text-white placeholder-gray-600 outline-none transition-all duration-300"
+              className="login-input w-full h-[52px] pl-12 pr-12 rounded-[14px] text-[length:var(--fs-2xl)] text-white placeholder-gray-600 outline-none transition-all duration-300"
             />
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gray-400 transition-colors">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -170,7 +170,7 @@ export default function Login() {
 
         {/* 错误提示 */}
         <div className={`overflow-hidden transition-all duration-300 ${err ? 'max-h-16 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'}`}>
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px]"
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[length:var(--fs-lg)]"
             style={{
               background: 'rgba(239,68,68,0.06)',
               border: '1px solid rgba(239,68,68,0.1)',
@@ -185,7 +185,7 @@ export default function Login() {
 
         {/* 登录按钮 — ChatGPT 风格: 主题反色 flat, 无渐变/光晕/translateY 抖动 */}
         <button onClick={login} disabled={loading || !username.trim() || (passwordRequired && !password)}
-          className="btn-primary w-full h-[52px] rounded-full text-[15px] font-medium">
+          className="btn-primary w-full h-[52px] rounded-full text-[length:var(--fs-2xl)] font-medium">
           {loading ? (
             <span className="flex items-center justify-center gap-2">
               <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
@@ -200,7 +200,7 @@ export default function Login() {
         {/* 底部 */}
         {(branding.systemNameEn || branding.systemNameZh) && (
           <div className="text-center mt-16">
-            <p className="text-[11px] tracking-wide" style={{ color: theme !== 'light' ? '#374151' : '#9ca3af' }}>
+            <p className="text-[length:var(--fs-sm)] tracking-wide" style={{ color: theme !== 'light' ? '#374151' : '#9ca3af' }}>
               {[branding.systemNameEn, branding.systemNameZh].filter(Boolean).join(' · ')}
             </p>
           </div>

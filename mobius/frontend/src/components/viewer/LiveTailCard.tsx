@@ -25,13 +25,13 @@ function VirtualLiveTextBox({ text, cursorClassName }: { text: string; cursorCla
   return (
     <div
       ref={viewportRef}
-      className="h-[1.3em] min-w-0 flex-1 overflow-hidden text-[11px] leading-[1.2]"
+      className="h-[1.3em] min-w-0 flex-1 overflow-hidden text-[length:var(--fs-sm)] leading-[1.2]"
       style={{ color: 'var(--text-muted)' }}
       title={text}
     >
       <span className="block whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
         {text}
-        <span aria-hidden="true" className={`font-mono text-[12px] leading-none ${cursorClassName} animate-pulse`}>
+        <span aria-hidden="true" className={`font-mono text-[length:var(--fs-md)] leading-none ${cursorClassName} animate-pulse`}>
           ▍
         </span>
       </span>
@@ -42,7 +42,7 @@ function VirtualLiveTextBox({ text, cursorClassName }: { text: string; cursorCla
 function LegacyLiveText({ text }: { text: string }) {
   return (
     <span
-      className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px]"
+      className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--fs-sm)]"
       style={{ color: 'var(--text-muted)' }}
       title={text}
     >
@@ -101,7 +101,7 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenT
 
   return (
     <div
-      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-live-tail-card--easy' : ''} ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[12px]`}
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-live-tail-card--easy' : ''} ${theme.border} ${theme.bg} px-3 py-2 flex items-center gap-2 text-[length:var(--fs-md)]`}
       style={{ ['--live-accent' as string]: theme.accent } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className={`absolute inset-0 rounded-full ${theme.dot} animate-ping opacity-75`} />
@@ -110,7 +110,7 @@ export function JsonlLiveTailCard({ lastTimestamp, pid, realTimeInfo, liveTokenT
       <span className={`font-mono font-semibold ${theme.text} flex-shrink-0`}>LIVE</span>
       {/* 用户要求移除 pid 显示，不再需要
       {pid != null && (
-        <span className="text-[10px] text-[var(--text-muted)] font-mono flex-shrink-0">pid {pid}</span>
+        <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] font-mono flex-shrink-0">pid {pid}</span>
       )}
       */}
       {liveActive

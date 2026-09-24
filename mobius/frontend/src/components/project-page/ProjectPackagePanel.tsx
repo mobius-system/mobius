@@ -169,14 +169,14 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>打包下载</h3>
+            <h3 className="text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>打包下载</h3>
             {selected.size > 0 && (
-              <span className="text-[11px] px-2 py-0.5 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-400">
+              <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-400">
                 已选 {selected.size} 项 · {formatBytes(selectedSize)}
               </span>
             )}
           </div>
-          <div className="mt-1 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+          <div className="mt-1 text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
             只显示项目绑定目录下的表层文件和文件夹。{HIDDEN_FOLDER_NAME} 默认不选（莫比乌斯的工作缓存路径）；如果选择{HIDDEN_FOLDER_NAME}，系统仍会跳过 {HIDDEN_FOLDER_NAME}/package_zip。
           </div>
         </div>
@@ -184,7 +184,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
           type="button"
           onClick={loadEntries}
           disabled={loading || downloading}
-          className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50 inline-flex items-center gap-1.5"
+          className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50 inline-flex items-center gap-1.5"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
           刷新
@@ -192,25 +192,25 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
       </div>
 
       {data?.bind_path && (
-        <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={data.bind_path}>
+        <div className="text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }} title={data.bind_path}>
           绑定目录：{data.bind_path}
         </div>
       )}
 
       {error && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {error}
         </div>
       )}
       {message && (
-        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+        <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
           {message}
         </div>
       )}
 
       <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+          <label className="flex items-center gap-2 text-[length:var(--fs-md)] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
             <input
               type="checkbox"
               checked={allSelected}
@@ -225,7 +225,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
             type="button"
             onClick={downloadPackage}
             disabled={loading || downloading || selected.size === 0}
-            className="h-8 px-3 rounded-lg text-[12px] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+            className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 transition-colors border border-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
           >
             {downloading ? <Archive className="h-3.5 w-3.5 animate-pulse" strokeWidth={1.8} /> : <Download className="h-3.5 w-3.5" strokeWidth={1.8} />}
             {downloading ? '打包中...' : '下载'}
@@ -233,11 +233,11 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
         </div>
 
         {loading && !data ? (
-          <div className="text-[12px] px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-md)] px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
             正在读取项目目录...
           </div>
         ) : !data?.entries?.length ? (
-          <div className="text-[12px] px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-md)] px-3 py-8 text-center" style={{ color: 'var(--text-muted)' }}>
             项目绑定目录下暂无可打包条目
           </div>
         ) : (
@@ -261,21 +261,21 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
                   <Icon className="h-4 w-4 text-blue-400" strokeWidth={1.8} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[13px] truncate" title={entry.name}>{entry.name}</span>
+                      <span className="text-[length:var(--fs-lg)] truncate" title={entry.name}>{entry.name}</span>
                       {entry.name === HIDDEN_FOLDER_NAME && (
-                        <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/25 bg-amber-500/10 text-amber-500">
+                        <span className="shrink-0 text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded border border-amber-500/25 bg-amber-500/10 text-amber-500">
                           莫比乌斯的工作缓存路径
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 text-[11px] flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: 'var(--text-muted)' }}>
+                    <div className="mt-0.5 text-[length:var(--fs-sm)] flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: 'var(--text-muted)' }}>
                       <span>{entryTypeLabel(entry.type)}</span>
                       <span>·</span>
                       <span>{formatBytes(entry.size || 0)}</span>
                       {formatModified(entry.modified) && <span>· {formatModified(entry.modified)}</span>}
                     </div>
                   </div>
-                  <div className="text-[11px] font-mono tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-[length:var(--fs-sm)] font-mono tabular-nums" style={{ color: 'var(--text-muted)' }}>
                     {formatBytes(entry.size || 0)}
                   </div>
                 </label>
@@ -285,7 +285,7 @@ export function ProjectPackagePanel({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      <div className="text-[11px] leading-5 rounded-lg border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      <div className="text-[length:var(--fs-sm)] leading-5 rounded-lg border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         压缩包会保存在 {data?.package_dir || `${HIDDEN_FOLDER_NAME}/package_zip`}。该目录永远不会被写入新的压缩包，避免把历史压缩包重复套进去。
       </div>
     </div>

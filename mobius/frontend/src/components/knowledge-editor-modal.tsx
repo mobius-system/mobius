@@ -34,8 +34,8 @@ export function KnowledgeEditorModal({ projectId, issueId, onClose }: KnowledgeE
           <div className="flex min-w-0 items-center gap-2">
             <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" />
             <div className="min-w-0">
-              <div className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>查看当前知识</div>
-              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>项目通用知识宜精简克制；本任务知识记录仅与当前任务相关的内容</div>
+              <div className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>查看当前知识</div>
+              <div className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>项目通用知识宜精简克制；本任务知识记录仅与当前任务相关的内容</div>
             </div>
           </div>
           <button
@@ -89,7 +89,7 @@ function TabButton({ active, onClick, icon, label, hint }: {
   return (
     <button
       type="button" onClick={onClick}
-      className="inline-flex flex-nowrap items-center gap-1.5 px-3 py-2 text-[12px] border-b-2 -mb-px transition-colors whitespace-nowrap"
+      className="inline-flex flex-nowrap items-center gap-1.5 px-3 py-2 text-[length:var(--fs-md)] border-b-2 -mb-px transition-colors whitespace-nowrap"
       style={{
         borderColor: active ? '#06b6d4' : 'transparent',
         color: active ? 'var(--text-primary)' : 'var(--text-muted)',
@@ -98,7 +98,7 @@ function TabButton({ active, onClick, icon, label, hint }: {
     >
       {icon}
       <span>{label}</span>
-      <span className="hidden sm:inline text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>{hint}</span>
+      <span className="hidden sm:inline text-[length:var(--fs-2xs)] px-1 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>{hint}</span>
     </button>
   )
 }
@@ -187,17 +187,17 @@ function KnowledgePane({ loadUrl, saveUrl, fileHint, emptyHint }: {
   return (
     <div className="flex h-full flex-col p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{fileHint}</span>
-        <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="text-[length:var(--fs-xs)] truncate" style={{ color: 'var(--text-muted)' }}>{fileHint}</span>
+        <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
           {saving ? '保存中…' : saveError
             ? <span className="text-red-400">⚠ {saveError}</span>
             : (savedAt && '已自动保存')}
         </span>
       </div>
       {loadError ? (
-        <div className="flex-1 p-3 text-[12px] text-red-400">加载失败: {loadError}</div>
+        <div className="flex-1 p-3 text-[length:var(--fs-md)] text-red-400">加载失败: {loadError}</div>
       ) : loading ? (
-        <div className="flex flex-1 items-center justify-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="flex flex-1 items-center justify-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />加载中…
         </div>
       ) : (
@@ -206,11 +206,11 @@ function KnowledgePane({ loadUrl, saveUrl, fileHint, emptyHint }: {
           onChange={e => setContent(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={emptyHint}
-          className="flex-1 w-full resize-none rounded-lg p-3 font-mono text-[12px] leading-relaxed"
+          className="flex-1 w-full resize-none rounded-lg p-3 font-mono text-[length:var(--fs-md)] leading-relaxed"
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)', minHeight: '320px' }}
         />
       )}
-      <div className="mt-1.5 px-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="mt-1.5 px-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
         编辑后 500ms 自动保存 · Ctrl+S 立即保存{exists ? '' : ' · 首次保存将创建该文件'}
       </div>
     </div>

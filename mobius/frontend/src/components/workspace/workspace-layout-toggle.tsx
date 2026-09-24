@@ -97,7 +97,7 @@ export function WorkspaceLayoutToggle() {
         <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: isCurrent ? 'var(--accent-primary)' : 'var(--text-muted)' }} strokeWidth={2} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</span>
+            <span className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{opt.label}</span>
             {isCurrent && <Check className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />}
           </div>
         </div>
@@ -128,7 +128,7 @@ export function WorkspaceLayoutToggle() {
         }}
       >
         <LayoutTemplate className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-        {/* <span className="text-[12px] font-medium whitespace-nowrap">{currentLabel}</span> */}
+        {/* <span className="text-[length:var(--fs-md)] font-medium whitespace-nowrap">{currentLabel}</span> */}
       </TopNavActionElement>
 
       {open && (
@@ -137,7 +137,7 @@ export function WorkspaceLayoutToggle() {
           style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
           onClick={e => e.stopPropagation()}
         >
-          <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+          <div className="px-2 py-1.5 text-[length:var(--fs-xs)] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
             工作区布局
           </div>
           {renderModeOption(options[0])}
@@ -150,7 +150,7 @@ export function WorkspaceLayoutToggle() {
             >
               <ExternalLink className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} strokeWidth={2} />
               <div className="min-w-0 flex-1">
-                <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>在 VSCode 中打开</span>
+                <span className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>在 VSCode 中打开</span>
               </div>
             </button>
           )}

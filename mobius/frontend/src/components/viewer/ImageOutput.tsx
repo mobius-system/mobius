@@ -19,7 +19,7 @@ function ImageOutputItem({ url, index, onOpen }: { url: string; index: number; o
   return (
     <figure className="m-0 flex w-56 max-w-full flex-col gap-1">
       {err ? (
-        <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] px-3 text-center text-[11px] text-[var(--text-muted)]">
+        <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] px-3 text-center text-[length:var(--fs-sm)] text-[var(--text-muted)]">
           图片解码失败
         </div>
       ) : (
@@ -38,7 +38,7 @@ function ImageOutputItem({ url, index, onOpen }: { url: string; index: number; o
           />
         </button>
       )}
-      <figcaption className="truncate select-text font-mono text-[10px] text-[var(--text-muted)]">
+      <figcaption className="truncate select-text font-mono text-[length:var(--fs-xs)] text-[var(--text-muted)]">
         {label} · {display} · #{index + 1}
       </figcaption>
     </figure>

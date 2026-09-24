@@ -18,7 +18,7 @@ export function SearchModeToggle({
       aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
       title="切换搜索模式"
       onClick={() => onChange(isQuick ? 'deep' : 'quick')}
-      className={`inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 overflow-hidden rounded-full border text-[11px] transition-colors ${compact ? 'px-2' : 'px-2.5'}`}
+      className={`inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 overflow-hidden rounded-full border text-[length:var(--fs-sm)] transition-colors ${compact ? 'px-2' : 'px-2.5'}`}
       style={{
         color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
         borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',

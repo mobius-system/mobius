@@ -83,7 +83,7 @@ export function HomeModelHarnessSelect({
   return (
     <label
       data-home-model-harness-select
-      className="workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[11px]"
+      className="workbench-control-md flex min-w-0 items-center gap-2 border px-2 text-[length:var(--fs-sm)]"
       style={{
         color: optionsError ? 'var(--status-danger)' : 'var(--text-muted)',
         borderColor: optionsError ? 'var(--status-danger)' : 'var(--border-default)',
@@ -99,7 +99,7 @@ export function HomeModelHarnessSelect({
         }}
         disabled={disabled || !optionsLoaded || options.length === 0}
         aria-label="模型与 Harness 组合"
-        className="h-full max-w-[260px] truncate bg-transparent text-[12px] outline-none disabled:cursor-not-allowed"
+        className="h-full max-w-[260px] truncate bg-transparent text-[length:var(--fs-md)] outline-none disabled:cursor-not-allowed"
         style={{ color: optionsError ? 'var(--status-danger)' : 'var(--text-secondary)' }}
       >
         {!value && (

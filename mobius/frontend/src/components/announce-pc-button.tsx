@@ -92,7 +92,7 @@ function AnnouncePcButtonInner({
   }
 
   const base =
-    'announce-pc-button px-2 py-0.5 text-[11px] rounded-full transition-all hidden md:inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer select-none'
+    'announce-pc-button px-2 py-0.5 text-[length:var(--fs-sm)] rounded-full transition-all hidden md:inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer select-none'
   const tone = clicked
     ? 'border border-gray-500/25 text-gray-400 hover:bg-gray-500/10'
     : 'border border-green-500/30 text-green-300 hover:bg-green-500/15 hover:text-green-100'

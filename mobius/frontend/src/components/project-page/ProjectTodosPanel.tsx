@@ -96,7 +96,7 @@ function TodoRow({ todo, canManage, busy, onUpdate, onDelete }: TodoRowProps) {
                 event.currentTarget.blur()
               }
             }}
-            className={`w-full rounded-md border px-2 py-1.5 text-[13px] leading-5 focus:outline-none focus:border-blue-500/30 disabled:opacity-70 ${todo.completed ? 'line-through' : ''}`}
+            className={`w-full rounded-md border px-2 py-1.5 text-[length:var(--fs-lg)] leading-5 focus:outline-none focus:border-blue-500/30 disabled:opacity-70 ${todo.completed ? 'line-through' : ''}`}
             style={{
               background: 'var(--input-bg)',
               borderColor: 'var(--input-border)',
@@ -110,14 +110,14 @@ function TodoRow({ todo, canManage, busy, onUpdate, onDelete }: TodoRowProps) {
             onBlur={commitDescription}
             rows={2}
             placeholder="描述"
-            className="w-full resize-none rounded-md border px-2 py-1.5 text-[12px] leading-5 focus:outline-none focus:border-blue-500/30 placeholder:!text-[var(--placeholder-color)] disabled:opacity-70"
+            className="w-full resize-none rounded-md border px-2 py-1.5 text-[length:var(--fs-md)] leading-5 focus:outline-none focus:border-blue-500/30 placeholder:!text-[var(--placeholder-color)] disabled:opacity-70"
             style={{
               background: 'var(--input-bg)',
               borderColor: 'var(--input-border)',
               color: 'var(--text-secondary)',
             }}
           />
-          <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
             更新于 {new Date(todo.updated_at || todo.created_at).toLocaleString('zh-CN', {
               month: '2-digit',
               day: '2-digit',
@@ -261,8 +261,8 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>项目待办</h3>
-          <div className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <h3 className="text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>项目待办</h3>
+          <div className="mt-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             {activeItems.length} 未完成 · {completedItems.length} 已完成
           </div>
         </div>
@@ -270,7 +270,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
           type="button"
           onClick={loadTodos}
           disabled={loading}
-          className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50"
+          className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50"
         >
           {loading ? '刷新中...' : '刷新'}
         </button>
@@ -290,7 +290,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
               }
             }}
             placeholder="新增待办"
-            className="h-9 min-w-0 flex-1 rounded-lg border px-3 text-[13px] focus:outline-none focus:border-blue-500/30 placeholder:!text-[var(--placeholder-color)] disabled:opacity-60"
+            className="h-9 min-w-0 flex-1 rounded-lg border px-3 text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/30 placeholder:!text-[var(--placeholder-color)] disabled:opacity-60"
             style={{
               background: 'var(--input-bg)',
               borderColor: 'var(--input-border)',
@@ -301,7 +301,7 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
             type="button"
             onClick={addTodo}
             disabled={creating || !newTitle.trim()}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/15 px-3 text-[12px] text-blue-400 transition-colors hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/15 px-3 text-[length:var(--fs-md)] text-blue-400 transition-colors hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} /> : <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />}
             添加
@@ -310,17 +310,17 @@ export function ProjectTodosPanel({ projectId, canManage }: ProjectTodosPanelPro
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+        <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)] text-red-400">
           {error}
         </div>
       )}
 
       {loading && items.length === 0 ? (
-        <div className="rounded-lg border px-3 py-8 text-center text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+        <div className="rounded-lg border px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
           正在读取项目待办...
         </div>
       ) : sortedItems.length === 0 ? (
-        <div className="rounded-lg border border-dashed px-3 py-8 text-center text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+        <div className="rounded-lg border border-dashed px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
           暂无项目待办
         </div>
       ) : (

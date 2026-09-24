@@ -4,7 +4,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 // 重复手写的 "btn-primary + rounded-lg + flex + 图标 + 文案" 组合收口成一个组件,
 // 方便复用并保证视觉一致 (新建项目 / 新建 Issue / 新会话 等同类按钮).
 //
-// 统一尺寸与样式: 所有主操作按钮一律 h-8 px-3 text-[12px] gap-1.5, 图标建议 w-3.5 h-3.5,
+// 统一尺寸与样式: 所有主操作按钮一律 h-8 px-3 text-[length:var(--fs-md)] gap-1.5, 图标建议 w-3.5 h-3.5,
 // 不带额外阴影 / 字重; flex-shrink-0 防止在 flex 行(侧栏/卡片头)里被压缩. 视觉基底
 // .btn-primary (见 index.css) 已自带 opacity/transform 过渡与 :disabled 态
 // (opacity 0.35 + not-allowed), 故不再每处重复 disabled:opacity-* / disabled:cursor-*.
@@ -24,7 +24,7 @@ export function PrimaryActionButton({
 }: PrimaryActionButtonProps) {
   return (
     <button
-      className={`btn-primary rounded-lg flex flex-shrink-0 items-center transition-colors h-7 px-3 text-[12px] gap-1.5 ${className}`}
+      className={`btn-primary rounded-lg flex flex-shrink-0 items-center transition-colors h-7 px-3 text-[length:var(--fs-md)] gap-1.5 ${className}`}
       {...rest}
     >
       {icon}

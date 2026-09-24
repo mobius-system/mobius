@@ -9,6 +9,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { useStore } from '../store'
+import { readFontTierPx } from '../services/font-tiers'
 
 type Status = 'connecting' | 'connected' | 'closed' | 'error' | 'reconnecting'
 export type WebTerminalMode = 'cwd' | 'agent' | 'adhoc'
@@ -32,7 +33,7 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', adhocCommandKey, tit
     const term = new XTerm({
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans SC", monospace',
-      fontSize: 13,
+      fontSize: readFontTierPx('--fs-lg'), // xterm 只吃数值, 从档位变量解析当前 px
       theme: isDark
         ? { background: '#0d1117', foreground: '#e6edf3', cursor: '#e6edf3', selectionBackground: 'rgba(255,255,255,0.22)' }
         : { background: '#ffffff', foreground: '#1f2328', cursor: '#1f2328', selectionBackground: 'rgba(0,0,0,0.18)' },
@@ -193,15 +194,15 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', adhocCommandKey, tit
         {/* 头部 */}
         <div className="flex items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <Terminal className="h-4 w-4 flex-shrink-0" strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} />
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>
             {title || (mode === 'agent' ? 'Agent 后台终端' : 'Web 终端')}
           </span>
           {sessionId && (
-            <span className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               sid: {sessionId.slice(0, 8)}
             </span>
           )}
-          <span className={`ml-auto flex items-center gap-1.5 text-[11px] ${(status === 'connecting' || status === 'reconnecting') ? 'mobius-status-marquee' : ''}`} style={{ color: sm.color }}>
+          <span className={`ml-auto flex items-center gap-1.5 text-[length:var(--fs-sm)] ${(status === 'connecting' || status === 'reconnecting') ? 'mobius-status-marquee' : ''}`} style={{ color: sm.color }}>
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: sm.color }} />
             {sm.label}
           </span>
@@ -221,10 +222,10 @@ export function WebTerminalModal({ sessionId, mode = 'cwd', adhocCommandKey, tit
           <div ref={containerRef} className="h-full w-full" />
           {(status === 'error' || status === 'closed') && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/55 backdrop-blur-sm">
-              <span className="text-[13px]" style={{ color: status === 'error' ? '#f87171' : '#cbd5e1' }}>
+              <span className="text-[length:var(--fs-lg)]" style={{ color: status === 'error' ? '#f87171' : '#cbd5e1' }}>
                 {errMsg || (status === 'closed' ? '终端连接已断开' : '')}
               </span>
-              <span className="text-[11px]" style={{ color: '#94a3b8' }}>关闭弹窗后可重新打开</span>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: '#94a3b8' }}>关闭弹窗后可重新打开</span>
             </div>
           )}
         </div>

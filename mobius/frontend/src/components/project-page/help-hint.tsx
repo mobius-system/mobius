@@ -11,7 +11,7 @@ import { HelpCircle } from 'lucide-react'
 //   - hover 与键盘 focus 都能触发 (tabindex=0 + aria-describedby), ESC 关闭.
 type HelpHintProps = {
   text: string
-  /** 图标尺寸 (px), 默认 13 与 text-[13px] 标题对齐 */
+  /** 图标尺寸 (px), 默认 13 与 text-[length:var(--fs-lg)] 标题对齐 */
   size?: number
   className?: string
 }
@@ -90,7 +90,7 @@ export function HelpHint({ text, size = 13, className = '' }: HelpHintProps) {
           ref={tipRef}
           id={tipId}
           role="tooltip"
-          className="fixed z-[9999] max-w-[280px] px-3 py-2 rounded-lg text-[12px] leading-5 shadow-lg pointer-events-none"
+          className="fixed z-[9999] max-w-[280px] px-3 py-2 rounded-lg text-[length:var(--fs-md)] leading-5 shadow-lg pointer-events-none"
           style={{
             left: pos?.left,
             top: pos?.top,

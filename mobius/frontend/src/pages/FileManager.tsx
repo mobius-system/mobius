@@ -121,9 +121,9 @@ export default function FileManager({ onClose, onSendToChat }: {
             <svg className="w-5 h-5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            <span className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>文件浏览器</span>
+            <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>文件浏览器</span>
             {/* Breadcrumb */}
-            <div className="flex items-center gap-1 text-[12px] min-w-0" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
+            <div className="flex items-center gap-1 text-[length:var(--fs-md)] min-w-0" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
               <button onClick={() => { setViewFile(null); loadDir('/') }} className="hover:opacity-80 transition-colors">~</button>
               {breadcrumbs.map((seg, i) => (
                 <span key={i} className="flex items-center gap-1">
@@ -137,7 +137,7 @@ export default function FileManager({ onClose, onSendToChat }: {
           <div className="flex items-center gap-2">
             {viewFile && (
               <button onClick={() => onSendToChat(`请查看文件 ${viewFile.path} 的内容:\n\`\`\`${extToLang(viewFile.ext)}\n${viewFile.content.slice(0, 2000)}\n\`\`\``)}
-                className="h-7 px-3 text-[11px] bg-blue-500/15 text-blue-400 rounded-lg hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                className="h-7 px-3 text-[length:var(--fs-sm)] bg-blue-500/15 text-blue-400 rounded-lg hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                 发送给 Claude
               </button>
@@ -155,23 +155,23 @@ export default function FileManager({ onClose, onSendToChat }: {
             {/* Go up */}
             {currentPath !== '/' && (
               <button onClick={goUp} className="w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
-                <span className="text-[13px]">📂</span>
-                <span className="text-[13px]">..</span>
+                <span className="text-[length:var(--fs-lg)]">📂</span>
+                <span className="text-[length:var(--fs-lg)]">..</span>
               </button>
             )}
             {loading ? (
-              <div className="text-center text-[13px] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>加载中...</div>
+              <div className="text-center text-[length:var(--fs-lg)] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>加载中...</div>
             ) : entries.length === 0 ? (
-              <div className="text-center text-[13px] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>空目录</div>
+              <div className="text-center text-[length:var(--fs-lg)] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>空目录</div>
             ) : entries.map(entry => (
               <button key={entry.name} onClick={() => openEntry(entry)}
                 className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left ${
                   viewFile?.path?.endsWith('/' + entry.name) ? 'bg-blue-500/10 border-l-2 border-blue-500' : ''
                 }`}>
-                <span className="text-[13px] flex-shrink-0">{getFileIcon(entry.name, entry.type)}</span>
-                <span className="text-[13px] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
+                <span className="text-[length:var(--fs-lg)] flex-shrink-0">{getFileIcon(entry.name, entry.type)}</span>
+                <span className="text-[length:var(--fs-lg)] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
                 {entry.type === 'file' && entry.size !== null && (
-                  <span className="text-[10px] flex-shrink-0" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(entry.size)}</span>
+                  <span className="text-[length:var(--fs-xs)] flex-shrink-0" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(entry.size)}</span>
                 )}
               </button>
             ))}
@@ -182,9 +182,9 @@ export default function FileManager({ onClose, onSendToChat }: {
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', background: isDark ? '#0d1117' : '#f9fafb' }}>
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-[13px]">{getFileIcon(viewFile.path.split('/').pop() || '', 'file')}</span>
-                  <span className="text-[12px] truncate" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{viewFile.path.split('/').pop()}</span>
-                  <span className="text-[10px]" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(viewFile.size)}</span>
+                  <span className="text-[length:var(--fs-lg)]">{getFileIcon(viewFile.path.split('/').pop() || '', 'file')}</span>
+                  <span className="text-[length:var(--fs-md)] truncate" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{viewFile.path.split('/').pop()}</span>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: isDark ? '#374151' : '#9ca3af' }}>{formatSize(viewFile.size)}</span>
                 </div>
                 <button onClick={() => setViewFile(null)} className="transition-colors p-1" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -192,10 +192,10 @@ export default function FileManager({ onClose, onSendToChat }: {
               </div>
               <div className="flex-1 overflow-auto" style={{ background: isDark ? '#0a0e14' : '#ffffff' }}>
                 {viewLoading ? (
-                  <div className="text-center text-[13px] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>加载中...</div>
+                  <div className="text-center text-[length:var(--fs-lg)] py-8" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>加载中...</div>
                 ) : (
                   viewFile.ext === '.md' ? (
-                    <div className="px-6 py-4 max-w-none" style={{ color: isDark ? '#e2e8f0' : '#1e293b', fontSize: '13px', lineHeight: '1.6' }}>
+                    <div className="px-6 py-4 max-w-none" style={{ color: isDark ? '#e2e8f0' : '#1e293b', fontSize: 'var(--fs-lg)', lineHeight: '1.6' }}>
                       {viewFile.content
                         ? (() => {
                             try {
@@ -213,7 +213,7 @@ export default function FileManager({ onClose, onSendToChat }: {
                         className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
                     </div>
                   ) : (
-                    <pre className="px-4 py-3 text-[12px] font-mono leading-relaxed whitespace-pre" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{viewFile.content}</pre>
+                    <pre className="px-4 py-3 text-[length:var(--fs-md)] font-mono leading-relaxed whitespace-pre" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{viewFile.content}</pre>
                   )
                 )}
               </div>
@@ -222,7 +222,7 @@ export default function FileManager({ onClose, onSendToChat }: {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-2 border-t flex items-center gap-4 text-[10px]" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', color: isDark ? '#374151' : '#9ca3af' }}>
+        <div className="px-5 py-2 border-t flex items-center gap-4 text-[length:var(--fs-xs)]" style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', color: isDark ? '#374151' : '#9ca3af' }}>
           <span>{entries.length} 项</span>
           <span>点击文件预览 · 点击文件夹进入</span>
           <span className="flex items-center gap-1 ml-auto">

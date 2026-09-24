@@ -128,10 +128,10 @@ export function AttachmentComposer({ attachments, setAttachments, projectId, dar
                 <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)' }}>
                   <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
                   {a.status === 'uploading' && <div className="absolute inset-0 bg-black/40" />}
-                  {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[9px] flex items-center justify-center">失败</div>}
+                  {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[length:var(--fs-2xs)] flex items-center justify-center">失败</div>}
                 </div>
               ) : (
-                <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[10px]"
+                <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[length:var(--fs-xs)]"
                   style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
                   <Paperclip className="w-3 h-3" /><span className="max-w-[80px] truncate">{a.name}</span>
                 </div>
@@ -151,13 +151,13 @@ export function AttachmentComposer({ attachments, setAttachments, projectId, dar
       <div className="relative">
         {children}
         <button type="button" onClick={() => fileRef.current?.click()}
-          className="absolute right-2 top-[4.5rem] inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          className="absolute right-2 top-[4.5rem] inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-blue-500/10"
           style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
           <Paperclip className="h-3 w-3" strokeWidth={1.9} /> <span>附件</span>
         </button>
       </div>
       <div className="flex items-center gap-2 px-3 pb-2">
-        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
+        <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
       </div>
     </div>
   )

@@ -100,13 +100,13 @@ export function ExploreGroupCard({ items, hasError, showMeta = true, toolStatusM
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       className="jsonl-entry-card relative mb-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] shadow-sm"
     >
-      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[12px] select-text`}>
+      <summary className={`cursor-pointer px-3 pt-1.5 ${open ? 'pb-0.5' : 'pb-1.5'} flex items-center gap-2 text-[length:var(--fs-md)] select-text`}>
         <Search className={`h-3 w-3 flex-shrink-0 ${hasError ? 'text-red-400' : 'text-sky-400'}`} strokeWidth={2.2} aria-hidden="true" />
         <span className={`font-mono font-semibold flex-shrink-0 ${hasError ? 'text-red-300' : 'text-sky-300'}`}>探索</span>
-        <span className="text-[11px] text-[var(--text-muted)] truncate flex-1">
+        <span className="text-[length:var(--fs-sm)] text-[var(--text-muted)] truncate flex-1">
           已聚合 {items.length} 个只读 / 搜索工具调用{hasError ? ' · 含失败' : ''}
         </span>
-        <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">{open ? '▲' : '▼'}</span>
+        <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] flex-shrink-0 font-mono">{open ? '▲' : '▼'}</span>
       </summary>
       {open && (
         <div className="mt-1 flex flex-col gap-1 px-1 pb-1">
@@ -149,8 +149,8 @@ export function HiddenGapCard({ count, easyMode = false }: { count: number; easy
         <span className={`h-1.5 w-1.5 rounded-full ${ASSISTANT_END_TURN_THEME.dot}`}></span>
       </span>
       <span className={`font-mono font-semibold flex-shrink-0 ${ASSISTANT_END_TURN_THEME.text}`}>隐藏</span>
-      <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">本轮过长，此处隐藏了一些对话内容</span>
-      <span className="text-[10px] font-mono text-[var(--text-muted)] flex-shrink-0">{count} 条</span>
+      <span className="text-[length:var(--fs-sm)] text-[var(--text-secondary)] truncate flex-1 min-w-0">本轮过长，此处隐藏了一些对话内容</span>
+      <span className="text-[length:var(--fs-xs)] font-mono text-[var(--text-muted)] flex-shrink-0">{count} 条</span>
     </div>
   )
 }
@@ -162,7 +162,7 @@ function HiddenGapRow({ count, easyMode = false }: { count: number; easyMode?: b
   if (easyMode) return <HiddenGapCard count={count} easyMode />
   return (
     <div className="flex items-start gap-1.5">
-      <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">⋯</span>
+      <span className="font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">⋯</span>
       <div className="flex-1 min-w-0">
         <HiddenGapCard count={count} />
       </div>
@@ -193,11 +193,11 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
           </>
         ) : (
           <>
-            <span className="font-mono text-[10px] font-bold text-amber-400/75 flex-shrink-0 w-8">...</span>
+            <span className="font-mono text-[length:var(--fs-xs)] font-bold text-amber-400/75 flex-shrink-0 w-8">...</span>
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">上文续接{firstSummary ? ` · ${firstSummary}` : ''}</span>
-            <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">+{items.length}</span>
-            {!onlyGroup && <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">{open ? '▲' : '▼'}</span>}
+            <span className="text-[length:var(--fs-sm)] text-[var(--text-secondary)] truncate flex-1 min-w-0">上文续接{firstSummary ? ` · ${firstSummary}` : ''}</span>
+            <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] flex-shrink-0 font-mono">+{items.length}</span>
+            {!onlyGroup && <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">{open ? '▲' : '▼'}</span>}
           </>
         )}
       </button>
@@ -206,7 +206,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
         <div className="mt-2">
           {items.map(({ entry, lineNo, bashResults, readResults }) => (
             <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}`}>
-              {!easyMode && <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">...</span>}
+              {!easyMode && <span className="font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">...</span>}
               <div className="flex-1 min-w-0">
                 <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} readResults={readResults} showMeta={showMeta} easyMode={easyMode} toolStatus={toolStatusOf(entry, toolStatusMap)} forceOpen={lineNo === focusLineNo} parentOrderedCollapse={collapseLineNos?.has(lineNo)} taskPlans={taskPlans} />
               </div>
@@ -471,26 +471,26 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
           ) : (
             <>
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
-              <span className="font-mono text-[10px] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
+              <span className="font-mono text-[length:var(--fs-xs)] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
                 {headerTitle ?? `第 ${round.roundNum} 轮`}
               </span>
-              <span className="text-[11px] text-[var(--text-secondary)] truncate flex-1 min-w-0">
+              <span className="text-[length:var(--fs-sm)] text-[var(--text-secondary)] truncate flex-1 min-w-0">
                 {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
                 {openVisual ? '' : (userSummary || '(空)')}
               </span>
               {searchHighlighted && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[10px] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-400/80 bg-red-500/25 px-1.5 py-0.5 text-[length:var(--fs-xs)] font-semibold text-red-100 flex-shrink-0" title="搜索命中所在轮次">
                   <Search className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
                   搜索命中
                 </span>
               )}
               {!openVisual && agentCount > 0 && (
-                <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 font-mono">
+                <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] flex-shrink-0 font-mono">
                   +{agentCount}
                 </span>
               )}
               {!onlyGroup && (
-                <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+                <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)] flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
                   {openVisual ? '▲' : '▼'}
                 </span>
               )}
@@ -511,12 +511,12 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
                   type="button"
                   onClick={onRetry}
                   disabled={loading}
-                  className="text-[10px] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
+                  className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-60"
                 >
                   {loading ? '正在重试…' : '明细加载失败 · 点击重试'}
                 </button>
               ) : (
-                <span className="text-[10px] px-2 py-0.5 text-[var(--text-muted)]">
+                <span className="text-[length:var(--fs-xs)] px-2 py-0.5 text-[var(--text-muted)]">
                   正在加载本轮明细…
                 </span>
               )}
@@ -525,7 +525,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
           {/* 已加载但渲染为空 (条目全被噪声过滤 / 数据本就为空) → 显式提醒, 不留空白. */}
           {resident && renderSeq.length === 0 && (
             <div className="mb-1 flex justify-center">
-              <span className="text-[10px] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)]">
+              <span className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border border-dashed text-[var(--text-muted)]">
                 本轮为空 · 没有可显示的条目
               </span>
             </div>
@@ -556,7 +556,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
                   {/* 简易模式已关闭探索聚合, 这里只会出现在详细模式. */}
                   {/* Easy mode no longer aggregates, so this branch is detailed mode only. */}
                   <div className="flex items-start gap-1.5">
-                    <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
+                    <span className="font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">·</span>
                     <div className="flex-1 min-w-0">
                       <ExploreGroupCard items={ri.items} hasError={ri.hasError} showMeta={showMeta} toolStatusMap={toolStatusMap} collapseLineNos={collapseLineNos} focusLineNo={focusLineNo} forceFocusOpen={forceOpen} taskPlans={taskPlans} />
                     </div>
@@ -573,7 +573,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
               <Fragment key={(item.entry?.uuid || '') + '#' + item.lineNo}>
                 {gapsBefore(item.relIdx)}
                 <div className={`flex items-start gap-1.5${easyMode ? ' easy-round-entry-row' : ''}${easyMode && isUserItem ? ' easy-round-opener-row' : ''}`}>
-                  <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">
+                  <span className="font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-5 text-right leading-none select-none">
                     {/* 编号: 用户问题=轮次号(如 3), AI 回复=轮次号.子序号(如 3.1/3.2) */}
                     {isUserItem ? 'u' : `${item.relIdx}`}
                     {/* {isUserItem ? `${round.roundNum}` : `${round.roundNum}.${item.relIdx}`} */}

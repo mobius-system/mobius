@@ -82,6 +82,9 @@ export default defineConfig({
       // 桌面客户端 zip 由后端 server.js 的 /desktop-builds 静态路由分发 (build.py 产物).
       // dev 模式必须代理, 否则下载菜单链接被 vite SPA fallback 吞掉 → 404.
       '/desktop-builds': apiTarget,
+      // aimux bridge 由后端 server.js 反代并注入 bridge token (设备清单/连接状态/切换设备).
+      // dev 模式必须代理, 否则 vite SPA fallback 返回 index.html → 设备下拉恒空.
+      '/aimux_bridge': { target: apiTarget, ws: true, changeOrigin: false },
     }
   },
   build: {

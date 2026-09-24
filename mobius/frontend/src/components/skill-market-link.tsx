@@ -7,7 +7,7 @@ export function SkillMarketLink({ className = '' }: { className?: string }) {
     <button
       type="button"
       onClick={() => window.open(SKILL_MARKET_URL, '_blank', 'noopener,noreferrer')}
-      className={`inline-flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 px-2.5 py-1 text-[11px] text-emerald-500 transition-colors hover:bg-emerald-500/10 ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded border border-emerald-500/30 px-2.5 py-1 text-[length:var(--fs-sm)] text-emerald-500 transition-colors hover:bg-emerald-500/10 ${className}`}
       title="在新窗口打开 Skill 市场"
       aria-label="在新窗口打开 Skill 市场"
     >

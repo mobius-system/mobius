@@ -35,8 +35,8 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
           <span className="mb-3 inline-grid h-11 w-11 place-items-center rounded-xl" style={{ background: 'color-mix(in srgb, var(--accent-primary) 16%, transparent)', color: 'var(--accent-primary)' }}>
             <Sparkles className="h-5 w-5" />
           </span>
-          <h1 id="layout-mode-choice-title" className="text-lg font-semibold">选择你的使用模式</h1>
-          <p id="layout-mode-choice-description" className="mt-1.5 text-[13px] leading-5" style={{ color: 'var(--text-muted)' }}>
+          <h1 id="layout-mode-choice-title" className="text-[length:var(--fs-2xl)] font-semibold">选择你的使用模式</h1>
+          <p id="layout-mode-choice-description" className="mt-1.5 text-[length:var(--fs-lg)] leading-5" style={{ color: 'var(--text-muted)' }}>
             此选择会保存在当前浏览器中，之后也可以在主题菜单里随时切换。
           </p>
         </div>
@@ -53,8 +53,8 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', color: 'var(--accent-primary)' }}>
               <Columns2 className="h-4.5 w-4.5" />
             </span>
-            <strong className="block text-[14px]">常规模式</strong>
-            <span className="mt-2 grid min-w-0 gap-1 break-words text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <strong className="block text-[length:var(--fs-xl)]">常规模式</strong>
+            <span className="mt-2 grid min-w-0 gap-1 break-words text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>
               <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>高效快捷、层次化管理，可快速调整智能体群体技能和记忆，并详细查看思考与工具使用。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>并行推进多个项目。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>功能和信息密度更高，需要熟悉更多界面区域。</span>
@@ -71,8 +71,8 @@ export function LayoutModeChoiceModal({ onChoose }: LayoutModeChoiceModalProps) 
             <span className="mb-3 grid h-9 w-9 place-items-center rounded-lg" style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>
               <Sparkles className="h-4.5 w-4.5" />
             </span>
-            <strong className="block text-[14px]">简易模式</strong>
-            <span className="mt-2 grid min-w-0 gap-1 break-words text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>
+            <strong className="block text-[length:var(--fs-xl)]">简易模式</strong>
+            <span className="mt-2 grid min-w-0 gap-1 break-words text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>
               <span><b style={{ color: 'var(--text-secondary)' }}>优势：</b>降低认知负荷，布局与传统 Agent 对话界面更相似。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>适合：</b>专注处理一到两个项目。</span>
               <span><b style={{ color: 'var(--text-secondary)' }}>取舍：</b>项目层级和智能体群体管理入口更精简。</span>

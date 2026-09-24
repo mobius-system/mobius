@@ -32,17 +32,17 @@ export function KeyNode({ k, v, depth, parentKey }: { k: string; v: any; depth: 
       const defaultOpen = EXPAND_KEYS.has(k)
       return (
         <details open={defaultOpen} className="ml-3 my-0.5">
-          <summary className="cursor-pointer text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-text">
+          <summary className="cursor-pointer text-[length:var(--fs-sm)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-text">
             <span className="text-amber-300/80 font-mono">{k}</span>
             <span className="text-gray-500"> : </span>
             <span className="italic">"…" ({v.split('\n').length} lines)</span>
           </summary>
-          <pre className="mt-1 ml-3 px-2 py-1.5 text-[11px] font-mono whitespace-pre-wrap break-words rounded border border-[var(--border-color)] bg-[var(--prose-bg)] text-[var(--text-secondary)] max-h-96 overflow-auto">{v}</pre>
+          <pre className="mt-1 ml-3 px-2 py-1.5 text-[length:var(--fs-sm)] font-mono whitespace-pre-wrap break-words rounded border border-[var(--border-color)] bg-[var(--prose-bg)] text-[var(--text-secondary)] max-h-96 overflow-auto">{v}</pre>
         </details>
       )
     }
     return (
-      <div className="ml-3 my-0.5 text-[11px] font-mono leading-snug">
+      <div className="ml-3 my-0.5 text-[length:var(--fs-sm)] font-mono leading-snug">
         <span className="text-amber-300/80">{k}</span>
         <span className="text-gray-500"> : </span>
         <span className={typeof v === 'string' ? 'text-emerald-300/90 break-words' : 'text-cyan-300/90'}>
@@ -56,7 +56,7 @@ export function KeyNode({ k, v, depth, parentKey }: { k: string; v: any; depth: 
   const defaultOpen = depth === 0 ? true : (EXPAND_KEYS.has(k) && !COLLAPSE_KEYS.has(k))
   return (
     <details open={defaultOpen} className="ml-3 my-0.5 group">
-      <summary className="cursor-pointer text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-text font-mono">
+      <summary className="cursor-pointer text-[length:var(--fs-sm)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-text font-mono">
         <span className="text-amber-300/80">{k}</span>
         <span className="text-gray-500"> : </span>
         <span className="text-violet-300/70">{summarize(v, k)}</span>

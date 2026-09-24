@@ -33,7 +33,7 @@ import { lazyWithRetry } from '../services/handle-stale-chunk'
 const PathPickerModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.PathPickerModal })))
 import { ToggleSwitch } from './toggle-switch'
 import { ProjectMemberInvite, type MemberInput } from './project-member-invite'
-import { SessionModelPicker } from './session-model-picker'
+import { SessionModelPicker, useSessionModelOptions } from './session-model-picker'
 import { ExpandableTextarea } from './expandable-textarea'
 import { type Attachment, newAttId, formatFileSize, uploadAttachmentFile, appendAttachmentsToDesc } from './attachments'
 import { TopNavActionElement } from './top-nav-action'
@@ -144,8 +144,8 @@ function modalShellStyle(isDark: boolean): React.CSSProperties {
 function SectionLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
     <div className="flex items-baseline justify-between mb-1.5">
-      <label className="block text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{children}</label>
-      {hint && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
+      <label className="block text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-secondary)' }}>{children}</label>
+      {hint && <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
     </div>
   )
 }
@@ -159,27 +159,71 @@ function TextInput(props: { value: string; onChange: (v: string) => void; placeh
       onChange={e => onChange(e.target.value)}
       onKeyDown={e => { if (e.key === 'Enter' && onEnter) onEnter() }}
       placeholder={placeholder}
-      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40"
+      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40"
       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
     />
   )
 }
 
-export function LanguageSelect({ value, onChange }: { value: SessionLanguage; onChange: (v: SessionLanguage) => void }) {
+// 语言选择: 下拉形态 (与项目/任务/模型下拉同构, 便于并排紧凑摆放)
+// Language is a dropdown like the other selects so it can sit on one compact row
+export function LanguageSelect({ value, onChange, dark }: { value: SessionLanguage; onChange: (v: SessionLanguage) => void; dark: boolean }) {
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      {LANGUAGE_CHOICES.map(opt => {
-        const active = opt.key === value
-        return (
-          <button key={opt.key} type="button" onClick={() => onChange(opt.key)}
-            className="h-9 rounded-lg border text-[12px] transition-colors"
-            style={active
-              ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
-              : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-            {opt.title}
-          </button>
-        )
-      })}
+    <DropdownSelect
+      value={value}
+      onChange={v => onChange(v as SessionLanguage)}
+      dark={dark}
+      placeholder="— 选择语言 —"
+      options={LANGUAGE_CHOICES.map(opt => ({ value: opt.key, label: opt.title }))}
+    />
+  )
+}
+
+// 会话模型下拉 (紧凑形态): 与 grid 版 SessionModelPicker 共用同一份数据源, 配额信息内联进选项,
+// 超额模型禁用; 只有「已达限额 / tmux 软提醒」需要用户注意时, 才在下方补一行说明 —— 正常时不占高度.
+// Compact model dropdown; quota details live inside the options.
+export function SessionModelDropdown({ value, onChange, dark, quotaEnabled = true }: {
+  value: string
+  onChange: (key: string) => void
+  dark: boolean
+  quotaEnabled?: boolean
+}) {
+  const { options, stats } = useSessionModelOptions()
+  const usageOf = (key: string) => stats?.model_usage_limits?.models?.[key] || null
+  const items: DropdownOption[] = options.map(opt => {
+    const usage = usageOf(opt.key)
+    const blocked = quotaEnabled && !!usage?.blocked
+    const tmux = usage?.usage?.tmuxWindows
+    // 渠道/定位 + 管理员配额 + tmux 软提醒压进副标题, 避免在下拉外再占两行
+    // Backend, quota and tmux hint are folded into the option description
+    const desc = [
+      opt.sub,
+      usage?.limit != null ? `个人5h ${usage.count}/${usage.limit}` : '',
+      tmux?.warning ? `tmux ${tmux.count}/${tmux.limit}` : '',
+    ].filter(Boolean).join(' · ')
+    return {
+      value: opt.key,
+      label: String(opt.title || opt.label || opt.key),
+      description: desc || undefined,
+      disabled: blocked,
+      badge: blocked ? { text: '已达限额', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' } : undefined,
+    }
+  })
+  const usage = usageOf(value)
+  const tmux = usage?.usage?.tmuxWindows
+  return (
+    <div>
+      <DropdownSelect value={value} onChange={onChange} dark={dark} placeholder="— 选择模型 —" emptyText="暂无可用模型" options={items} />
+      {usage?.blocked && (
+        <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: '#ef4444' }}>
+          管理员模型限额: 最近 {usage.window_hours} 小时单用户提问 {usage.count}/{usage.limit} 次, 已达限制, 请切换模型
+        </p>
+      )}
+      {!usage?.blocked && tmux?.warning && (
+        <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: '#f59e0b' }}>
+          tmux 窗口达到软提醒阈值（当前 {tmux.count} / {tmux.limit}），仍可创建
+        </p>
+      )}
     </div>
   )
 }
@@ -224,6 +268,21 @@ export function useAsyncList<T>(fetcher: () => Promise<T[]>, deps: any[], cache?
   return { list, loading, refresh: load }
 }
 
+// 下拉标题 + 刷新按钮 (加载中图标转圈): 项目/任务/协作设备三处共用同一形态.
+// Label with a refresh button whose icon spins while the list reloads; shared by all three selects
+function LabelWithRefresh({ label, loading, onRefresh }: { label: React.ReactNode; loading?: boolean; onRefresh?: () => void }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {label}
+      {onRefresh && (
+        <button type="button" onClick={onRefresh} title="刷新列表" className="inline-flex items-center justify-center rounded hover:bg-[var(--bg-card-hover)]">
+          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+        </button>
+      )}
+    </span>
+  )
+}
+
 function SelectShell({ label, hint, current, placeholder, loading, onRefresh, children, dark }: {
   label: string; hint?: string; current?: string; placeholder?: string; loading?: boolean
   onRefresh?: () => void; children: React.ReactNode; dark: boolean
@@ -231,17 +290,10 @@ function SelectShell({ label, hint, current, placeholder, loading, onRefresh, ch
   return (
     <div>
       <SectionLabel hint={hint}>
-        <span className="flex items-center gap-1.5">
-          {label}
-          {onRefresh && (
-            <button type="button" onClick={onRefresh} title="刷新列表" className="inline-flex items-center justify-center rounded hover:bg-[var(--bg-card-hover)]">
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
-            </button>
-          )}
-        </span>
+        <LabelWithRefresh label={label} loading={loading} onRefresh={onRefresh} />
       </SectionLabel>
       {children}
-      {current && <p className="mt-1 text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>当前: {current}</p>}
+      {current && <p className="mt-1 text-[length:var(--fs-xs)] truncate" style={{ color: 'var(--text-muted)' }}>当前: {current}</p>}
     </div>
   )
 }
@@ -345,7 +397,7 @@ export function DropdownSelect({
         title={size === 'sm' ? (selected ? selected.label : (placeholder || '')) : undefined}
         aria-label={iconOnly ? `${placeholder || '选择'}${selected ? `：${selected.label}` : ''}` : undefined}
         data-has-value={hasValidValue ? 'true' : 'false'}
-        className={`${size === 'sm' ? (iconOnly ? 'h-7 w-7 flex-shrink-0 rounded-lg p-0 text-[11px]' : 'max-w-[168px] h-7 px-2 gap-1 rounded-lg text-[11px]') : 'w-full h-10 px-2.5 gap-2 rounded-xl text-[13px]'} text-left flex items-center justify-between focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-color-strong,#475569)]`}
+        className={`${size === 'sm' ? (iconOnly ? 'h-7 w-7 flex-shrink-0 rounded-lg p-0 text-[length:var(--fs-sm)]' : 'max-w-[168px] h-7 px-2 gap-1 rounded-lg text-[length:var(--fs-sm)]') : 'w-full h-10 px-2.5 gap-2 rounded-xl text-[length:var(--fs-lg)]'} text-left flex items-center justify-between focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-color-strong,#475569)]`}
         style={{
           background: 'var(--input-bg)',
           border: open || (iconOnly && hasValidValue) ? '1px solid rgba(59,130,246,0.72)' : '1px solid var(--input-border)',
@@ -369,7 +421,7 @@ export function DropdownSelect({
                 <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                   <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                   <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索…" autoFocus
-                    className="flex-1 bg-transparent text-[12px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+                    className="flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
                     style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
                   {q && (
                     <button type="button" onClick={() => setQ('')} className="flex-shrink-0 rounded hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}>
@@ -389,7 +441,7 @@ export function DropdownSelect({
                     setOpen(false)
                     panelAction.onClick()
                   }}
-                  className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[length:var(--fs-md)] font-medium transition-colors hover:bg-blue-500/10 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ color: '#60a5fa' }}
                 >
                   <FolderPlus className="h-3.5 w-3.5 flex-shrink-0" />
@@ -399,7 +451,7 @@ export function DropdownSelect({
             )}
             <div className="flex-1 min-h-0 overflow-y-auto py-1">
               {filtered.length === 0 ? (
-                <p className="text-[11px] italic px-3 py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText || '无匹配项'}</p>
+                <p className="text-[length:var(--fs-sm)] italic px-3 py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText || '无匹配项'}</p>
               ) : filtered.map(opt => {
                 const active = opt.value === value
                 return (
@@ -408,12 +460,12 @@ export function DropdownSelect({
                     style={{ background: active ? 'rgba(59,130,246,0.10)' : 'transparent' }}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{opt.label}</span>
+                        <span className="truncate text-[length:var(--fs-md)]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{opt.label}</span>
                         {opt.badge && (
-                          <span className="text-[9px] px-1 py-0.5 rounded shrink-0" style={{ background: opt.badge.bg, color: opt.badge.color }}>{opt.badge.text}</span>
+                          <span className="text-[length:var(--fs-2xs)] px-1 py-0.5 rounded shrink-0" style={{ background: opt.badge.bg, color: opt.badge.color }}>{opt.badge.text}</span>
                         )}
                       </div>
-                      {opt.description && <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>}
+                      {opt.description && <div className="text-[length:var(--fs-xs)] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.description}</div>}
                     </div>
                     {active && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#60a5fa' }} />}
                   </button>
@@ -498,10 +550,10 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
                   <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)' }}>
                     <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
                     {a.status === 'uploading' && <div className="absolute inset-0 bg-black/40" />}
-                    {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[9px] flex items-center justify-center">失败</div>}
+                    {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[length:var(--fs-2xs)] flex items-center justify-center">失败</div>}
                   </div>
                 ) : (
-                  <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[10px]"
+                  <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[length:var(--fs-xs)]"
                     style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
                     <Paperclip className="w-3 h-3" /><span className="max-w-[80px] truncate">{a.name}</span>
                   </div>
@@ -516,15 +568,15 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
         )}
         <ExpandableTextarea value={value} onValueChange={onValueChange} placeholder={placeholder}
           overlayTitle="编辑目的 / 问题描述"
-          className="w-full bg-transparent resize-none border-0 px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
+          className="w-full bg-transparent resize-none border-0 px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
           style={{ minHeight: 72, color: dark ? '#f1f5f9' : '#1e293b' }} />
         <div className="flex items-center gap-2 px-3 pb-2">
           <button type="button" onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-secondary)' }}>
             <Paperclip className="w-3.5 h-3.5" /> 附件
           </button>
-          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
+          <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
         </div>
       </div>
     </div>
@@ -585,7 +637,7 @@ export function SkillMemoryPicker({
 
   const close = () => { setPanel(null); setQ('') }
 
-  const btnCls = "h-9 min-w-0 rounded-lg border px-2 text-[12px] flex items-center justify-between gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+  const btnCls = "h-9 min-w-0 rounded-lg border px-2 text-[length:var(--fs-md)] flex items-center justify-between gap-2 transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
 
   return (
     <>
@@ -595,7 +647,7 @@ export function SkillMemoryPicker({
             title="选择注入本次会话的 Skill 与 Memory"
             aria-label={`记忆和技能：${enabledTotal}/${availableTotal} 已启用`}
             data-has-value={hasValidValue ? 'true' : 'false'}
-            className={`${iconOnlyTrigger ? 'h-7 w-7 flex-shrink-0 justify-center p-0' : 'h-7 min-w-0 max-w-[168px] justify-between gap-1 px-2'} rounded-lg border text-[11px] flex items-center transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`${iconOnlyTrigger ? 'h-7 w-7 flex-shrink-0 justify-center p-0' : 'h-7 min-w-0 max-w-[168px] justify-between gap-1 px-2'} rounded-lg border text-[length:var(--fs-sm)] flex items-center transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed`}
             style={{
               borderColor: hasValidValue ? 'rgba(59,130,246,0.72)' : 'var(--input-border)',
               color: hasValidValue ? '#60a5fa' : 'var(--text-secondary)',
@@ -617,7 +669,7 @@ export function SkillMemoryPicker({
                 <span style={{ color: '#60a5fa' }}><Lock className="w-3 h-3" /></span>
                 Skill
               </span>
-              <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledSkillCount}/{skills.length}</span>
+              <span className="text-[length:var(--fs-sm)] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledSkillCount}/{skills.length}</span>
             </button>
             <button type="button" onClick={() => setPanel('memory')} disabled={disabled} className={btnCls}
               style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
@@ -625,7 +677,7 @@ export function SkillMemoryPicker({
                 <span style={{ color: '#a855f7' }}><Eye className="w-3 h-3" /></span>
                 Memory
               </span>
-              <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledMemoryCount}/{memories.length}</span>
+              <span className="text-[length:var(--fs-sm)] tabular-nums" style={{ color: 'var(--text-muted)' }}>{enabledMemoryCount}/{memories.length}</span>
             </button>
           </>
         )}
@@ -644,7 +696,7 @@ export function SkillMemoryPicker({
                   <div className="inline-flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                     {(['skill', 'memory'] as const).map(kind => (
                       <button key={kind} type="button" onClick={() => { setPanel(kind); setQ('') }}
-                        className="h-7 rounded-md px-2.5 text-[12px] transition-colors"
+                        className="h-7 rounded-md px-2.5 text-[length:var(--fs-md)] transition-colors"
                         style={panel === kind
                           ? { background: 'rgba(59,130,246,0.18)', color: '#60a5fa' }
                           : { color: 'var(--text-muted)' }}>
@@ -653,11 +705,11 @@ export function SkillMemoryPicker({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[14px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+                  <div className="text-[length:var(--fs-xl)] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
                     {panel === 'skill' ? 'Skill 选择' : 'Memory 选择'}
                   </div>
                 )}
-                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                   {panel === 'skill' ? `${enabledSkillCount}/${skills.length} 已启用 · 取消勾选的将不注入 Agent 上下文` : `${enabledMemoryCount}/${memories.length} 已启用 · 取消勾选的将不注入 Agent 上下文`}
                 </div>
               </div>
@@ -669,12 +721,12 @@ export function SkillMemoryPicker({
               <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                 <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索名称或描述…" autoFocus
-                  className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+                  className="flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
               {filtered.length === 0 ? (
-                <p className="text-[11px] italic px-2 py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-[length:var(--fs-sm)] italic px-2 py-6 text-center" style={{ color: 'var(--text-muted)' }}>
                   {panel === 'skill' ? emptySkillText : emptyMemoryText}
                 </p>
               ) : filtered.map(it => {
@@ -691,15 +743,15 @@ export function SkillMemoryPicker({
                         onChange={() => !locked && !mutex && onToggle(it.id)} className="mt-0.5 accent-blue-500" />
                       <div className="min-w-0 flex-1" style={{ opacity: mutex ? 0.4 : checked ? 1 : 0.5 }}>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="truncate text-[12px]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{it.name}</span>
-                          {it.research_role && <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{it.research_role}</span>}
-                          <span className="px-1 py-0.5 rounded text-[9px] shrink-0" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
+                          <span className="truncate text-[length:var(--fs-md)]" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{it.name}</span>
+                          {it.research_role && <span className="px-1 py-0.5 rounded text-[length:var(--fs-2xs)] shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{it.research_role}</span>}
+                          <span className="px-1 py-0.5 rounded text-[length:var(--fs-2xs)] shrink-0" style={{ background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>{SCOPE_LABEL[it.scope] || it.scope}</span>
                         </div>
-                        {it.description && <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{it.description}</div>}
+                        {it.description && <div className="text-[length:var(--fs-xs)] truncate" style={{ color: 'var(--text-muted)' }}>{it.description}</div>}
                       </div>
                     </label>
                     {accent && (
-                      <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px]"
+                      <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[length:var(--fs-2xs)]"
                         style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>
                         {accent === '互斥' ? <Ban className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}{accent}
                       </span>
@@ -709,7 +761,7 @@ export function SkillMemoryPicker({
               })}
             </div>
             <div className="px-4 py-2.5 border-t flex justify-end" style={{ borderColor: 'var(--border-color)' }}>
-              <button type="button" onClick={close} className="h-8 px-4 rounded-lg text-[12px] btn-primary">完成</button>
+              <button type="button" onClick={close} className="h-8 px-4 rounded-lg text-[length:var(--fs-md)] btn-primary">完成</button>
             </div>
           </div>
         </div>,
@@ -731,17 +783,17 @@ function CreateSuccessDialog({ kind, name, detailUrl, onClose }: { kind: CreateK
         <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(34,197,94,0.15)' }}>
           <CheckCircle2 className="w-7 h-7" style={{ color: '#22c55e' }} />
         </div>
-        <h3 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
-        <p className="text-[12px] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
+        <p className="text-[length:var(--fs-md)] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           {labelMap[kind]}「<span style={{ color: isDark ? '#e2e8f0' : '#334155' }}>{name || '(未命名)'}</span>」已创建。是否跳转详情？
         </p>
         <div className="flex gap-2 w-full">
           <button type="button" onClick={onClose}
-            className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)]"
             style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>留在当前页</button>
           <button type="button"
             onClick={() => { if (detailUrl) window.open(detailUrl, '_blank', 'noopener,noreferrer'); onClose() }}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors flex items-center justify-center gap-1.5">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors flex items-center justify-center gap-1.5">
             <ExternalLink className="w-3.5 h-3.5" /> 跳转详情
           </button>
         </div>
@@ -764,21 +816,21 @@ function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose,
         <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: 'rgba(34,197,94,0.15)' }}>
           <CheckCircle2 className="w-7 h-7" style={{ color: '#22c55e' }} />
         </div>
-        <h3 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
-        <p className="text-[12px] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>创建成功</h3>
+        <p className="text-[length:var(--fs-md)] mb-5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           会话「<span style={{ color: dark ? '#e2e8f0' : '#334155' }}>{name || '(未命名)'}</span>」已创建并开始执行。
         </p>
         <div className="flex flex-col gap-2 w-full">
           <button type="button" onClick={onView} disabled={!canView}
-            className="h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             查看
           </button>
           <div className="flex gap-2 w-full">
             <button type="button" onClick={onCreateAnother}
-              className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+              className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)]"
               style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>再创建一个</button>
             <button type="button" onClick={onClose}
-              className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+              className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)]"
               style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>关闭</button>
           </div>
         </div>
@@ -798,7 +850,7 @@ function CreateModalShell({ title, onClose, children, footer, dark, width = 560,
         style={{ ...modalShellStyle(dark), maxWidth: `min(${width}px, calc(100vw - 24px))` }}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b shrink-0 gap-2" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
             {headerExtra}
           </div>
           <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -815,10 +867,10 @@ function CreateModalShell({ title, onClose, children, footer, dark, width = 560,
 function Footer({ loading, submitText, onClose, onSubmit, disabled }: { loading: boolean; submitText: string; onClose: () => void; onSubmit: () => void; disabled?: boolean }) {
   return (
     <div className="flex gap-2">
-      <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]"
+      <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)]"
         style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>取消</button>
       <button onClick={onSubmit} disabled={loading || disabled}
-        className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+        className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
         {loading ? '创建中...' : submitText}
       </button>
     </div>
@@ -944,8 +996,8 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
       <div className="relative w-[440px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
+        <h4 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
+        <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
         {projectKind !== 'extension' && (
           <ProjectMemberInvite
             value={inviteMembers}
@@ -954,7 +1006,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
           />
         )}
         <div className="mt-5 flex justify-end">
-          <button type="button" onClick={() => setPermissionOpen(false)} className="h-9 px-5 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
+          <button type="button" onClick={() => setPermissionOpen(false)} className="h-9 px-5 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors">完成</button>
         </div>
       </div>
     </div>
@@ -985,7 +1037,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             }
           })}
         />
-        <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>{PROJECT_KIND_PRESETS.find(p => p.kind === projectKind)?.desc}</p>
+        <p className="mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{PROJECT_KIND_PRESETS.find(p => p.kind === projectKind)?.desc}</p>
       </div>
       <div>
         <SectionLabel hint={archiveFile ? '留空则用压缩包文件名' : undefined}>项目名称</SectionLabel>
@@ -995,14 +1047,14 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
         <div>
           <SectionLabel hint="小写字母开头, 1-32 字符">拓展标识名</SectionLabel>
           <TextInput value={extensionName} onChange={v => { setExtensionName(v.toLowerCase().replace(/[^a-z0-9-]/g, '')); setErr('') }} placeholder="例如：my-awesome-ext" dark={dark} />
-          <p className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>创建后在 mobius/extension/ 下生成拓展骨架，可在主页直接打开</p>
+          <p className="mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>创建后在 mobius/extension/ 下生成拓展骨架，可在主页直接打开</p>
         </div>
       ) : (
         <>
           <div>
             <SectionLabel hint="选填">项目描述</SectionLabel>
             <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
-              className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+              className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
           </div>
           <div>
@@ -1010,7 +1062,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             <div className="flex gap-2">
               <TextInput value={bindPath} onChange={v => { setBindPath(v); setBindPathManual(true); setErr('') }} placeholder="点击右侧选择，或手动输入绝对路径" dark={dark} />
               <button type="button" onClick={() => setPickerOpen(true)} title="选择路径"
-                className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[12px] shrink-0 hover:bg-[var(--bg-card-hover)]"
+                className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[length:var(--fs-md)] shrink-0 hover:bg-[var(--bg-card-hover)]"
                 style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
                 <FolderOpen className="w-3.5 h-3.5" />
               </button>
@@ -1035,17 +1087,17 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Upload className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12px] font-medium" style={{ color: archiveFile ? (dark ? '#cbd5e1' : '#334155') : 'var(--text-muted)' }}>
+                <span className="block truncate text-[length:var(--fs-md)] font-medium" style={{ color: archiveFile ? (dark ? '#cbd5e1' : '#334155') : 'var(--text-muted)' }}>
                   {archiveFile ? archiveFile.name : '点击选择压缩包(可不上传)'}
                 </span>
-                <span className="mt-0.5 block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="mt-0.5 block text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                   {archiveFile ? `${formatFileSize(archiveFile.size)} · 创建时自动解压 + git init` : '留空创建空项目; 上传则解压代码并自动 git init'}
                 </span>
               </span>
               {archiveFile && (
                 <span role="button" tabIndex={0}
                   onClick={e => { e.stopPropagation(); setArchiveFile(null); if (archiveInputRef.current) archiveInputRef.current.value = '' }}
-                  className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>移除</span>
+                  className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: '#60a5fa' }}>移除</span>
               )}
             </button>
           </div>
@@ -1057,23 +1109,23 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
               <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
-                <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（负责人 / 管理员 / 成员 / 访客）'}</span>
+                <span className="block text-[length:var(--fs-md)] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
+                <span className="mt-0.5 block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（负责人 / 管理员 / 成员 / 访客）'}</span>
               </span>
-              <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>设置</span>
+              <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: '#60a5fa' }}>设置</span>
             </button>
           </div>
           {projectKind === 'default' && (
             <ToggleSwitch
               checked={researchEnabled}
               onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
-              className="flex items-start gap-3 text-[13px]"
+              className="flex items-start gap-3 text-[length:var(--fs-lg)]"
               style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-              <span><span className="font-medium">启用研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
+              <span><span className="font-medium">启用研究系统</span><span className="block text-[length:var(--fs-sm)] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
             </ToggleSwitch>
           )}
           {projectKind === 'research' && (
-            <div className="rounded-xl px-3 py-2 text-[11px] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+            <div className="rounded-xl px-3 py-2 text-[length:var(--fs-sm)] flex items-center gap-2" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
               <FlaskConical className="w-3.5 h-3.5" /> 研究项目已自动启用研究系统并禁用 git worktree
             </div>
           )}
@@ -1081,7 +1133,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
             <ToggleSwitch
               checked={defaultUseWorktree}
               onChange={setDefaultUseWorktree}
-              className="flex items-center gap-3 text-[13px]"
+              className="flex items-center gap-3 text-[length:var(--fs-lg)]"
               style={{ color: dark ? '#cbd5e1' : '#334155' }}>
               默认使用 git worktree（新建任务时在绑定路径下开独立工作区）
             </ToggleSwitch>
@@ -1176,25 +1228,25 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setPermissionOpen(false)} />
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围受所属项目权限限制。</p>
+        <h4 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
+        <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围受所属项目权限限制。</p>
         <div>
           <div className="grid grid-cols-2 gap-1.5">
             {issueVisibilityOptions.map(opt => {
               const active = visibility === opt.value
               return (
                 <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }} title={opt.desc}
-                  className="h-8 rounded-lg border text-[12px] transition-colors"
+                  className="h-8 rounded-lg border text-[length:var(--fs-md)] transition-colors"
                   style={active ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' } : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
                   {opt.label}
                 </button>
               )
             })}
           </div>
-          <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>父项目可见性为「{parentVisibilityLabel}」，本任务单可选范围已自动收窄。</p>
+          <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>父项目可见性为「{parentVisibilityLabel}」，本任务单可选范围已自动收窄。</p>
         </div>
         <div className="mt-5 flex gap-2">
-          <button type="button" onClick={() => setPermissionOpen(false)} className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">完成</button>
+          <button type="button" onClick={() => setPermissionOpen(false)} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors">完成</button>
         </div>
       </div>
     </div>
@@ -1229,7 +1281,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
       <div>
         <SectionLabel hint="默认同标题, 选填">任务描述</SectionLabel>
         <ExpandableTextarea value={effectiveDesc} onValueChange={v => { setDesc(v); setDescTouched(true); setErr('') }} placeholder="详细说明任务目标与约束" overlayTitle="编辑任务描述"
-          className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+          className="w-full h-24 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
       </div>
       <button type="button" onClick={() => projectId && setPermissionOpen(true)} disabled={!projectId}
@@ -1237,17 +1289,17 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
         style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
         <Eye className="w-4 h-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[12px] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
-          <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="block text-[length:var(--fs-md)] font-medium" style={{ color: dark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
+          <span className="mt-0.5 block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
           </span>
         </span>
-        <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+        <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: '#60a5fa' }}>修改</span>
       </button>
       <ToggleSwitch
         checked={isPlanning}
         onChange={v => { setIsPlanning(v); setErr('') }}
-        className="flex items-start gap-3 text-[13px]"
+        className="flex items-start gap-3 text-[length:var(--fs-lg)]"
         style={{ color: dark ? '#cbd5e1' : '#334155' }}>
         <span>
           <span className="font-medium">系统宏观规划模式</span>
@@ -1258,7 +1310,7 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
           <ToggleSwitch
             checked={useWorktree}
             onChange={v => { setUseWorktree(v); setErr('') }}
-            className="flex items-center gap-3 text-[13px]"
+            className="flex items-center gap-3 text-[length:var(--fs-lg)]"
             style={{ color: dark ? '#cbd5e1' : '#334155' }}>
             使用 git worktree（在绑定路径下为本任务开独立工作区）
           </ToggleSwitch>
@@ -1369,6 +1421,25 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     })
   }, [])
 
+  // 协作设备 (aimux bridge): 显式指定本会话绑定的设备, 覆盖桌面端 bootData 注入的本机标识.
+  // null = 跟随本机 (与改动前完全一致); 哨兵值代表"跟随本机"这一项.
+  // Explicit aimux bridge device for this session; null keeps the previous behaviour (follow the local identifier)
+  const [deviceOverride, setDeviceOverride] = useState<string | null>(null)
+  const [bridgeDevices, setBridgeDevices] = useState<Array<{ name: string; status?: string; platform?: string }>>([])
+  const [devicesLoading, setDevicesLoading] = useState(false)
+  const [devicesLoaded, setDevicesLoaded] = useState(false)
+  // 拉取 bridge 设备清单 (与会话头部切换设备同一数据源); 供展开「更多会话设置」与标题栏刷新按钮共用
+  // Loads the bridge device list; shared by the section-expand effect and the label's refresh button
+  const loadDevices = useCallback(() => {
+    setDevicesLoading(true)
+    api('/aimux_bridge/api/remotes')
+      .then((data: any) => setBridgeDevices(Array.isArray(data?.remotes) ? data.remotes.filter((d: any) => d?.name) : []))
+      .catch(() => setBridgeDevices([]))
+      .finally(() => { setDevicesLoading(false); setDevicesLoaded(true) })
+  }, [])
+  // 展开时才首次拉取 (未展开不产生请求); 之后「更多会话设置」折叠再展开不会重复拉, 要新数据点标题栏刷新
+  useEffect(() => { if (moreOpen && !devicesLoaded) loadDevices() }, [moreOpen, devicesLoaded, loadDevices])
+
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: PROJECTS_SCOPE, userId: user?.id })
   // 二级联动: 选 project 后拉 issues. 缓存 scope 单列 (菜单只取 active, 与项目页的全量 issues 列表区分开)
   // Separate cache scope: this menu only lists active issues, unlike the project page's full list
@@ -1456,9 +1527,18 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
   }
 
-  // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选, SkillMemoryPicker 经 skillLockedOf 锁定不可取消.
-  // web 端 workMode 恒 null → 永远 false, 不影响 skill 行为. 与 NewSessionModal matchesRequiredSkill 同源.
-  const isPcTaskMode = workMode === 'pc' || workMode === 'dual'
+  // 协作设备下拉里「跟随本机」那一项的哨兵值 (不会发给后端)
+  // Sentinel value for the "follow the local identifier" option; never sent to the backend
+  const DEVICE_AUTO = '__auto__'
+  // 显式选中的协作设备优先, 未选时沿用本机标识 (桌面端 bootData 注入); 两者皆空则为空.
+  // An explicitly picked device wins; otherwise the local identifier applies
+  const effectiveAimuxId = deviceOverride ?? aimuxId
+  // web 端显式指定设备时也走 PC 任务模式 (默认双侧): 后端提示词与 remote_* MCP 注入都依赖 work_mode, 缺失则设备选择失效.
+  // Picking a device on web implies PC task mode — the backend prompt and MCP injection both need work_mode
+  const effectiveWorkMode = workMode ?? (deviceOverride ? 'dual' : null)
+  // PC 任务模式 (pc/dual): mobius-aimux skill 强制必选, SkillMemoryPicker 经 skillLockedOf 锁定不可取消.
+  // web 端未指定设备时 effectiveWorkMode 恒 null → 永远 false, 不影响 skill 行为. 与 NewSessionModal matchesRequiredSkill 同源.
+  const isPcTaskMode = effectiveWorkMode === 'pc' || effectiveWorkMode === 'dual'
   const skillLockedOf = useCallback((id: string) => {
     if (!isPcTaskMode) return false
     const sk = availSkills.find(s => s.id === id)
@@ -1485,8 +1565,9 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
         // 用户手填过名称 → 标记 name_touched, 后端置 name_human_edited=1, AI 标题生成器不再覆盖此名.
         name_touched: nameUserTouchedRef.current,
-        // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+        // PC 任务模式: 桌面端恒有 workMode; web 端仅在用户显式选了协作设备时才附 (effectiveWorkMode 随之非空).
+        // PC task mode: always on desktop, and on web once a collaboration device was explicitly picked
+        ...(effectiveWorkMode ? { pc_client_metadata: { work_mode: effectiveWorkMode, aimux_id: effectiveAimuxId || undefined, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
       // 记录「恢复上次选择」快照 (项目/任务/语言/Skill·Memory), 下次新建可一键回填. 与工作草稿 (gc:new-session) 不同键, 提交清草稿不影响此快照.
@@ -1561,7 +1642,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   const headerExtra = lastSelection ? (
     <button key="restore-last" type="button" onClick={restoreLastSelection}
       title={`恢复上次选择：${lastSelection.projectName || '项目'} / ${lastSelection.issueTitle || '任务'}`}
-      className="h-7 px-2 rounded-lg flex items-center gap-1 text-[11px] hover:bg-[var(--bg-card-hover)] transition-colors"
+      className="h-7 px-2 rounded-lg flex items-center gap-1 text-[length:var(--fs-sm)] hover:bg-[var(--bg-card-hover)] transition-colors"
       style={{ color: 'var(--text-muted)' }}>
       <History className="w-3 h-3" />
       <span>恢复上次选择</span>
@@ -1629,21 +1710,60 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
       )}
       <button type="button" onClick={() => setMoreOpen(v => !v)}
-        className="flex w-full items-center gap-1.5 py-1 text-[12px] font-medium rounded-lg transition-colors hover:bg-[var(--bg-card-hover)]"
+        className="flex w-full items-center gap-1.5 py-1 text-[length:var(--fs-md)] font-medium rounded-lg transition-colors hover:bg-[var(--bg-card-hover)]"
         style={{ color: 'var(--text-secondary)' }}>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
         <span>更多会话设置</span>
       </button>
       {moreOpen && (
         <>
-          <div>
-            <SectionLabel>会话名称</SectionLabel>
-            <TextInput value={name} onChange={v => { setName(v); nameUserTouchedRef.current = true; setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
+          {/* 会话名称 / 协作设备并排一行 (省高度); 窄屏退回上下两行
+              Session name + collaboration device share one row; they stack on narrow screens */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3.5">
+            <div>
+              <SectionLabel>会话名称</SectionLabel>
+              <TextInput value={name} onChange={v => { setName(v); nameUserTouchedRef.current = true; setErr('') }} placeholder="给这个会话起个名字" dark={dark} />
+            </div>
+            <div>
+              {/* 标签已自带说明, 不再挂 hint —— 半宽列里两者并排会挤爆 */}
+              <SectionLabel>
+                <LabelWithRefresh label="设备（令智能体在指定设备工作）" loading={devicesLoading} onRefresh={loadDevices} />
+              </SectionLabel>
+              <DropdownSelect
+                value={deviceOverride ?? DEVICE_AUTO}
+                onChange={v => setDeviceOverride(v === DEVICE_AUTO ? null : v)}
+                dark={dark}
+                placeholder="— 不指定设备 —"
+                emptyText="暂无可协作设备"
+                options={[
+                  // 桌面端默认绑定的是本机标识, web 端没有"本机"概念 → 同一个默认项按平台措辞
+                  { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '不指定设备', description: aimuxId ? `当前: ${aimuxId}` : '不带协作设备创建' },
+                  // 离线设备仍可选 (与头部切换设备一致: 断开时仍可依托中枢继续执行任务), 只标状态不置灰
+                  // Offline devices stay selectable — they are flagged, not disabled, matching the header switcher
+                  ...bridgeDevices.map(d => ({
+                    value: d.name,
+                    label: d.name,
+                    description: [d.platform, d.status === 'connected' ? '在线' : '离线'].filter(Boolean).join(' · '),
+                    badge: d.status === 'connected' ? undefined : { text: '离线', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+                  })),
+                ]}
+              />
+              {devicesLoaded && bridgeDevices.length === 0 && (
+                <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>暂无已连接的 bridge 设备</p>
+              )}
+            </div>
           </div>
-          <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} collapsedRows={1} />
-          <div>
-            <SectionLabel hint="注入上下文语言">语言</SectionLabel>
-            <LanguageSelect value={language} onChange={setLanguage} />
+          {/* 模型 / 语言并排一行 (都为下拉, 省高度); 窄屏退回上下两行
+              Model + language share one row as dropdowns; they stack on narrow screens */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3.5">
+            <div>
+              <SectionLabel>模型</SectionLabel>
+              <SessionModelDropdown value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
+            </div>
+            <div>
+              <SectionLabel hint="注入上下文语言">语言</SectionLabel>
+              <LanguageSelect value={language} onChange={setLanguage} dark={dark} />
+            </div>
           </div>
           <div>
             <SectionLabel hint={issueId ? '点击展开二级弹窗选择' : '选择任务后可配置'}>Skill / Memory</SectionLabel>
@@ -1929,7 +2049,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
         />
       </SelectShell>
       {projectId && !researchEnabled && (
-        <div className="rounded-xl px-3 py-2 text-[12px] flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
+        <div className="rounded-xl px-3 py-2 text-[length:var(--fs-md)] flex items-center gap-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
           <Ban className="w-3.5 h-3.5" /> 当前项目未启用研究系统，请前往项目设置开启后再创建研究智能体。
         </div>
       )}
@@ -1971,7 +2091,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
       <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
       <div>
         <SectionLabel hint="注入上下文语言">语言</SectionLabel>
-        <LanguageSelect value={language} onChange={setLanguage} />
+        <LanguageSelect value={language} onChange={setLanguage} dark={dark} />
       </div>
       <div>
         <SectionLabel hint="创建后不可更改">角色</SectionLabel>
@@ -2068,7 +2188,7 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
         title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
         className="mobius-create-trigger gap-1">
         <Plus className="w-3.5 h-3.5" strokeWidth={2} />
-        {/* {!isMobile && <span className="text-[12px] font-medium">新建</span>} */}
+        {/* {!isMobile && <span className="text-[length:var(--fs-md)] font-medium">新建</span>} */}
         {!isMobile && <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />}
       </TopNavActionElement>
       {open && (
@@ -2082,7 +2202,7 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
               <button key={item.kind} type="button"
                 disabled={!ok}
                 onClick={() => { if (ok) { onOpenChange(false); onPick(item.kind) } }}
-                className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 style={{ color: 'var(--text-primary)' }}>
                 <Icon className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>{item.label}</span>

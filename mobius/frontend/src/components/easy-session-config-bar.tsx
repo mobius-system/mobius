@@ -293,7 +293,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
               required
               aria-required="true"
               placeholder="项目名（必填）"
-              className="h-7 w-full min-w-[96px] rounded-lg border bg-transparent pl-7 pr-2 text-[11px] outline-none transition-colors placeholder:!text-[var(--placeholder-color)] focus:border-blue-500/60"
+              className="h-7 w-full min-w-[96px] rounded-lg border bg-transparent pl-7 pr-2 text-[length:var(--fs-sm)] outline-none transition-colors placeholder:!text-[var(--placeholder-color)] focus:border-blue-500/60"
               style={{ borderColor: selection.projectName.trim() ? 'rgba(59,130,246,0.72)' : 'var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }}
             />
           </label>

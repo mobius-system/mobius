@@ -217,7 +217,7 @@ export function AdvancedSessionActions({
       data-variant={variant}
       aria-label="高级会话按钮组"
     >
-      {menu && <div className="px-1 text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>当前会话工具</div>}
+      {menu && <div className="px-1 text-[length:var(--fs-xs)] font-medium" style={{ color: 'var(--text-muted)' }}>当前会话工具</div>}
       <div className={`flex flex-wrap items-stretch ${menu ? 'gap-1' : 'gap-2'}`}>
         {actionButtons}
       </div>

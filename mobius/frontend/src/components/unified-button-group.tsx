@@ -150,9 +150,9 @@ export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(f
   if (buttonId && group?.hiddenIds.has(buttonId)) return null
 
   const defaultClassName = isTab
-    ? `group/unified-button inline-flex h-9 w-9 min-w-0 flex-none items-center justify-center gap-1 overflow-hidden rounded-md border px-1 text-center text-[12px] leading-snug transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
+    ? `group/unified-button inline-flex h-9 w-9 min-w-0 flex-none items-center justify-center gap-1 overflow-hidden rounded-md border px-1 text-center text-[length:var(--fs-md)] leading-snug transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
     : isSwitch
-      ? 'group/unified-button inline-flex min-h-7 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40'
+      ? 'group/unified-button inline-flex min-h-7 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-[length:var(--fs-sm)] transition-colors disabled:cursor-not-allowed disabled:opacity-40'
       : `group/unified-button relative inline-flex min-w-0 items-center ${displayLabel ? 'min-h-9 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-left' : 'h-9 w-9 flex-none justify-center rounded-md px-0'} bg-transparent transition-[background-color,border-color,transform,box-shadow] duration-150 hover:-translate-y-px hover:bg-[var(--bg-card-hover)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40 ${ACCENT_CLASS[accent]}`
   const iconMotion = motion === 'breathe'
     ? 'duration-300 ease-out group-hover/unified-button:scale-110 group-focus-visible/unified-button:scale-110'
@@ -185,7 +185,7 @@ export const UnifiedButton = forwardRef<HTMLButtonElement, UnifiedButtonProps>(f
         </>}
       </button>
       {showTooltip && tooltipOpen && typeof document !== 'undefined' ? createPortal(
-        <div ref={tooltipRef} id={tooltipId} role="tooltip" className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl" style={tooltipPos ? { left: tooltipPos.left, top: tooltipPos.top, transform: tooltipPos.placement === 'bottom' ? 'translate(-50%, 0)' : 'translate(-50%, -100%)', visibility: 'visible' } : { left: 0, top: 0, visibility: 'hidden' }}>{tooltip || label}</div>, document.body) : null}
+        <div ref={tooltipRef} id={tooltipId} role="tooltip" className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[length:var(--fs-sm)] font-medium text-[var(--text-primary)] shadow-xl" style={tooltipPos ? { left: tooltipPos.left, top: tooltipPos.top, transform: tooltipPos.placement === 'bottom' ? 'translate(-50%, 0)' : 'translate(-50%, -100%)', visibility: 'visible' } : { left: 0, top: 0, visibility: 'hidden' }}>{tooltip || label}</div>, document.body) : null}
     </>
   )
 })

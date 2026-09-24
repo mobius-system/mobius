@@ -57,7 +57,7 @@ function PlanRow({ index, step }: { index: number; step: PlanStep }) {
   if (step.blockedBy?.length) depParts.push(`被阻塞 ${step.blockedBy.map((b) => '#' + b).join(' ')}`)
   return (
     <div className="flex items-start gap-2 px-2.5 py-1.5 border-b border-[var(--border-color)]/40 last:border-b-0">
-      <span className="mt-0.5 flex-shrink-0 min-w-[1.25rem] text-right font-mono text-[10px] leading-[1.35] text-[var(--text-muted)] select-none">{label}</span>
+      <span className="mt-0.5 flex-shrink-0 min-w-[1.25rem] text-right font-mono text-[length:var(--fs-xs)] leading-[1.35] text-[var(--text-muted)] select-none">{label}</span>
       <Icon
         className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${meta.iconClass}${meta.spin ? ' animate-spin' : ''}`}
         strokeWidth={2.4}
@@ -65,20 +65,20 @@ function PlanRow({ index, step }: { index: number; step: PlanStep }) {
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          <span className={`min-w-0 flex-1 text-[11.5px] leading-snug break-words ${meta.textClass}`}>
+          <span className={`min-w-0 flex-1 text-[length:var(--fs-sm)] leading-snug break-words ${meta.textClass}`}>
             {step.step}
           </span>
-          <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-mono leading-none ${meta.badgeClass}`}>
+          <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[length:var(--fs-2xs)] font-mono leading-none ${meta.badgeClass}`}>
             {meta.label}
           </span>
         </div>
         {detail && (
-          <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--text-muted)] break-words">
+          <div className="mt-0.5 text-[length:var(--fs-xs)] leading-snug text-[var(--text-muted)] break-words">
             {detail}
           </div>
         )}
         {depParts.length > 0 && (
-          <div className="mt-0.5 text-[9px] font-mono text-[var(--text-dimmed)]">{depParts.join(' · ')}</div>
+          <div className="mt-0.5 text-[length:var(--fs-2xs)] font-mono text-[var(--text-dimmed)]">{depParts.join(' · ')}</div>
         )}
       </div>
     </div>
@@ -92,7 +92,7 @@ export function JsonEntryPlanCard({ plan }: { plan: PlanUpdate }) {
   return (
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       <div className="border-b border-[var(--border-color)] px-2.5 py-1.5">
-        <div className="flex items-center gap-2 text-[10px]">
+        <div className="flex items-center gap-2 text-[length:var(--fs-xs)]">
           <span className={`font-semibold ${allDone ? 'text-emerald-300' : 'text-violet-300'}`}>
             {allDone ? '计划已完成' : '计划模式'}
           </span>

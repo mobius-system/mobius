@@ -287,7 +287,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>
+          <div className="flex items-center gap-2 text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>
             <Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
             <span>耗时</span>
           </div>
@@ -308,7 +308,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
             type="button"
             onClick={() => void handleClear()}
             disabled={loading || refreshing || !sessionId}
-            className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[10.5px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -318,17 +318,17 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
       </div>
 
       {error && (
-        <div className="rounded-lg border px-3 py-2 text-[11px] text-red-400" style={{ borderColor: 'rgba(248,113,113,0.28)', background: 'rgba(248,113,113,0.06)' }}>
+        <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-sm)] text-red-400" style={{ borderColor: 'rgba(248,113,113,0.28)', background: 'rgba(248,113,113,0.06)' }}>
           {error}
         </div>
       )}
 
       {loading && !data ? (
-        <div className="rounded-lg border px-3 py-8 text-center text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
+        <div className="rounded-lg border px-3 py-8 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
           正在加载耗时统计...
         </div>
       ) : !segments.length ? (
-        <div className="rounded-lg border px-3 py-8 text-center text-[11px]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
+        <div className="rounded-lg border px-3 py-8 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
           暂无可统计的耗时段
         </div>
       ) : (
@@ -347,7 +347,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     type="button"
                     onClick={() => setView(item.key)}
                     aria-pressed={active}
-                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 py-1.5 text-[length:var(--fs-sm)] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
                     style={{
                       color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                       background: active ? 'var(--bg-active)' : 'transparent',
@@ -360,7 +360,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 )
               })}
             </div>
-            <div className="text-right text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-right text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
               <div>总计 {segments.length} 段</div>
             </div>
           </div>
@@ -368,12 +368,12 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
           {view === 'waterfall' ? (
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
               <div className="mb-2 min-w-0">
-                <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>
                   <BarChart3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
                   <span>瀑布</span>
                 </div>
                 <div
-                  className="mt-0.5 truncate text-[10px]"
+                  className="mt-0.5 truncate text-[length:var(--fs-xs)]"
                   style={{ color: 'var(--text-muted)' }}
                   title={
                     data?.start_at || data?.updated_at
@@ -386,7 +386,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     : '未设置起点'}
                 </div>
               </div>
-              <div className="mt-1.5 flex items-center gap-3 text-[9.5px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-1.5 flex items-center gap-3 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: KIND_COLORS.model }} />
                   模型推理
@@ -430,7 +430,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                   })}
                 </div>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[9px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+              <div className="mt-1 flex items-center justify-between text-[length:var(--fs-2xs)] tabular-nums" style={{ color: 'var(--text-muted)' }}>
                 <span>+{formatDuration(timelineWindow.start)}</span>
                 <span>+{formatDuration(timelineWindow.end)}</span>
               </div>
@@ -441,7 +441,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                 data-design-id="time-window-controls"
               >
                 <label className="grid grid-cols-[68px_minmax(0,1fr)_38px] items-center gap-2">
-                  <span className="text-[10.5px]" style={{ color: 'var(--text-secondary)' }}>时间缩放</span>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-secondary)' }}>时间缩放</span>
                   <input
                     type="range"
                     min="1"
@@ -456,12 +456,12 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     aria-label="时间缩放"
                     aria-valuetext={`${timelineZoom.toFixed(timelineZoom % 1 === 0 ? 0 : 1)} 倍`}
                   />
-                  <output className="text-right text-[10px] tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                  <output className="text-right text-[length:var(--fs-xs)] tabular-nums" style={{ color: 'var(--text-primary)' }}>
                     {timelineZoom.toFixed(timelineZoom % 1 === 0 ? 0 : 1)}×
                   </output>
                 </label>
                 <label className="grid grid-cols-[68px_minmax(0,1fr)_38px] items-center gap-2">
-                  <span className="text-[10.5px]" style={{ color: 'var(--text-secondary)' }}>时间定位</span>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-secondary)' }}>时间定位</span>
                   <input
                     type="range"
                     min="0"
@@ -474,7 +474,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     aria-label="时间定位"
                     aria-valuetext={`当前窗口从会话开始后 ${formatDuration(timelineWindow.start)} 到 ${formatDuration(timelineWindow.end)}`}
                   />
-                  <output className="text-right text-[10px] tabular-nums" style={{ color: timelineZoom === 1 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                  <output className="text-right text-[length:var(--fs-xs)] tabular-nums" style={{ color: timelineZoom === 1 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                     {timelineZoom === 1 ? '全段' : `${Math.round(timelinePosition / 10)}%`}
                   </output>
                 </label>
@@ -482,7 +482,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
             </div>
           ) : (
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              <div className="mb-2 flex items-center gap-2 text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>
                 <PieChart className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
                 <span>占比</span>
               </div>
@@ -506,10 +506,10 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                     )
                   })}
                   <circle cx={pieCenter} cy={pieCenter} r="24" fill="var(--bg-primary)" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-                  <text x={pieCenter} y={57} textAnchor="middle" className="fill-[var(--text-primary)]" style={{ fontSize: 11, fontWeight: 600 }}>
+                  <text x={pieCenter} y={57} textAnchor="middle" className="fill-[var(--text-primary)]" style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
                     {formatDuration(totalMs)}
                   </text>
-                  <text x={pieCenter} y={70} textAnchor="middle" className="fill-[var(--text-muted)]" style={{ fontSize: 8 }}>
+                  <text x={pieCenter} y={70} textAnchor="middle" className="fill-[var(--text-muted)]" style={{ fontSize: 'var(--fs-2xs)' }}>
                     {segments.length} 段
                   </text>
                 </svg>
@@ -519,11 +519,11 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
                   <div key={slice.key} className="flex items-center gap-2 rounded-md border px-2 py-1.5" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
                     <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: slice.color }} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2 text-[length:var(--fs-sm)]">
                         <span className="truncate" style={{ color: 'var(--text-primary)' }}>{slice.label}</span>
                         <span className="flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatDuration(slice.duration)}</span>
                       </div>
-                      <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <div className="mt-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                         {slice.count} 段 · {pieTotal > 0 ? `${Math.round(slice.duration / pieTotal * 100)}%` : '0%'}
                       </div>
                     </div>

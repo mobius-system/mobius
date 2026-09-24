@@ -187,7 +187,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
   const countFor = (key: 'all' | Role): number => (key === 'all' ? members.length : counts[key] || 0)
 
   const thStyle: React.CSSProperties = {
-    color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11,
+    color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 'var(--fs-sm)',
   }
   const tdStyle: React.CSSProperties = { padding: '10px', verticalAlign: 'middle' }
 
@@ -199,7 +199,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
           const active = filterRole === tab.key
           return (
             <button key={tab.key} type="button" onClick={() => setFilterRole(tab.key)}
-              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[length:var(--fs-sm)] border transition-colors"
               style={active
                 ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
                 : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -216,12 +216,12 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="搜索成员姓名或账号..."
-          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
+          className="h-8 flex-1 min-w-[180px] rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
           style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
         />
         {canManage && (
           <button type="button" onClick={() => setShowAdd((s) => !s)}
-            className="h-8 px-3 rounded-md text-[12px] btn-primary transition-colors">
+            className="h-8 px-3 rounded-md text-[length:var(--fs-md)] btn-primary transition-colors">
             {showAdd ? '收起添加' : '+ 添加成员'}
           </button>
         )}
@@ -241,7 +241,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
               />
             </div>
             <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={adding}
-              className="h-9 px-2 rounded-lg text-[12px] border flex-shrink-0"
+              className="h-9 px-2 rounded-lg text-[length:var(--fs-md)] border flex-shrink-0"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
               <option value="member">项目成员</option>
               <option value="manager">项目管理员</option>
@@ -250,12 +250,12 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button type="button" onClick={addMembers} disabled={!pendingIds.length || adding}
-              className="h-8 px-3 rounded-lg text-[12px] btn-primary transition-colors disabled:opacity-50">
+              className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] btn-primary transition-colors disabled:opacity-50">
               {adding ? '添加中...' : '加入项目组'}
             </button>
             <div className="relative">
               <button type="button" onClick={toggleGroups} disabled={adding}
-                className="h-8 px-3 rounded-lg text-[12px] border transition-colors"
+                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] border transition-colors"
                 style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)', background: 'var(--modal-bg)' }}>
                 + 按群组加入
               </button>
@@ -265,10 +265,10 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
                   <div className="absolute z-50 mt-1 w-64 max-h-60 overflow-auto rounded-lg border shadow-lg"
                     style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)' }}>
                     {groups.length === 0 ? (
-                      <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
+                      <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
                     ) : groups.map((g) => (
                       <button key={g.id} type="button" onClick={() => addGroup(g.id)}
-                        className="block w-full text-left px-3 py-2 text-[12px] hover:bg-[var(--bg-card-hover)] transition-colors"
+                        className="block w-full text-left px-3 py-2 text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)] transition-colors"
                         style={{ color: 'var(--text-secondary)' }}>
                         {g.name} <span style={{ color: 'var(--text-muted)' }}>· {g.active_user_count} 位启用成员</span>
                       </button>
@@ -278,29 +278,29 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
               )}
             </div>
             {pendingIds.length > 0 && (
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>已选 {pendingIds.length} 人</span>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>已选 {pendingIds.length} 人</span>
             )}
           </div>
         </div>
       )}
 
       {err && (
-        <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.08)', color: '#f87171' }}>
+        <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.08)', color: '#f87171' }}>
           {err}
         </div>
       )}
 
       {/* 成员表格: 成员 / 角色 / 加入时间 / 操作 */}
       {loading ? (
-        <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       ) : filteredMembers.length === 0 ? (
-        <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
           {members.length === 0 ? '暂无项目组成员' : '没有匹配的成员'}
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-[12px]">
+            <table className="w-full border-collapse text-left text-[length:var(--fs-md)]">
               <thead>
                 <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <th style={thStyle}>成员</th>
@@ -317,12 +317,12 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
                     <tr key={m.user_id} className="border-b last:border-b-0" style={{ borderColor: 'var(--input-border)' }}>
                       <td style={tdStyle}>
                         <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{m.display_name}</span>
+                          <span className="text-[length:var(--fs-lg)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{m.display_name}</span>
                           {!m.is_active && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}>已停用</span>
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded" style={{ background: 'rgba(148,163,184,0.16)', color: 'var(--text-muted)' }}>已停用</span>
                           )}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[length:var(--fs-sm)] flex-wrap" style={{ color: 'var(--text-muted)' }}>
                           <span className="font-mono">{m.user_id}</span>
                           {m.groups.length > 0 && m.groups.map((g) => (
                             <span key={g.id} className="px-1.5 py-0 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -337,20 +337,20 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
                             value={m.role}
                             disabled={busyId === m.user_id}
                             onChange={(e) => changeRole(m.user_id, e.target.value as Role)}
-                            className="h-7 px-1.5 rounded-md text-[11px] border"
+                            className="h-7 px-1.5 rounded-md text-[length:var(--fs-sm)] border"
                             style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                           >
                             {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                           </select>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={ROLE_BADGE_STYLE[m.role]}>{ROLE_LABELS[m.role]}</span>
+                          <span className="px-1.5 py-0.5 rounded border text-[length:var(--fs-xs)]" style={ROLE_BADGE_STYLE[m.role]}>{ROLE_LABELS[m.role]}</span>
                         )}
                       </td>
                       <td style={{ ...tdStyle, color: 'var(--text-muted)' }}>{formatDate(m.created_at)}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         {canEditThis ? (
                           <button type="button" onClick={() => removeMember(m.user_id)} disabled={busyId === m.user_id}
-                            className="h-7 px-2 rounded-md text-[11px] border transition-colors"
+                            className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border transition-colors"
                             style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
                             移除
                           </button>
@@ -366,7 +366,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       )}
 
       {!canManage && (
-        <div className="rounded-lg border px-3 py-2 text-[11px]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+        <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
           仅项目负责人 / 项目管理员可以管理成员与角色。
         </div>
       )}

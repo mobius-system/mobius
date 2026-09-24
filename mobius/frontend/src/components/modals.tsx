@@ -210,8 +210,8 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
           <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          <span className="text-[14px] font-semibold flex-shrink-0" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择绑定路径</span>
-          <div className="flex items-center gap-1 text-[12px] min-w-0 flex-1 overflow-hidden" style={{ color: 'var(--text-muted)' }}>
+          <span className="text-[length:var(--fs-xl)] font-semibold flex-shrink-0" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择绑定路径</span>
+          <div className="flex items-center gap-1 text-[length:var(--fs-md)] min-w-0 flex-1 overflow-hidden" style={{ color: 'var(--text-muted)' }}>
             <button onClick={() => loadDir('/')} className="hover:text-blue-400 transition-colors">~</button>
             {breadcrumbs.map((seg, i) => (
               <span key={i} className="flex items-center gap-1 min-w-0">
@@ -222,7 +222,7 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
             ))}
           </div>
           <button onClick={() => { setManualMode(m => !m); setManualErr(''); if (!manualMode && !manualPath) setManualPath(absPath) }}
-            className="flex-shrink-0 h-7 px-2 inline-flex items-center gap-1 rounded-xl text-[12px] border transition-colors"
+            className="flex-shrink-0 h-7 px-2 inline-flex items-center gap-1 rounded-xl text-[length:var(--fs-md)] border transition-colors"
             style={{
               color: manualMode ? '#fff' : 'var(--text-secondary)',
               background: manualMode ? '#3b82f6' : 'var(--bg-card-hover)',
@@ -232,7 +232,7 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
             手动输入
           </button>
           <button onClick={() => { setCreating(true); setNewName(''); setCreateErr('') }}
-            className="flex-shrink-0 h-7 px-2 rounded-xl text-[12px] bg-[var(--bg-card-hover)] hover:bg-[var(--bg-hover)] border transition-colors"
+            className="flex-shrink-0 h-7 px-2 rounded-xl text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] hover:bg-[var(--bg-hover)] border transition-colors"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>
             + 新建子目录
           </button>
@@ -245,16 +245,16 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
                 onChange={e => { setManualPath(e.target.value); setManualErr('') }}
                 onKeyDown={e => { if (e.key === 'Enter') submitManual(); if (e.key === 'Escape') setManualMode(false) }}
                 placeholder="绝对路径，如 /data/repos/foo"
-                className="flex-1 h-8 px-3 rounded-xl text-[13px] border outline-none focus:border-blue-400"
+                className="flex-1 h-8 px-3 rounded-xl text-[length:var(--fs-lg)] border outline-none focus:border-blue-400"
                 style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
               <button onClick={submitManual}
-                className="flex-shrink-0 h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">使用此路径</button>
+                className="flex-shrink-0 h-8 px-3 rounded-xl text-[length:var(--fs-md)] btn-primary transition-colors">使用此路径</button>
             </div>
-            <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[length:var(--fs-sm)] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px text-amber-400" strokeWidth={1.75} />
               <span>手动输入的路径<strong>不做任何校验</strong>（不检查是否存在 / 是否目录 / 是否在工作目录内），请自行确认无误。</span>
             </p>
-            {manualErr && <span className="text-[11px] text-red-400">{manualErr}</span>}
+            {manualErr && <span className="text-[length:var(--fs-sm)] text-red-400">{manualErr}</span>}
           </div>
         )}
 
@@ -263,14 +263,14 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
             <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submitCreate(); if (e.key === 'Escape') setCreating(false) }}
               placeholder="新目录名"
-              className="flex-1 h-8 px-3 rounded-xl text-[13px] border outline-none focus:border-blue-400"
+              className="flex-1 h-8 px-3 rounded-xl text-[length:var(--fs-lg)] border outline-none focus:border-blue-400"
               style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
             <button onClick={submitCreate}
-              className="h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">创建</button>
+              className="h-8 px-3 rounded-xl text-[length:var(--fs-md)] btn-primary transition-colors">创建</button>
             <button onClick={() => setCreating(false)}
-              className="h-8 px-3 rounded-xl text-[12px] bg-[var(--bg-card-hover)] border"
+              className="h-8 px-3 rounded-xl text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] border"
               style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>取消</button>
-            {createErr && <span className="text-[11px] text-red-400 ml-1">{createErr}</span>}
+            {createErr && <span className="text-[length:var(--fs-sm)] text-red-400 ml-1">{createErr}</span>}
           </div>
         )}
 
@@ -278,36 +278,36 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
           {currentPath !== '/' && (
             <button onClick={goUp} className="w-full flex items-center gap-3 px-5 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left" style={{ color: 'var(--text-muted)' }}>
               <FolderOpen className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} />
-              <span className="text-[13px]">..</span>
+              <span className="text-[length:var(--fs-lg)]">..</span>
             </button>
           )}
           {loading ? (
-            <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-center text-[length:var(--fs-lg)] py-8" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : err ? (
-            <div className="text-center text-[13px] py-8 text-red-400">{err}</div>
+            <div className="text-center text-[length:var(--fs-lg)] py-8 text-red-400">{err}</div>
           ) : entries.length === 0 ? (
-            <div className="text-center text-[13px] py-8 px-6 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-center text-[length:var(--fs-lg)] py-8 px-6 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               此目录下没有子目录，可点击下方「选择此目录」绑定当前目录，或点上方「新建子目录」创建一个。
             </div>
           ) : entries.map(entry => (
             <button key={entry.name} onClick={() => enter(entry.name)}
               className="w-full flex items-center gap-3 px-5 py-2 hover:bg-[var(--bg-card-hover)] transition-colors text-left">
               <Folder className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} style={{ color: 'var(--text-muted)' }} />
-              <span className="text-[13px] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
+              <span className="text-[length:var(--fs-lg)] truncate flex-1" style={{ color: isDark ? '#d1d5db' : '#374151' }}>{entry.name}</span>
             </button>
           ))}
         </div>
 
         <div className="px-5 py-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={absPath}>
+          <div className="flex-1 text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }} title={absPath}>
             将选择：<span style={{ color: 'var(--text-primary)' }}>{absPath}</span>
           </div>
-          <button onClick={onClose} className="h-8 px-3 rounded-xl text-[12px] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="h-8 px-3 rounded-xl text-[length:var(--fs-md)] bg-[var(--bg-card-hover)] border" style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={() => {
               const abs = currentPath === '/' ? userHome : (userHome + currentPath)
               onPick(abs, currentPath, false)
             }}
-            className="h-8 px-3 rounded-xl text-[12px] btn-primary transition-colors">
+            className="h-8 px-3 rounded-xl text-[length:var(--fs-md)] btn-primary transition-colors">
             选择此目录
           </button>
         </div>
@@ -319,6 +319,15 @@ export function PathPickerModal({ initialPath, onClose, onPick }: { initialPath?
 // =====================================================================
 // 新建 Project
 // =====================================================================
+
+// 三张项目类型卡片的悬浮强调色, 各自对齐图标颜色以便一眼区分
+// Per-kind hover accent for the three project-kind cards, matching each icon color
+const PROJECT_KIND_HOVER: Record<NewProjectKind, string> = {
+  default: 'hover:border-blue-500/45 hover:bg-blue-500/10 hover:shadow-[0_14px_32px_-14px_rgba(59,130,246,0.75)]',
+  research: 'hover:border-emerald-500/45 hover:bg-emerald-500/10 hover:shadow-[0_14px_32px_-14px_rgba(52,211,153,0.75)]',
+  extension: 'hover:border-violet-500/45 hover:bg-violet-500/10 hover:shadow-[0_14px_32px_-14px_rgba(167,139,250,0.75)]',
+}
+
 export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: any) => void }) {
   const DRAFT_KEY = 'new-project'
   const { theme, user } = useStore()
@@ -474,14 +483,14 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
 
   const visibilityControl = (
     <div>
-      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
+      <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>项目可见性</label>
       <div className="grid grid-cols-2 gap-1.5">
         {PROJECT_VISIBILITY_OPTIONS.map((option) => {
           const active = visibility === option.value
           return (
             <button key={option.value} type="button" onClick={() => setVisibility(option.value)}
               title={option.description}
-              className="h-8 rounded-lg border text-[12px] transition-colors"
+              className="h-8 rounded-lg border text-[length:var(--fs-md)] transition-colors"
               style={active
                 ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
                 : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -490,11 +499,11 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
           )
         })}
       </div>
-      <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>
         {visibilityOption.description}
       </p>
       {projectKind === 'extension' ? (
-        <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[length:var(--fs-sm)] mt-2" style={{ color: 'var(--text-muted)' }}>
           拓展项目的写权限由系统管理；这里仅设置谁能看到这个项目。
         </p>
       ) : (
@@ -502,14 +511,14 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
           <ToggleSwitch
             checked={canPostIssue}
             onChange={v => { setCanPostIssue(v); setErr('') }}
-            className="flex items-center gap-3 text-[12px]"
+            className="flex items-center gap-3 text-[length:var(--fs-md)]"
             style={{ color: 'var(--text-secondary)' }}>
             读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
           </ToggleSwitch>
           <ToggleSwitch
             checked={canRunSession}
             onChange={v => { setCanRunSession(v); setErr('') }}
-            className="flex items-center gap-3 text-[12px]"
+            className="flex items-center gap-3 text-[length:var(--fs-md)]"
             style={{ color: 'var(--text-secondary)' }}>
             读者可启动执行会话 (同上, private 永远只允许 owner)
           </ToggleSwitch>
@@ -524,8 +533,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
+        <h4 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
+        <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
         {projectKind !== 'extension' && (
           <div className="mt-3">
             <ProjectMemberInvite
@@ -537,7 +546,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         )}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={() => setPermissionOpen(false)}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors">
             完成
           </button>
         </div>
@@ -581,8 +590,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       <div data-tour="project-modal" className="relative w-[575px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         {step === 'type' ? (
           <>
-            <h3 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>选择项目类型</h3>
-            <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>先选择本次要创建的项目类型，下一步再填写细节。</p>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>选择项目类型</h3>
+            <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>先选择本次要创建的项目类型，下一步再填写细节。</p>
             <div className="space-y-2.5">
               {projectKindOptions.map(opt => {
                 const disabled = opt.kind === 'extension' && !canCreateExtensionProject
@@ -593,16 +602,16 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                     disabled={disabled}
                     onClick={() => chooseProjectKind(opt.kind)}
                     data-tour={`project-kind-${opt.kind}`}
-                    className="flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45"
-                    style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
-                    <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border"
+                    className={`group flex w-full items-start gap-3 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] p-3 text-left transition-[transform,border-color,box-shadow,background-color] duration-300 ease-out disabled:cursor-not-allowed disabled:opacity-45 ${disabled ? '' : 'hover:-translate-y-0.5 ' + PROJECT_KIND_HOVER[opt.kind]}`}
+                    style={{ color: 'var(--text-primary)' }}>
+                    <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border transition-transform duration-300 ease-out group-hover:scale-110"
                       style={{ color: opt.kind === 'research' ? '#34d399' : opt.kind === 'extension' ? '#a78bfa' : '#60a5fa', borderColor: 'var(--input-border)', background: 'rgba(255,255,255,0.03)' }}>
                       {opt.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-semibold">{opt.label}</span>
-                      <span className="mt-0.5 block text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{opt.description}</span>
-                      <span className="mt-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>{opt.note}</span>
+                      <span className="block text-[length:var(--fs-lg)] font-semibold">{opt.label}</span>
+                      <span className="mt-0.5 block text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-secondary)' }}>{opt.description}</span>
+                      <span className="mt-1 block text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{opt.note}</span>
                     </span>
                   </button>
                 )
@@ -610,7 +619,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
             </div>
             {err && <ErrBanner className="mt-4">{err}</ErrBanner>}
             <div className="mt-5 flex gap-2">
-              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
             </div>
           </>
         ) : (
@@ -623,8 +632,8 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                 <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
               </button>
               <div className="min-w-0">
-                <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建{NEW_PROJECT_KIND_LABELS[projectKind]}</h3>
-                <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建{NEW_PROJECT_KIND_LABELS[projectKind]}</h3>
+                <p className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                   {projectKind === 'default'
                     ? '经典项目默认不启动研究系统。'
                     : projectKind === 'research'
@@ -637,25 +646,25 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
               <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
                 data-tour="project-name-input"
                 placeholder="项目名称" onKeyDown={e => e.key === 'Enter' && submit()}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
               <ExpandableTextarea value={desc} onValueChange={setDesc}
                 placeholder="项目描述（选填）"
                 overlayTitle="编辑项目描述"
-                className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+                className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
               {projectKind === 'extension' ? (
                 <div>
                   <input value={extensionName} onChange={e => { setExtensionName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); setErr('') }}
                     placeholder="拓展标识名，如 my-awesome-ext"
                     maxLength={32}
-                    className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                    className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
-                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>小写字母开头，可含小写字母、数字和连字符，1-32字符。</p>
+                  <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>小写字母开头，可含小写字母、数字和连字符，1-32字符。</p>
                 </div>
               ) : (
                 <>
-                  <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-[length:var(--fs-sm)] -mt-1" style={{ color: 'var(--text-muted)' }}>
                     您希望把项目放置于什么位置？
                     {bindPathManual
                       ? <span className="text-amber-400"> · 手动输入路径</span>
@@ -666,12 +675,12 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                       data-tour="project-path-input"
                       title={bindPath}
                       aria-label={bindPath ? `绑定路径：${bindPath}` : '绑定路径'}
-                      className="flex-1 h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
+                      className="flex-1 h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
                       onClick={() => setPickerOpen(true)}
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                     <button type="button" onClick={() => setPickerOpen(true)}
                       data-tour="project-path-picker"
-                      className="h-10 px-3 rounded-xl text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                      className="h-10 px-3 rounded-xl text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
                       <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
                       选择路径
                     </button>
@@ -688,12 +697,12 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                     checked={!researchEnabled && defaultUseWorktree}
                     disabled={researchEnabled}
                     onChange={setDefaultUseWorktree}
-                    className="flex items-center gap-3 text-[13px]"
+                    className="flex items-center gap-3 text-[length:var(--fs-lg)]"
                     style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
                     默认使用 git worktree（新建任务时该选项默认打钩）
                   </ToggleSwitch>
                   {researchEnabled && (
-                    <p className="text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用研究系统，本项目强制禁用 worktree</p>
+                    <p className="text-[length:var(--fs-sm)] -mt-1" style={{ color: 'var(--text-muted)' }}>已启用研究系统，本项目强制禁用 worktree</p>
                   )}
                   {projectKind === 'default' && (
                     <ToggleSwitch
@@ -703,7 +712,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                         setResearchEnabled(enabled)
                         if (enabled) setDefaultUseWorktree(false)
                       }}
-                      className="flex items-center gap-3 text-[13px]"
+                      className="flex items-center gap-3 text-[length:var(--fs-lg)]"
                       style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
                       启用研究系统（默认关闭，开启后自动禁用 git worktree）
                     </ToggleSwitch>
@@ -716,20 +725,20 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
                 <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
-                  <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <span className="block text-[length:var(--fs-md)] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>设置项目成员</span>
+                  <span className="mt-0.5 block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                     {inviteMembers.length ? `已选 ${inviteMembers.length} 位成员` : '点击添加项目成员（创建后可随时修改）'}
                   </span>
                 </span>
-                <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+                <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: '#60a5fa' }}>修改</span>
               </button>
             </div>
             {err && <ErrBanner>{err}</ErrBanner>}
             <div className="flex gap-2">
-              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
               <button onClick={submit} disabled={loading}
                 data-tour="project-submit"
-                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
                 {loading ? '创建中...' : '创建'}
               </button>
             </div>
@@ -849,40 +858,40 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-[640px] max-h-[85vh] rounded-2xl p-6 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5 flex-shrink-0" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>项目设置</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5 flex-shrink-0" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>项目设置</h3>
         <div className="space-y-3 mb-4 overflow-y-auto pr-1 flex-1">
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目名称</label>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>项目名称</label>
             <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
               placeholder="项目名称" onKeyDown={e => e.key === 'Enter' && submit()}
-              className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           </div>
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>项目描述</label>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>项目描述</label>
             <ExpandableTextarea value={desc} onValueChange={setDesc}
               placeholder="项目描述（选填）"
               overlayTitle="编辑项目描述"
-              className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+              className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           </div>
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>项目文件路径 & 工作目录</p>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>绑定路径</label>
+            <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>项目文件路径 & 工作目录</p>
             <div className="flex items-center gap-2">
               <input value={bindPath} readOnly placeholder="必填（限家目录下）"
-                className="flex-1 h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
+                className="flex-1 h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none cursor-pointer"
                 onClick={() => setPickerOpen(true)}
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
               <button type="button" onClick={() => setPickerOpen(true)}
-                className="h-10 px-3 rounded-xl text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
+                className="h-10 px-3 rounded-xl text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                 选择路径
               </button>
             </div>
           </div>
           <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-            <summary className="text-[11px] cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>项目成员</summary>
+            <summary className="text-[length:var(--fs-sm)] cursor-pointer select-none" style={{ color: 'var(--text-muted)' }}>项目成员</summary>
             <div className="mt-2">
               <ProjectTeamPanel projectId={project.id} canManage={project.can_manage} actorRole={project.project_role || null} />
             </div>
@@ -892,11 +901,11 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               checked={!researchEnabled && defaultUseWorktree}
               disabled={researchEnabled}
               onChange={v => { setDefaultUseWorktree(v); setErr('') }}
-              className="flex items-center gap-3 text-[13px]"
+              className="flex items-center gap-3 text-[length:var(--fs-lg)]"
               style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               默认使用 git worktree
             </ToggleSwitch>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>
               {researchEnabled
                 ? '已启用研究系统，本项目强制禁用 worktree'
                 : '开启后，本项目新建任务时「使用 git worktree」默认打钩，否则默认不打钩'}
@@ -906,83 +915,83 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
             <ToggleSwitch
               checked={researchEnabled}
               onChange={v => { setResearchEnabled(v); setErr('') }}
-              className="flex items-center gap-3 text-[13px]"
+              className="flex items-center gap-3 text-[length:var(--fs-lg)]"
               style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
               启用研究系统
             </ToggleSwitch>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
+            <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>开启后，本项目会显示研究入口；研究与任务并列管理。启用时会自动禁用 git worktree</p>
           </div>
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒消息</label>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒消息</label>
             <ExpandableTextarea value={forgottenFlagMessage} onValueChange={value => { setForgottenFlagMessage(value); setErr('') }}
               overlayTitle="编辑 running.flag 提醒消息"
-              className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+              className="w-full h-28 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>后台每 60s 巡检，若某会话 agent 已停工但 running.flag 未删除，自动向该会话发送此消息。已自动填入系统默认文案，可直接修改保存；若清空保存则恢复使用系统默认文案</p>
+            <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>后台每 60s 巡检，若某会话 agent 已停工但 running.flag 未删除，自动向该会话发送此消息。已自动填入系统默认文案，可直接修改保存；若清空保存则恢复使用系统默认文案</p>
           </div>
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>被遗忘 running.flag 提醒策略</label>
             <div className="space-y-3">
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
+                <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>任务会话</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
                     <input type="number" min={1} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
                       value={forgottenFlagIssueInit}
                       onChange={e => { setForgottenFlagIssueInit(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
                     <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
                       value={forgottenFlagIssueBackoff}
                       onChange={e => { setForgottenFlagIssueBackoff(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
                     <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
                       value={forgottenFlagIssuePatience}
                       onChange={e => { setForgottenFlagIssuePatience(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                 </div>
               </div>
               <div>
-                <div className="text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
+                <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>研究智能体</div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Init（分钟）</div>
                     <input type="number" min={30} max={FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} step={1}
                       value={forgottenFlagResearchInit}
                       onChange={e => { setForgottenFlagResearchInit(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Backoff（倍数）</div>
                     <input type="number" min={1} max={FORGOTTEN_FLAG_BACKOFF_MAX} step={0.01}
                       value={forgottenFlagResearchBackoff}
                       onChange={e => { setForgottenFlagResearchBackoff(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                   <div>
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
+                    <div className="text-[length:var(--fs-xs)] mb-1" style={{ color: 'var(--text-muted)' }}>Patience（次数）</div>
                     <input type="number" min={1} max={FORGOTTEN_FLAG_PATIENCE_MAX} step={1}
                       value={forgottenFlagResearchPatience}
                       onChange={e => { setForgottenFlagResearchPatience(e.target.value); setErr('') }}
-                      className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                      className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
                   </div>
                 </div>
               </div>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
+            <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>默认任务: 10 / 2 / 3；研究: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
           </div>
 
           <div className="pt-2">
@@ -997,9 +1006,9 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2 flex-shrink-0">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
@@ -1094,11 +1103,11 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour="delete-project-modal" className="relative max-h-[calc(100vh-32px)] w-[440px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl p-5 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>删除项目</h3>
-        <p className="text-[12px] leading-5 mb-4" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>删除项目</h3>
+        <p className="text-[length:var(--fs-md)] leading-5 mb-4" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
           删除「<strong>{project.name}</strong>」后，相关数据不能从回收站恢复。
         </p>
-        <div className="mb-4 flex gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px]"
+        <div className="mb-4 flex gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)]"
           style={{ color: theme !== 'light' ? '#fca5a5' : '#b91c1c' }}>
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" strokeWidth={1.75} />
           <div className="min-w-0">删除会移除该项目、任务单、研究记录、执行会话及项目级 Skill 和 Memory。</div>
@@ -1111,32 +1120,32 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
             ['运行中', impact?.running_session_count],
           ].map(([label, value], index) => (
             <div key={String(label)} className={`min-w-0 px-2 py-2 text-center ${index ? 'border-l' : ''}`} style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-              <div className="text-[15px] font-semibold tabular-nums" style={{ color: label === '运行中' && Number(value) > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
+              <div className="text-[length:var(--fs-2xl)] font-semibold tabular-nums" style={{ color: label === '运行中' && Number(value) > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
                 {previewLoading ? '...' : Number(value || 0)}
               </div>
-              <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{label}</div>
+              <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{label}</div>
             </div>
           ))}
         </div>
         {adminOverride && (
-          <div className="mb-4 rounded-lg border px-3 py-2 text-[12px] leading-5"
+          <div className="mb-4 rounded-lg border px-3 py-2 text-[length:var(--fs-md)] leading-5"
             style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)' }}>
             你正在以系统管理员身份删除他人创建的项目。本次操作将记录账号、原因、影响范围和结果。
           </div>
         )}
         <div className="space-y-3 mb-4">
           <label className="block">
-            <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+            <span className="mb-1.5 block text-[length:var(--fs-md)] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
               确认 1：输入项目名或项目 ID
             </span>
             <input autoFocus value={confirmName} onChange={e => { setConfirmName(e.target.value); setErr('') }}
               data-tour="delete-project-confirm-input"
               placeholder={project.name || project.id}
               onKeyDown={e => e.key === 'Enter' && submit()}
-              className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           </label>
-          <label data-tour="delete-project-final-confirm" className="flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-[12px]"
+          <label data-tour="delete-project-final-confirm" className="flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-[length:var(--fs-md)]"
             style={{ borderColor: dangerAcknowledged ? 'rgba(239,68,68,0.45)' : 'var(--input-border)', background: dangerAcknowledged ? 'rgba(239,68,68,0.08)' : 'var(--input-bg)', color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
             <input type="checkbox" checked={dangerAcknowledged}
               onChange={e => { setDangerAcknowledged(e.target.checked); setErr('') }}
@@ -1147,19 +1156,19 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
           </label>
           {policy?.requires_reason && (
             <label className="block">
-              <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+              <span className="mb-1.5 block text-[length:var(--fs-md)] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
                 代删原因
               </span>
               <textarea value={reason} onChange={e => { setReason(e.target.value); setErr('') }}
                 data-tour="delete-project-reason-input"
                 placeholder="说明为什么需要由系统管理员删除"
                 maxLength={1000}
-                className="h-20 w-full resize-none rounded-lg px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-amber-500/40"
+                className="h-20 w-full resize-none rounded-lg px-3 py-2 text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-amber-500/40"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
             </label>
           )}
           <label className="block">
-            <span className="mb-1.5 block text-[12px] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
+            <span className="mb-1.5 block text-[length:var(--fs-md)] font-medium" style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }}>
               当前账号密码
             </span>
             <input type="password" value={password} onChange={e => { setPassword(e.target.value); setErr('') }}
@@ -1167,16 +1176,16 @@ export function DeleteProjectModal({ project, onClose, onDeleted }: { project: a
               placeholder="输入当前登录账号的密码"
               autoComplete="current-password"
               onKeyDown={e => { if (e.key === 'Enter' && canSubmit) submit() }}
-              className="w-full h-10 px-3 rounded-lg text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-red-500/40"
+              className="w-full h-10 px-3 rounded-lg text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-red-500/40"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           </label>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading || !canSubmit}
             data-tour="delete-project-submit"
-            className="flex-1 h-9 rounded-lg text-[13px] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-lg text-[length:var(--fs-lg)] text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-40">
             {loading ? '删除中...' : '确认删除'}
           </button>
         </div>
@@ -1209,17 +1218,17 @@ export function ExtensionDeleteModal({ project, onClose, onDone }: { project: an
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-[420px] rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
           隐藏拓展「{project.name}」
         </h3>
-        <p className="text-[12px] mb-4" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+        <p className="text-[length:var(--fs-md)] mb-4" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
           只从你的项目页隐藏入口，不删除任务单、执行会话或星标。可在「已屏蔽项目」中随时恢复显示。
         </p>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submitHide} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '处理中...' : '隐藏卡片'}
           </button>
         </div>
@@ -1307,14 +1316,14 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
 
   const issuePermissionControl = (
     <div>
-      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
+      <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
       <div className="grid grid-cols-2 gap-1.5">
         {issueVisibilityOptions.map((opt) => {
           const active = visibility === opt.value
           return (
             <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setErr('') }}
               title={opt.description}
-              className="h-8 rounded-lg border text-[12px] transition-colors"
+              className="h-8 rounded-lg border text-[length:var(--fs-md)] transition-colors"
               style={active
                 ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
                 : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -1323,7 +1332,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
           )
         })}
       </div>
-      <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>
         父项目可见性为「{parentVisibilityLabel}」，本任务单可选范围已自动收窄。
       </p>
     </div>
@@ -1335,12 +1344,12 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
       <div className="relative w-[420px] max-w-[calc(100vw-32px)] rounded-2xl p-5 shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h4 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
-        <p className="mb-4 text-[12px]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围会受所属项目权限限制。</p>
+        <h4 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>修改任务权限</h4>
+        <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>设置谁能看到这个任务。可选范围会受所属项目权限限制。</p>
         {issuePermissionControl}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={() => setPermissionOpen(false)}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors">
             完成
           </button>
         </div>
@@ -1352,18 +1361,18 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour="issue-modal" className="relative w-[440px] rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建任务</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建任务</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
             data-tour="issue-title-input"
             placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
-            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
             data-tour="issue-description-input"
             placeholder="任务描述（默认同标题）"
             overlayTitle="编辑任务描述"
-            className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            className="w-full h-28 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
 
           <button type="button" onClick={() => setPermissionOpen(true)}
@@ -1372,19 +1381,19 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
             <Eye className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.75} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[12px] font-medium" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
-              <span className="mt-0.5 block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <span className="block text-[length:var(--fs-md)] font-medium" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>修改任务权限</span>
+              <span className="mt-0.5 block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                 {visibilityOption.label} · 项目为{parentVisibilityLabel}，可选范围已收窄
               </span>
             </span>
-            <span className="flex-shrink-0 text-[11px]" style={{ color: '#60a5fa' }}>修改</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: '#60a5fa' }}>修改</span>
           </button>
 
           <ToggleSwitch
             data-tour="issue-worktree-toggle"
             checked={useWorktree}
             onChange={v => { setUseWorktree(v); setErr('') }}
-            className="flex items-center gap-3 text-[13px]"
+            className="flex items-center gap-3 text-[length:var(--fs-lg)]"
             style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             使用 git worktree（在绑定路径下为本任务开独立工作区）
           </ToggleSwitch>
@@ -1394,9 +1403,9 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
                 data-tour="issue-branch-input"
                 placeholder="分支名称（留空默认使用任务标识）"
                 onKeyDown={e => e.key === 'Enter' && submit()}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
-              <p className="text-[11px] px-1" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
+              <p className="text-[length:var(--fs-sm)] px-1" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>
                 工作区路径 = 绑定路径/分支名。若该路径已存在，创建会失败并提示重新输入。
               </p>
             </div>
@@ -1405,7 +1414,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
           <ToggleSwitch
             checked={isPlanning}
             onChange={v => { setIsPlanning(v); setErr('') }}
-            className="flex items-start gap-3 text-[13px] leading-5"
+            className="flex items-start gap-3 text-[length:var(--fs-lg)] leading-5"
             style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
             <span>
               <span className="font-medium">系统宏观规划模式</span>
@@ -1416,7 +1425,7 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
             <ToggleSwitch
               checked={createFirstSession}
               onChange={v => { setCreateFirstSession(v); setErr('') }}
-              className="flex items-start gap-3 text-[13px] leading-5"
+              className="flex items-start gap-3 text-[length:var(--fs-lg)] leading-5"
               style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
               <span>立即创建第一个会话（创建后自动打开新会话菜单）</span>
             </ToggleSwitch>
@@ -1424,10 +1433,10 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
             data-tour="issue-submit"
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '创建中...' : '创建'}
           </button>
         </div>
@@ -1474,19 +1483,19 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-96 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改任务</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改任务</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
             placeholder="任务标题" onKeyDown={e => e.key === 'Enter' && submit()}
-            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={desc} onValueChange={setDesc}
             placeholder="任务描述（选填）"
             overlayTitle="编辑任务描述"
-            className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <div>
-            <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
+            <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>任务单可见性（不能比项目可见性更宽）</label>
             <div className="grid grid-cols-2 gap-1.5">
               {[
                 { value: 'inherit', label: '继承项目', desc: '跟随所属项目的可见性' },
@@ -1499,7 +1508,7 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
                 return (
                   <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value as any); setErr('') }}
                     title={opt.desc}
-                    className="h-8 rounded-lg border text-[12px] transition-colors"
+                    className="h-8 rounded-lg border text-[length:var(--fs-md)] transition-colors"
                     style={active
                       ? { background: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.48)', color: '#60a5fa' }
                       : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -1512,9 +1521,9 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
@@ -1564,18 +1573,18 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建研究</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>新建研究</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
             placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
-            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={effectiveDesc} onValueChange={value => { setDesc(value); setDescTouched(true); setErr('') }}
             placeholder="研究描述（默认同标题）"
             overlayTitle="编辑研究描述"
-            className="w-full h-28 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            className="w-full h-28 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
-          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+          <label className="block text-[length:var(--fs-md)]" style={{ color: 'var(--text-secondary)' }}>
             Assistant limit（AI-Leader 的招募上限，Leader 不占名额，默认为3；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit}
               onChange={e => { setAssistantLimit(Number(e.target.value)); setErr('') }}
@@ -1585,16 +1594,16 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
           <ToggleSwitch
             checked={createLeader}
             onChange={v => { setCreateLeader(v); setErr('') }}
-            className="flex items-start gap-3 text-[13px] leading-5"
+            className="flex items-start gap-3 text-[length:var(--fs-lg)] leading-5"
             style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
             <span>立即创建 Leader（创建后自动打开 Leader 配置，走 AI-Leader 自动组队）</span>
           </ToggleSwitch>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '创建中...' : '创建'}
           </button>
         </div>
@@ -1650,38 +1659,38 @@ export function NewResearchLeaderModal({ research, onClose, onCreated }: { resea
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-[560px] max-h-[calc(100vh-32px)] overflow-y-auto rounded-2xl p-6 shadow-2xl" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>创建 Leader · AI-Leader 自动组队</h3>
-        <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>Leader 会先与你讨论研究方案，获得你的授权后再自动招募团队。</p>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>创建 Leader · AI-Leader 自动组队</h3>
+        <p className="text-[length:var(--fs-md)] mb-4" style={{ color: 'var(--text-muted)' }}>Leader 会先与你讨论研究方案，获得你的授权后再自动招募团队。</p>
         <div className="space-y-3 mb-4">
           <input value={leaderName} onChange={e => { setLeaderName(e.target.value); setErr('') }}
             placeholder="Leader 名称"
-            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-md)] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
           <input value={leaderPurpose} onChange={e => { setLeaderPurpose(e.target.value); setErr('') }} placeholder="Leader 职责"
-            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
+            className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-md)] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
           <select value={leaderModel} onChange={e => setLeaderModel(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg text-[12px] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
+            className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-md)] focus:outline-none" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
             {(modelOptions.length > 0 ? modelOptions : [{ key: 'codex', label: 'Codex' }]).map((item: any) => (
               <option key={item.key} value={item.key}>{item.label || item.title || item.key}</option>
             ))}
           </select>
-          <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
+          <div className="rounded-lg px-3 py-2 text-[length:var(--fs-sm)]" style={{ background: 'var(--input-bg)', color: 'var(--text-secondary)' }}>
             Skill：research-chief-agent（Leader 必选）
           </div>
-          <label className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+          <label className="flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-secondary)' }}>
             <input type="checkbox" checked={memoryConfirmed} onChange={e => setMemoryConfirmed(e.target.checked)} />
             明确选择：Leader 初始不加载额外 Memory
           </label>
           <ExpandableTextarea value={leaderPrompt} onValueChange={setLeaderPrompt}
             placeholder="Leader 初始 Prompt / 初始研究任务"
             overlayTitle="编辑 Leader 初始 Prompt"
-            className="w-full h-28 px-3 py-2 rounded-lg text-[12px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
+            className="w-full h-28 px-3 py-2 rounded-lg text-[length:var(--fs-md)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '创建中...' : '创建并启动 Leader'}
           </button>
         </div>
@@ -1709,29 +1718,29 @@ export function RenameResearchModal({ research, onClose, onRenamed }: { research
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-96 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改研究</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改研究</h3>
         <div className="space-y-3 mb-4">
           <input autoFocus value={title} onChange={e => { setTitle(e.target.value); setErr('') }}
             placeholder="研究标题" onKeyDown={e => e.key === 'Enter' && submit()}
-            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           <ExpandableTextarea value={desc} onValueChange={setDesc}
             placeholder="研究描述（选填）"
             overlayTitle="编辑研究描述"
-            className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
+            className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 resize-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
-          <label className="block text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+          <label className="block text-[length:var(--fs-md)]" style={{ color: 'var(--text-secondary)' }}>
             Assistant limit（1-12，AI-Leader 的招募上限；真人用户后续补建不受此限）
             <input type="number" min={1} max={12} value={assistantLimit} onChange={e => setAssistantLimit(Number(e.target.value))}
-              className="mt-1 w-full h-9 px-3 rounded-xl text-[13px] focus:outline-none"
+              className="mt-1 w-full h-9 px-3 rounded-xl text-[length:var(--fs-lg)] focus:outline-none"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
           </label>
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
@@ -1794,18 +1803,18 @@ function SessionSkillPreviewDialog({ skill, isDark, onClose }: { skill: WizardIt
         <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="min-w-0 text-[15px] font-semibold leading-6 break-words" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+              <h3 className="min-w-0 text-[length:var(--fs-2xl)] font-semibold leading-6 break-words" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 {skill.name}
               </h3>
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
                 {scopeLabel}
               </span>
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>
                 {body.length} 字
               </span>
             </div>
             {skill.description && (
-              <p className="mt-1 text-[12px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+              <p className="mt-1 text-[length:var(--fs-md)] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                 {skill.description}
               </p>
             )}
@@ -1823,7 +1832,7 @@ function SessionSkillPreviewDialog({ skill, isDark, onClose }: { skill: WizardIt
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-5">
           <pre
-            className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[12px] leading-relaxed"
+            className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[length:var(--fs-md)] leading-relaxed"
             style={{
               background: isDark ? '#111827' : '#ffffff',
               borderColor: isDark ? '#374151' : '#e5e7eb',
@@ -2687,7 +2696,7 @@ export function NewSessionModal({
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCancelTarget({ kind, item: { id: projectIdCopyId, name, scope: 'project' } }) }}
       disabled={!!scopeBusyId}
       title="移除我复制的项目级条目 (你的用户级原件保留)"
-      className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+      className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[length:var(--fs-xs)] transition-colors disabled:opacity-40"
       style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
       移除项目级
     </button>
@@ -2745,7 +2754,7 @@ export function NewSessionModal({
         <button
           type="button"
           onClick={() => { setDeferPurpose(!deferPurpose); setErr('') }}
-          className="inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[10px] transition-colors hover:bg-blue-500/10"
+          className="inline-flex h-6 w-20 items-center gap-1 whitespace-nowrap rounded-lg border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-blue-500/10"
           style={{
             color: 'var(--text-muted)',
             borderColor: 'var(--input-border)',
@@ -2758,7 +2767,7 @@ export function NewSessionModal({
           <span>稍后再写</span>
         </button>
       ) : undefined}
-      className={`w-full h-28 px-3 py-2 text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none resize-none ${isPresetMode ? 'rounded-xl focus:border-blue-500/30' : 'border-0 bg-transparent'}`}
+      className={`w-full h-28 px-3 py-2 text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none resize-none ${isPresetMode ? 'rounded-xl focus:border-blue-500/30' : 'border-0 bg-transparent'}`}
       style={isPresetMode
         ? { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }
         : { color: isDark ? '#f1f5f9' : '#1e293b' }} />
@@ -2782,16 +2791,16 @@ export function NewSessionModal({
             style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}
           >
             <Loader2 className="h-9 w-9 animate-spin" style={{ color: '#60a5fa' }} strokeWidth={1.8} />
-            <div className="text-[14px] font-medium" style={{ color: '#f1f5f9' }}>
+            <div className="text-[length:var(--fs-xl)] font-medium" style={{ color: '#f1f5f9' }}>
               {isPresetMode ? '正在保存预设，请稍候…' : '正在创建会话，请稍候…'}
             </div>
             {!isPresetMode && continueFromSessionId && (
-              <div className="text-[11px]" style={{ color: '#cbd5e1' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
+              <div className="text-[length:var(--fs-sm)]" style={{ color: '#cbd5e1' }}>正在生成转接记录并启动新会话，完成后自动进入</div>
             )}
           </div>
         )}
         <div className="flex items-center justify-between gap-3 mb-4">
-          <h3 className="text-[15px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+          <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {modalTitle || (isPresetMode ? '会话预设菜单' : `新建 ${displayEntityLabel}`)} · 第 {step} 步 / 共 {totalSteps} 步
           </h3>
           <div className="flex shrink-0 items-center gap-2">
@@ -2815,7 +2824,7 @@ export function NewSessionModal({
 
         {step === 1 && (
           <>
-            <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+            <p className="text-[length:var(--fs-md)] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               {isPresetMode
                 ? '这里只保存未来创建会话时要使用的参数，不会立即创建真正的会话。'
                 : `${displayEntityLabel} 创建后, 当前的 Skill 与 Memory 会作为快照定型, 之后修改不影响此 ${displayEntityLabel}.`}
@@ -2825,14 +2834,14 @@ export function NewSessionModal({
               <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
                 data-tour="session-name-input"
                 placeholder={`${entityNameLabel}（如：修复登录 Bug）`}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: isDark ? '#f1f5f9' : '#1e293b' }} />
               {canDeferPurpose && deferPurpose ? (
                 <button
                   type="button"
                   data-tour="session-description-input"
                   onClick={() => { setDeferPurpose(false); setErr('') }}
-                  className="w-full min-h-14 rounded-xl border px-3 py-2 text-left text-[13px] font-medium transition-colors hover:bg-blue-500/10"
+                  className="w-full min-h-14 rounded-xl border px-3 py-2 text-left text-[length:var(--fs-lg)] font-medium transition-colors hover:bg-blue-500/10"
                   style={{
                     background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)',
                     borderColor: isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)',
@@ -2862,7 +2871,7 @@ export function NewSessionModal({
               )}
               {isResearch && (
                 <div>
-                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>研究角色（创建后不可更改）</div>
+                  <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>研究角色（创建后不可更改）</div>
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" disabled={chiefExists}
                       onClick={() => { setRole('chief_researcher'); setErr(''); if (agentSkills.length > 0) setShowAgentSkillModal(true) }}
@@ -2872,8 +2881,8 @@ export function NewSessionModal({
                         border: `1px solid ${role === 'chief_researcher' ? '#10b981' : 'var(--input-border)'}`,
                         color: isDark ? '#f1f5f9' : '#1e293b',
                       }}>
-                      <div className="text-[13px] font-medium">chief_researcher</div>
-                      <div className="text-[11px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                      <div className="text-[length:var(--fs-lg)] font-medium">chief_researcher</div>
+                      <div className="text-[length:var(--fs-sm)]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                         {chiefExists ? '当前研究已存在' : '每个研究只能有一个'}
                       </div>
                     </button>
@@ -2885,19 +2894,19 @@ export function NewSessionModal({
                         border: `1px solid ${role === 'research_assistant' ? '#3b82f6' : 'var(--input-border)'}`,
                         color: isDark ? '#f1f5f9' : '#1e293b',
                       }}>
-                      <div className="text-[13px] font-medium">research_assistant</div>
-                      <div className="text-[11px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>数量不限</div>
+                      <div className="text-[length:var(--fs-lg)] font-medium">research_assistant</div>
+                      <div className="text-[length:var(--fs-sm)]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>数量不限</div>
                     </button>
                   </div>
                   {agentSkills.length > 0 && (
-                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[12px]"
+                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[length:var(--fs-md)]"
                       style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                       <div className="min-w-0">
                         <span style={{ color: isDark ? '#9ca3af' : '#64748b' }}>Agent Main Skill: </span>
                         <strong style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{chosenAgentSkill ? chosenAgentSkill.name : '完全自定义'}</strong>
                       </div>
                       <button type="button" onClick={() => setShowAgentSkillModal(true)}
-                        className="shrink-0 text-[11px] px-2 py-0.5 rounded border text-blue-400" style={{ borderColor: 'var(--input-border)' }}>
+                        className="shrink-0 text-[length:var(--fs-sm)] px-2 py-0.5 rounded border text-blue-400" style={{ borderColor: 'var(--input-border)' }}>
                         选择 / 更改
                       </button>
                     </div>
@@ -2908,7 +2917,7 @@ export function NewSessionModal({
                 <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} onPathChange={setPcPath} />
               )}
               <div>
-                <div className="text-[12px] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                <div className="text-[length:var(--fs-md)] mb-1.5 flex items-center justify-between" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                   <span>模型（创建后不可更改）</span>
                 </div>
                 <div
@@ -2944,8 +2953,8 @@ export function NewSessionModal({
                     }
                     const cardBody = (
                       <>
-                        <div className="text-[13px] font-medium truncate">{opt.title || opt.label}</div>
-                        <div className="text-[11px] flex flex-wrap items-baseline gap-x-1.5 min-w-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                        <div className="text-[length:var(--fs-lg)] font-medium truncate">{opt.title || opt.label}</div>
+                        <div className="text-[length:var(--fs-sm)] flex flex-wrap items-baseline gap-x-1.5 min-w-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           <span className="truncate">{opt.sub}</span>
                           {!quotaBlocked && usage?.limit != null && (
                             <span className="font-medium whitespace-nowrap" style={{ color: quotaBlocked ? '#ef4444' : (isDark ? '#93c5fd' : '#2563eb') }}>
@@ -2976,7 +2985,7 @@ export function NewSessionModal({
                 </div>
                 {hasCollapsedModelOverflow && !modelExpandedForSelection && (
                   <button type="button" onClick={() => setModelGridManuallyExpanded(v => !v)}
-                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{
                       borderColor: 'var(--input-border)',
                       color: isDark ? '#9ca3af' : '#64748b',
@@ -2987,7 +2996,7 @@ export function NewSessionModal({
                   </button>
                 )}
                 {selectedModelUsage?.limit != null && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px]"
+                  <div className="mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[length:var(--fs-md)]"
                     style={{
                       background: selectedModelUsage.blocked ? 'rgba(239,68,68,0.08)' : 'rgba(59,130,246,0.08)',
                       borderColor: selectedModelUsage.blocked ? 'rgba(239,68,68,0.32)' : 'rgba(59,130,246,0.25)',
@@ -3003,7 +3012,7 @@ export function NewSessionModal({
                   </div>
                 )}
                 {promptStats && (
-                  <div className="mt-2 text-[12px] font-medium" style={{ color: selectedTmuxWarning ? '#f59e0b' : '#16a34a' }}>
+                  <div className="mt-2 text-[length:var(--fs-md)] font-medium" style={{ color: selectedTmuxWarning ? '#f59e0b' : '#16a34a' }}>
                     {selectedTmuxUsage?.limit != null
                       ? selectedTmuxWarning
                         ? `${selectedModelOption?.label || selectedBackendLabel} tmux 窗口达到软提醒阈值（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}），仍可创建。`
@@ -3013,7 +3022,7 @@ export function NewSessionModal({
                 )}
               </div>
               <div>
-                <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>语言（创建后不可更改）</div>
+                <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>语言（创建后不可更改）</div>
                 <div className="grid grid-cols-2 gap-2">
                   {SESSION_LANGUAGE_CHOICES.map(opt => {
                     const active = language === opt.key
@@ -3025,8 +3034,8 @@ export function NewSessionModal({
                           border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`,
                           color: isDark ? '#f1f5f9' : '#1e293b',
                         }}>
-                        <div className="text-[13px] font-medium">{opt.title}</div>
-                        <div className="text-[11px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.sub}</div>
+                        <div className="text-[length:var(--fs-lg)] font-medium">{opt.title}</div>
+                        <div className="text-[length:var(--fs-sm)]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.sub}</div>
                       </button>
                     )
                   })}
@@ -3034,7 +3043,7 @@ export function NewSessionModal({
               </div>
               {isPresetMode && personalityOptions.length > 0 && (
                 <div>
-                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>性格预设</div>
+                  <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>性格预设</div>
                   <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
                     {personalityOptions.map(opt => {
                       const active = personality === opt.key
@@ -3050,8 +3059,8 @@ export function NewSessionModal({
                             color: isDark ? '#f1f5f9' : '#1e293b',
                           }}
                         >
-                          <div className="min-w-0 truncate text-[13px] font-medium">{opt.label}</div>
-                          <div className="mt-0.5 min-w-0 whitespace-normal break-words text-[11px] leading-snug" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.description}</div>
+                          <div className="min-w-0 truncate text-[length:var(--fs-lg)] font-medium">{opt.label}</div>
+                          <div className="mt-0.5 min-w-0 whitespace-normal break-words text-[length:var(--fs-sm)] leading-snug" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.description}</div>
                         </button>
                       )
                     })}
@@ -3060,7 +3069,7 @@ export function NewSessionModal({
               )}
               {isPresetMode && showExistingSessionAction && (
                 <div>
-                  <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>旧会话存在时的动作</div>
+                  <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>旧会话存在时的动作</div>
                   <div className="grid grid-cols-2 gap-2">
                     {EXISTING_SESSION_ACTION_OPTIONS.map(opt => {
                       const active = existingSessionAction === opt.key
@@ -3072,8 +3081,8 @@ export function NewSessionModal({
                             border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`,
                             color: isDark ? '#f1f5f9' : '#1e293b',
                           }}>
-                          <div className="text-[13px] font-medium">{opt.title}</div>
-                          <div className="text-[11px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.sub}</div>
+                          <div className="text-[length:var(--fs-lg)] font-medium">{opt.title}</div>
+                          <div className="text-[length:var(--fs-sm)]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.sub}</div>
                         </button>
                       )
                     })}
@@ -3083,10 +3092,10 @@ export function NewSessionModal({
             </div>
             {err && <ErrBanner>{err}</ErrBanner>}
             <div className="flex gap-2 mt-auto">
-              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
               <button onClick={goPreview} disabled={previewLoading}
                 data-tour="session-preview-next"
-                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
                 {previewLoading ? '加载预览...' : '下一步 · 预览配置'}
               </button>
             </div>
@@ -3096,7 +3105,7 @@ export function NewSessionModal({
         {step === 2 && !preview && (
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
             <Loader2 className="h-7 w-7 animate-spin" style={{ color: '#3b82f6' }} strokeWidth={1.8} />
-            <div className="text-[13px]">正在加载预览配置…</div>
+            <div className="text-[length:var(--fs-lg)]">正在加载预览配置…</div>
           </div>
         )}
 
@@ -3105,7 +3114,7 @@ export function NewSessionModal({
             <div data-tour="session-preview" className="flex-1 min-h-0 mb-4 overflow-y-auto lg:overflow-hidden pr-1 lg:pr-0">
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(320px,1.08fr)] gap-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
                 <div className="space-y-3 min-h-0 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
-                  <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
+                  <div className="rounded-lg p-3 text-[length:var(--fs-sm)] leading-relaxed" style={{
                     background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)',
                     border: `1px solid ${isDark ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.25)'}`,
                     color: isDark ? '#93c5fd' : '#1d4ed8',
@@ -3120,7 +3129,7 @@ export function NewSessionModal({
 
                   <section data-tour="session-preview-skills">
                     {forcedSkillConflicts.length > 0 && (
-                      <div className="mb-2 rounded-md border px-2.5 py-1.5 text-[11px] leading-relaxed"
+                      <div className="mb-2 rounded-md border px-2.5 py-1.5 text-[length:var(--fs-sm)] leading-relaxed"
                            style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)', color: isDark ? '#fca5a5' : '#b91c1c' }}>
                         <div className="font-medium">【必选skill与当前的skill白名单冲突】</div>
                         <div className="mt-0.5 opacity-90">
@@ -3129,19 +3138,19 @@ export function NewSessionModal({
                       </div>
                     )}
                     <div className="flex items-center justify-between mb-1.5">
-                      <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                      <h4 className="text-[length:var(--fs-md)] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                         Skill ({skillCheckedCount}/{availableSkills.length})
                       </h4>
                       {availableSkills.length > 0 && (
                         <div className="flex gap-1.5">
                           <button onClick={() => { const none = normalizeSkillExclusions(new Set<string>()); setExcludedSkills(none); fetchPreview(none, excludedMemories).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
+                            className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
                           <button onClick={() => { const all = normalizeSkillExclusions(new Set<string>(availableSkills.map(s => s.id))); setExcludedSkills(all); fetchPreview(all, excludedMemories).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
+                            className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
                         </div>
                       )}
                     </div>
-                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                    <div className="rounded-lg p-2.5 space-y-1.5 text-[length:var(--fs-sm)]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                       {availableSkills.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无 (本 {isResearch ? '研究' : '任务'} 未启用任何 Skill)</p>}
                       {(() => {
                         const renderSkillRow = (sk: WizardItem, showProjectCopy: boolean) => {
@@ -3160,31 +3169,31 @@ export function NewSessionModal({
                                   className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
                                 <div className="min-w-0 flex-1" style={{ opacity: mutuallyExclusive ? 0.38 : checked ? 1 : 0.45 }}>
                                   <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
-                                  {sk.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
+                                  {sk.description && <div className="text-[length:var(--fs-xs)] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{sk.description}</div>}
                                 </div>
                               </label>
                               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                                {locked && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
-                                {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
+                                {locked && <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>{required ? '必选' : '主Skill'}</span>}
+                                {mutuallyExclusive && <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)', color: isDark ? '#fca5a5' : '#dc2626' }}>互斥</span>}
                                 {sk.scope === 'project' && canScopeChange && isProjectCopyByMe(sk) && (
                                   <button
                                     type="button"
                                     onClick={() => setCancelTarget({ kind: 'skill', item: sk })}
                                     disabled={!!scopeBusyId}
                                     title="移除我复制的项目级条目 (你的用户级原件保留)"
-                                    className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-40"
+                                    className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[length:var(--fs-xs)] transition-colors disabled:opacity-40"
                                     style={{ color: isDark ? '#fca5a5' : '#b91c1c', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>
                                     移除项目级
                                   </button>
                                 )}
                                 {showProjectCopy && skillProjectCopyAction(sk)}
-                                <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
+                                <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>
                                   {SCOPE_LABEL_WIZ[sk.scope] || sk.scope}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setPreviewingSkill(sk)}
-                                  className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                                  className="inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)]"
                                   style={{ color: isDark ? '#93c5fd' : '#1d4ed8', borderColor: 'var(--input-border)' }}
                                   title={`预览 ${sk.name} 的完整 SKILL.md`}
                                   aria-label={`预览 ${sk.name} 的完整 SKILL.md`}
@@ -3197,7 +3206,7 @@ export function NewSessionModal({
                           )
                         }
                         const groupHeader = (label: string, count: number) => count > 0 ? (
-                          <div className="pt-1 pb-0.5 text-[10px] font-medium" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>{label} ({count})</div>
+                          <div className="pt-1 pb-0.5 text-[length:var(--fs-xs)] font-medium" style={{ color: isDark ? '#6b7280' : '#94a3b8' }}>{label} ({count})</div>
                         ) : null
                         return (<>
                           {groupHeader('项目 Skill', projectSkillItems.length)}
@@ -3209,7 +3218,7 @@ export function NewSessionModal({
                         </>)
                       })()}
                       {availableSkills.length > 0 && !isResearch && (
-                        <p className="pt-1 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                        <p className="pt-1 text-[length:var(--fs-xs)] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
                           {projectSkillCount > 0
                             ? `已读取当前项目的 ${projectSkillCount} 个项目级 Skill。创建后会固定为本 ${displayEntityLabel} 的快照。`
                             : `这里没有当前项目的项目级 Skill。其他项目里的 Skill 不会进入本 ${displayEntityLabel}；已有 ${displayEntityLabel} 也不会自动补入新添加的 Skill。`}
@@ -3221,19 +3230,19 @@ export function NewSessionModal({
 
                   <section data-tour="session-preview-memories">
                     <div className="flex items-center justify-between mb-1.5">
-                      <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                      <h4 className="text-[length:var(--fs-md)] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                         Memory ({memoryCheckedCount}/{availableMemories.length})
                       </h4>
                       {availableMemories.length > 0 && (
                         <div className="flex gap-1.5">
                           <button onClick={() => { const none = new Set<string>(); setExcludedMemories(none); fetchPreview(excludedSkills, none).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
+                            className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全选</button>
                           <button onClick={() => { const all = new Set<string>(availableMemories.map(m => m.id)); setExcludedMemories(all); fetchPreview(excludedSkills, all).then(setPreview).catch(() => {}) }}
-                            className="text-[10px] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
+                            className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>全不选</button>
                         </div>
                       )}
                     </div>
-                    <div className="rounded-lg p-2.5 space-y-1.5 text-[11px]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
+                    <div className="rounded-lg p-2.5 space-y-1.5 text-[length:var(--fs-sm)]" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
                       {availableMemories.length === 0 && <p className="italic" style={{ color: isDark ? '#6b7280' : '#64748b' }}>无</p>}
                       {availableMemories.map(m => {
                         const checked = !excludedMemories.has(m.id)
@@ -3251,12 +3260,12 @@ export function NewSessionModal({
                                 className="mt-0.5 accent-blue-500 cursor-pointer" />
                               <div className="min-w-0 flex-1" style={{ opacity: checked ? 1 : 0.45 }}>
                                 <div className="truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{m.name}</div>
-                                {m.description && <div className="text-[10px] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
+                                {m.description && <div className="text-[length:var(--fs-xs)] truncate" style={{ color: isDark ? '#6b7280' : '#64748b' }}>{m.description}</div>}
                               </div>
                             </label>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                               {memoryProjectCopyAction(m)}
-                              <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
+                              <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
                                 {SCOPE_LABEL_WIZ[m.scope] || m.scope}
                               </span>
                             </div>
@@ -3268,10 +3277,10 @@ export function NewSessionModal({
                 </div>
 
                 <section className="order-first min-h-[320px] lg:order-none lg:h-full lg:min-h-0 flex flex-col overflow-hidden rounded-lg p-3" style={{ background: isDark ? '#1f2937' : '#f9fafb', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}` }}>
-                  <h4 className="shrink-0 text-[12px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+                  <h4 className="shrink-0 text-[length:var(--fs-md)] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                     完整注入文本 ({previewBodyText.length} 字)
                   </h4>
-                  <pre className="m-0 flex-1 min-h-[260px] lg:min-h-0 max-h-[45vh] lg:max-h-none overflow-y-auto overscroll-contain text-[10px] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
+                  <pre className="m-0 flex-1 min-h-[260px] lg:min-h-0 max-h-[45vh] lg:max-h-none overflow-y-auto overscroll-contain text-[length:var(--fs-xs)] leading-snug whitespace-pre-wrap break-words rounded-md p-2"
                     style={{ background: isDark ? '#111827' : '#ffffff', border: `1px solid ${isDark ? '#374151' : '#e5e7eb'}`, color: isDark ? '#f1f5f9' : '#1e293b', fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace' }}>
                     {previewBodyText || '暂无可注入文本。'}
                   </pre>
@@ -3281,16 +3290,16 @@ export function NewSessionModal({
 
             {err && <ErrBanner>{err}</ErrBanner>}
             {scopeNotice && (
-              <div className="mb-2 rounded-lg border px-3 py-1.5 text-[12px]"
+              <div className="mb-2 rounded-lg border px-3 py-1.5 text-[length:var(--fs-md)]"
                    style={{ background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.3)', color: isDark ? '#86efac' : '#15803d' }}>
                 {scopeNotice}
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
+              <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
               <button onClick={submit} disabled={loading || previewLoading}
                 data-tour="session-submit"
-                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
                 {loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
               </button>
             </div>
@@ -3313,19 +3322,19 @@ export function NewSessionModal({
             width: 'min(460px, calc(100vw - 32px))',
             background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
           }}>
-            <h3 className="text-[15px] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
               移除项目级「{cancelTarget.item.name}」?
             </h3>
-            <p className="text-[12px] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+            <p className="text-[length:var(--fs-md)] mb-4 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               这条项目级{cancelTarget.kind === 'skill' ? ' Skill' : ' Memory'}将被移除, 你的用户级原件保留。若复制到项目级后被编辑过, 这些修改会一并丢弃;
               已创建的 {displayEntityLabel} 不受影响, 仅影响之后新建的 {displayEntityLabel}。
             </p>
             <div className="flex gap-2">
               <button type="button" onClick={() => setCancelTarget(null)} disabled={!!scopeBusyId}
-                className="flex-1 h-8 rounded-lg text-[12px] border"
+                className="flex-1 h-8 rounded-lg text-[length:var(--fs-md)] border"
                 style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>保留项目级</button>
               <button type="button" onClick={removeProjectCopy} disabled={!!scopeBusyId}
-                className="flex-1 h-8 rounded-lg text-[12px] border transition-colors disabled:opacity-40"
+                className="flex-1 h-8 rounded-lg text-[length:var(--fs-md)] border transition-colors disabled:opacity-40"
                 style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.1)' }}>
                 {scopeBusyId ? '处理中…' : '确认移除'}
               </button>
@@ -3341,8 +3350,8 @@ export function NewSessionModal({
             width: 'min(560px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)',
             background: 'var(--modal-bg)', border: '1px solid var(--border-color)',
           }}>
-            <h3 className="text-[15px] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择研究智能体 Skill</h3>
-            <p className="text-[12px] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>选择研究智能体 Skill</h3>
+            <p className="text-[length:var(--fs-md)] mb-3 leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
               选中后会把「按照该 skill 完成任务」追加到当前 {displayEntityLabel} 目的末尾，并确保该 skill 注入当前 {displayEntityLabel}（第二步不可取消）。
             </p>
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
@@ -3353,26 +3362,26 @@ export function NewSessionModal({
                     className="w-full text-left rounded-xl px-3 py-2.5 transition-colors"
                     style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}` }}>
                     <div className="flex items-center gap-2">
-                      <div className="text-[13px] font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
+                      <div className="text-[length:var(--fs-lg)] font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{sk.name}</div>
                       {sk.research_role && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0" style={{ background: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)', color: isDark ? '#34d399' : '#059669' }}>{sk.research_role}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)', color: isDark ? '#34d399' : '#059669' }}>{sk.research_role}</span>
                       )}
-                      <span className="px-1.5 py-0.5 rounded text-[10px] shrink-0 ml-auto" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>{SCOPE_LABEL_WIZ[sk.scope] || sk.scope}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0 ml-auto" style={{ background: isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.1)', color: isDark ? '#c084fc' : '#7e22ce' }}>{SCOPE_LABEL_WIZ[sk.scope] || sk.scope}</span>
                     </div>
-                    {sk.description && <div className="text-[11px] mt-1" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{sk.description}</div>}
+                    {sk.description && <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{sk.description}</div>}
                   </button>
                 )
               })}
               <button type="button" onClick={() => chooseAgentSkill(null)}
                 className="w-full text-left rounded-xl px-3 py-2.5 transition-colors"
                 style={{ background: !chosenAgentSkill ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px dashed ${!chosenAgentSkill ? '#3b82f6' : 'var(--input-border)'}` }}>
-                <div className="text-[13px] font-medium" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>不选择，完全自定义</div>
-                <div className="text-[11px] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>自行填写 {displayEntityLabel} 目的，不绑定任何 research agent skill</div>
+                <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>不选择，完全自定义</div>
+                <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>自行填写 {displayEntityLabel} 目的，不绑定任何 research agent skill</div>
               </button>
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={() => setShowAgentSkillModal(false)}
-                className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>关闭</button>
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>关闭</button>
             </div>
           </div>
         </div>
@@ -3408,18 +3417,18 @@ export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = 
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-80 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>重命名{entityTitleLabel}</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>重命名{entityTitleLabel}</h3>
         <div className="mb-4">
           <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
             placeholder={entityNameLabel} onKeyDown={e => e.key === 'Enter' && submit()}
-            className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+            className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
         </div>
         {err && <ErrBanner>{err}</ErrBanner>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={loading}
-            className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
             {loading ? '保存中...' : '保存'}
           </button>
         </div>
@@ -3444,13 +3453,13 @@ export function ConfirmModal({ title, message, onConfirm, onClose, confirmText =
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div data-tour={dataTour} className="relative w-80 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
-        <p className="text-[13px] mb-5" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>{message}</p>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
+        <p className="text-[length:var(--fs-lg)] mb-5" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>{message}</p>
         <div className="flex gap-2">
-          <button onClick={onClose} disabled={loading} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} disabled={loading} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={handleConfirm} disabled={loading}
             data-tour={confirmDataTour}
-            className={`flex-1 h-9 rounded-xl text-[13px] text-white transition-colors disabled:opacity-40 ${confirmClass}`}>
+            className={`flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] text-white transition-colors disabled:opacity-40 ${confirmClass}`}>
             {loading ? '处理中...' : confirmText}
           </button>
         </div>
@@ -3508,22 +3517,22 @@ export function MoveScopeModal({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-[420px] rounded-2xl p-5 shadow-2xl" onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[14px] font-semibold mb-1" style={{ color: textPrimary }}>{title}</h3>
-        <p className="text-[11px] mb-4" style={{ color: textMuted }}>
+        <h3 className="text-[length:var(--fs-xl)] font-semibold mb-1" style={{ color: textPrimary }}>{title}</h3>
+        <p className="text-[length:var(--fs-sm)] mb-4" style={{ color: textMuted }}>
           当前位置: {currentScopeLabel}{operationLabel === '复制' ? '。复制后源位置仍会保留' : ''}
         </p>
 
         {!lockToProject && (
           <div className="mb-3">
-            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>目标</label>
+            <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: textMuted }}>目标</label>
             <div className="flex gap-2">
               <button onClick={() => setScope('user')} disabled={saving}
-                className={`flex-1 h-8 rounded text-[12px] border transition-colors ${scope === 'user' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
+                className={`flex-1 h-8 rounded text-[length:var(--fs-md)] border transition-colors ${scope === 'user' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
                 style={scope === 'user' ? {} : { color: textMuted, borderColor: 'var(--input-border)' }}>
                 我的 (用户级)
               </button>
               <button onClick={() => setScope('project')} disabled={saving}
-                className={`flex-1 h-8 rounded text-[12px] border transition-colors ${scope === 'project' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
+                className={`flex-1 h-8 rounded text-[length:var(--fs-md)] border transition-colors ${scope === 'project' ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : ''}`}
                 style={scope === 'project' ? {} : { color: textMuted, borderColor: 'var(--input-border)' }}>
                 项目级
               </button>
@@ -3533,15 +3542,15 @@ export function MoveScopeModal({
 
         {scope === 'project' && (
           <div className="mb-3">
-            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>选择目标项目</label>
+            <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: textMuted }}>选择目标项目</label>
             {loading ? (
-              <div className="text-[12px] py-1" style={{ color: textMuted }}>加载中...</div>
+              <div className="text-[length:var(--fs-md)] py-1" style={{ color: textMuted }}>加载中...</div>
             ) : projects.length === 0 ? (
-              <div className="text-[12px] py-1" style={{ color: textMuted }}>暂无可选项目</div>
+              <div className="text-[length:var(--fs-md)] py-1" style={{ color: textMuted }}>暂无可选项目</div>
             ) : (
               <select value={projectId} onChange={e => { setProjectId(e.target.value); setErr('') }}
                 disabled={saving}
-                className="w-full h-8 px-2 rounded text-[12px] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-8 px-2 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}>
                 <option value="">-- 请选择 --</option>
                 {projects.map((p: any) => (
@@ -3552,14 +3561,14 @@ export function MoveScopeModal({
           </div>
         )}
 
-        {err && <pre className="text-[11px] text-red-400 mb-3 whitespace-pre-wrap break-all max-h-32 overflow-auto">{err}</pre>}
+        {err && <pre className="text-[length:var(--fs-sm)] text-red-400 mb-3 whitespace-pre-wrap break-all max-h-32 overflow-auto">{err}</pre>}
 
         <div className="flex gap-2">
           <button onClick={onClose} disabled={saving}
-            className="flex-1 h-8 rounded text-[12px] border disabled:opacity-40"
+            className="flex-1 h-8 rounded text-[length:var(--fs-md)] border disabled:opacity-40"
             style={{ color: textMuted, borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={submit} disabled={saving || loading || (scope === 'project' && !projectId)}
-            className="flex-1 h-8 rounded text-[12px] bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40">
+            className="flex-1 h-8 rounded text-[length:var(--fs-md)] bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-40">
             {saving ? `${operationLabel}中...` : operationLabel}
           </button>
         </div>
@@ -3594,45 +3603,45 @@ export function TurnTree({ sessionId, onClose, onRefresh }: { sessionId: string;
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            <h3 className="text-[14px] font-semibold" style={{ color: textPrimary }}>对话轮次历史</h3>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-[var(--bg-card-hover)]" style={{ color: textMuted }}>{turns.length} 轮</span>
+            <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: textPrimary }}>对话轮次历史</h3>
+            <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded bg-[var(--bg-card-hover)]" style={{ color: textMuted }}>{turns.length} 轮</span>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors" style={{ color: textMuted }}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-          {loading && <div className="text-center py-8 text-[13px]" style={{ color: textMuted }}>加载中...</div>}
-          {!loading && turns.length === 0 && <div className="text-center py-8 text-[13px]" style={{ color: textMuted }}>暂无对话记录</div>}
+          {loading && <div className="text-center py-8 text-[length:var(--fs-lg)]" style={{ color: textMuted }}>加载中...</div>}
+          {!loading && turns.length === 0 && <div className="text-center py-8 text-[length:var(--fs-lg)]" style={{ color: textMuted }}>暂无对话记录</div>}
           {turns.map(t => (
             <details key={t.turn_number} className="group rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
               <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--bg-card)] transition-colors">
-                <div className="w-7 h-7 rounded-full bg-blue-500/15 flex items-center justify-center text-[12px] font-semibold text-blue-400 flex-shrink-0">
+                <div className="w-7 h-7 rounded-full bg-blue-500/15 flex items-center justify-center text-[length:var(--fs-md)] font-semibold text-blue-400 flex-shrink-0">
                   {t.turn_number}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-medium truncate" style={{ color: textPrimary }}>
+                  <div className="text-[length:var(--fs-md)] font-medium truncate" style={{ color: textPrimary }}>
                     {t.user_input || '(用户输入)'}
                   </div>
-                  <div className="text-[11px] mt-0.5 truncate" style={{ color: textMuted }}>
+                  <div className="text-[length:var(--fs-sm)] mt-0.5 truncate" style={{ color: textMuted }}>
                     {t.agent_output || '(Agent 输出)'}
                   </div>
                 </div>
-                <div className="text-[10px] flex-shrink-0" style={{ color: textMuted }}>
+                <div className="text-[length:var(--fs-xs)] flex-shrink-0" style={{ color: textMuted }}>
                   {timeAgo(t.created_at)}
                 </div>
                 <svg className="w-3.5 h-3.5 flex-shrink-0 transition-transform group-open:rotate-90" style={{ color: textMuted }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </summary>
               <div className="border-t px-4 py-3 space-y-2" style={{ borderColor: 'var(--border-color)' }}>
                 <div>
-                  <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>用户输入</div>
-                  <div className="text-[12px] px-3 py-2 rounded-lg" style={{ background: 'var(--input-bg)', color: textPrimary }}>
+                  <div className="text-[length:var(--fs-md)] font-semibold mb-1" style={{ color: textMuted }}>用户输入</div>
+                  <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg" style={{ background: 'var(--input-bg)', color: textPrimary }}>
                     {t.user_input ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{t.user_input}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[12px] font-semibold mb-1" style={{ color: textMuted }}>Agent 输出</div>
-                  <div className="text-[12px] px-3 py-2 rounded-lg max-h-[300px] overflow-y-auto" style={{ background: 'var(--input-bg)', color: textPrimary }}>
+                  <div className="text-[length:var(--fs-md)] font-semibold mb-1" style={{ color: textMuted }}>Agent 输出</div>
+                  <div className="text-[length:var(--fs-md)] px-3 py-2 rounded-lg max-h-[300px] overflow-y-auto" style={{ background: 'var(--input-bg)', color: textPrimary }}>
                     {t.agent_output ? <ReactMarkdown className="prose-sm prose-invert" remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{t.agent_output}</ReactMarkdown> : <span style={{ color: textMuted }}>(无)</span>}
                   </div>
                 </div>
@@ -3731,19 +3740,19 @@ function DesktopDownloadRowItem({ row, theme }: { row: DesktopDownloadRow; theme
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
           </svg>
           <div className="min-w-0">
-            <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{row.label}</div>
-            <div className="text-[11px] truncate" style={{ color: subMuted }}>
+            <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>{row.label}</div>
+            <div className="text-[length:var(--fs-sm)] truncate" style={{ color: subMuted }}>
               {row.sub}{row.primary.size ? ` · ${formatBytes(row.primary.size)}` : ''} · SHA256 {row.primary.sha256.slice(0, 8)}…
             </div>
           </div>
         </div>
         <a href={`/desktop-builds/${row.primary.file}`} download title={`SHA256: ${row.primary.sha256}`}
-          className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>
+          className="text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>
           下载 {row.primary.format.toUpperCase()}
         </a>
       </div>
       {row.alt && (
-        <div className="mt-2 pl-8 text-[11px]" style={{ color: subMuted }}>
+        <div className="mt-2 pl-8 text-[length:var(--fs-sm)]" style={{ color: subMuted }}>
           或下载 <a href={`/desktop-builds/${row.alt.file}`} download className="underline" style={{ color: '#0a84ff' }}>ZIP 压缩包</a>
           {row.alt.size ? ` (${formatBytes(row.alt.size)})` : ''}
         </div>
@@ -3803,15 +3812,15 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: muted }}>{subtitle}</div>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载桌面客户端</h3>
+            <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: muted }}>{subtitle}</div>
           </div>
-          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+          <button onClick={onClose} className="text-[length:var(--fs-2xl)] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         {/* Tab: GitHub 统一 apps-v* Release (默认, 跳转) | 本地服务器 (manifest 下载) */}
         <div className="flex justify-start mt-3">
-          <div className="inline-flex rounded-md border p-0.5 text-[12px]"
+          <div className="inline-flex rounded-md border p-0.5 text-[length:var(--fs-md)]"
             style={{ background: 'var(--input-bg)', borderColor: 'var(--border-color)' }}>
             {([
               ['github', 'GitHub 最新版（推荐）'],
@@ -3839,36 +3848,36 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
               <div className="flex items-center gap-3">
                 <GithubIcon className="w-6 h-6 shrink-0" strokeWidth={2} style={{ color: theme !== 'light' ? '#cbd5e1' : '#475569' }} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>GitHub 最新 Release</div>
-                  <div className="text-[11px]" style={{ color: subMuted }}>CI 自动构建 macOS (Apple Silicon / Intel) 与 Windows 安装包</div>
+                  <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>GitHub 最新 Release</div>
+                  <div className="text-[length:var(--fs-sm)]" style={{ color: subMuted }}>CI 自动构建 macOS (Apple Silicon / Intel) 与 Windows 安装包</div>
                 </div>
                 <a href={DESKTOP_GITHUB_RELEASES_URL} target="_blank" rel="noopener noreferrer"
-                  className="text-[12px] px-3 py-1.5 rounded-lg font-medium shrink-0 inline-flex items-center gap-1.5" style={{ background: '#0a84ff', color: '#fff' }}>
+                  className="text-[length:var(--fs-md)] px-3 py-1.5 rounded-lg font-medium shrink-0 inline-flex items-center gap-1.5" style={{ background: '#0a84ff', color: '#fff' }}>
                   前往下载
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-              <div className="mt-2 pl-9 text-[11px] break-all" style={{ color: subMuted }}>{DESKTOP_GITHUB_RELEASES_URL}</div>
+              <div className="mt-2 pl-9 text-[length:var(--fs-sm)] break-all" style={{ color: subMuted }}>{DESKTOP_GITHUB_RELEASES_URL}</div>
             </div>
-            <div className="text-[11px] px-1" style={{ color: subMuted }}>如无法访问 GitHub, 可切换到「本地服务器」从当前服务器下载。</div>
+            <div className="text-[length:var(--fs-sm)] px-1" style={{ color: subMuted }}>如无法访问 GitHub, 可切换到「本地服务器」从当前服务器下载。</div>
           </div>
         ) : (
           <div className="space-y-2 mt-4">
             {error ? (
               <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-                <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
-                <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
-                <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
+                <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>桌面客户端暂不可用</div>
+                <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: muted }}>{error}</div>
+                <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /desktop-builds/manifest.json</div>
               </div>
             ) : rows.length ? (
               rows.map(r => <DesktopDownloadRowItem key={r.key} row={r} theme={theme} />)
             ) : (
-              <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+              <div className="px-4 py-6 rounded-xl text-center text-[length:var(--fs-md)]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
             )}
           </div>
         )}
 
-        <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
+        <div className="text-[length:var(--fs-sm)] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次启动会自动在本机创建 Python 虚拟环境并安装 aimux (需联网, 约 30-90 秒)</div>
           <div>· macOS 默认提供 DMG 安装镜像 (ZIP 为备用)；不确定芯片型号可点左上角  →「关于本机」查看</div>
           <div>· 登录后桌面端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>desktop-&lt;主机名&gt;</code> 注册到 AIMUX 节点列表</div>
@@ -3929,12 +3938,12 @@ export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>安装 Mobius 命令行终端</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: muted }}>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>安装 Mobius 命令行终端</h3>
+            <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: muted }}>
               在本机终端直接创建任务、连接 AIMUX，并与 Mobius Web 共享项目和会话。
             </div>
           </div>
-          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+          <button onClick={onClose} className="text-[length:var(--fs-2xl)] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         <div className="space-y-3 mt-4">
@@ -3943,30 +3952,30 @@ export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
               style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div>
-                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{option.label}</div>
-                  <div className="text-[11px] mt-0.5" style={{ color: muted }}>{option.sub}</div>
+                  <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>{option.label}</div>
+                  <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: muted }}>{option.sub}</div>
                 </div>
                 {option.id === 'windows' && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(10,132,255,0.14)', color: '#0a84ff' }}>一键安装</span>
+                  <span className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(10,132,255,0.14)', color: '#0a84ff' }}>一键安装</span>
                 )}
               </div>
               <div className="relative">
-                <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
+                <pre className="text-[length:var(--fs-md)] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
                   style={{ background: theme !== 'light' ? '#0f172a' : '#f1f5f9', color: theme !== 'light' ? '#e2e8f0' : '#1e293b', border: '1px solid var(--border-color)' }}>
                   {option.command}
                 </pre>
                 <button type="button" onClick={() => void copyCommand(option.id, option.command)}
-                  className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[11px] border transition-colors"
+                  className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[length:var(--fs-sm)] border transition-colors"
                   style={{ background: 'var(--bg-card-hover)', borderColor: 'var(--border-color)', color: muted }}>
                   {copied === option.id ? '已复制' : '复制'}
                 </button>
               </div>
-              <div className="text-[11px] mt-2 leading-relaxed" style={{ color: muted }}>{option.note}</div>
+              <div className="text-[length:var(--fs-sm)] mt-2 leading-relaxed" style={{ color: muted }}>{option.note}</div>
             </section>
           ))}
         </div>
 
-        <div className="text-[11px] mt-4 p-3 rounded-lg" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.08)' : '#f0f7ff', color: muted }}>
+        <div className="text-[length:var(--fs-sm)] mt-4 p-3 rounded-lg" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.08)' : '#f0f7ff', color: muted }}>
           npm 包名：<code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>@mobius-os/mobius</code>。安装命令使用 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>latest</code> 标签，始终获取最新公开版本。
         </div>
       </div>
@@ -4020,21 +4029,21 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载移动端 App</h3>
-            <div className="text-[11px] mt-0.5" style={{ color: muted }}>{subtitle}</div>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>下载移动端 App</h3>
+            <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: muted }}>{subtitle}</div>
           </div>
-          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+          <button onClick={onClose} className="text-[length:var(--fs-2xl)] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
         <div className="space-y-2 mt-4">
           {error ? (
             <div className="px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)' }}>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>移动端 App 暂不可用</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>{error}</div>
-              <div className="text-[11px] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /mobile-builds/manifest.json</div>
+              <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>移动端 App 暂不可用</div>
+              <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: muted }}>{error}</div>
+              <div className="text-[length:var(--fs-sm)] mt-1" style={{ color: muted }}>请稍后再试，或联系管理员检查 /mobile-builds/manifest.json</div>
             </div>
           ) : androidBuilds.length === 0 && !iosLink ? (
-            <div className="px-4 py-6 rounded-xl text-center text-[12px]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
+            <div className="px-4 py-6 rounded-xl text-center text-[length:var(--fs-md)]" style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--border-color)', color: muted }}>加载中…</div>
           ) : (
             <>
               {androidBuilds.map(b => {
@@ -4050,13 +4059,13 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
                       </svg>
                       <div className="min-w-0">
-                        <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{meta.label}</div>
-                        <div className="text-[11px] truncate" style={{ color: subMuted }}>
+                        <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>{meta.label}</div>
+                        <div className="text-[length:var(--fs-sm)] truncate" style={{ color: subMuted }}>
                           {meta.sub}{formatBytes(b.size) ? ` · ${formatBytes(b.size)}` : ''}{b.sha256 ? ` · SHA256 ${b.sha256.slice(0, 8)}…` : ''}
                         </div>
                       </div>
                     </div>
-                    <span className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
+                    <span className="text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>下载</span>
                   </a>
                 )
               })}
@@ -4069,11 +4078,11 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
                     </svg>
                     <div className="min-w-0">
-                      <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
-                      <div className="text-[11px] truncate" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
+                      <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
+                      <div className="text-[length:var(--fs-sm)] truncate" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
                     </div>
                   </div>
-                  <span className="text-[12px] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>TestFlight</span>
+                  <span className="text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium shrink-0" style={{ background: '#0a84ff', color: '#fff' }}>TestFlight</span>
                 </a>
               ) : manifest ? (
                 <div key="ios-placeholder"
@@ -4084,18 +4093,18 @@ export function MobileDownloadModal({ onClose }: { onClose: () => void }) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
-                      <div className="text-[11px]" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
+                      <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>iOS</div>
+                      <div className="text-[length:var(--fs-sm)]" style={{ color: subMuted }}>TestFlight 内测 · iPhone/iPad</div>
                     </div>
                   </div>
-                  <span className="text-[12px] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
+                  <span className="text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>未上线</span>
                 </div>
               ) : null}
             </>
           )}
         </div>
 
-        <div className="text-[11px] mt-4 space-y-1" style={{ color: muted }}>
+        <div className="text-[length:var(--fs-sm)] mt-4 space-y-1" style={{ color: muted }}>
           <div>· 首次安装需允许"未知来源应用"（设置 → 安全 → 允许此来源）</div>
           <div>· 登录后移动端会以 <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>mobile-&lt;设备名&gt;</code> 注册到设备列表</div>
           <div>· 服务器地址可在 App 设置页修改；推荐使用 HTTPS</div>
@@ -4139,34 +4148,34 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative w-80 rounded-2xl p-6 shadow-2xl" onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改密码</h3>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-5" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改密码</h3>
         {success ? (
           <div className="text-center py-4">
-            <div className="text-green-400 text-[14px] mb-1">密码修改成功</div>
-            <div className="text-[12px]" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>即将关闭...</div>
+            <div className="text-green-400 text-[length:var(--fs-xl)] mb-1">密码修改成功</div>
+            <div className="text-[length:var(--fs-md)]" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>即将关闭...</div>
           </div>
         ) : (
           <>
             <div className="space-y-3 mb-4">
               <input type="password" placeholder="原密码" value={oldPw}
                 onChange={e => { setOldPw(e.target.value); setErr('') }}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
               <input type="password" placeholder="新密码（至少 6 位）" value={newPw}
                 onChange={e => { setNewPw(e.target.value); setErr('') }}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
               <input type="password" placeholder="确认新密码" value={confirmPw}
                 onChange={e => { setConfirmPw(e.target.value); setErr('') }}
                 onKeyDown={e => e.key === 'Enter' && submit()}
-                className="w-full h-10 px-3 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+                className="w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }} />
             </div>
             {err && <ErrBanner>{err}</ErrBanner>}
             <div className="flex gap-2">
-              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border transition-colors" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+              <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border transition-colors" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
               <button onClick={submit} disabled={loading}
-                className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
                 {loading ? '提交中...' : '确认修改'}
               </button>
             </div>
@@ -4279,17 +4288,17 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // render function (非内部组件): AimuxGuideModal 有 setInterval(refreshRemotes,3000) 每 3 秒重渲染,
   // 内部组件会让复制按钮/标题每次 unmount/remount -> 点复制可能 mousedown/mouseup 落不同节点而 click 落空.
   const renderSectionTitle = (text: string) => (
-    <div className="text-[12px] font-semibold mb-2 mt-4 first:mt-0" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>{text}</div>
+    <div className="text-[length:var(--fs-md)] font-semibold mb-2 mt-4 first:mt-0" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>{text}</div>
   )
 
   const renderCodeBlock = (label: string, text: string) => (
     <div className="relative">
-      <pre className="text-[12px] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
+      <pre className="text-[length:var(--fs-md)] rounded-lg p-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all"
         style={{ background: theme !== 'light' ? '#0f172a' : '#f1f5f9', color: theme !== 'light' ? '#e2e8f0' : '#1e293b', border: '1px solid var(--border-color)' }}>
         {text}
       </pre>
       <button onClick={() => copy(label, text)}
-        className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[11px] border transition-colors"
+        className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[length:var(--fs-sm)] border transition-colors"
         style={{ background: 'var(--bg-card-hover)', borderColor: 'var(--border-color)', color: theme !== 'light' ? '#94a3b8' : '#475569' }}>
         {copied === label ? '已复制' : '复制'}
       </button>
@@ -4304,20 +4313,20 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h3 className="text-[15px] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>AIMUX 连接指引</h3>
-            {/* <div className="text-[11px] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>AIMUX 连接指引</h3>
+            {/* <div className="text-[length:var(--fs-sm)] mt-0.5" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
               把您的计算机 (Windows/Mac/Linux) 连接到 Mobius 中枢，然后允许智能体联合您的计算机一起执行任务。
             </div> */}
           </div>
-          <button onClick={onClose} className="text-[18px] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
+          <button onClick={onClose} className="text-[length:var(--fs-2xl)] leading-none opacity-60 hover:opacity-100" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>×</button>
         </div>
 
-        <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+        <div className="text-[length:var(--fs-md)] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(56,189,248,0.10)' : '#f0f7ff', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
           <span className="font-semibold">AIMUX 是什么：</span>AIMUX 是莫比乌斯系统的触手：它负责把任意计算机（Windows / Mac / Linux）接入莫比乌斯中枢，形成协作网络，从而完成复杂跨设备任务。AIMUX专门针对 <strong>缺SSH/SSH不可达</strong> 的桌面笔记本、工作站、嵌入式设备、网络受限设备设计。
         </div>
 
         {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
-          <div className="text-[12px] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(16,185,129,0.10)' : '#f0fdf4', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+          <div className="text-[length:var(--fs-md)] mb-3 p-3 rounded-lg leading-relaxed" style={{ background: theme !== 'light' ? 'rgba(16,185,129,0.10)' : '#f0fdf4', color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
             您正在使用桌面客户端，<strong>已自动连接</strong>，无需手动连接。当您需要连接更多<strong>其他</strong>计算机时，可在<strong>其他</strong>设备上运行下面的命令。
           </div>
         )}
@@ -4327,17 +4336,17 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
 
         {renderSectionTitle('2. 启动连接')}
         <div className="mb-2">
-          <div className="text-[11px] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( 给您的计算机起一个绰号，作为辨识名称。 )</div>
+          <div className="text-[length:var(--fs-sm)] mb-1" style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>identifier ( 给您的计算机起一个绰号，作为辨识名称。 )</div>
           <input
             value={identifier}
             onChange={e => handleIdentifierChange(e.target.value)}
             placeholder={defaultIdentifier}
             spellCheck={false}
             autoComplete="off"
-            className="w-full h-8 px-3 rounded-xl text-[13px] font-mono border outline-none focus:border-blue-400"
+            className="w-full h-8 px-3 rounded-xl text-[length:var(--fs-lg)] font-mono border outline-none focus:border-blue-400"
             style={{ background: 'var(--modal-bg)', color: 'var(--text-primary)', borderColor: 'var(--input-border)' }} />
         </div>
-        <div className="text-[11px] mb-2 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+        <div className="text-[length:var(--fs-sm)] mb-2 space-y-1" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
           <div>
             <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>--identifier</code> 改成你想要的名字 (字母/数字/_.-)
           </div>
@@ -4348,32 +4357,32 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         {renderCodeBlock('connect', connectCmd)}
 
         {renderSectionTitle('3. 在 mobius 中验证')}
-        <div className="text-[12px] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+        <div className="text-[length:var(--fs-md)] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
           连接成功后, 该机器会出现在下方列表 (每 3 秒刷新)
         </div>
 
         <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-color)' }}>
-          <div className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ background: 'var(--bg-card-hover)', color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>
+          <div className="flex items-center justify-between px-3 py-1.5 text-[length:var(--fs-sm)]" style={{ background: 'var(--bg-card-hover)', color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>
             <span>已连接的 bridge clients ({remotes.length})</span>
             <span>每 3 秒刷新</span>
           </div>
           {remotesErr ? (
-            <div className="px-3 py-3 text-[12px]" style={{ color: '#ef4444' }}>{remotesErr}</div>
+            <div className="px-3 py-3 text-[length:var(--fs-md)]" style={{ color: '#ef4444' }}>{remotesErr}</div>
           ) : remotes.length === 0 ? (
-            <div className="px-3 py-3 text-[12px]" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+            <div className="px-3 py-3 text-[length:var(--fs-md)]" style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
               暂无 client 连接. 在外部机器上执行上面的命令, 几秒后这里会出现它
             </div>
           ) : (
             <div className="max-h-[180px] overflow-y-auto">
               {remotes.map((r, i) => (
-                <div key={r.name + i} className="flex items-center gap-2 px-3 py-1.5 text-[12px]" style={{ borderTop: i > 0 ? '1px solid var(--border-color)' : 'none' }}>
+                <div key={r.name + i} className="flex items-center gap-2 px-3 py-1.5 text-[length:var(--fs-md)]" style={{ borderTop: i > 0 ? '1px solid var(--border-color)' : 'none' }}>
                   <span className={r.status === 'connected' ? 'w-1.5 h-1.5 rounded-full bg-green-500' : 'w-1.5 h-1.5 rounded-full bg-gray-400'} />
                   <span className="font-mono" style={{ color: theme !== 'light' ? '#e2e8f0' : '#1e293b' }}>{r.name}</span>
                   <span className="opacity-50">·</span>
                   <span style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{r.platform || '?'}</span>
                   <span className="opacity-50">·</span>
                   <span style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{r.default_profile || '?'}</span>
-                  <span className="ml-auto text-[10px]" style={{ color: r.status === 'connected' ? '#22c55e' : '#94a3b8' }}>{r.status}</span>
+                  <span className="ml-auto text-[length:var(--fs-xs)]" style={{ color: r.status === 'connected' ? '#22c55e' : '#94a3b8' }}>{r.status}</span>
                 </div>
               ))}
             </div>
@@ -4381,17 +4390,17 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {renderSectionTitle('4. 赋能智能体连接能力')}
-        <div className="text-[12px] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
+        <div className="text-[length:var(--fs-md)] mb-2" style={{ color: theme !== 'light' ? '#cbd5e1' : '#334155' }}>
           在与智能体对话时, 复制粘贴以下话术, 赋能智能体连接能力 (话术里的名称会随第 2 步输入实时更新)
         </div>
         {renderCodeBlock('announce', announceText)}
 
-        <div className="mt-4 pt-3 border-t text-[11px] space-y-1" style={{ borderColor: 'var(--border-color)', color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
+        <div className="mt-4 pt-3 border-t text-[length:var(--fs-sm)] space-y-1" style={{ borderColor: 'var(--border-color)', color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
           <div>endpoint: <code className="px-1 rounded" style={{ background: 'var(--bg-card-hover)' }}>{baseUrl}</code> ({displayProto.toUpperCase()} · host: {browserHost} · port: {displayPort})</div>
         </div>
 
         <div className="flex justify-end mt-5">
-          <button onClick={onClose} className="h-9 px-5 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border transition-colors"
+          <button onClick={onClose} className="h-9 px-5 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border transition-colors"
             style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>关闭</button>
         </div>
       </div>
@@ -4469,7 +4478,7 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
 
   const scopeButton = (s: 'user' | 'project', label: string, disabled = false) => (
     <button onClick={() => !disabled && setScope(s)} disabled={disabled}
-      className={`flex-1 h-9 rounded-lg text-[12px] border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+      className={`flex-1 h-9 rounded-lg text-[length:var(--fs-md)] border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
         scope === s
           ? (isDark ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' : 'bg-rose-500/10 text-rose-700 border-rose-500/30')
           : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)]'
@@ -4485,10 +4494,10 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
         onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
-            <span className="text-rose-400 text-[14px]">📌</span>
-            <h3 className="text-[14px] font-semibold" style={{ color: textPrimary }}>沉淀为 Memory</h3>
+            <span className="text-rose-400 text-[length:var(--fs-xl)]">📌</span>
+            <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: textPrimary }}>沉淀为 Memory</h3>
             {!turnsLoading && (
-              <span className="text-[10px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
+              <span className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
                 {turnsCount === 0 ? '会话暂无轮次' :
                   `已拼入 ${turnsCount} 轮完整对话` + (summaryCount > 0 ? ` (含 ${summaryCount} 条 hook 摘要)` : '')}
               </span>
@@ -4500,7 +4509,7 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-          <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{
+          <div className="rounded-lg p-3 text-[length:var(--fs-sm)] leading-relaxed" style={{
             background: isDark ? 'rgba(244,63,94,0.06)' : 'rgba(244,63,94,0.04)',
             border: `1px solid ${isDark ? 'rgba(244,63,94,0.25)' : 'rgba(244,63,94,0.2)'}`,
             color: isDark ? '#fda4af' : '#9f1239',
@@ -4509,31 +4518,31 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
           </div>
 
           <div>
-            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>Memory 名称 (必填)</label>
+            <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: textMuted }}>Memory 名称 (必填)</label>
             <input value={name} onChange={e => { setName(e.target.value); setErr('') }}
-              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
+              className="w-full px-3 py-2 rounded-lg text-[length:var(--fs-md)] focus:outline-none focus:border-blue-500/30"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary }} />
           </div>
 
           <div>
-            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>简介 (可选, 用于列表展示)</label>
+            <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: textMuted }}>简介 (可选, 用于列表展示)</label>
             <input value={desc} onChange={e => { setDesc(e.target.value); setErr('') }}
               placeholder="例: 调试 SSO 重定向 loop 的根因和修复路径"
-              className="w-full px-3 py-2 rounded-lg text-[12px] focus:outline-none focus:border-blue-500/30"
+              className="w-full px-3 py-2 rounded-lg text-[length:var(--fs-md)] focus:outline-none focus:border-blue-500/30"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary }} />
           </div>
 
           <div>
-            <label className="text-[11px] mb-1 block" style={{ color: textMuted }}>正文 (草稿已预填,可任意改写)</label>
+            <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: textMuted }}>正文 (草稿已预填,可任意改写)</label>
             <textarea value={body} onChange={e => { setBody(e.target.value); setErr('') }}
               disabled={turnsLoading}
-              className="w-full px-3 py-2 rounded-lg text-[12px] font-mono leading-snug resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-50"
+              className="w-full px-3 py-2 rounded-lg text-[length:var(--fs-md)] font-mono leading-snug resize-y focus:outline-none focus:border-blue-500/30 disabled:opacity-50"
               rows={22}
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: textPrimary, maxHeight: '50vh' }} />
           </div>
 
           <div>
-            <label className="text-[11px] mb-1.5 block" style={{ color: textMuted }}>保存到</label>
+            <label className="text-[length:var(--fs-sm)] mb-1.5 block" style={{ color: textMuted }}>保存到</label>
             <div className="flex gap-2">
               {scopeButton('user', '用户级 (仅我可见)')}
               {scopeButton('project', '项目级' + (projectId ? '' : ' (无项目)'), !projectId)}
@@ -4541,13 +4550,13 @@ export function SinkAsMemoryModal({ sessionId, sessionName, projectId, onClose, 
           </div>
         </div>
 
-        {err && <div className="px-6 pb-2 text-[12px] text-red-400">{err}</div>}
+        {err && <div className="px-6 pb-2 text-[length:var(--fs-md)] text-red-400">{err}</div>}
         <div className="px-6 py-3 border-t flex justify-end gap-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-          <button onClick={onClose} className="h-9 px-4 rounded-lg text-[12px] border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
+          <button onClick={onClose} className="h-9 px-4 rounded-lg text-[length:var(--fs-md)] border" style={{ borderColor: 'var(--input-border)', color: textMuted }}>
             取消
           </button>
           <button onClick={submit} disabled={saving || turnsLoading}
-            className="h-9 px-4 rounded-lg text-[12px] text-white bg-rose-500 hover:bg-rose-600 transition-colors disabled:opacity-40">
+            className="h-9 px-4 rounded-lg text-[length:var(--fs-md)] text-white bg-rose-500 hover:bg-rose-600 transition-colors disabled:opacity-40">
             {saving ? '保存中...' : '沉淀'}
           </button>
         </div>

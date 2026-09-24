@@ -63,15 +63,15 @@ function InitialBlockRow({ block }: { block: InitialContextBlock }) {
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       className="group rounded-md transition-colors hover:bg-[var(--bg-hover)]"
     >
-      <summary className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[11px] select-none">
+      <summary className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-[length:var(--fs-sm)] select-none">
         <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded bg-[var(--initial-accent-soft)]">
           <Icon className="h-3 w-3 text-[var(--initial-accent-text)]" strokeWidth={2.2} aria-hidden="true" />
         </span>
         <span className="flex-shrink-0 font-medium text-[var(--text-secondary)]">{meta.label}</span>
-        <span className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--text-muted)]" title={blockPreview(block)}>
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)] text-[var(--text-muted)]" title={blockPreview(block)}>
           {blockPreview(block)}
         </span>
-        <span className="flex-shrink-0 font-mono text-[9px] text-[var(--text-dimmed)]">{block.lineCount} 行</span>
+        <span className="flex-shrink-0 font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)]">{block.lineCount} 行</span>
         <ChevronDown
           className="h-3 w-3 flex-shrink-0 text-[var(--text-dimmed)] transition-transform group-open:rotate-180"
           strokeWidth={2.2}
@@ -80,7 +80,7 @@ function InitialBlockRow({ block }: { block: InitialContextBlock }) {
       </summary>
       {open && block.body && (
         <div className="mx-1.5 mb-1 mt-0.5 rounded-md border border-[var(--border-color)] bg-[var(--prose-bg)] px-2.5 py-2">
-          <div className="max-h-[46vh] overflow-y-auto text-[12px] leading-relaxed">
+          <div className="max-h-[46vh] overflow-y-auto text-[length:var(--fs-md)] leading-relaxed">
             <Suspense fallback={<CompactPlainTextFallback text={block.body} />}>
               <CompactMarkdown text={block.body} />
             </Suspense>
@@ -100,10 +100,10 @@ export function JsonEntryInitialCard({ match }: { match: InitialContextMatch }) 
         <div className="rounded-lg border border-[var(--initial-accent-border)] bg-[var(--initial-question-bg)] px-3 py-2">
           <div className="mb-1.5 flex items-center gap-1.5">
             <UserRound className="h-3.5 w-3.5 flex-shrink-0 text-[var(--initial-accent)]" strokeWidth={2.4} aria-hidden="true" />
-            <span className="text-[10px] font-semibold tracking-wide text-[var(--initial-accent-text)]">用户的初始请求</span>
-            <span className="ml-auto font-mono text-[9px] text-[var(--text-dimmed)]">{questionLines} 行</span>
+            <span className="text-[length:var(--fs-xs)] font-semibold tracking-wide text-[var(--initial-accent-text)]">用户的初始请求</span>
+            <span className="ml-auto font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)]">{questionLines} 行</span>
           </div>
-          <div className="max-h-[46vh] overflow-y-auto text-[12.5px] leading-relaxed">
+          <div className="max-h-[46vh] overflow-y-auto text-[length:var(--fs-md)] leading-relaxed">
             <Suspense fallback={<CompactPlainTextFallback text={match.question} />}>
               <CompactMarkdown text={match.question} />
             </Suspense>
@@ -114,8 +114,8 @@ export function JsonEntryInitialCard({ match }: { match: InitialContextMatch }) 
         <div>
           <div className="mb-1 flex items-center gap-2 px-1.5">
             <BookOpen className="h-3 w-3 flex-shrink-0 text-[var(--text-muted)]" strokeWidth={2.2} aria-hidden="true" />
-            <span className="flex-shrink-0 text-[10px] font-semibold text-[var(--text-secondary)]">注入上下文</span>
-            <span className="flex-shrink-0 font-mono text-[9px] text-[var(--text-dimmed)]">
+            <span className="flex-shrink-0 text-[length:var(--fs-xs)] font-semibold text-[var(--text-secondary)]">注入上下文</span>
+            <span className="flex-shrink-0 font-mono text-[length:var(--fs-2xs)] text-[var(--text-dimmed)]">
               {match.blocks.length} 块 · {totalChars.toLocaleString()} 字符{match.language === 'en' ? ' · EN' : ''}
             </span>
             <span className="h-px min-w-4 flex-1 bg-[var(--border-color)]" />
@@ -128,7 +128,7 @@ export function JsonEntryInitialCard({ match }: { match: InitialContextMatch }) 
         </div>
       )}
       {!match.question && match.blocks.length === 0 ? (
-        <div className="px-1.5 py-1 text-[11px] text-[var(--text-muted)]">
+        <div className="px-1.5 py-1 text-[length:var(--fs-sm)] text-[var(--text-muted)]">
           <CompactPlainTextFallback text={match.raw} />
         </div>
       ) : null}

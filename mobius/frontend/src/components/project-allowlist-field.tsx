@@ -18,7 +18,7 @@ export function ProjectAllowlistField({
   const active = visibility === 'allowlist'
   return (
     <div>
-      <label className="block text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>
+      <label className="block text-[length:var(--fs-sm)] mb-1" style={{ color: 'var(--text-muted)' }}>
         添加用户
         {!active && (
           <span className="ml-1.5" style={{ color: 'var(--text-muted)' }}>
@@ -34,7 +34,7 @@ export function ProjectAllowlistField({
         emptyHint={active ? '点击选择用户，或输入用户名搜索' : '允许名单当前不生效'}
       />
       {selectedIds.length > 0 && (
-        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[length:var(--fs-sm)] mt-1" style={{ color: 'var(--text-muted)' }}>
           在「指定用户」可见性下，项目创建者、管理员和名单中的用户可见。
         </p>
       )}

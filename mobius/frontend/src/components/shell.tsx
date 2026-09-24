@@ -8,7 +8,7 @@ import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
 import type { AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
-import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, Type, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -241,7 +241,7 @@ function DiskIndicator() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M7.5 17.25h.01M10.5 17.25h.01" />
       </svg>
-      <span className="text-[12px] tabular-nums font-medium">
+      <span className="text-[length:var(--fs-md)] tabular-nums font-medium">
         {pct != null ? `${pct}%` : '--'}
       </span>
     </TopNavActionElement>
@@ -277,7 +277,7 @@ function MemoryIndicator() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
           d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z" />
       </svg>
-      <span className="text-[12px] tabular-nums font-medium">
+      <span className="text-[length:var(--fs-md)] tabular-nums font-medium">
         {pct != null ? `${pct}%` : '--'}
       </span>
     </TopNavActionElement>
@@ -324,12 +324,12 @@ function VersionIndicator() {
       className="max-w-[210px] select-none"
       title={title}
       style={{ color: 'var(--text-muted)' }}>
-      {/* <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
-      <span className="text-[12px] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
+      {/* <span className="text-[length:var(--fs-sm)] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>ver</span>
+      <span className="text-[length:var(--fs-md)] tabular-nums truncate" style={{ color: 'var(--text-secondary)' }}>
         {version}
       </span> */}
-      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>UP</span>
-      <span className="text-[11px] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>
+      <span className="text-[length:var(--fs-sm)] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>UP</span>
+      <span className="text-[length:var(--fs-sm)] font-medium tracking-wide" style={{ color: 'var(--text-muted)' }}>
         {uptime}
       </span>
     </TopNavActionElement>
@@ -382,15 +382,15 @@ function NavSwitcherPanel({
           value={search}
           onChange={e => onSearchChange(e.target.value)}
           placeholder="搜索..."
-          className="h-7 w-full rounded-md pl-7 pr-2 text-[12px] focus:outline-none"
+          className="h-7 w-full rounded-md pl-7 pr-2 text-[length:var(--fs-md)] focus:outline-none"
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
         />
       </div>
       <div className="overflow-y-auto">
         {loading ? (
-          <div className="px-2 py-3 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+          <div className="px-2 py-3 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : filtered.length === 0 ? (
-          <div className="px-2 py-3 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+          <div className="px-2 py-3 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
         ) : (
           filtered.map(item => (
             <LinklessRouteButton
@@ -408,7 +408,7 @@ function NavSwitcherPanel({
               />
               <span className="min-w-0 flex-1">
                 <span
-                  className="block truncate text-[12px] font-medium leading-5"
+                  className="block truncate text-[length:var(--fs-md)] font-medium leading-5"
                   style={{
                     color: item.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)',
                     textDecoration: item.status === 'completed' ? 'line-through' : undefined,
@@ -417,7 +417,7 @@ function NavSwitcherPanel({
                   {item.label}
                 </span>
                 {item.meta && (
-                  <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{item.meta}</span>
+                  <span className="block truncate text-[length:var(--fs-xs)] leading-4" style={{ color: 'var(--text-muted)' }}>{item.meta}</span>
                 )}
               </span>
               {item.active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
@@ -606,13 +606,13 @@ function RecentSessionsPanel({
       <div className="flex items-center justify-between gap-2 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
         <div className="flex min-w-0 items-center gap-2">
           <History className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
-          <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
+          <span className="text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>近期活跃会话</span>
         </div>
         <LinklessRouteButton
           to={`/u/${userParam}/mobius_overview_cluster`}
           onClick={onPick}
           title="系统可视化 · 查看全局会话集群图谱"
-          className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium leading-none transition-colors hover:bg-[var(--bg-hover)]"
+          className="inline-flex flex-shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] font-medium leading-none transition-colors hover:bg-[var(--bg-hover)]"
           style={{ color: 'var(--text-secondary)' }}
         >
           <Network className="h-3.5 w-3.5" />
@@ -624,7 +624,7 @@ function RecentSessionsPanel({
           <button
             type="button"
             onClick={() => setSelectedProject(null)}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] leading-none transition-colors"
             style={projectChipStyle(effectiveProject === null)}
           >
             <span>全部</span>
@@ -635,7 +635,7 @@ function RecentSessionsPanel({
               type="button"
               onClick={() => setSelectedProject(p.id)}
               title={p.name}
-              className="inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors"
+              className="inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] leading-none transition-colors"
               style={projectChipStyle(effectiveProject === p.id)}
             >
               <span className="truncate">{p.name}</span>
@@ -646,11 +646,11 @@ function RecentSessionsPanel({
       )}
       <div className="flex-1 min-h-0 overflow-y-auto py-1">
         {loading ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+          <div className="px-3 py-6 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : error ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{error}</div>
+          <div className="px-3 py-6 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{error}</div>
         ) : visibleSessions.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
+          <div className="px-3 py-6 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
         ) : (
           <div aria-label="按项目与任务分组的近期活跃会话" data-testid="normal-recent-session-tree">
             {visibleGroups.map(group => {
@@ -676,12 +676,12 @@ function RecentSessionsPanel({
                       {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
-                      <span className="block truncate text-[11px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                      <span className="block truncate text-[length:var(--fs-2xs)] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                      <span className="block truncate text-[length:var(--fs-sm)] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
                     </span>
                     <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
-                      <span className="text-[8px] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
-                      <span className="text-[8px] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                      <span className="text-[length:var(--fs-2xs)] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
+                      <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
                         {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
                       </span>
                     </span>
@@ -714,15 +714,15 @@ function RecentSessionsPanel({
                           <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
                           <span className="min-w-0 flex-1">
                             <span className="flex min-w-0 items-center gap-1">
-                              <span className="flex-shrink-0 rounded px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
-                              <span className="min-w-0 flex-1 truncate text-[10px] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
+                              <span className="flex-shrink-0 rounded px-1 py-0.5 text-[length:var(--fs-2xs)] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
+                              <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
                             </span>
-                            <span className="mt-0.5 flex items-center gap-1.5 text-[8px] leading-3" style={{ color: 'var(--text-muted)' }}>
+                            <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--fs-2xs)] leading-3" style={{ color: 'var(--text-muted)' }}>
                               <span>{timeAgoPrecise(session.last_active || '')}</span>
                               <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
                             </span>
                           </span>
-                          <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[8px] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
+                          <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[length:var(--fs-2xs)] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
                           {active && <Check className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
                         </LinklessRouteButton>
                       )
@@ -812,6 +812,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showRecentSessions, setShowRecentSessions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
+  const [showFontSettings, setShowFontSettings] = useState(false)
   // 调色盘里的主题列表与当前激活 id — 在下拉菜单和顶栏按钮里都用到.
   // 每次打开菜单 / 关闭调色盘 / 主题切换时刷新, 避免在下拉里看到陈旧数据.
   const [customThemes, setCustomThemes] = useState<CustomTheme[]>([])
@@ -1062,7 +1063,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             >
               {!branding.hideLogo && <MobiusLogo size={28} />}
               {/* {branding.systemNameEn && (
-                <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                <span className="mobius-topnav-brandtext font-semibold text-[length:var(--fs-xl)] tracking-tight" style={{ color: 'var(--text-primary)' }}>
                   {branding.systemNameEn}
                 </span>
               )} */}
@@ -1077,22 +1078,22 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               />
             )}
           </div>
-          <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+          <span className="mobius-topnav-sep-pre text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>/</span>
           <LinklessRouteButton
             to={userParam ? `/u/${userParam}` : '/'}
             newTab
             aria-label="回到主页"
             title="回到主页"
-            className="mobius-topnav-userlink uppercase text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+            className="mobius-topnav-userlink uppercase text-[length:var(--fs-lg)] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
             {userParam}
           </LinklessRouteButton>
           {projectParam && (
             <>
-              <span className="mobius-topnav-sep-post text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <span className="mobius-topnav-sep-post text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>/</span>
               <div className="mobius-topnav-projectcrumb relative flex min-w-0 items-center">
                 <LinklessRouteButton to={`/u/${userParam}/p/${projectParam}`}
-                  className="uppercase text-[13px] hover:text-blue-400 truncate"
+                  className="uppercase text-[length:var(--fs-lg)] hover:text-blue-400 truncate"
                   style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
                   title={projectName}>
                   {projectName}
@@ -1123,7 +1124,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
           {issueParam && (
             <>
-              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <span className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>/</span>
               <div className="relative flex min-w-0 items-center">
                 <button
                   type="button"
@@ -1132,7 +1133,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   aria-label="切换任务"
                   aria-haspopup="menu"
                   aria-expanded={openSwitcher === 'issue'}
-                  className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
+                  className="flex min-w-0 items-center gap-0.5 text-[length:var(--fs-lg)] hover:text-blue-400"
                   style={{ color: 'var(--text-primary)' }}>
                   <span className="truncate" style={{ maxWidth: 270 }} title={issueTitle}>{issueTitle}</span>
                   <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${openSwitcher === 'issue' ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
@@ -1152,7 +1153,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
           {researchParam && (
             <>
-              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <span className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>/</span>
               <div className="relative flex min-w-0 items-center">
                 <button
                   type="button"
@@ -1161,7 +1162,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   aria-label="切换研究"
                   aria-haspopup="menu"
                   aria-expanded={openSwitcher === 'research'}
-                  className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
+                  className="flex min-w-0 items-center gap-0.5 text-[length:var(--fs-lg)] hover:text-blue-400"
                   style={{ color: 'var(--text-primary)' }}>
                   <span className="truncate" style={{ maxWidth: 270 }} title={researchTitle}>{researchTitle}</span>
                   <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${openSwitcher === 'research' ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
@@ -1215,7 +1216,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 data-tour="top-search"
                 className="mobius-search-trigger">
                 <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-                {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
+                {/* {!isMobile && <span className="mobius-topnav-search-label text-[length:var(--fs-md)] font-medium">搜索</span>} */}
               </TopNavActionElement>
               {/* 系统可视化入口 — 固定在搜索按钮右侧，沿用当前用户路由上下文。 */}
               <TopNavActionElement
@@ -1265,7 +1266,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               className="max-w-[128px] min-w-0 justify-center"
             >
               {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} /> : <Sliders className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />}
-              <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>外观</span>
+              <span className="mobius-topnav-theme-label min-w-0 max-w-[80px] truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-secondary)' }}>外观</span>
             </TopNavActionElement>
             {showThemeMenu && (
               <div
@@ -1292,8 +1293,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                         ))}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[12px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{option.label}</span>
-                        <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{option.description}</span>
+                        <span className="block text-[length:var(--fs-md)] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{option.label}</span>
+                        <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>{option.description}</span>
                       </span>
                       {selected ? <Check className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-secondary)' }} /> : null}
                     </button>
@@ -1310,8 +1311,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 >
                   <WavesHorizontal className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">背景光流</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    <span className="block text-[length:var(--fs-md)] font-semibold leading-4">背景光流</span>
+                    <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>
                       缓慢色彩流动 · {backgroundFlowEnabled ? '已开启' : '已关闭'}
                     </span>
                   </span>
@@ -1343,8 +1344,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 >
                   <CircleDot className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">小莫光点</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    <span className="block text-[length:var(--fs-md)] font-semibold leading-4">小莫光点</span>
+                    <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>
                       浮动入口 · {assistantBubbleEnabled ? '已显示' : '已隐藏'}
                     </span>
                   </span>
@@ -1396,8 +1397,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 >
                   <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">简易模式</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    <span className="block text-[length:var(--fs-md)] font-semibold leading-4">简易模式</span>
+                    <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>
                       {'精简会话界面 · '}{sessionEasyEnabled ? '已开启' : '已关闭'}
                     </span>
                   </span>
@@ -1422,7 +1423,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 {customThemes.length > 0 && (
                   <>
                     <div className="my-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} />
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                    <div className="px-2 py-1 text-[length:var(--fs-xs)] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                       自定义主题
                     </div>
                     {customThemes.map(t => {
@@ -1448,8 +1449,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                             <span className="flex-1" style={{ background: accent }} />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[12px] font-semibold leading-4 truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</span>
-                            <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                            <span className="block text-[length:var(--fs-md)] font-semibold leading-4 truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</span>
+                            <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>
                               基于「{getBaseOption(t.base).label}」· {Object.keys(t.overrides).length} 个覆写
                             </span>
                           </span>
@@ -1468,8 +1469,20 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 >
                   <Palette className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] font-semibold leading-4">调色盘</span>
-                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>自由调节主题颜色 · 保存到浏览器</span>
+                    <span className="block text-[length:var(--fs-md)] font-semibold leading-4">调色盘</span>
+                    <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>自由调节主题颜色 · 保存到浏览器</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowThemeMenu(false); setShowFontSettings(true) }}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <Type className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[length:var(--fs-md)] font-semibold leading-4">字体设置</span>
+                    <span className="block truncate text-[length:var(--fs-sm)] leading-4" style={{ color: 'var(--text-muted)' }}>七档字号统一调节 · 保存到浏览器</span>
                   </span>
                 </button>
               </div>
@@ -1487,7 +1500,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               aria-expanded={showUserMenu}
               onClick={(e: any) => { e.stopPropagation(); setShowUserMenu((s) => !s) }}>
               {isMobile && <UserRound className="h-4 w-4" strokeWidth={2} />}
-              {!isMobile && <span className="text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
+              {!isMobile && <span className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>}
               {!isMobile && <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
             </TopNavActionElement>
             {showUserMenu && (
@@ -1496,7 +1509,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 onClick={e => e.stopPropagation()}>
                 {user?.role === 'admin' && (
                   <button onClick={() => { setShowUserMenu(false); window.openAdminOverlay?.() }}
-                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                    className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                     style={{ color: 'var(--text-primary)' }}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0h-6m6 0v-6a2 2 0 012-2h2a2 2 0 012 2v6m-6 0h6" /></svg>
                     管理中心
@@ -1504,43 +1517,43 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                 )}
                 <div className="border-t my-0.5" style={{ borderColor: 'var(--border-color)' }} />
                 <button onClick={() => { setShowUserMenu(false); setShowAimuxGuide(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                   AIMUX 连接指引
                 </button>
                 <button onClick={() => { setShowUserMenu(false); setShowDesktopDownload(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
                   下载桌面客户端
                 </button>
                 <button onClick={() => { setShowUserMenu(false); setShowTerminalInstall(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 17l6-6-6-6m8 12h8" /></svg>
                   下载命令行终端
                 </button>
                 <button onClick={() => { setShowUserMenu(false); setShowMobileDownload(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
                   下载移动端 App
                 </button>
                 <button onClick={() => { setShowUserMenu(false); setShowChangePw(true) }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                   修改密码
                 </button>
                 <button onClick={() => { setShowUserMenu(false); toggleTheme() }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 md:hidden"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2 md:hidden"
                   style={{ color: 'var(--text-primary)' }}>
                   <Palette className="w-3.5 h-3.5" />
                   切换主题
                 </button>
                 <button onClick={() => { setShowUserMenu(false); logout(); navigate('/') }}
-                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-red-500/10 flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-red-500/10 flex items-center gap-2"
                   style={{ color: '#ef4444' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                   退出登录
@@ -1565,6 +1578,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {showTerminalInstall && <TerminalInstallModal onClose={() => setShowTerminalInstall(false)} />}
         {showMobileDownload && <MobileDownloadModal onClose={() => setShowMobileDownload(false)} />}
         {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
+        {showFontSettings && <FontSettingsModal onClose={() => setShowFontSettings(false)} />}
         {showSearch && (
           <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
         )}
@@ -1606,6 +1620,8 @@ const TerminalInstallModal = lazyWithRetry(() => import('./modals').then(module 
 const GlobalCreateRoot = lazyWithRetry(() => import('./global-create').then(module => ({ default: module.GlobalCreateRoot })))
 const SearchModal = lazyWithRetry(() => import('./search-modal').then(module => ({ default: module.SearchModal })))
 const CustomThemePalette = lazyWithRetry(() => import('./custom-theme-palette').then(module => ({ default: module.CustomThemePalette })))
+// 字体设置弹窗 (外观菜单入口) — 同样懒加载, 打开时才下载
+const FontSettingsModal = lazyWithRetry(() => import('./font-settings-modal').then(module => ({ default: module.FontSettingsModal })))
 
 // 全局打开 overlay 的函数 (供外部按钮触发, 如「监控」「配置」入口直接落到对应 tab).
 // 可选 tab: 传入即直接落到该 tab (例如「监控」按钮传 'runtime' = 运行监控), 不传则用管理中心默认 tab.
@@ -1647,7 +1663,7 @@ function OverlayPanels() {
 export function Loading({ text = '加载中...' }: { text?: string } = {}) {
   return (
     <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
-      <div className="text-[13px]">{text}</div>
+      <div className="text-[length:var(--fs-lg)]">{text}</div>
     </div>
   )
 }

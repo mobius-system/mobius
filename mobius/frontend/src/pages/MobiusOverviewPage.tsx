@@ -327,12 +327,12 @@ function GraphNodeButton({
         style={{ background: selected ? 'var(--bg-active)' : 'transparent' }}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-[12px] font-semibold leading-4">{node.title}</span>
-          {/* <span className="flex-shrink-0 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+          <span className="truncate text-[length:var(--fs-md)] font-semibold leading-4">{node.title}</span>
+          {/* <span className="flex-shrink-0 text-[length:var(--fs-xs)] leading-4" style={{ color: 'var(--text-muted)' }}>
             {kindLabel(node.kind, node.source?.research_role)}
           </span> */}
         </span>
-        <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-secondary)' }}>{meta}</span>
+        <span className="block truncate text-[length:var(--fs-xs)] leading-4" style={{ color: 'var(--text-secondary)' }}>{meta}</span>
       </span>
     </button>
   )
@@ -341,7 +341,7 @@ function GraphNodeButton({
 function InfoRow({ label, value }: { label: string; value: any }) {
   if (value === undefined || value === null || value === '') return null
   return (
-    <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 border-b py-2 text-[12px]" style={{ borderColor: 'var(--border-color)' }}>
+    <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 border-b py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)' }}>
       <div style={{ color: 'var(--text-muted)' }}>{label}</div>
       <div className="min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>{String(value)}</div>
     </div>
@@ -374,10 +374,10 @@ function DetailDrawer({
               <NodeIcon kind={node.kind} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-sm)] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 {kindLabel(node.kind, node.source?.research_role)}
               </div>
-              <h2 className="mt-1 break-words text-[16px] font-semibold leading-6" style={{ color: 'var(--text-primary)' }}>
+              <h2 className="mt-1 break-words text-[length:var(--fs-2xl)] font-semibold leading-6" style={{ color: 'var(--text-primary)' }}>
                 {node.title}
               </h2>
             </div>
@@ -394,7 +394,7 @@ function DetailDrawer({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {node.description && (
-              <div className="mb-4 rounded-lg border p-3 text-[12px] leading-5" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
+              <div className="mb-4 rounded-lg border p-3 text-[length:var(--fs-md)] leading-5" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
                 {node.description}
               </div>
             )}
@@ -411,12 +411,12 @@ function DetailDrawer({
             {node.kind === 'session' && (
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Agent</div>
-                  <div className="mt-1 text-[13px] font-semibold" style={{ color: nodeAccent(node.kind, node.source) }}>{statusLabel(node.source?.agent_status)}</div>
+                  <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>Agent</div>
+                  <div className="mt-1 text-[length:var(--fs-lg)] font-semibold" style={{ color: nodeAccent(node.kind, node.source) }}>{statusLabel(node.source?.agent_status)}</div>
                 </div>
                 <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-                  <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>成本</div>
-                  <div className="mt-1 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>成本</div>
+                  <div className="mt-1 text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                     ${Number(node.source?.total_cost_usd || 0).toFixed(4)}
                   </div>
                 </div>
@@ -429,7 +429,7 @@ function DetailDrawer({
               type="button"
               disabled={!path}
               onClick={() => path && navigate(path)}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-[length:var(--fs-lg)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               style={{ color: '#fff', background: path ? 'var(--accent-primary)' : 'var(--bg-hover)' }}
             >
               <ArrowUpRight className="h-4 w-4" />
@@ -703,8 +703,8 @@ export default function MobiusOverviewPage() {
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
-              <div className="text-[13px] font-semibold">Projects</div>
-              <div className="ml-auto rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+              <div className="text-[length:var(--fs-lg)] font-semibold">Projects</div>
+              <div className="ml-auto rounded-md px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
                 {visibleProjects.length}
               </div>
             </div>
@@ -713,7 +713,7 @@ export default function MobiusOverviewPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[12px] outline-none transition-colors focus:border-[var(--accent-primary)]"
+                className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[length:var(--fs-md)] outline-none transition-colors focus:border-[var(--accent-primary)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                 placeholder="搜索 Project"
               />
@@ -721,7 +721,7 @@ export default function MobiusOverviewPage() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {visibleProjects.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配项目</div>
+              <div className="px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>没有匹配项目</div>
             ) : (
               visibleProjects.map((project: any) => {
                 const active = project.id === selectedProject?.id
@@ -739,8 +739,8 @@ export default function MobiusOverviewPage() {
                       style={{ background: active ? 'var(--accent-primary)' : 'var(--text-muted)' }}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
-                      <span className="mt-0.5 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <span className="block truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
+                      <span className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                         <span>{compactCount(project.issue_count)} Issues</span>
                         <span>{compactCount(project.research_count)} Research</span>
                       </span>
@@ -758,8 +758,8 @@ export default function MobiusOverviewPage() {
               <Sparkles className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-semibold">{selectedProject?.name || '选择 Project'}</div>
-              <div className="mt-0.5 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[length:var(--fs-xl)] font-semibold">{selectedProject?.name || '选择 Project'}</div>
+              <div className="mt-0.5 flex items-center gap-3 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                 <span>{graph.nodes.filter((node) => node.kind === 'issue').length} Issues</span>
                 <span>{graph.nodes.filter((node) => node.kind === 'research').length} Research</span>
                 <span>{graph.nodes.filter((node) => node.kind === 'session').length} Sessions / Agents</span>
@@ -773,7 +773,7 @@ export default function MobiusOverviewPage() {
                     key={option.key}
                     type="button"
                     onClick={() => setTimeRange(option.key)}
-                    className="h-7 rounded px-2.5 text-[11px] font-medium transition-colors"
+                    className="h-7 rounded px-2.5 text-[length:var(--fs-sm)] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -798,7 +798,7 @@ export default function MobiusOverviewPage() {
                 type="button"
                 title="重置缩放"
                 onClick={resetViewport}
-                className="flex h-7 min-w-[54px] items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                className="flex h-7 min-w-[54px] items-center justify-center gap-1 rounded px-1.5 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-[var(--bg-hover)]"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 <RotateCcw className="h-3 w-3" />
@@ -815,12 +815,12 @@ export default function MobiusOverviewPage() {
               </button>
             </div>
             {isLoadingGraph && (
-              <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="flex items-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
                 加载中
               </div>
             )}
-            {error && <div className="max-w-[360px] truncate text-[12px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[360px] truncate text-[length:var(--fs-md)] text-red-400">{error}</div>}
           </div>
 
           <div
@@ -875,7 +875,7 @@ export default function MobiusOverviewPage() {
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'var(--card-bg)' }}
                 >
                   <Activity className="h-5 w-5 flex-shrink-0" />
-                  <div className="text-[12px] leading-5">这个 Project 在{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
+                  <div className="text-[length:var(--fs-md)] leading-5">这个 Project 在{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
                 </div>
               )}
             </div>

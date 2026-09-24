@@ -58,12 +58,12 @@ export function ToastCard({
       <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${TONE_ACCENT[tone]}`}>
         {icon}
       </div>
-      <div className="min-w-0 flex-1 text-sm font-medium leading-5">
+      <div className="min-w-0 flex-1 text-[length:var(--fs-xl)] font-medium leading-5">
         <div className="truncate">{title}</div>
-        {subtitle ? <div className="truncate text-xs font-normal opacity-80">{subtitle}</div> : null}
+        {subtitle ? <div className="truncate text-[length:var(--fs-md)] font-normal opacity-80">{subtitle}</div> : null}
       </div>
       {clickable && actionLabel ? (
-        <span className="flex-shrink-0 text-xs font-semibold text-emerald-400">{actionLabel}</span>
+        <span className="flex-shrink-0 text-[length:var(--fs-md)] font-semibold text-emerald-400">{actionLabel}</span>
       ) : null}
       {typeof onClose === 'function' ? (
         <button

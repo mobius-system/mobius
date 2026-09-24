@@ -152,7 +152,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
               title="更多"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] transition-colors ${
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-md)] transition-colors ${
                 activeInOverflow ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'
               }`}
               style={!activeInOverflow ? { color: 'var(--text-muted)' } : undefined}
@@ -174,7 +174,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
                     disabled={t.disabled}
                     title={t.title}
                     onClick={() => { onSelect(t.key); setMenuOpen(false) }}
-                    className={`inline-flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[length:var(--fs-md)] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                       t.active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'
                     }`}
                     style={!t.active ? { color: 'var(--text-secondary)' } : undefined}
@@ -188,7 +188,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
         )}
       </div>
 
-      {/* 测量层: 所有 tab + ⋯ 按钮的不可见副本, 仅供 offsetWidth 读真实宽度. class 镜像可视 tab 的尺寸 (h-7/px-3/text-[12px]) 和 ⋯ 按钮 (h-7/px-2). */}
+      {/* 测量层: 所有 tab + ⋯ 按钮的不可见副本, 仅供 offsetWidth 读真实宽度. class 镜像可视 tab 的尺寸 (h-7/px-3/text-[length:var(--fs-md)]) 和 ⋯ 按钮 (h-7/px-2). */}
       <div
         aria-hidden
         className="pointer-events-none absolute flex items-center gap-1"
@@ -203,7 +203,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
               if (el) measureTabEls.current.set(t.key, el)
               else measureTabEls.current.delete(t.key)
             }}
-            className="h-7 shrink-0 rounded-md px-3 text-[12px] whitespace-nowrap"
+            className="h-7 shrink-0 rounded-md px-3 text-[length:var(--fs-md)] whitespace-nowrap"
           >
             {t.label}
           </button>
@@ -212,7 +212,7 @@ export function ProjectOverflowTabs({ tabs, onSelect, className = '', style }: P
           type="button"
           tabIndex={-1}
           ref={measureMoreRef}
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[12px] whitespace-nowrap"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[length:var(--fs-md)] whitespace-nowrap"
         >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>

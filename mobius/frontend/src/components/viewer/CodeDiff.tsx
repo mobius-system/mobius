@@ -123,7 +123,7 @@ export function JsonEntryCodeDiff({ edit }: { edit: CodeEdit }) {
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
       {fileRows.map(({ file, rows }, index) => (
         <div key={`${file.filePath || index}-${index}`} className={index > 0 ? 'border-t border-[var(--border-color)]' : ''}>
-          <div className="flex min-w-0 items-center gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+          <div className="flex min-w-0 items-center gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[length:var(--fs-xs)]">
             <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]" title={file.filePath || undefined}>
               {file.filePath ? basename(file.filePath) : 'Edit'}
             </span>
@@ -132,7 +132,7 @@ export function JsonEntryCodeDiff({ edit }: { edit: CodeEdit }) {
             <span className="flex-shrink-0 font-mono text-emerald-700 dark:text-emerald-300">+{file.kind === 'unified' ? file.addedLineCount : file.newLineCount}</span>
           </div>
           <div className="max-h-[34rem] overflow-auto">
-            <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+            <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
               <CodeDiffRows rows={rows} />
             </div>
           </div>

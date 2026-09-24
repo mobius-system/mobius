@@ -98,7 +98,7 @@ export function EasySessionToolBar({ children, label = '会话工具', disabled 
             onMouseDown={event => event.stopPropagation()}
           >
             <header className="flex flex-shrink-0 items-center justify-between gap-2 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
-              <span className="min-w-0 truncate text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>{panelLabel}</span>
+              <span className="min-w-0 truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{panelLabel}</span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}

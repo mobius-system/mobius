@@ -20,17 +20,17 @@ export function PendingQueueCard({ pending, onPauseToDequeue, easyMode = false }
   const count = pending.length
   return (
     <div
-      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-pending-queue-card--easy' : ''} border-amber-500/15 bg-amber-500/[0.05] px-3 py-2 flex items-center gap-2 text-[12px]`}
+      className={`mb-2 rounded-lg border card-enter jsonl-live-sweep ${easyMode ? 'jsonl-pending-queue-card--easy' : ''} border-amber-500/15 bg-amber-500/[0.05] px-3 py-2 flex items-center gap-2 text-[length:var(--fs-md)]`}
       style={{ ['--live-accent' as string]: '#fbbf24' } as CSSProperties}>
       <span className="relative inline-flex w-2 h-2 flex-shrink-0">
         <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />
         <span className="relative inline-flex rounded-full w-2 h-2 bg-amber-400" />
       </span>
       <span className="font-mono font-semibold text-amber-300 flex-shrink-0">排队</span>
-      <span className="flex-1 text-[11px] truncate" style={{ color: 'var(--text-muted)' }} title={last?.user_summary || undefined}>
+      <span className="flex-1 text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }} title={last?.user_summary || undefined}>
         {last?.user_summary || '(无内容)'}
       </span>
-      <span className="text-[10px] text-amber-300/80 font-mono flex-shrink-0">等 {count} 条指令</span>
+      <span className="text-[length:var(--fs-xs)] text-amber-300/80 font-mono flex-shrink-0">等 {count} 条指令</span>
       {onPauseToDequeue && (
         <button
           type="button"

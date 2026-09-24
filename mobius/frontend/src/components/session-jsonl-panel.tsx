@@ -415,7 +415,7 @@ function SessionJsonlPanelInner({
           {exclusiveContent == null ? (
             <VSCodeOpenProvider projectId={currentProjectId}>
               {variant === 'easy' ? (
-                <Suspense fallback={<div className="py-10 text-center text-[12px] text-[var(--text-muted)]">正在整理简易对话...</div>}>
+                <Suspense fallback={<div className="py-10 text-center text-[length:var(--fs-md)] text-[var(--text-muted)]">正在整理简易对话...</div>}>
                   <JsonlViewEasy
                     snapshot={historySnapshot}
                     store={historyStore}
@@ -469,7 +469,7 @@ function SessionJsonlPanelInner({
       </div>
       {exclusiveContent == null && hasNewMessages && hasScrollRoom && (
         <div className="flex justify-center py-1 flex-shrink-0">
-          <button onClick={onJumpToBottom} className="px-4 py-1.5 text-[12px] bg-blue-500/90 text-white rounded-full hover:bg-blue-500 transition-colors shadow-md flex items-center gap-1.5">
+          <button onClick={onJumpToBottom} className="px-4 py-1.5 text-[length:var(--fs-md)] bg-blue-500/90 text-white rounded-full hover:bg-blue-500 transition-colors shadow-md flex items-center gap-1.5">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
             新消息
           </button>
@@ -478,11 +478,11 @@ function SessionJsonlPanelInner({
       {exclusiveContent == null && searchHits.length > 0 && (searchHighlightActiveRef?.current || searchHighlightTargetRef?.current) && (
         <div className="flex justify-center py-1 flex-shrink-0">
           <div className="inline-flex items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-1.5 py-1 shadow-md" role="group" aria-label="搜索命中导航">
-            <span className="px-2 text-[11px] font-semibold text-red-100">查看命中</span>
-            <button type="button" onClick={onSearchHitJump} className="rounded-full px-2 py-1 text-[11px] font-medium text-red-200 hover:bg-red-500/20">跳转</button>
-            <button type="button" onClick={onSearchHitPrevious} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="上一个命中">上一个命中</button>
-            <button type="button" onClick={onSearchHitNext} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="下一个命中">下一个命中</button>
-            <button type="button" onClick={onSearchHitClear} className="rounded-full px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/20" aria-label="清除搜索结果">清除搜索结果</button>
+            <span className="px-2 text-[length:var(--fs-sm)] font-semibold text-red-100">查看命中</span>
+            <button type="button" onClick={onSearchHitJump} className="rounded-full px-2 py-1 text-[length:var(--fs-sm)] font-medium text-red-200 hover:bg-red-500/20">跳转</button>
+            <button type="button" onClick={onSearchHitPrevious} className="rounded-full px-2 py-1 text-[length:var(--fs-sm)] text-red-200 hover:bg-red-500/20" aria-label="上一个命中">上一个命中</button>
+            <button type="button" onClick={onSearchHitNext} className="rounded-full px-2 py-1 text-[length:var(--fs-sm)] text-red-200 hover:bg-red-500/20" aria-label="下一个命中">下一个命中</button>
+            <button type="button" onClick={onSearchHitClear} className="rounded-full px-2 py-1 text-[length:var(--fs-sm)] text-red-200 hover:bg-red-500/20" aria-label="清除搜索结果">清除搜索结果</button>
           </div>
         </div>
       )}

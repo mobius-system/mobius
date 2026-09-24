@@ -1668,7 +1668,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
     <div className="relative h-full min-h-[360px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
       <div ref={hostRef} className="absolute inset-0" />
       {agents.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-[13px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="absolute inset-0 flex items-center justify-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
           暂无 Agent
         </div>
       )}
@@ -1678,7 +1678,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
           {onDelete && deletableSelected && (
             <button type="button" onClick={() => onDelete(deletableSelected.id)}
               title="删除当前选中的 Agent"
-              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110"
+              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[length:var(--fs-md)] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110"
               style={{ borderColor: 'rgba(248,113,113,0.55)', background: theme === 'dark' ? 'rgba(248,113,113,0.2)' : 'rgba(248,113,113,0.95)', color: theme === 'dark' ? '#fca5a5' : '#ffffff' }}>
               <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
               删除
@@ -1687,7 +1687,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
           {onAdd && (
             <button type="button" onClick={onAdd} disabled={addDisabled}
               title={addDisabled ? '已达团队上限' : '添加 Agent'}
-              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[length:var(--fs-md)] font-medium shadow-lg backdrop-blur-sm transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               style={{ borderColor: 'rgba(16,185,129,0.55)', background: theme === 'dark' ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.95)', color: theme === 'dark' ? '#34d399' : '#ffffff' }}>
               <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
               添加

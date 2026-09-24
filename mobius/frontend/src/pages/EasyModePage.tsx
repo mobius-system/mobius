@@ -995,7 +995,7 @@ export default function EasyModePage() {
   }
 
   return (
-    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', fontSize: '11px' }} data-page="easy-mode">
+    <div className="flex h-screen flex-col" style={{ background: 'var(--bg-primary)', fontSize: 'var(--fs-sm)' }} data-page="easy-mode">
       <TopNav />
       <div className="flex min-h-0 flex-1">
         <ResizablePanel

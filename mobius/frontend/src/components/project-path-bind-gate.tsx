@@ -98,11 +98,11 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
         className="relative w-[460px] max-w-[calc(100vw-40px)] max-h-[calc(100vh-40px)] overflow-y-auto overscroll-contain rounded-[14px] p-[22px_24px] shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
       >
-        <h3 className="text-[16px] font-semibold mb-2.5">绑定本地工作路径</h3>
-        <p className="text-[13px] mb-3.5 break-words leading-relaxed whitespace-normal" style={{ color: 'var(--text-secondary)' }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2.5">绑定本地工作路径</h3>
+        <p className="text-[length:var(--fs-lg)] mb-3.5 break-words leading-relaxed whitespace-normal" style={{ color: 'var(--text-secondary)' }}>
           本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。绑定后即可在本机使用该项目；若只是想浏览，可先退出项目。
         </p>
-        <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>
+        <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>
         <div className="flex gap-2 mb-2">
           <input
             type="text"
@@ -110,27 +110,27 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
             autoFocus
             onChange={e => { setPath(e.target.value); setErr('') }}
             onKeyDown={e => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void confirm() } }}
-            className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[13px] outline-none focus:border-blue-500/40 font-mono"
+            className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[length:var(--fs-lg)] outline-none focus:border-blue-500/40 font-mono"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
           <button
             type="button"
             onClick={browse}
             disabled={busy}
-            className="h-9 shrink-0 px-3 rounded-lg text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 shrink-0 px-3 rounded-lg text-[length:var(--fs-lg)] flex items-center gap-1.5 disabled:opacity-50"
             style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}
           >
             <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.8} />
             浏览…
           </button>
         </div>
-        {err && <div className="text-[12px] mb-2" style={{ color: '#ef4444' }}>{err}</div>}
+        {err && <div className="text-[length:var(--fs-md)] mb-2" style={{ color: '#ef4444' }}>{err}</div>}
         <div className="flex items-center justify-between gap-2 mt-4">
           <button
             type="button"
             onClick={exitProject}
             disabled={busy}
-            className="h-9 px-3 rounded-[9px] text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 px-3 rounded-[9px] text-[length:var(--fs-lg)] flex items-center gap-1.5 disabled:opacity-50"
             style={{ color: 'var(--text-secondary)', border: '1px solid var(--input-border)', background: 'transparent' }}
           >
             <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -140,7 +140,7 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
             type="button"
             onClick={confirm}
             disabled={busy}
-            className="h-9 px-5 rounded-[9px] text-[14px] font-semibold text-white disabled:opacity-60"
+            className="h-9 px-5 rounded-[9px] text-[length:var(--fs-xl)] font-semibold text-white disabled:opacity-60"
             style={{ background: '#0a84ff' }}
           >
             {busy ? '处理中…' : '确认绑定'}

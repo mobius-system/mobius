@@ -113,7 +113,7 @@ export function CodeMirrorEditor({ fileName, value, skin, onChange, wrap = false
       theme={theme}
       extensions={extensions}
       height="100%"
-      style={{ height: '100%', fontSize: '12.5px' }}
+      style={{ height: '100%', fontSize: 'var(--fs-md)' }}
     />
   )
 }

@@ -1735,7 +1735,7 @@ function worldBounds(nodes: ClusterSession[], creatorClusters: CreatorCluster[] 
 function InfoRow({ label, value }: { label: string; value: any }) {
   if (value === undefined || value === null || value === '') return null
   return (
-    <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-3 border-b py-2 text-[12px]" style={{ borderColor: 'var(--border-color)' }}>
+    <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-3 border-b py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)' }}>
       <div style={{ color: 'var(--text-muted)' }}>{label}</div>
       <div className="min-w-0 break-words" style={{ color: 'var(--text-primary)' }}>{String(value)}</div>
     </div>
@@ -1767,10 +1767,10 @@ function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { s
               {selection.kind === 'creator' ? <UserRound className="h-4 w-4" /> : selection.kind === 'project' ? <GitBranch className="h-4 w-4" /> : selection.kind === 'issue' ? <CircleDot className="h-4 w-4" /> : selection.kind === 'research' ? <FlaskConical className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-sm)] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 {selectionKindLabel(selection)}
               </div>
-              <h2 className="mt-1 break-words text-[16px] font-semibold leading-6" style={{ color: 'var(--text-primary)' }}>
+              <h2 className="mt-1 break-words text-[length:var(--fs-2xl)] font-semibold leading-6" style={{ color: 'var(--text-primary)' }}>
                 {selection.title}
               </h2>
             </div>
@@ -1786,7 +1786,7 @@ function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { s
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {(selection.source?.description || selection.source?.summary) && (
-              <div className="mb-4 rounded-lg border p-3 text-[12px] leading-5" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
+              <div className="mb-4 rounded-lg border p-3 text-[length:var(--fs-md)] leading-5" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
                 {selection.source.description || selection.source.summary}
               </div>
             )}
@@ -1817,13 +1817,13 @@ function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { s
                 <InfoRow label="活跃会话" value={selection.cluster.sessions.length} />
                 {selection.kind === 'project' && <InfoRow label="活跃主题" value={selection.cluster.parents.length} />}
                 <div className="mt-4">
-                  <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>最近 Session / Agent</div>
+                  <div className="mb-2 text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-muted)' }}>最近 Session / Agent</div>
                   <div className="space-y-1">
                     {recentSessions.map((session) => (
                       <div key={session.id} className="flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--bg-hover)]">
                         <button type="button" onClick={() => navigate(getSelectionPath(userParam, { kind: session.kind, id: session.id, title: session.title, source: session.source, session }))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                           <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: sessionColor(session) }} />
-                          <span className="min-w-0 flex-1"><span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{session.title}</span><span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span></span>
+                          <span className="min-w-0 flex-1"><span className="block truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-primary)' }}>{session.title}</span><span className="block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{selection.kind === 'creator' ? `${session.projectName} · ` : ''}{session.parentTitle} · {timeAgoPrecise(session.activeAt || '')}</span></span>
                         </button>
                         {onShowConversation && <button type="button" title="显示对话浮窗" aria-label={`显示 ${session.title} 对话浮窗`} onClick={() => onShowConversation(session)} className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-active)] hover:text-[var(--accent-primary)]"><MessageSquare className="h-3.5 w-3.5" /></button>}
                       </div>
@@ -1835,7 +1835,7 @@ function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { s
           </div>
           <div className="border-t p-4" style={{ borderColor: 'var(--border-color)' }}>
             {selection && isSessionSelection(selection) && onShowConversation && (
-              <button type="button" onClick={() => onShowConversation(selection.session)} className="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-md border text-[12px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: `${color}66`, color }}>
+              <button type="button" onClick={() => onShowConversation(selection.session)} className="mb-2 flex h-9 w-full items-center justify-center gap-2 rounded-md border text-[length:var(--fs-md)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: `${color}66`, color }}>
                 <MessageSquare className="h-3.5 w-3.5" />显示对话浮窗
               </button>
             )}
@@ -1843,7 +1843,7 @@ function DetailDrawer({ selection, userParam, onClose, onShowConversation }: { s
               type="button"
               disabled={!path}
               onClick={() => path && navigate(path)}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-md text-[length:var(--fs-lg)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               style={{ color: '#fff', background: path ? 'var(--accent-primary)' : 'var(--bg-hover)' }}
             >
               <ArrowUpRight className="h-4 w-4" />
@@ -2706,9 +2706,9 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
-              <div className="text-[13px] font-semibold">Cluster Overview</div>
+              <div className="text-[length:var(--fs-lg)] font-semibold">Cluster Overview</div>
               <div className="ml-auto flex items-center gap-1">
-                <div className="rounded-md px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
+                <div className="rounded-md px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
                   {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
                 </div>
                 <button
@@ -2728,7 +2728,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
               <input
                 value={query}
                 onChange={(event) => handleQueryChange(event.target.value)}
-                className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[12px] outline-none transition-colors focus:border-[var(--accent-primary)]"
+                className="h-8 w-full rounded-md border bg-transparent pl-8 pr-2 text-[length:var(--fs-md)] outline-none transition-colors focus:border-[var(--accent-primary)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                 placeholder="搜索 Project / 创建者"
               />
@@ -2746,7 +2746,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                     type="button"
                     data-cluster-mode={option.key}
                     onClick={() => handleClusterModeChange(option.key)}
-                    className="flex h-7 items-center justify-center gap-1.5 rounded text-[11px] font-medium transition-colors"
+                    className="flex h-7 items-center justify-center gap-1.5 rounded text-[length:var(--fs-sm)] font-medium transition-colors"
                     style={{ color: active ? '#fff' : 'var(--text-secondary)', background: active ? 'var(--accent-primary)' : 'transparent' }}
                   >
                     <Icon className="h-3.5 w-3.5" />
@@ -2758,7 +2758,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {visibleProjects.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配项目或创建者</div>
+              <div className="px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>没有匹配项目或创建者</div>
             ) : clusterMode === 'creator' ? (
               visibleCreatorGroups.map((creator) => {
                 const cluster = model.creatorClusters.find((item) => item.id === creator.id)
@@ -2775,8 +2775,8 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                       <UserRound className="h-3.5 w-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>{creator.title}</span>
-                      <span className="mt-0.5 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <span className="block truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{creator.title}</span>
+                      <span className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                         <span>{creator.projects.length} Projects</span>
                         <span>{cluster ? compactCount(cluster.sessions.length) : '加载中'} Sessions</span>
                       </span>
@@ -2798,8 +2798,8 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                   >
                     <span className="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: projectColor(project.id) }} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
-                      <span className="mt-0.5 flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <span className="block truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
+                      <span className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                         <span>{cluster ? compactCount(cluster.sessions.length) : snapshotLoading ? '加载中' : '0'} Sessions</span>
                         <span>{timeAgoPrecise(activeTimeValue(project))}</span>
                       </span>
@@ -2831,15 +2831,15 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
               onClick={goBack}
               title="返回上一页 (Esc)"
               aria-label="返回上一页"
-              className="group flex h-6 flex-shrink-0 items-center gap-1 rounded-md border pl-1.5 pr-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              className="group flex h-6 flex-shrink-0 items-center gap-1 rounded-md border pl-1.5 pr-2 text-[length:var(--fs-2xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
             >
               <ArrowLeft className="h-2.5 w-2.5 transition-transform group-hover:-translate-x-0.5" style={{ color: 'var(--accent-primary)' }} />
               返回
             </button>}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[10px] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
-              <div className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden text-[8px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[length:var(--fs-xs)] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
+              <div className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>
                 {clusterMode === 'creator' && <span className="flex-shrink-0 whitespace-nowrap">{model.creatorClusters.length} Creators</span>}
                 <span className="min-w-0 truncate">{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
                 <span className="min-w-0 truncate" title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
@@ -2854,7 +2854,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                     key={option.key}
                     type="button"
                     onClick={() => handleTimeRangeChange(option.key)}
-                    className="h-5 rounded px-1.5 text-[8px] font-medium transition-colors"
+                    className="h-5 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -2866,17 +2866,17 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
+              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
             </div>
-            <button type="button" title="显示近期会话浮窗（最多 10 个）" aria-label="显示近期会话浮窗" onClick={handleRecentConversationWindowsChange} className="flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-2 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}><MessageSquare className="h-2.5 w-2.5" />近期会话浮窗</button>
+            <button type="button" title="显示近期会话浮窗（最多 10 个）" aria-label="显示近期会话浮窗" onClick={handleRecentConversationWindowsChange} className="flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-2 text-[length:var(--fs-2xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}><MessageSquare className="h-2.5 w-2.5" />近期会话浮窗</button>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
+              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
               <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <ZoomOut className="h-2.5 w-2.5" />
               </button>
-              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[8px] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[length:var(--fs-2xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
                 <LocateFixed className="h-2 w-2" />
                 {Math.round(zoom * 100)}%
               </button>
@@ -2897,14 +2897,14 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                 type="button"
                 title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
                 onClick={handleShowCommunicationChange}
-                className="flex h-5 items-center gap-1 rounded px-1.5 text-[8px] font-medium transition-colors"
+                className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors"
                 style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
               >
                 <MessageSquare className="h-2.5 w-2.5" />
                 通讯
               </button>
             </div>
-            {error && <div className="max-w-[250px] truncate text-[8px] text-red-400">{error}</div>}
+            {error && <div className="max-w-[250px] truncate text-[length:var(--fs-2xs)] text-red-400">{error}</div>}
           </div>
 
           <div ref={viewportRef} className="absolute inset-x-0 bottom-0 top-[40px] overflow-hidden">
@@ -2918,7 +2918,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
             />
             {hoverLabel && (
               <div
-                className="pointer-events-none absolute z-10 max-w-[280px] rounded-md border px-2.5 py-1.5 text-[11px] shadow-xl"
+                className="pointer-events-none absolute z-10 max-w-[280px] rounded-md border px-2.5 py-1.5 text-[length:var(--fs-sm)] shadow-xl"
                 style={{
                   left: Math.min(sizeRef.current.width - 286, hoverLabel.x + 12),
                   top: Math.max(8, hoverLabel.y + 12),
@@ -2934,7 +2934,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
             {!loadingCount && model.nodes.length === 0 && (
               <div className="absolute left-1/2 top-1/2 flex w-[340px] -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-lg border p-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'var(--card-bg)' }}>
                 <Sparkles className="h-5 w-5 flex-shrink-0" />
-                <div className="text-[12px] leading-5">最近{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
+                <div className="text-[length:var(--fs-md)] leading-5">最近{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
               </div>
             )}
           </div>

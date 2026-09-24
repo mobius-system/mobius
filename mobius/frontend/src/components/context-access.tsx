@@ -100,7 +100,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
     )
   }, [guests, search, nameMap])
 
-  const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 11 }
+  const thStyle: React.CSSProperties = { color: 'var(--text-muted)', fontWeight: 500, textAlign: 'left', padding: '8px 10px', fontSize: 'var(--fs-sm)' }
   const tdStyle: React.CSSProperties = { padding: '10px', verticalAlign: 'middle' }
 
   return (
@@ -111,8 +111,8 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="min-w-0">
-            <div className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{kindLabel} · 访客管理</div>
-            <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{item?.name || item?.id}</div>
+            <div className="text-[length:var(--fs-xl)] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{kindLabel} · 访客管理</div>
+            <div className="text-[length:var(--fs-sm)] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{item?.name || item?.id}</div>
           </div>
           <button onClick={onClose} disabled={saving}
             className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40"
@@ -123,7 +123,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
 
         <div className="p-5 space-y-3 overflow-auto">
           {loading ? (
-            <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : (
             <>
               {/* 角色筛选 Tab (全部 / 访客 · 计数) */}
@@ -133,7 +133,7 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                   const count = tab.key === 'all' ? (guests.length + 1) : guests.length
                   return (
                     <button key={tab.key} type="button" onClick={() => setFilter(tab.key)}
-                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] border transition-colors"
+                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[length:var(--fs-sm)] border transition-colors"
                       style={active
                         ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.40)', color: '#60a5fa' }
                         : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
@@ -150,11 +150,11 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="搜索访客姓名或账号..."
-                  className="h-8 flex-1 min-w-[140px] rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
+                  className="h-8 flex-1 min-w-[140px] rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
                 />
                 <button type="button" onClick={() => setShowAdd((s) => !s)}
-                  className="h-8 px-3 rounded-md text-[12px] btn-primary transition-colors">
+                  className="h-8 px-3 rounded-md text-[length:var(--fs-md)] btn-primary transition-colors">
                   {showAdd ? '收起' : '+ 添加访客'}
                 </button>
               </div>
@@ -168,13 +168,13 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                     placeholder="搜索员工账号或昵称..."
                     emptyHint="输入账号或昵称搜索启用员工"
                   />
-                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>选中即加入访客列表（可读可用，不可修改）。</p>
+                  <p className="text-[length:var(--fs-sm)] mt-1.5" style={{ color: 'var(--text-muted)' }}>选中即加入访客列表（可读可用，不可修改）。</p>
                 </div>
               )}
 
               {/* 成员表格: 创建者 + 访客 */}
               <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
-                <table className="w-full border-collapse text-left text-[12px]">
+                <table className="w-full border-collapse text-left text-[length:var(--fs-md)]">
                   <thead>
                     <tr className="border-b" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                       <th style={thStyle}>成员</th>
@@ -186,29 +186,29 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                     {showOwner && (
                       <tr className="border-b" style={{ borderColor: 'var(--input-border)' }}>
                         <td style={tdStyle}>
-                          <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[ownerId] || ownerId}</div>
-                          <div className="mt-0.5 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{ownerId}</div>
+                          <div className="text-[length:var(--fs-lg)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[ownerId] || ownerId}</div>
+                          <div className="mt-0.5 text-[length:var(--fs-sm)] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{ownerId}</div>
                         </td>
                         <td style={tdStyle}>
-                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={{ background: 'rgba(59,130,246,0.16)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.32)' }}>创建者 · 全权</span>
+                          <span className="px-1.5 py-0.5 rounded border text-[length:var(--fs-xs)]" style={{ background: 'rgba(59,130,246,0.16)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.32)' }}>创建者 · 全权</span>
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>
+                          <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>—</span>
                         </td>
                       </tr>
                     )}
                     {filteredGuests.map((id) => (
                       <tr key={id} className="border-b last:border-b-0" style={{ borderColor: 'var(--input-border)' }}>
                         <td style={tdStyle}>
-                          <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[id] || id}</div>
-                          <div className="mt-0.5 text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{id}</div>
+                          <div className="text-[length:var(--fs-lg)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{nameMap[id] || id}</div>
+                          <div className="mt-0.5 text-[length:var(--fs-sm)] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{id}</div>
                         </td>
                         <td style={tdStyle}>
-                          <span className="px-1.5 py-0.5 rounded border text-[10px]" style={{ background: 'rgba(148,163,184,0.14)', color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>访客 · 可读可用</span>
+                          <span className="px-1.5 py-0.5 rounded border text-[length:var(--fs-xs)]" style={{ background: 'rgba(148,163,184,0.14)', color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>访客 · 可读可用</span>
                         </td>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>
                           <button type="button" onClick={() => removeGuest(id)} disabled={saving}
-                            className="h-7 px-2 rounded-md text-[11px] border transition-colors"
+                            className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border transition-colors"
                             style={{ borderColor: 'rgba(248,113,113,0.32)', color: '#f87171', background: 'rgba(248,113,113,0.06)' }}>
                             移除
                           </button>
@@ -216,26 +216,26 @@ export function ContextAccessModal({ baseUrl, item, kindLabel, onClose, onSaved 
                       </tr>
                     ))}
                     {!showOwner && filteredGuests.length === 0 && (
-                      <tr><td colSpan={3} className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无访客</td></tr>
+                      <tr><td colSpan={3} className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无访客</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
 
-              <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
                 创建者全权；访客可阅读、可使用，但不能修改。无访客时仅创建者可见。
               </p>
-              {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
+              {err && <pre className="text-[length:var(--fs-sm)] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
             </>
           )}
         </div>
 
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <button onClick={onClose} disabled={saving}
-            className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
+            className="h-8 px-3 text-[length:var(--fs-md)] rounded border disabled:opacity-40"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={save} disabled={loading || saving}
-            className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40">
+            className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40">
             {saving ? '保存中...' : '保存'}
           </button>
         </div>

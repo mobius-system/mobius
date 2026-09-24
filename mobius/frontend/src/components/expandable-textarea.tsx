@@ -66,7 +66,7 @@ export function ExpandableTextarea({
           onClick={() => setExpanded(true)}
           disabled={disabled}
           title={expandTitle}
-          className={`absolute right-2 inline-flex h-6 items-center gap-1 rounded-lg border px-1.5 text-[10px] transition-colors disabled:hidden hover:bg-blue-500/10 ${compact ? 'top-1.5' : 'top-2'} ${expandButtonClassName}`}
+          className={`absolute right-2 inline-flex h-6 items-center gap-1 rounded-lg border px-1.5 text-[length:var(--fs-xs)] transition-colors disabled:hidden hover:bg-blue-500/10 ${compact ? 'top-1.5' : 'top-2'} ${expandButtonClassName}`}
           style={{
             color: 'var(--text-muted)',
             borderColor: 'var(--input-border)',
@@ -96,12 +96,12 @@ export function ExpandableTextarea({
             onClick={event => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{overlayTitle}</h3>
+              <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{overlayTitle}</h3>
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
                 title="收起编辑区"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
                 style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
               >
                 <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -114,7 +114,7 @@ export function ExpandableTextarea({
               disabled={disabled}
               value={value}
               onChange={event => onValueChange(event.target.value)}
-              className={`min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 ${overlayClassName}`}
+              className={`min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30 ${overlayClassName}`}
               style={{
                 background: 'var(--input-bg)',
                 border: '1px solid var(--input-border)',

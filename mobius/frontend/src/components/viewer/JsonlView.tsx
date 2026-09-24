@@ -50,7 +50,7 @@ const GROUP_ENTRY_HEAD = 8
 function JsonlInitialSkeleton() {
   return (
     <div className="jsonl-initial-skeleton" aria-live="polite" role="status">
-      <div className="mb-3 flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="mb-3 flex items-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
         <span className="relative inline-flex h-3.5 w-3.5 flex-shrink-0">
           <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
           <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
@@ -530,7 +530,7 @@ export function JsonlView({
     if (initialLoading) return <JsonlInitialSkeleton />
     if (emptyLoadingText) {
       return (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[12px] text-amber-200 card-enter" aria-live="polite">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[length:var(--fs-md)] text-amber-200 card-enter" aria-live="polite">
           <div className="flex items-center gap-3">
             <span className="relative inline-flex w-4 h-4 flex-shrink-0">
               <span className="absolute inset-0 rounded-full border-2 border-amber-300/20" />
@@ -542,7 +542,7 @@ export function JsonlView({
       )
     }
     return (
-      <div className="text-[12px] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
+      <div className="text-[length:var(--fs-md)] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
         暂无对话内容
       </div>
     )
@@ -550,19 +550,19 @@ export function JsonlView({
 
   // 非空
   return (
-    <div className="text-[12px]">
+    <div className="text-[length:var(--fs-md)]">
       <span className="sr-only" aria-live="polite" aria-atomic="true">{roundHeaderPaletteAnnouncement}</span>
       <div ref={headerRef} className="flex items-center gap-2 px-1 py-1 sticky top-0 z-10 backdrop-blur-lg bg-[var(--bg-page)]/80">
         {headerTitle && <span className="min-w-0 truncate text-[var(--text-secondary)] font-semibold" title={headerTitle}>{headerTitle}</span>}
-        {groups.length > 0 && <span className="text-[var(--text-muted)] text-[11px]">{groups.length} 轮</span>}
+        {groups.length > 0 && <span className="text-[var(--text-muted)] text-[length:var(--fs-sm)]">{groups.length} 轮</span>}
         {loadedGroups < groups.length && (
-          <span className="text-[var(--text-muted)] text-[11px]" title="展开对应轮次时按需加载明细">已载 {loadedGroups}/{groups.length} 轮 · 共 {totalEntryCount} 条</span>
+          <span className="text-[var(--text-muted)] text-[length:var(--fs-sm)]" title="展开对应轮次时按需加载明细">已载 {loadedGroups}/{groups.length} 轮 · 共 {totalEntryCount} 条</span>
         )}
         {lastRoundUserSummary && (
           <button
             type="button"
             onClick={jumpToLastRound}
-            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border-0 p-0 cursor-pointer text-left transition-colors"
+            className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-transparent border-0 p-0 cursor-pointer text-left transition-colors"
             title={`点击跳转到末轮：${lastRoundUserSummary}`}
           >
             <span className="opacity-60">末轮 ·</span> {lastRoundUserSummary}

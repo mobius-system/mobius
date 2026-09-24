@@ -919,7 +919,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-          <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
+          <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
             {source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${remoteName}` : ''}` : '中枢文件')}
           </span>
           <div className="flex-1" />
@@ -951,7 +951,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               <button
                 type="button"
                 onClick={() => chooseSource('hub')}
-                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
                 style={{
                   borderColor: source === 'hub' ? 'var(--accent-primary)' : 'var(--input-border)',
                   background: source === 'hub' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
@@ -966,7 +966,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 <button
                   type="button"
                   onClick={() => chooseSource('local')}
-                  className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                  className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
                   style={{
                     borderColor: source === 'local' ? 'var(--accent-primary)' : 'var(--input-border)',
                     background: source === 'local' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
@@ -981,7 +981,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               <button
                 type="button"
                 onClick={() => chooseSource('remote')}
-                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors"
+                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
                 style={{
                   borderColor: source === 'remote' ? 'var(--accent-primary)' : 'var(--input-border)',
                   background: source === 'remote' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
@@ -1002,7 +1002,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   disabled={!remoteSourcesLoaded || remoteSources.length === 0}
                   aria-label="远程机器"
                   data-tour="workspace-remote-machine-select"
-                  className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[11px] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
+                  className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[length:var(--fs-sm)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
                 >
                   {remoteSources.length === 0 && <option value="">未注册远程机器</option>}
@@ -1037,11 +1037,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   }}
                   placeholder="留空用默认目录, 回车确认"
                   aria-label="远程目录"
-                  className="h-6 min-w-0 flex-1 rounded-md border px-1.5 font-mono text-[10px] focus:outline-none"
+                  className="h-6 min-w-0 flex-1 rounded-md border px-1.5 font-mono text-[length:var(--fs-xs)] focus:outline-none"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
                 />
               ) : (
-                <div className="min-w-0 flex-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={activeRootPath || undefined}>
+                <div className="min-w-0 flex-1 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }} title={activeRootPath || undefined}>
                   {activeRootPath || (source === 'local' ? '未绑定本地工作路径' : (source === 'remote' ? '未配置远程工作路径' : '未绑定项目路径'))}
                 </div>
               )}
@@ -1049,7 +1049,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 <button
                   type="button"
                   onClick={commitRemoteRoot}
-                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)]"
                   style={{ borderColor: 'var(--accent-primary)', color: 'var(--text-primary)' }}
                   title="保存远程目录 (留空恢复默认)"
                 >
@@ -1061,7 +1061,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   type="button"
                   onClick={() => { setRemoteRootDraft(activeRootPath === '默认登录目录' ? '' : (activeRootPath || '')); setRemoteRootError(''); setRemoteRootEditing(true) }}
                   disabled={!remoteName}
-                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                   style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                   title={remoteRoot ? '更改远程目录' : '选择远程目录'}
                 >
@@ -1074,7 +1074,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   type="button"
                   onClick={chooseLocalPath}
                   disabled={localPathBusy}
-                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="inline-flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                   style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                   title={localBindPath ? '更改本地绑定路径' : '选择本地绑定路径'}
                 >
@@ -1084,7 +1084,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               )}
             </div>
             {source === 'remote' && remoteRootError && (
-              <div className="mt-1 text-[10px] text-red-400">{remoteRootError}</div>
+              <div className="mt-1 text-[length:var(--fs-xs)] text-red-400">{remoteRootError}</div>
             )}
           </div>
         {/* 文件名搜索过滤 (仅覆盖已展开加载过的目录) */}
@@ -1097,7 +1097,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 value={filter}
                 onChange={e => setFilter(e.target.value)}
                 placeholder="过滤文件名…"
-                className="h-7 w-full rounded-md border pl-7 pr-6 text-[12px] focus:outline-none"
+                className="h-7 w-full rounded-md border pl-7 pr-6 text-[length:var(--fs-md)] focus:outline-none"
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
               />
               {filter && (
@@ -1113,16 +1113,16 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           onContextMenu={(e) => openTreeContextMenu(e, null)}
         >
           {!rootLoaded ? (
-            <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : rootError ? (
             <div className="px-2 py-4 text-center">
-              <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{rootError}</div>
+              <div className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{rootError}</div>
               {source === 'local' && isDesktop && (
                 <button
                   type="button"
                   onClick={chooseLocalPath}
                   disabled={localPathBusy}
-                  className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                   style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                 >
                   {localPathBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />}
@@ -1165,19 +1165,19 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           {selected ? (
             <>
               {dirty && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: cc.accent }} title="已修改未保存" />}
-              <span className="flex-shrink-0 text-[13px]">{fileIcon(selected.name, 'file')}</span>
-              <span className="truncate text-[12px] font-medium" style={{ color: cc.fg }} title={selected.abs_path}>{selected.name}</span>
+              <span className="flex-shrink-0 text-[length:var(--fs-lg)]">{fileIcon(selected.name, 'file')}</span>
+              <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: cc.fg }} title={selected.abs_path}>{selected.name}</span>
               {fileData && (
-                <span className="flex-shrink-0 text-[10px]" style={{ color: cc.muted }}>
+                <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: cc.muted }}>
                   {formatSize(fileData.size)}{fileData.truncated ? ' · 截断' : ''}
                 </span>
               )}
               <div className="flex-1" />
-              {saveOk && <span className="flex-shrink-0 text-[10px] text-emerald-400">已保存</span>}
-              {saveError && <span className="flex-shrink-0 text-[10px] text-red-400" title={saveError}>保存失败</span>}
+              {saveOk && <span className="flex-shrink-0 text-[length:var(--fs-xs)] text-emerald-400">已保存</span>}
+              {saveError && <span className="flex-shrink-0 text-[length:var(--fs-xs)] text-red-400" title={saveError}>保存失败</span>}
               {fileData && !fileData.binary && !fileData.truncated && (
                 <button type="button" onClick={save} disabled={!dirty || saving} title="保存 (Ctrl+S)"
-                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cc.hover}`}
+                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cc.hover}`}
                   style={{ color: dirty ? cc.accent : cc.muted }}>
                   {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                   保存
@@ -1187,7 +1187,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               {mdFile && (
                 <button type="button" onClick={() => setMdPreview(v => !v)}
                   title={mdPreview ? '切换为源码编辑' : '切换为 Markdown 富文本编辑'}
-                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition-colors ${cc.hover}`}
+                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
                   style={{ color: mdPreview ? cc.accent : cc.muted }}>
                   {mdPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   {mdPreview ? '源码' : '富文本'}
@@ -1217,7 +1217,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               )}
             </>
           ) : (
-            <span className="text-[12px]" style={{ color: cc.muted }}>代码浏览</span>
+            <span className="text-[length:var(--fs-md)]" style={{ color: cc.muted }}>代码浏览</span>
           )}
         </div>
 
@@ -1226,30 +1226,30 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           {!selected ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <FileCode2 className="w-8 h-8" />
-              <div className="text-[13px]" style={{ color: cc.fg }}>从左侧选择一个文件</div>
-              <div className="text-[11px]">语法高亮 + 可编辑，Ctrl+S 保存</div>
+              <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>从左侧选择一个文件</div>
+              <div className="text-[length:var(--fs-sm)]">语法高亮 + 可编辑，Ctrl+S 保存</div>
             </div>
           ) : fileLoading ? (
             <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <div className="text-[12px]">正在读取文件…</div>
+              <div className="text-[length:var(--fs-md)]">正在读取文件…</div>
             </div>
           ) : fileError ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
-              <div className="text-[12px] text-red-400">{fileError}</div>
+              <div className="text-[length:var(--fs-md)] text-red-400">{fileError}</div>
             </div>
           ) : fileData?.binary ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
-              <div className="text-[13px]" style={{ color: cc.fg }}>二进制文件，不提供预览</div>
-              <div className="text-[11px]">{formatSize(fileData.size)}</div>
+              <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>二进制文件，不提供预览</div>
+              <div className="text-[length:var(--fs-sm)]">{formatSize(fileData.size)}</div>
             </div>
           ) : fileData?.truncated ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <AlertTriangle className="w-6 h-6 text-amber-400" />
-              <div className="text-[13px]" style={{ color: cc.fg }}>文件过大（&gt; 1.5MB），已截断不提供编辑</div>
-              <div className="text-[11px]">如需编辑请在 VSCode 中打开</div>
+              <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>文件过大（&gt; 1.5MB），已截断不提供编辑</div>
+              <div className="text-[length:var(--fs-sm)]">如需编辑请在 VSCode 中打开</div>
             </div>
           ) : fileData ? (
             mdFile && mdPreview ? (
@@ -1259,7 +1259,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 fallback={(
                   <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    <div className="text-[12px]">代码编辑器按需加载中…</div>
+                    <div className="text-[length:var(--fs-md)]">代码编辑器按需加载中…</div>
                   </div>
                 )}
               >
@@ -1296,10 +1296,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 ? <FolderPlus className="h-4 w-4 text-emerald-400" strokeWidth={1.8} />
                 : <FilePlus2 className="h-4 w-4 text-blue-400" strokeWidth={1.8} />}
               <div className="min-w-0">
-                <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   {creating.kind === 'dir' ? '新建目录' : '新建文件'}
                 </div>
-                <div className="truncate text-[11px] font-mono" title={creating.parentPath} style={{ color: 'var(--text-muted)' }}>
+                <div className="truncate text-[length:var(--fs-sm)] font-mono" title={creating.parentPath} style={{ color: 'var(--text-muted)' }}>
                   {creating.parentPath}
                 </div>
               </div>
@@ -1317,11 +1317,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 disabled={creating.submitting}
                 onChange={event => setCreating(prev => prev ? { ...prev, name: event.target.value, error: undefined } : prev)}
                 placeholder={creating.kind === 'dir' ? '目录名' : '文件名'}
-                className="h-9 w-full rounded-lg border bg-[var(--bg-primary)] px-3 text-[13px] outline-none focus:border-blue-500/60 disabled:opacity-60"
+                className="h-9 w-full rounded-lg border bg-[var(--bg-primary)] px-3 text-[length:var(--fs-lg)] outline-none focus:border-blue-500/60 disabled:opacity-60"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
               />
               {creating.error && (
-                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)] text-red-300">
                   {creating.error}
                 </div>
               )}
@@ -1330,7 +1330,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   type="button"
                   disabled={creating.submitting}
                   onClick={() => setCreating(null)}
-                  className="h-8 rounded-lg border px-3 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
+                  className="h-8 rounded-lg border px-3 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-60"
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
                 >
                   取消
@@ -1338,7 +1338,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 <button
                   type="submit"
                   disabled={creating.submitting}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-500 px-3 text-[12px] text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-500 px-3 text-[length:var(--fs-md)] text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
                 >
                   {creating.submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   创建
@@ -1373,7 +1373,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
             zIndex: 55,
             padding: '8px 16px',
             borderRadius: '8px',
-            fontSize: '12px',
+            fontSize: 'var(--fs-md)',
             color: '#fff',
             background: toast.kind === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)',
             boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
@@ -1450,7 +1450,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
   }
   hits.sort((a, b) => a.name.localeCompare(b.name))
   if (hits.length === 0) {
-    return <div className="text-[11px] py-3 text-center" style={{ color: 'var(--text-muted)' }}>无匹配文件</div>
+    return <div className="text-[length:var(--fs-sm)] py-3 text-center" style={{ color: 'var(--text-muted)' }}>无匹配文件</div>
   }
   return (
     <div>
@@ -1462,14 +1462,14 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
             type="button"
             onClick={() => onSelectFile(e)}
             title={e.abs_path}
-            className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[12px] ${sel ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
+            className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[length:var(--fs-md)] ${sel ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
             style={{ paddingLeft: '8px', color: 'var(--text-primary)', background: sel ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
             <span className="flex-shrink-0">{fileIcon(e.name, 'file')}</span>
             <span className="truncate flex-1">{e.name}</span>
           </button>
         )
       })}
-      {hits.length > 200 && <div className="text-[10px] py-1 text-center" style={{ color: 'var(--text-muted)' }}>仅显示前 200 个，请细化过滤…</div>}
+      {hits.length > 200 && <div className="text-[length:var(--fs-xs)] py-1 text-center" style={{ color: 'var(--text-muted)' }}>仅显示前 200 个，请细化过滤…</div>}
     </div>
   )
 }

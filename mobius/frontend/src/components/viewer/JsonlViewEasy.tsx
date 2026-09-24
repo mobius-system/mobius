@@ -50,7 +50,7 @@ const GROUP_ENTRY_HEAD = 8
 function JsonlInitialSkeleton() {
   return (
     <div className="jsonl-initial-skeleton" aria-live="polite" role="status">
-      <div className="mb-3 flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="mb-3 flex items-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
         <span className="relative inline-flex h-3.5 w-3.5 flex-shrink-0">
           <span className="absolute inset-0 rounded-full border-2 border-[var(--text-muted)] opacity-20" />
           <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-[var(--text-muted)] animate-spin" />
@@ -553,7 +553,7 @@ export default function JsonlViewEasy({
     if (initialLoading) return <JsonlInitialSkeleton />
     if (emptyLoadingText) {
       return (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[12px] text-amber-200 card-enter" aria-live="polite">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-4 py-4 text-[length:var(--fs-md)] text-amber-200 card-enter" aria-live="polite">
           <div className="flex items-center gap-3">
             <span className="relative inline-flex w-4 h-4 flex-shrink-0">
               <span className="absolute inset-0 rounded-full border-2 border-amber-300/20" />
@@ -565,7 +565,7 @@ export default function JsonlViewEasy({
       )
     }
     return (
-      <div className="text-[12px] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
+      <div className="text-[length:var(--fs-md)] text-center py-8 text-[var(--text-muted)]" aria-live="polite" role="status">
         暂无对话内容
       </div>
     )
@@ -573,7 +573,7 @@ export default function JsonlViewEasy({
 
   // 非空
   return (
-    <div className="text-[12px]">
+    <div className="text-[length:var(--fs-md)]">
       <span className="sr-only" aria-live="polite" aria-atomic="true">{roundHeaderPaletteAnnouncement}</span>
       <VirtualizedBlockList
         blocks={renderBlocks}

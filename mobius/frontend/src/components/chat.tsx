@@ -394,16 +394,16 @@ function RawJsonlList({ store }: { store: SessionHistoryStore | null }) {
   )
   const renderWindow = useMemo(() => buildRawJsonlRenderWindow(entries), [entries])
   if (entries.length === 0) {
-    return <div className="text-center text-[13px] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
+    return <div className="text-center text-[length:var(--fs-lg)] py-8" style={{ color: 'var(--text-muted)' }}>暂无 JSONL 数据 (会话尚未产生输出)</div>
   }
   return (
     <>
-      <pre className="text-[11px] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text" style={{ color: 'var(--text-secondary)' }}>
+      <pre className="text-[length:var(--fs-sm)] leading-relaxed p-5 m-0 whitespace-pre font-mono select-text" style={{ color: 'var(--text-secondary)' }}>
         {renderWindow.text}
       </pre>
       {renderWindow.truncated && (
         <div
-          className="sticky bottom-0 px-5 py-2 text-[11px] border-t"
+          className="sticky bottom-0 px-5 py-2 text-[length:var(--fs-sm)] border-t"
           style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
         >
           内容过长, 仅显示前 {renderWindow.shownCount} / {renderWindow.totalCount} 条 — 完整内容请点右上角「下载 JSONL」。
@@ -521,7 +521,7 @@ function SessionTitle({ name, theme }: { name?: string | null; theme: string }) 
   const full = String(name || '')
   return (
     <h2
-      className="min-w-0 flex items-baseline gap-1 font-semibold text-[14px]"
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-xl)]"
       style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
       title={full || undefined}
     >
@@ -677,14 +677,14 @@ function AttachmentChip({ att, theme, onRemove, onPreview }: {
             </div>
           )}
           {att.status === 'error' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[10px] font-semibold" title={att.error}>
+            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[length:var(--fs-xs)] font-semibold" title={att.error}>
               失败
             </div>
           )}
         </button>
       ) : (
         <div
-          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[9px] font-semibold leading-none"
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[length:var(--fs-2xs)] font-semibold leading-none"
           style={{ ...baseStyle, color: isDark ? '#bfdbfe' : '#2563eb' }}>
           <span>{fileLabel}</span>
             {att.status === 'uploading' && (
@@ -696,7 +696,7 @@ function AttachmentChip({ att, theme, onRemove, onPreview }: {
               </div>
             )}
             {att.status === 'error' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[8px] font-semibold" title={att.error}>
+              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[length:var(--fs-2xs)] font-semibold" title={att.error}>
                 !
               </div>
             )}
@@ -730,7 +730,7 @@ function AttachmentImagePreviewModal({ preview, onClose }: {
     <div className="fixed inset-0 z-[80] flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
       <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
       <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
-        <div className="min-w-0 text-[13px] font-medium truncate">{preview.name}</div>
+        <div className="min-w-0 text-[length:var(--fs-lg)] font-medium truncate">{preview.name}</div>
         <button
           type="button"
           onClick={onClose}
@@ -916,35 +916,35 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
         <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <History className="w-4 h-4 text-blue-400 flex-shrink-0" strokeWidth={1.8} />
-            <span className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>回放输入</span>
-            <span className="text-[11px] font-normal flex-shrink-0" style={{ color: 'var(--text-muted)' }}>· {entries.length} 条</span>
+            <span className="text-[length:var(--fs-xl)] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>回放输入</span>
+            <span className="text-[length:var(--fs-sm)] font-normal flex-shrink-0" style={{ color: 'var(--text-muted)' }}>· {entries.length} 条</span>
           </div>
           <button onClick={onClose}
-            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)' }}>关闭</button>
         </div>
 
         <div className="px-5 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <input value={query} onChange={e => setQuery(e.target.value)}
             placeholder="搜索输入内容"
-            className="w-full h-9 px-3 rounded-lg text-[13px] focus:outline-none focus:border-blue-500/40"
+            className="w-full h-9 px-3 rounded-lg text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/40"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-          {copyError && <div className="mt-2 text-[11px] text-red-400">{copyError}</div>}
+          {copyError && <div className="mt-2 text-[length:var(--fs-sm)] text-red-400">{copyError}</div>}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {loading && (
-            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>加载中...</div>
+            <div className="text-center py-10 text-[length:var(--fs-lg)]" style={{ color: textMuted }}>加载中...</div>
           )}
           {!loading && error && (
-            <pre className="text-[12px] text-red-400 whitespace-pre-wrap break-words rounded-lg p-3"
+            <pre className="text-[length:var(--fs-md)] text-red-400 whitespace-pre-wrap break-words rounded-lg p-3"
               style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>{error}</pre>
           )}
           {!loading && !error && entries.length === 0 && (
-            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>暂无可回放输入</div>
+            <div className="text-center py-10 text-[length:var(--fs-lg)]" style={{ color: textMuted }}>暂无可回放输入</div>
           )}
           {!loading && !error && entries.length > 0 && filteredEntries.length === 0 && (
-            <div className="text-center py-10 text-[13px]" style={{ color: textMuted }}>没有匹配的输入</div>
+            <div className="text-center py-10 text-[length:var(--fs-lg)]" style={{ color: textMuted }}>没有匹配的输入</div>
           )}
           {!loading && !error && filteredEntries.length > 0 && (
             <div className="space-y-2">
@@ -959,17 +959,17 @@ function SessionInputReplayModal({ sessionId, onPick, onClose }: {
                     <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-[11px] flex-1 min-w-0 truncate" style={{ color: textMuted }}>
+                          <span className="text-[length:var(--fs-sm)] flex-1 min-w-0 truncate" style={{ color: textMuted }}>
                             {entry.created_at ? timeAgo(entry.created_at) : '未知时间'}
                           </span>
                           {entry.turn_number ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0"
                               style={{ color: textMuted, background: 'var(--bg-card-hover)' }}>
                               turn {entry.turn_number}
                             </span>
                           ) : null}
                         </div>
-                        <div className="text-[13px] leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap break-words select-text pr-1"
+                        <div className="text-[length:var(--fs-lg)] leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap break-words select-text pr-1"
                           style={{ color: 'var(--text-primary)' }}>
                           {previewTextOf(entry)}
                         </div>
@@ -1022,22 +1022,22 @@ function CompactContextConfirmModal({ onConfirm, onClose }: {
         className="relative w-[360px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="text-[15px] font-semibold mb-2" style={{ color: textPrimary }}>压缩上文</h3>
-        <p className="text-[13px] leading-relaxed mb-5" style={{ color: textMuted }}>
+        <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: textPrimary }}>压缩上文</h3>
+        <p className="text-[length:var(--fs-lg)] leading-relaxed mb-5" style={{ color: textMuted }}>
           是否继续，将消耗一段时间压缩上文；压缩期间，您可以继续发送后续指令，但响应会延后。期间点击“终止”可以打断压缩。
         </p>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 h-9 rounded-xl text-[13px] bg-[var(--bg-card-hover)] border"
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border"
             style={{ color: textMuted, borderColor: 'var(--input-border)' }}>
             取消
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 h-9 rounded-xl text-[13px] text-white bg-blue-500 hover:bg-blue-600 transition-colors">
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] text-white bg-blue-500 hover:bg-blue-600 transition-colors">
             继续
           </button>
         </div>
@@ -1066,7 +1066,7 @@ function diffLineClass(line: string) {
 function GitDiffBlock({ diff }: { diff: string }) {
   const lines = diff ? diff.split('\n') : []
   return (
-    <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+    <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
       {lines.map((line, index) => (
         <div key={`${index}-${line.slice(0, 24)}`} className={`grid grid-cols-[3.25rem_minmax(0,1fr)] ${diffLineClass(line)}`}>
           <span className="code-diff-line-number select-none border-r border-[var(--border-color)]/50 px-2 text-right">
@@ -1160,44 +1160,44 @@ function SessionFileChangesModal({ sessionId, onClose }: {
         <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <FileDiff className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>文件修改清单</span>
-            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {files.length} 个文件</span>
+            <span className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>文件修改清单</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {files.length} 个文件</span>
           </div>
           <button
             type="button"
             onClick={() => void loadFiles()}
             disabled={loading}
             title="重新扫描"
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
             style={{ color: 'var(--text-secondary)' }}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCompare className="h-3.5 w-3.5" />}
             重新扫描
           </button>
           <button onClick={onClose}
-            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)' }}>关闭</button>
         </div>
 
         {(error || workspaceError) && (
-          <div className="mx-5 mt-3 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25">
+          <div className="mx-5 mt-3 rounded-lg border px-3 py-2 text-[length:var(--fs-md)] text-red-300 bg-red-500/10 border-red-500/25">
             {error || workspaceError}
           </div>
         )}
 
         <div className="flex min-h-0 flex-1">
           <div className="flex w-[34%] min-w-[260px] flex-col border-r" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="border-b px-4 py-2 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <div className="border-b px-4 py-2 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
               修改文件来自 session JSONL 特征，右侧 diff 来自当前 Git 仓库。
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {loading && (
-                <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="flex items-center justify-center gap-2 py-10 text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   扫描中...
                 </div>
               )}
               {!loading && files.length === 0 && !error && (
-                <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无文件修改记录</div>
+                <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无文件修改记录</div>
               )}
               {!loading && files.length > 0 && (
                 <div className="space-y-1">
@@ -1210,14 +1210,14 @@ function SessionFileChangesModal({ sessionId, onClose }: {
                         onClick={() => setSelectedPath(file.path)}
                         className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${active ? 'border-blue-500/35 bg-blue-500/10' : 'border-transparent hover:bg-[var(--bg-card-hover)]'}`}>
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={file.display_path} style={{ color: 'var(--text-primary)' }}>
+                          <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--fs-md)]" title={file.display_path} style={{ color: 'var(--text-primary)' }}>
                             {file.display_path}
                           </span>
-                          <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
+                          <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
                             {file.count}
                           </span>
                         </div>
-                        <div className="mt-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="mt-1 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                           {formatFeatureTime(file.last_timestamp)}
                         </div>
                       </button>
@@ -1231,39 +1231,39 @@ function SessionFileChangesModal({ sessionId, onClose }: {
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-auto">
               {!selectedFile && !loading && (
-                <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>请选择一个文件</div>
+                <div className="py-16 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>请选择一个文件</div>
               )}
               {selectedFile && (
                 <div className="min-w-0">
                   <div className="sticky top-0 z-10 flex min-w-0 items-center gap-2 border-b px-4 py-2"
                     style={{ background: 'var(--modal-bg)', borderColor: 'var(--border-color)' }}>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={selectedFile.display_path} style={{ color: 'var(--text-primary)' }}>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--fs-md)]" title={selectedFile.display_path} style={{ color: 'var(--text-primary)' }}>
                       {selectedFile.display_path}
                     </span>
                     {!diffLoading && diff?.mode && (
-                      <span className="flex-shrink-0 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-300">
+                      <span className="flex-shrink-0 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[length:var(--fs-sm)] text-blue-300">
                         {DIFF_MODE_LABELS[diff.mode]}
                       </span>
                     )}
                     {!diffLoading && diff && !diff.diff && diff.fallback_content !== undefined && (
-                      <span className="flex-shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
+                      <span className="flex-shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[length:var(--fs-sm)] text-amber-300">
                         文件内容
                       </span>
                     )}
                     {diffLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-400" />}
                   </div>
                   {diffError && (
-                    <pre className="m-4 whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{diffError}</pre>
+                    <pre className="m-4 whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[length:var(--fs-md)] text-red-300">{diffError}</pre>
                   )}
                   {!diffLoading && !diffError && diff && !diff.diff && diff.fallback_content !== undefined && (
                     <div className="overflow-auto">
-                      <pre className="min-w-max whitespace-pre p-4 font-mono text-[11px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                      <pre className="min-w-max whitespace-pre p-4 font-mono text-[length:var(--fs-sm)] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
                         {diff.fallback_content || ' '}
                       </pre>
                     </div>
                   )}
                   {!diffLoading && !diffError && (!diff || (!diff.diff && diff.fallback_content === undefined)) && (
-                    <div className="py-16 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>没有可显示的 diff 或文件内容</div>
+                    <div className="py-16 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>没有可显示的 diff 或文件内容</div>
                   )}
                   {!diffError && diff?.diff && diff.diff.trim() !== '' && (
                     <div className="overflow-auto">
@@ -1342,20 +1342,20 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
         <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话 Bash 命令</span>
-            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {commands.length} 条</span>
+            <span className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>会话 Bash 命令</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {commands.length} 条</span>
           </div>
           <button
             type="button"
             onClick={() => void loadCommands()}
             disabled={loading}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
             style={{ color: 'var(--text-secondary)' }}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCompare className="h-3.5 w-3.5" />}
             重新扫描
           </button>
           <button onClick={onClose}
-            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)' }}>关闭</button>
         </div>
 
@@ -1364,26 +1364,26 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜索命令、描述或工作目录"
-            className="h-9 w-full rounded-lg px-3 text-[13px] focus:outline-none focus:border-blue-500/40"
+            className="h-9 w-full rounded-lg px-3 text-[length:var(--fs-lg)] focus:outline-none focus:border-blue-500/40"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {loading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex items-center justify-center gap-2 py-10 text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
               <Loader2 className="h-4 w-4 animate-spin" />
               扫描中...
             </div>
           )}
           {!loading && error && (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{error}</pre>
+            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[length:var(--fs-md)] text-red-300">{error}</pre>
           )}
           {!loading && !error && commands.length === 0 && (
-            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无 Bash 命令记录</div>
+            <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无 Bash 命令记录</div>
           )}
           {!loading && !error && commands.length > 0 && filtered.length === 0 && (
-            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>没有匹配的命令</div>
+            <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>没有匹配的命令</div>
           )}
           {!loading && !error && filtered.length > 0 && (
             <div className="space-y-3">
@@ -1393,16 +1393,16 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
                   <div key={command.id || index} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                     <div className="mb-2 flex min-w-0 items-start gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                           <span>{formatFeatureTime(command.timestamp)}</span>
                           {command.timestamp && <span>· {timeAgo(command.timestamp)}</span>}
                           {command.source && <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>{command.source}</span>}
                         </div>
                         {command.description && (
-                          <div className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{command.description}</div>
+                          <div className="mt-1 text-[length:var(--fs-md)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{command.description}</div>
                         )}
                         {command.cwd && (
-                          <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{command.cwd}</div>
+                          <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{command.cwd}</div>
                         )}
                       </div>
                       <button
@@ -1415,7 +1415,7 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
                         {copied ? <Check className="h-3.5 w-3.5" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.9} />}
                       </button>
                     </div>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[length:var(--fs-sm)] leading-relaxed"
                       style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
                       {command.command}
                     </pre>
@@ -1471,35 +1471,35 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
         <div className="flex flex-shrink-0 items-center gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
-            <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
-            <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>· {tasks.length + sessionTasks.length} 个</span>
+            <span className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {tasks.length + sessionTasks.length} 个</span>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
             style={{ color: 'var(--text-secondary)' }}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             刷新
           </button>
           <button onClick={onClose}
-            className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-secondary)' }}>关闭</button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {loading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex items-center justify-center gap-2 py-10 text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
               <Loader2 className="h-4 w-4 animate-spin" /> 读取中...
             </div>
           )}
           {!loading && error && (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[12px] text-red-300">{error}</pre>
+            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[length:var(--fs-md)] text-red-300">{error}</pre>
           )}
           {!loading && !error && !available && (
-            <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
+            <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
           )}
           {!loading && !error && available && (
             <>
-              <div className="mb-3 rounded-xl border px-3.5 py-3 text-[12px]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="mb-3 rounded-xl border px-3.5 py-3 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
                   <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? '#22c55e' : '#fbbf24') : '#6b7280' }} />
                   <span>
@@ -1509,22 +1509,22 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                   </span>
                 </div>
                 {lock && (
-                  <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mt-1.5 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                     持锁 session: {lock.sessionId || '-'} · pid: {lock.pid || '-'}{lock.acquiredAt ? ` · 接管于 ${formatFeatureTime(lock.acquiredAt)}` : ''}
                   </div>
                 )}
                 {data?.root && (
-                  <div className="mt-1 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={String(data.root)}>
+                  <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }} title={String(data.root)}>
                     读取目录{data?.worktree ? ' (worktree)' : ''}: {String(data.root)}
                   </div>
                 )}
-                <div className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1.5 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                   durable 任务持久化在 <code className="font-mono">.claude/scheduled_tasks.json</code>, 由持锁会话触发 (创建者 ≠ 触发者)。session-only 任务 (durable:false) 只存在于本会话内存、Claude 退出即消失, 从会话转录重建, 下方以「仅本会话」标记列出。
                 </div>
               </div>
 
               {tasks.length === 0 && sessionTasks.length === 0 ? (
-                <div className="py-10 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>暂无活跃定时任务</div>
+                <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无活跃定时任务</div>
               ) : (
                 <div className="space-y-3">
                   {[...tasks.map((t: any) => ({ t, sessionOnly: false })), ...sessionTasks.map((t: any) => ({ t, sessionOnly: true }))].map(({ t, sessionOnly }, i: number) => {
@@ -1534,7 +1534,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                     const promptStr = typeof t.prompt === 'string' ? t.prompt : ''
                     return (
                       <div key={(t.id || '') + '-' + i} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: sessionOnly ? 'rgba(251,191,36,0.35)' : 'var(--border-color)' }}>
-                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                           <span className="rounded px-1.5 py-0.5 font-mono" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>{t.id || '?'}</span>
                           <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{t.cron || '-'}</span>
                           {sessionOnly
@@ -1548,14 +1548,14 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                           {t.lastFiredAt && <span>· 上次触发 {formatFeatureTime(t.lastFiredAt)}</span>}
                         </div>
                         {promptStr && (
-                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
+                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[length:var(--fs-sm)] leading-relaxed"
                             style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
                             {promptStr}
                           </pre>
                         )}
                         {sessionOnly
-                          ? <div className="mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>session-only: 只存在于本会话内存, Claude 退出即消失</div>
-                          : (t.createdBySessionId && <div className="mt-1.5 truncate font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>创建 session: {t.createdBySessionId}{t.createdByPid ? ` · pid ${t.createdByPid}` : ''}</div>)}
+                          ? <div className="mt-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>session-only: 只存在于本会话内存, Claude 退出即消失</div>
+                          : (t.createdBySessionId && <div className="mt-1.5 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>创建 session: {t.createdBySessionId}{t.createdByPid ? ` · pid ${t.createdByPid}` : ''}</div>)}
                       </div>
                     )
                   })}
@@ -1571,7 +1571,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
 
 // =====================================================================
 // HeaderActionButton — 顶栏操作按钮统一元件.
-// 尺寸/圆角/字号与 SessionStatusChip 严格对齐 (text-[11px] + py-0.5 + rounded-full),
+// 尺寸/圆角/字号与 SessionStatusChip 严格对齐 (text-[length:var(--fs-sm)] + py-0.5 + rounded-full),
 // 让 终止 / 新会话 / 打开应用 / 更多 等不再比 [执行中] 状态 chip 高出一截.
 // tone 复刻各按钮原有的语义色; iconOnly 用于纯图标按钮 (如 [...] 菜单触发器).
 // =====================================================================
@@ -1604,7 +1604,7 @@ function HeaderActionButton({
     <button
       type="button"
       className={[
-        'text-[11px] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
+        'text-[length:var(--fs-sm)] rounded-full border inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed',
         iconOnly ? 'h-[22px] w-[22px] p-0' : 'px-2.5 py-0.5',
         HEADER_ACTION_TONE_CLASS[tone],
         className,
@@ -1647,7 +1647,7 @@ function ChatHeaderOverflowMenu({
   }, [open])
   // 统一到顶栏「新建」下拉风格 (global-create): py-1.5 / hover var(--bg-hover) / gap-2.
   // 保留 justify-between — 本菜单项含右侧计数徽标需两端对齐.
-  const itemClass = "w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center justify-between gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+  const itemClass = "w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center justify-between gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
   return (
     <div className="relative">
       <HeaderActionButton
@@ -1675,12 +1675,12 @@ function ChatHeaderOverflowMenu({
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
             <span>原始 JSONL 数据</span>
-            {jsonlCount > 0 && <span className="text-[10px] text-[var(--text-muted)]">{jsonlCount}</span>}
+            {jsonlCount > 0 && <span className="text-[length:var(--fs-xs)] text-[var(--text-muted)]">{jsonlCount}</span>}
           </button>
           <button className={itemClass}
             onClick={() => { setOpen(false); onToggleAutoUrgentOnEnter() }}>
             <span>{autoUrgentOnEnter ? '关闭回车自动加急' : '启动回车自动加急'}</span>
-            {autoUrgentOnEnter && <span className="text-[10px]" style={{ color: '#fbbf24' }}>已开启</span>}
+            {autoUrgentOnEnter && <span className="text-[length:var(--fs-xs)]" style={{ color: '#fbbf24' }}>已开启</span>}
           </button>
           <button className={itemClass}
             onClick={() => { setOpen(false); onViewScheduledTasks() }}>
@@ -1726,7 +1726,7 @@ export function MessageBubble({
   }
 
   if (m.role === 'system') return (
-    <div className="msg-enter flex justify-center"><span className={`text-[11px] px-3 py-1 rounded-full border ${isDark ? 'text-gray-400 bg-white/[0.03] border-white/[0.05]' : 'text-gray-500 bg-black/[0.02] border-black/[0.06]'}`}>{m.content}</span></div>
+    <div className="msg-enter flex justify-center"><span className={`text-[length:var(--fs-sm)] px-3 py-1 rounded-full border ${isDark ? 'text-gray-400 bg-white/[0.03] border-white/[0.05]' : 'text-gray-500 bg-black/[0.02] border-black/[0.06]'}`}>{m.content}</span></div>
   )
   // v2 兜底: 未知 SDK 事件(raw role). 不像 Claude 气泡, 折成一行紫色小标. 默认折叠.
   if (m.role === 'raw') {
@@ -1736,12 +1736,12 @@ export function MessageBubble({
     return (
       <div className="msg-enter flex justify-center">
         <details className="group max-w-[78%]">
-          <summary className="text-[11px] px-3 py-1 rounded-full border cursor-pointer flex items-center gap-1.5"
+          <summary className="text-[length:var(--fs-sm)] px-3 py-1 rounded-full border cursor-pointer flex items-center gap-1.5"
             style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.08)', borderColor: 'rgba(167,139,250,0.25)' }}>
             <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             🔬 SDK 事件 · {sdkType}
           </summary>
-          <pre className="mt-1.5 px-3 py-2 rounded-lg text-[10px] font-mono overflow-x-auto max-h-48 leading-snug"
+          <pre className="mt-1.5 px-3 py-2 rounded-lg text-[length:var(--fs-xs)] font-mono overflow-x-auto max-h-48 leading-snug"
             style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
             {m.raw_event || m.content}
           </pre>
@@ -1770,23 +1770,23 @@ export function MessageBubble({
   if (m.role === 'thinking') return (
     <div className="msg-enter ml-11">
       <details className="group">
-        <summary className="text-[11px] text-indigo-400/60 cursor-pointer hover:text-indigo-400/80 flex items-center gap-1">
+        <summary className="text-[length:var(--fs-sm)] text-indigo-400/60 cursor-pointer hover:text-indigo-400/80 flex items-center gap-1">
           <svg className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           思考过程
         </summary>
-        <div className={`border-l-2 border-indigo-500/20 rounded-r-lg px-4 py-2 mt-1 text-[12px] italic max-h-40 overflow-y-auto ${isDark ? 'bg-[#0d1117] text-gray-500' : 'bg-gray-100 text-gray-500'}`}>{m.content?.slice(0, 500)}</div>
+        <div className={`border-l-2 border-indigo-500/20 rounded-r-lg px-4 py-2 mt-1 text-[length:var(--fs-md)] italic max-h-40 overflow-y-auto ${isDark ? 'bg-[#0d1117] text-gray-500' : 'bg-gray-100 text-gray-500'}`}>{m.content?.slice(0, 500)}</div>
       </details>
     </div>
   )
   if (m.role === 'tool') return (
     <div className="msg-enter ml-11 group/tool relative">
       <details className={`rounded-2xl overflow-hidden group ${isDark ? 'bg-white/[0.015] border border-white/[0.04]' : 'bg-gray-50 border border-black/[0.06]'}`}>
-        <summary className={`px-3 py-1.5 cursor-pointer text-[12px] flex items-center gap-1.5 transition-colors ${isDark ? 'text-gray-500 hover:text-gray-400 hover:bg-white/[0.02]' : 'text-gray-500 hover:text-gray-600 hover:bg-black/[0.02]'}`}>
+        <summary className={`px-3 py-1.5 cursor-pointer text-[length:var(--fs-md)] flex items-center gap-1.5 transition-colors ${isDark ? 'text-gray-500 hover:text-gray-400 hover:bg-white/[0.02]' : 'text-gray-500 hover:text-gray-600 hover:bg-black/[0.02]'}`}>
           <svg className="w-3 h-3 transition-transform group-open:rotate-90 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
           <Wrench className="w-3 h-3 flex-shrink-0" strokeWidth={1.75} />
           <span className="truncate">{m.tool_summary || '工具调用'}</span>
         </summary>
-        <pre className={`px-3 py-2 text-[10px] overflow-x-auto font-mono max-h-48 ${isDark ? 'text-gray-600 border-t border-white/[0.03] bg-[#0a0e14]' : 'text-gray-500 border-t border-black/[0.04] bg-gray-100'}`}>{m.content?.slice(0, 2000)}</pre>
+        <pre className={`px-3 py-2 text-[length:var(--fs-xs)] overflow-x-auto font-mono max-h-48 ${isDark ? 'text-gray-600 border-t border-white/[0.03] bg-[#0a0e14]' : 'text-gray-500 border-t border-black/[0.04] bg-gray-100'}`}>{m.content?.slice(0, 2000)}</pre>
       </details>
       <div className="absolute -right-10 top-0 opacity-0 group-hover/tool:opacity-100 transition-opacity">
         <ActionButton icon={copied
@@ -1820,7 +1820,7 @@ export function MessageBubble({
       const rest = quoteMatch[2]
       return (
         <>
-          <div className="border-l-2 border-[var(--text-dimmed)] pl-3 mb-2 text-[12px] italic line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{quoted}</div>
+          <div className="border-l-2 border-[var(--text-dimmed)] pl-3 mb-2 text-[length:var(--fs-md)] italic line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{quoted}</div>
           <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{rest}</ReactMarkdown></div>
         </>
       )
@@ -1831,13 +1831,13 @@ export function MessageBubble({
         const rest = quoteMatch[2]
         return (
           <>
-            <div className="border-l-2 pl-3 mb-2 text-[12px] italic line-clamp-2"
+            <div className="border-l-2 pl-3 mb-2 text-[length:var(--fs-md)] italic line-clamp-2"
               style={{ borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}>{quoted}</div>
-            <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{rest}</p>
+            <p className="text-[length:var(--fs-2xl)] leading-[1.55] whitespace-pre-wrap">{rest}</p>
           </>
         )
       }
-      return <p className="text-[15px] leading-[1.55] whitespace-pre-wrap">{content}</p>
+      return <p className="text-[length:var(--fs-2xl)] leading-[1.55] whitespace-pre-wrap">{content}</p>
     }
     return <div className="prose-chat"><ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>{content}</ReactMarkdown></div>
   }
@@ -1870,7 +1870,7 @@ export function MessageBubble({
           </div>
         )}
         {sessionMentions.length > 0 && (
-          <div className="mb-2 space-y-1 border-b pb-2 text-[10px] leading-relaxed"
+          <div className="mb-2 space-y-1 border-b pb-2 text-[length:var(--fs-xs)] leading-relaxed"
             style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)', color: isDark ? 'rgba(255,255,255,0.62)' : 'rgba(0,0,0,0.58)' }}>
             {sessionMentions.map((mention: any) => (
               <div key={`${mention.session_id}:${mention.mode || 'read_only'}`} className="min-w-0">
@@ -1962,13 +1962,13 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
         <AgentStatusDot agentStatus={session.agent_status} />
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <div className="text-[11px] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
-        <div className="text-[10px] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{[`${session.message_count} 消息`, timeAgo(session.last_active), modelLabel].filter(Boolean).join(' · ')}</div>
+        <div className="text-[length:var(--fs-sm)] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
+        <div className="text-[length:var(--fs-xs)] leading-[12px] mt-0.5 truncate" style={{ color: textMuted }}>{[`${session.message_count} 消息`, timeAgo(session.last_active), modelLabel].filter(Boolean).join(' · ')}</div>
       </div>
       <div className={`relative h-6 w-0 flex-shrink-0 overflow-hidden transition-[width] duration-150 ${actionWidthClass}`}>
         <div className="absolute inset-0 flex items-center justify-end gap-1 overflow-hidden opacity-100 transition-opacity group-hover:opacity-0">
           {session.research_role && (
-            <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[9px] leading-4 border"
+            <span className="flex-shrink-0 rounded px-1.5 py-[1px] text-[length:var(--fs-2xs)] leading-4 border"
               title={`研究角色: ${session.research_role}`}
               style={{
                 color: session.research_role === 'chief_researcher' ? '#34d399' : '#a78bfa',
@@ -4288,10 +4288,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           >
             <div className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0">
-                <div id="run-project-port-title" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div id="run-project-port-title" className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   确认发送运行前端命令
                 </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                   下面的消息将发送给当前会话
                 </div>
               </div>
@@ -4307,7 +4307,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
             </div>
             <div className="p-4">
               <div
-                className="max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 text-[12px] leading-relaxed"
+                className="max-h-[320px] overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 text-[length:var(--fs-md)] leading-relaxed"
                 style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
               >
                 {runProjectPrompt}
@@ -4316,7 +4316,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 <button
                   type="button"
                   onClick={() => setRunProjectPrompt('')}
-                  className="h-9 rounded-xl border px-4 text-[13px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                  className="h-9 rounded-xl border px-4 text-[length:var(--fs-lg)] transition-colors hover:bg-[var(--bg-card-hover)]"
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
                 >
                   取消
@@ -4324,7 +4324,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 <button
                   type="button"
                   onClick={confirmSendRunProjectPortPrompt}
-                  className="h-9 rounded-xl bg-emerald-500 px-4 text-[13px] font-medium text-white transition-colors hover:bg-emerald-600"
+                  className="h-9 rounded-xl bg-emerald-500 px-4 text-[length:var(--fs-lg)] font-medium text-white transition-colors hover:bg-emerald-600"
                 >
                   确认发送
                 </button>
@@ -4369,7 +4369,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               done={backendJobDone === true && !backendAlive}
               alwaysShowLabel
             />
-            <div className="flex min-w-0 items-center gap-1.5 text-[12px]" aria-label="当前会话上下文">
+            <div className="flex min-w-0 items-center gap-1.5 text-[length:var(--fs-md)]" aria-label="当前会话上下文">
               <span className="max-w-[180px] truncate font-medium uppercase" style={{ color: 'var(--text-secondary)' }} title={projectForSession?.name || currentProjectId}>
                 {projectForSession?.name || currentProjectId || '项目'}
               </span>
@@ -4409,7 +4409,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               onSwitchDevice={handleSwitchAimuxDevice}
             />
             {/* {currentModelLabel && (
-              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
+              <span className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
                 style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
                 {currentModelLabel}
@@ -4479,7 +4479,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               projectId={currentProjectId}
               subPath={currentVscodeSubPath}
               showWorktreeOption={!!currentVscodeSubPath}
-              className="text-[11px] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[length:var(--fs-sm)] rounded-full px-2.5 py-0.5 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
           {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目" 收纳进来 (计数槽自取条数) */}
@@ -4503,7 +4503,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
       {stopFeedbackActive && (
         <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">
-          <div className="session-stop-toast flex items-center gap-2 rounded-xl border border-red-300/45 bg-red-600 px-4 py-2 text-[13px] font-semibold text-white shadow-2xl shadow-red-950/40">
+          <div className="session-stop-toast flex items-center gap-2 rounded-xl border border-red-300/45 bg-red-600 px-4 py-2 text-[length:var(--fs-lg)] font-semibold text-white shadow-2xl shadow-red-950/40">
             <span className="session-stop-toast__icon inline-flex h-5 w-5 items-center justify-center rounded-md bg-white/18">
               <span className="h-2.5 w-2.5 rounded-sm bg-white" />
             </span>
@@ -4513,7 +4513,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       )}
 
       {lastSendError && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
+        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[length:var(--fs-md)] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
@@ -4535,7 +4535,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
       {/* 持久失败横幅: 取自 failed.flag 的 reason, 可手动关闭; 成功继续对话后也会隐藏. */}
       {showBackendFailureBanner && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
+        <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-[length:var(--fs-md)] text-red-300 bg-red-500/10 border-red-500/25 flex-shrink-0">
           <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
@@ -4706,7 +4706,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           {replyTo && (
             <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-500/5 border border-blue-500/15 rounded-xl">
               <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-              <div className="flex-1 min-w-0 text-[12px] text-[var(--text-secondary)] truncate">
+              <div className="flex-1 min-w-0 text-[length:var(--fs-md)] text-[var(--text-secondary)] truncate">
                 引用 {replyTo.role === 'assistant' ? '智能体' : '你'}: {(replyTo.content || '').slice(0, 100)}
               </div>
               <button onClick={() => setReplyTo(null)} className="text-[var(--text-dimmed)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0">
@@ -4717,7 +4717,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           {editingMsg && (
             <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-yellow-500/5 border border-yellow-500/15 rounded-xl">
               <svg className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-              <div className="flex-1 min-w-0 text-[12px] text-yellow-400/80">编辑消息 (将作为新消息重新发送)</div>
+              <div className="flex-1 min-w-0 text-[length:var(--fs-md)] text-yellow-400/80">编辑消息 (将作为新消息重新发送)</div>
               <button onClick={() => { setEditingMsg(null); setInput('') }} className="text-[var(--text-dimmed)] hover:text-[var(--text-secondary)] transition-colors flex-shrink-0">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -4751,18 +4751,18 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               <div className="absolute inset-0 z-20 p-1 pointer-events-none" style={{ background: 'var(--input-bg)', borderRadius: 14 }}>
                 <div className="flex h-full items-center justify-center rounded-[14px] border border-dashed border-blue-500/55"
                   style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.18))' }}>
-                  <div className="text-[12px] font-medium text-blue-400">松开以添加文件</div>
+                  <div className="text-[length:var(--fs-md)] font-medium text-blue-400">松开以添加文件</div>
                 </div>
               </div>
             )}
             <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
             <div className="px-3 pt-3 pb-2.5">
               {!modelAvailable && (
-                <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/45 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug" style={{ color: 'var(--text-primary)' }}>
+                <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/45 bg-amber-500/10 px-3 py-2 text-[length:var(--fs-md)] leading-snug" style={{ color: 'var(--text-primary)' }}>
                   <span className="flex-1">因之前使用的模型被管理员移除，本次会话不能继续，如需继续，请点击“修改模型并继续”。</span>
                   <button type="button" onClick={() => setContinueModalOpen(true)}
                     disabled={!currentSession?.session_id || (!currentIssueId && !(currentSession as any)?.research_id)}
-                    className="btn-label shrink-0 rounded-md bg-amber-500 px-2.5 py-1 text-[12px] font-medium text-black hover:bg-amber-400">
+                    className="btn-label shrink-0 rounded-md bg-amber-500 px-2.5 py-1 text-[length:var(--fs-md)] font-medium text-black hover:bg-amber-400">
                     修改模型并继续
                   </button>
                 </div>
@@ -4783,10 +4783,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               {selectedAgentMentions.length > 0 && (
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {selectedAgentMentions.map((mention) => (
-                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[12px]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
+                    <div key={mention.sessionId} className="flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2 py-1.5 text-[length:var(--fs-md)]" style={{ borderColor: 'rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
                       <Bot className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
                       <span className="max-w-48 truncate">@{mention.name}</span>
-                      <span className="whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+                      <span className="whitespace-nowrap rounded border px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
                         {mention.mode === 'bidirectional' ? '双向' : '只读'}
                       </span>
                       <button
@@ -4804,7 +4804,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               )}
               <div className="relative">
               {!input && !editingMsg && !isNewConversation && (
-                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid min-w-0 grid-cols-2 gap-x-3 gap-y-0.5 pb-1 text-[11px] leading-[1.35]" style={{ color: 'var(--placeholder-color)' }}>
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid min-w-0 grid-cols-2 gap-x-3 gap-y-0.5 pb-1 text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)' }}>
                   <span className="col-span-2 min-w-0 truncate">发送指令：</span>
                   <span className="min-w-0 truncate">· Shift+Enter 换行</span>
                   <span className="min-w-0 truncate">· Ctrl/⌘+V 粘贴文件/截图</span>
@@ -4843,7 +4843,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   send(autoUrgentOnEnter)
                 }}
                 placeholder={input && inputPlaceholder}
-                className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[14px] leading-[1.55] placeholder:!text-[var(--placeholder-color)] placeholder:!text-[11px] focus:outline-none overflow-y-auto"
+                className="w-full bg-transparent resize-none border-0 px-0 pt-0 pb-1 text-[length:var(--fs-xl)] leading-[1.55] placeholder:!text-[var(--placeholder-color)] placeholder:!text-[length:var(--fs-sm)] focus:outline-none overflow-y-auto"
                 style={{ height: inputHeight, minHeight: layout === 'easy' ? 42 : 60, maxHeight: '70vh', color: 'var(--text-primary)' }}
               />
               </div>
@@ -4880,20 +4880,20 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                     }}
                   >
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); openFilePicker() }}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
                       <Paperclip className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
                       <span>上传文件</span>
                     </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); setCompactConfirmOpen(true) }}
                       disabled={!sessionId}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
                       <Archive className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />
                       <span>压缩上文</span>
                     </button>
                     <button type="button" role="menuitem" onClick={() => { setInputMenuOpen(false); toggleInputExpanded() }}
-                      className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       style={{ color: 'var(--text-primary)' }}>
                       {inputExpanded ? <Minimize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} /> : <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} />}
                       <span>{inputExpanded ? '收起大输入' : '展开大输入'}</span>
@@ -4971,7 +4971,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 )
               })()}
             </div>
-            <div className={`pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[10px] ${sendingHint ? 'mobius-status-marquee' : ''}`} style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
+            <div className={`pointer-events-none absolute bottom-3 right-3 z-10 max-w-[55%] truncate text-right text-[length:var(--fs-xs)] ${sendingHint ? 'mobius-status-marquee' : ''}`} style={{ color: sendingHint ? '#facc15' : 'var(--text-muted)' }}>
               {sendingHint ?? ''}
             </div>
           </div>
@@ -5006,12 +5006,12 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
             onClick={event => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>长文本编辑</h3>
+              <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>长文本编辑</h3>
               <button
                 type="button"
                 onClick={() => setInputExpanded(false)}
                 title="收起编辑区"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
                 style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}
               >
                 <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -5024,7 +5024,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               onChange={e => setInput(e.target.value)}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
-              className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
+              className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
               style={{
                 background: 'var(--input-bg)',
                 border: '1px solid var(--input-border)',
@@ -5032,7 +5032,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               }}
             />
 	            <div className="mt-2 flex items-center justify-between gap-2">
-	              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+	              <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
 	                Enter 发送 · Shift+Enter 换行 · Esc 收起
 	              </span>
 	              <div className="flex items-center gap-1.5">
@@ -5139,7 +5139,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           >
             <div className="flex items-center gap-2">
               <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
-              <h3 className="min-w-0 flex-1 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>打开终端</h3>
+              <h3 className="min-w-0 flex-1 text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>打开终端</h3>
               <button
                 type="button"
                 onClick={() => setTerminalChoiceOpen(false)}
@@ -5163,8 +5163,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               >
                 <Terminal className="h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.9} />
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-medium">在当前目录打开终端</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>进入当前会话所属项目目录</span>
+                  <span className="block text-[length:var(--fs-lg)] font-medium">在当前目录打开终端</span>
+                  <span className="block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>进入当前会话所属项目目录</span>
                 </span>
               </button>
               <button
@@ -5179,8 +5179,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               >
                 <Bot className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-medium">打开终端并显示 Agent 后台</span>
-                  <span className="block truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
+                  <span className="block text-[length:var(--fs-lg)] font-medium">打开终端并显示 Agent 后台</span>
+                  <span className="block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>自动 attach 到当前会话的 tmux 窗口</span>
                 </span>
               </button>
             </div>
@@ -5204,12 +5204,12 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
             onClick={e => e.stopPropagation()}
             style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
             <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-              <span className="text-[14px] font-semibold flex-1 min-w-0 flex items-baseline gap-2" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-[length:var(--fs-xl)] font-semibold flex-1 min-w-0 flex items-baseline gap-2" style={{ color: 'var(--text-primary)' }}>
                 <span className="flex-shrink-0">原始 JSONL <JsonlCountSlot store={historyStore}>{(loaded, total) => (
-                  <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>· 已载 {loaded}{total > loaded ? ` / ${total}` : ''} 条</span>
+                  <span className="text-[length:var(--fs-sm)] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>· 已载 {loaded}{total > loaded ? ` / ${total}` : ''} 条</span>
                 )}</JsonlCountSlot></span>
                 {jsonlPath && (
-                  <span className="text-[11px] font-mono truncate min-w-0" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
+                  <span className="text-[length:var(--fs-sm)] font-mono truncate min-w-0" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
                 )}
               </span>
               {/* 复制的是 jsonl 在服务器上的绝对路径 (而非全文): 正文有渲染预算, 全文既长又没必要
@@ -5259,7 +5259,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   : <Download className="h-2.5 w-2.5" strokeWidth={1.9} aria-hidden="true" />}
               </button>
               <button onClick={() => setShowRaw(false)}
-                className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
+                className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 style={{ color: 'var(--text-secondary)' }}>关闭</button>
             </div>
             <div className="flex-1 overflow-y-auto">

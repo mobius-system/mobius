@@ -172,22 +172,22 @@ function HierarchyHitRow({
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
           <span
-            className="flex-shrink-0 rounded px-1 py-0.5 text-[9px] leading-none"
+            className="flex-shrink-0 rounded px-1 py-0.5 text-[length:var(--fs-2xs)] leading-none"
             style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)' }}
           >
             {hierarchyHitLabel(hit.kind)}
           </span>
-          <span className={`${variant === 'sidebar' ? 'text-[11px]' : 'text-[12px]'} min-w-0 truncate font-medium`} style={{ color: 'var(--text-primary)' }}>
+          <span className={`${variant === 'sidebar' ? 'text-[length:var(--fs-sm)]' : 'text-[length:var(--fs-md)]'} min-w-0 truncate font-medium`} style={{ color: 'var(--text-primary)' }}>
             <SearchMatchText text={hit.title || '未命名'} query={query} />
           </span>
         </span>
         {isSession && hit.parent_title && (
-          <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
             位于 {hit.parent_kind === 'research' ? '研究' : '任务'} · {hit.parent_title}
           </span>
         )}
         {descriptionMatched && (
-          <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="mt-0.5 block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
             <SearchMatchText text={hit.description} query={query} />
           </span>
         )}
@@ -643,7 +643,7 @@ export default function UserPage() {
             ) : (
               <button key={item.key} type="button" data-user-nav-key={item.key}
                 onClick={() => ((item as any).action ? (item as any).action() : setActiveView(item.key as UserView))}
-                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-[13px] transition-colors ${activeView === item.key ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`}
+                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-[length:var(--fs-lg)] transition-colors ${activeView === item.key ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-hover)]'}`}
                 style={activeView === item.key ? undefined : { color: 'var(--text-secondary)' }}>
                 {item.icon}{item.label}
               </button>
@@ -659,7 +659,7 @@ export default function UserPage() {
             <div className="mb-6">
               <div>
                 <div className="min-w-0">
-                  <h1 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
+                  <h1 className="text-[length:var(--fs-2xl)] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
                 </div>
               </div>
 
@@ -672,7 +672,7 @@ export default function UserPage() {
                     maxLength={200}
                     data-project-hierarchy-search
                     placeholder={projectSearchMode === 'quick' ? '搜索项目、任务或会话...' : '深度搜索所有会话内容...'}
-                    className="h-full min-w-0 flex-1 bg-transparent text-[12px] focus:outline-none"
+                    className="h-full min-w-0 flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none"
                     style={{ color: 'var(--text-primary)' }} />
                   {hierarchySearchLoading && projectSearchMode === 'quick' ? (
                     <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: '#60a5fa' }} />
@@ -687,30 +687,30 @@ export default function UserPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-1 rounded-lg border p-1" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                   <button type="button" onClick={() => setProjectFilters([])} title="显示全部未屏蔽项目"
-                    className={`h-7 rounded-md px-3 text-[11px] transition-colors ${projectFilters.length === 0 ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                    className={`h-7 rounded-md px-3 text-[length:var(--fs-sm)] transition-colors ${projectFilters.length === 0 ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
                     style={projectFilters.length !== 0 ? { color: 'var(--text-muted)' } : undefined}>全部</button>
                   {PROJECT_FILTERS.map((item) => {
                     const active = projectFilters.includes(item.key)
                     return (
                       <button key={item.key} type="button" onClick={() => toggleProjectFilter(item.key)} title={item.title}
-                        className={`h-7 rounded-md px-3 text-[11px] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                        className={`h-7 rounded-md px-3 text-[length:var(--fs-sm)] transition-colors ${active ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
                         style={!active ? { color: 'var(--text-muted)' } : undefined}>{item.label}</button>
                     )
                   })}
                 </div>
                 {mutedProjectIds.length > 0 && (
                   <button type="button" onClick={() => { setShowMutedPanel((v) => !v); if (!showMutedPanel) refreshMutedProjects() }}
-                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: showMutedPanel ? '#60a5fa' : 'var(--text-muted)' }}>
                     <EyeOff className="h-3.5 w-3.5" /> 已屏蔽项目
-                    <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'rgba(255,255,255,0.06)' }}>{mutedProjectIds.length}</span>
+                    <span className="rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: 'rgba(255,255,255,0.06)' }}>{mutedProjectIds.length}</span>
                   </button>
                 )}
               </div>
-              {hierarchySearchError && <div className="mt-2 text-[10px]" style={{ color: '#f87171' }}>{hierarchySearchError}</div>}
+              {hierarchySearchError && <div className="mt-2 text-[length:var(--fs-xs)]" style={{ color: '#f87171' }}>{hierarchySearchError}</div>}
               <div className="mt-4 flex min-h-8 flex-wrap items-center justify-between gap-3 border-t pt-3" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                  <span className="text-[12px]">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[length:var(--fs-sm)] tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                  <span className="text-[length:var(--fs-md)]">
                     {projectSearchMode === 'deep'
                       ? (search.trim().length >= 2 ? '深度搜索会话内容' : '输入至少 2 个字符开始深度搜索')
                       : normalizedSearch
@@ -736,13 +736,13 @@ export default function UserPage() {
               <div className="mb-6 rounded-lg border px-3 py-3" style={{ borderColor: 'rgba(248,113,113,0.30)', background: 'rgba(248,113,113,0.04)' }}>
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>已屏蔽项目</div>
-                    <div className="mt-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>这里可以恢复被你屏蔽的项目</div>
+                    <div className="text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>已屏蔽项目</div>
+                    <div className="mt-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>这里可以恢复被你屏蔽的项目</div>
                   </div>
-                  {mutedProjectsLoading && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>加载中...</span>}
+                  {mutedProjectsLoading && <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>加载中...</span>}
                 </div>
                 {mutedProjects.length === 0 ? (
-                  <div className="mt-3 rounded-md border border-dashed px-3 py-4 text-center text-[12px]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+                  <div className="mt-3 rounded-md border border-dashed px-3 py-4 text-center text-[length:var(--fs-md)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
                     暂无已屏蔽项目
                   </div>
                 ) : (
@@ -750,14 +750,14 @@ export default function UserPage() {
                     {mutedProjects.map((p: any) => (
                       <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
                         <LinklessNav to={`/u/${p.created_by}/p/${p.id}`} className="min-w-0 flex-1">
-                          <div className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
-                          <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{p.kind === 'extension' ? '拓展项目' : '普通项目'}</div>
+                          <div className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+                          <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{p.kind === 'extension' ? '拓展项目' : '普通项目'}</div>
                         </LinklessNav>
                         <button
                           type="button"
                           onClick={(e) => unmuteProject(e, p)}
                           disabled={mutedBusyId === p.id}
-                          className="inline-flex h-7 items-center gap-1 rounded-full border px-3 text-[11px] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                          className="inline-flex h-7 items-center gap-1 rounded-full border px-3 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
                           style={{ color: '#60a5fa', borderColor: 'rgba(59,130,246,0.35)' }}>
                           <Eye className="h-3.5 w-3.5" />
                           恢复显示
@@ -775,15 +775,15 @@ export default function UserPage() {
               <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
                 {normalizedSearch && hierarchySearchLoading ? (
                   <ListLoadingHint />
-                ) : <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>{emptyProjectText}</div>}
+                ) : <div className="text-[length:var(--fs-xl)] mb-3" style={{ color: 'var(--text-muted)' }}>{emptyProjectText}</div>}
                 {!hierarchySearchLoading && projectFilters.length > 0 ? (
                   <button onClick={() => setProjectFilters([])}
-                    className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
+                    className="h-9 px-4 rounded-lg text-[length:var(--fs-lg)] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     清空筛选
                   </button>
                 ) : !hierarchySearchLoading && !normalizedSearch ? (
                   <button onClick={() => setShowNew(true)} data-tour="user-empty-create-project"
-                    className="h-9 px-4 rounded-lg text-[13px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
+                    className="h-9 px-4 rounded-lg text-[length:var(--fs-lg)] text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 transition-colors">
                     创建第一个项目
                   </button>
                 ) : null}
@@ -828,13 +828,13 @@ export default function UserPage() {
                         <div className="flex items-center gap-2 min-w-0">
                           <svg className="w-4 h-4 flex-shrink-0" style={{ color: cardTheme.iconColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                            className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
+                            className="text-[length:var(--fs-xl)] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
                             <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
                           {isMuted && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
+                            <span className="text-[length:var(--fs-2xs)] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           )}
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
@@ -880,7 +880,7 @@ export default function UserPage() {
                                           }
                                         }}
                                         disabled={mutedBusyId === p.id}
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
                                         style={{ color: isMuted ? '#60a5fa' : '#f87171' }}
                                       >
                                         {isMuted ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -890,7 +890,7 @@ export default function UserPage() {
                                       <button
                                         type="button"
                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExtDeletingProject(p); setOpenProjectMenuId(null) }}
-                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)]"
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-hover)]"
                                         style={{ color: 'var(--text-primary)' }}
                                       >
                                         <MoreHorizontal className="h-3.5 w-3.5" />
@@ -905,13 +905,13 @@ export default function UserPage() {
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
                           {p.is_self_develop && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
                               style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.30)' }}>
                               自进化
                             </span>
                           )}
                           {p.kind === 'extension' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0"
                               style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.10)' }}
                               title={p.disabled ? '拓展目录已消失, 数据保留中' : '由 mobius/extension/ 自动同步'}>
                               {p.disabled ? '拓展(失效)' : '拓展'}
@@ -923,13 +923,13 @@ export default function UserPage() {
                       {/* 描述 + 元数据 */}
                       <div className="px-4 py-2.5">
                         {p.description ? (
-                          <p className="text-[12px] truncate mb-2" style={{ color: 'var(--text-secondary)' }} title={p.description}>
+                          <p className="text-[length:var(--fs-md)] truncate mb-2" style={{ color: 'var(--text-secondary)' }} title={p.description}>
                             <SearchMatchText text={p.description} query={normalizedSearch} />
                           </p>
                         ) : (
-                          <p className="text-[12px] italic mb-2" style={{ color: 'var(--text-muted)' }}>无描述</p>
+                          <p className="text-[length:var(--fs-md)] italic mb-2" style={{ color: 'var(--text-muted)' }}>无描述</p>
                         )}
-                        <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="flex items-center gap-3 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                           <span>{activeIssueCount} 进行中</span>
                           <span>{completedIssueCount} 已完成</span>
                           {p.research_enabled && <span>{p.research_count || 0} 研究</span>}
@@ -940,14 +940,14 @@ export default function UserPage() {
                       {/* 拓展项目: "进入"按钮 (打开新 tab 进入特殊应用) */}
                       {p.kind === 'extension' && (
                         <div className="border-t px-4 py-2 flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-                          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                             特殊拓展应用
                           </span>
                           <button
                             disabled={p.disabled}
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (p.disabled) return; window.open(`/extension/${p.extension_name}/`, '_blank') }}
                             title={p.disabled ? '拓展目录已删除' : `打开新 tab 进入 ${p.name}`}
-                            className="h-7 px-3 rounded text-[12px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="h-7 px-3 rounded text-[length:var(--fs-md)] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ color: '#fff', background: p.disabled ? '#475569' : '#6366f1' }}>
                             进入 →
                           </button>
@@ -958,18 +958,18 @@ export default function UserPage() {
                       {showingSearchMatches ? (
                         <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                           <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+                            <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-muted)' }}>
                               命中内容 {searchGroup?.total_matches || searchMatches.length}
                             </span>
                             <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                              className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">进入项目 →</LinklessNav>
+                              className="text-[length:var(--fs-sm)] text-blue-400 hover:text-blue-300 transition-colors">进入项目 →</LinklessNav>
                           </div>
                           <div className="min-w-0 space-y-0.5">
                             {searchMatches.slice(0, 5).map((hit) => (
                               <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
                             ))}
                             {(searchGroup?.total_matches || 0) > 5 && (
-                              <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              <div className="px-2 py-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                                 另有 {(searchGroup?.total_matches || 0) - 5} 条匹配
                               </div>
                             )}
@@ -978,15 +978,15 @@ export default function UserPage() {
                       ) : (
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{overviewLabel}</span>
+                          <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-muted)' }}>{overviewLabel}</span>
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
+                            className="text-[length:var(--fs-sm)] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
                         {overviewItems.length === 0 ? (
                           overviewLoading ? (
                             <ListLoadingHint compact />
                           ) : (
-                            <div className="text-[11px] py-2" style={{ color: 'var(--text-muted)' }}>{overviewEmpty}</div>
+                            <div className="text-[length:var(--fs-sm)] py-2" style={{ color: 'var(--text-muted)' }}>{overviewEmpty}</div>
                           )
                         ) : (
                           <div className="space-y-1 min-w-0">
@@ -994,20 +994,20 @@ export default function UserPage() {
                               <LinklessNav key={`${kind}:${item.id}`} to={`/u/${p.created_by}/p/${p.id}/${kind === 'research' ? 'r' : 'i'}/${item.id}`}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
                                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70'}`} />
-                                <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
+                                <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
                                   style={kind === 'research' ? { color: '#34d399', background: 'rgba(52,211,153,0.10)' } : { color: '#60a5fa', background: 'rgba(96,165,250,0.10)' }}>
                                   {kind === 'research' ? '研究' : '任务'}
                                 </span>
-                                <span className="text-[12px] truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>
+                                <span className="text-[length:var(--fs-md)] truncate flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>
                                   {item.title}
                                 </span>
                                 {item.session_count > 0 && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{item.session_count}</span>
+                                  <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>{item.session_count}</span>
                                 )}
                               </LinklessNav>
                             ))}
                             {overviewTotal > 5 && (
-                              <div className="text-[11px] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
+                              <div className="text-[length:var(--fs-sm)] py-1 px-2" style={{ color: 'var(--text-muted)' }}>
                                 还有 {overviewTotal - 5} 个...
                               </div>
                             )}
@@ -1029,7 +1029,7 @@ export default function UserPage() {
             {/* 10.7: 搜索命中且当前用户已屏蔽的项目. 仍可见, 但带"已屏蔽"角标; 点击 Eye 图标可恢复显示. */}
             {search.trim() && searchMutedProjects.length > 0 && (
               <div className="mt-6">
-                <div className="mb-2 text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+                <div className="mb-2 text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-muted)' }}>
                   已屏蔽 - 搜索命中 ({searchMutedProjects.length})
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1040,11 +1040,11 @@ export default function UserPage() {
                       <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(248,113,113,0.30)' }}>
                         <div className="flex items-center gap-2 min-w-0">
                           <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
-                            className="text-[14px] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
+                            className="text-[length:var(--fs-xl)] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
                             style={{ color: 'var(--text-primary)' }} title={p.name}>
                             <SearchMatchText text={p.name} query={normalizedSearch} />
                           </LinklessNav>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
+                          <span className="text-[length:var(--fs-2xs)] px-1.5 py-0.5 rounded flex-shrink-0" style={{ color: '#f87171', background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.30)' }}>已屏蔽</span>
                           <button onClick={(e) => unmuteProject(e, p)} disabled={mutedBusyId === p.id}
                             title="恢复显示"
                             aria-label="恢复显示"
@@ -1053,7 +1053,7 @@ export default function UserPage() {
                             <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
                           </button>
                         </div>
-                        <p className="mt-1 text-[11px] pl-1" style={{ color: 'var(--text-muted)' }}>
+                        <p className="mt-1 text-[length:var(--fs-sm)] pl-1" style={{ color: 'var(--text-muted)' }}>
                           该项目仍在你的屏蔽列表中，仅搜索时可见。点击标题可直接进入；点击右侧按钮可恢复显示。
                         </p>
                       </div>
@@ -1063,7 +1063,7 @@ export default function UserPage() {
                             <HierarchyHitRow key={`${hit.kind}:${hit.id}`} project={p} hit={hit} query={normalizedSearch} variant="card" />
                           ))}
                           {hierarchyGroupByProject.get(String(p.id))!.total_matches > 5 && (
-                            <div className="px-2 py-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            <div className="px-2 py-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                               另有 {hierarchyGroupByProject.get(String(p.id))!.total_matches - 5} 条匹配
                             </div>
                           )}
@@ -1079,8 +1079,8 @@ export default function UserPage() {
           {userParam === user?.id && activeView === 'memory' && (
             <div className="max-w-4xl mx-auto">
               <div className="mb-4">
-                <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Memory</h1>
-                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级记忆片段, 可随时添加/编辑/删除</p>
+                <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Memory</h1>
+                <p className="text-[length:var(--fs-md)] mt-1" style={{ color: 'var(--text-muted)' }}>用户级记忆片段, 可随时添加/编辑/删除</p>
               </div>
               <MemoriesManager scope="user" />
             </div>
@@ -1088,8 +1088,8 @@ export default function UserPage() {
           {userParam === user?.id && activeView === 'skills' && (
             <div className="max-w-4xl mx-auto">
               <div className="mb-4">
-                <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Skill</h1>
-                <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有任务中默认可用</p>
+                <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Skill</h1>
+                <p className="text-[length:var(--fs-md)] mt-1" style={{ color: 'var(--text-muted)' }}>用户级 skill, 在你创建的所有任务中默认可用</p>
               </div>
               <SkillsManager scope="user" />
             </div>
@@ -1132,9 +1132,9 @@ function PlaceholderView({ icon, title, desc }: { icon: ReactNode; title: string
       <div className="rounded-2xl border-2 border-dashed p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>{icon}</div>
-        <div className="text-[16px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
-        <p className="mx-auto mt-2 max-w-md text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>{desc}</p>
-        <div className="mt-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>敬请期待</div>
+        <div className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
+        <p className="mx-auto mt-2 max-w-md text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+        <div className="mt-3 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>敬请期待</div>
       </div>
     </div>
   )

@@ -148,7 +148,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
         <span className={`inline-flex ${iconClassName || 'h-4 w-4'} items-center justify-center transition-transform ${motion === 'breathe' ? 'duration-300 ease-out group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:scale-110' : 'duration-200 group-hover/advanced-interaction:-translate-y-0.5 group-hover/advanced-interaction:rotate-[-8deg] group-hover/advanced-interaction:scale-110 group-focus-visible/advanced-interaction:-translate-y-0.5 group-focus-visible/advanced-interaction:rotate-[-8deg] group-focus-visible/advanced-interaction:scale-110'}`}>
           {icon}
         </span>
-        {displayLabel && <span className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4">{label}</span>}
+        {displayLabel && <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium leading-4">{label}</span>}
       </button>
       {tooltipOpen && typeof document !== 'undefined'
         ? createPortal(
@@ -157,7 +157,7 @@ export const AdvancedInteractionBtn = forwardRef<HTMLButtonElement, AdvancedInte
             id={tooltipId}
             role="tooltip"
             // tooltipPos 为 null = 首帧渲染用于测量, visibility:hidden 保持布局以读 offsetWidth/Height, 测量完成 (useLayoutEffect 设了 tooltipPos) 后再可见.
-            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] shadow-xl"
+            className="pointer-events-none fixed z-[1000] max-w-[220px] whitespace-nowrap rounded-md border border-[var(--border-color)] bg-[var(--modal-bg)] px-2 py-1 text-[length:var(--fs-sm)] font-medium text-[var(--text-primary)] shadow-xl"
             style={
               tooltipPos
                 ? {

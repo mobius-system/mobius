@@ -318,12 +318,12 @@ export default function Welcome() {
       <div className="w-full max-w-[640px] relative z-10">
         <div className="text-center mb-8">
           <div className="inline-block mb-5"><MobiusLogo size={56} /></div>
-          <h1 className="text-[26px] font-semibold tracking-tight mb-2" style={{ color: 'var(--text-primary)' }}>欢迎使用 Mobius</h1>
-          <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>链接一切的自进化 Agent 操作系统</p>
+          <h1 className="text-[length:var(--fs-2xl)] font-semibold tracking-tight mb-2" style={{ color: 'var(--text-primary)' }}>欢迎使用 Mobius</h1>
+          <p className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>链接一切的自进化 Agent 操作系统</p>
         </div>
 
         {checkErr && (
-          <div className="mb-3 rounded-xl px-3 py-2 text-[12px]" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>{checkErr}</div>
+          <div className="mb-3 rounded-xl px-3 py-2 text-[length:var(--fs-md)]" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444' }}>{checkErr}</div>
         )}
 
         <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
@@ -340,10 +340,10 @@ export default function Welcome() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="block text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>{o.title}</span>
-                    {o.badge && <span className="rounded-full px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>{o.badge}</span>}
+                    <span className="block text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>{o.title}</span>
+                    {o.badge && <span className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>{o.badge}</span>}
                   </span>
-                  <span className="mt-0.5 block text-[12px]" style={{ color: 'var(--text-muted)' }}>{o.desc}</span>
+                  <span className="mt-0.5 block text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{o.desc}</span>
                 </span>
                 {!o.disabled && !o.busy && <ChevronRight className="h-4 w-4 flex-shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--text-muted)' }} />}
               </button>
@@ -352,17 +352,17 @@ export default function Welcome() {
         </div>
 
         {machineLines.length > 0 && (
-          <div className="mt-5 px-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <div className="mt-5 px-1 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             {machineLines.map((l, i) => <div key={i}>{l}</div>)}
           </div>
         )}
-        <div className="mt-1.5 px-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>{connectLine}</div>
+        <div className="mt-1.5 px-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{connectLine}</div>
 
         {/* 桌面端连接管理: 更换服务器 / 退出登录 / 清除缓存。
             更换服务器 & 退出登录 均回到本地登录页 (在那里可改 URL 或重新登录);
             清除缓存 = 清远程前端 HTTP/SW 缓存后刷新本页 (保留登录态)。web 端隐藏。 */}
         {isDesktop && (md?.logout || md?.clearCache) && (
-          <div className="mt-3 flex items-center justify-center gap-3 text-[11px]">
+          <div className="mt-3 flex items-center justify-center gap-3 text-[length:var(--fs-sm)]">
             {md?.logout && (
               <button type="button"
                 onClick={() => { try { void md.logout?.() } catch { /* 主进程会切到登录页, 本页随之销毁 */ } }}
@@ -438,14 +438,14 @@ function WelcomePathChoice({ path, onBack, onCreateNew, onReuseExisting }: {
             <ChevronLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 pt-0.5">
-            <h1 id="path-choice-title" className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>如何使用这个文件夹？</h1>
-            <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>这个路径尚未关联 Mobius 项目。请选择它接下来的归属。</p>
+            <h1 id="path-choice-title" className="text-[length:var(--fs-2xl)] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>如何使用这个文件夹？</h1>
+            <p className="mt-1 text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>这个路径尚未关联 Mobius 项目。请选择它接下来的归属。</p>
           </div>
         </div>
 
         <div className="mb-4 flex items-center gap-2 rounded-xl px-3.5 py-3" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
           <FolderOpen className="h-4 w-4 shrink-0" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />
-          <code className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-secondary)' }} title={path}>{path}</code>
+          <code className="min-w-0 flex-1 truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-secondary)' }} title={path}>{path}</code>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -459,11 +459,11 @@ function WelcomePathChoice({ path, onBack, onCreateNew, onReuseExisting }: {
                   <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 <span className="mt-5 flex min-w-0 items-center justify-between gap-3">
-                  <span className="min-w-0 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{choice.title}</span>
+                  <span className="min-w-0 text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{choice.title}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition-transform duration-200 group-hover:translate-x-0.5" style={{ color: 'var(--text-muted)' }} aria-hidden="true" />
                 </span>
-                <span className="mt-2 block text-[12px] leading-5" style={{ color: 'var(--text-secondary)' }}>{choice.desc}</span>
-                <span className="mt-3 block border-t pt-3 text-[11px] leading-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>{choice.detail}</span>
+                <span className="mt-2 block text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-secondary)' }}>{choice.desc}</span>
+                <span className="mt-3 block border-t pt-3 text-[length:var(--fs-sm)] leading-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>{choice.detail}</span>
               </button>
             )
           })}
@@ -586,15 +586,15 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
 
   const visibilityOption = VISIBILITY_OPTIONS.find(o => o.value === visibility) || VISIBILITY_OPTIONS[0]
   const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }
-  const inputCls = 'w-full h-10 px-3 rounded-xl text-[13px] outline-none focus:border-blue-500/40 transition-colors'
+  const inputCls = 'w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] outline-none focus:border-blue-500/40 transition-colors'
 
   // 注意: 这里用 render function (renderLocalPathField()) 而非内部组件 (<LocalPathField/>).
   // 若写成组件内组件, 每次父组件按键重渲染都会让它是新组件类型 -> unmount/remount -> input 失焦.
   const renderLocalPathField = () => (
     <div>
-      <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>
+      <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>
         本地路径{flow.localPathVisible ? <> <span style={{ color: '#ef4444' }}>*</span></> : null}
-        <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>· 本机工作目录, 不上传服务器</span>
+        <span className="ml-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>· 本机工作目录, 不上传服务器</span>
       </label>
       <div className="flex gap-2">
         <input type="text" value={localPath}
@@ -602,7 +602,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
           placeholder="选择或输入本机绝对路径"
           className={`${inputCls} font-mono`} style={inputStyle} />
         <button type="button" onClick={browseLocal} title="浏览…"
-          className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[12px] shrink-0 hover:bg-[var(--bg-card-hover)]"
+          className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[length:var(--fs-md)] shrink-0 hover:bg-[var(--bg-card-hover)]"
           style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
           <FolderBrowse className="w-3.5 h-3.5" />
         </button>
@@ -620,13 +620,13 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
             style={{ color: 'var(--text-muted)' }} title="返回">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page2Title}</h1>
+          <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page2Title}</h1>
         </div>
 
         <div className="rounded-2xl p-5" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
           <div className="space-y-4">
             <div>
-              <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目名称 <span style={{ color: '#ef4444' }}>*</span></label>
+              <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目名称 <span style={{ color: '#ef4444' }}>*</span></label>
               <input type="text" value={name} autoFocus
                 onChange={e => { setName(e.target.value); setErr('') }}
                 placeholder="例如：强化学习最新进展调研" className={inputCls} style={inputStyle} />
@@ -637,7 +637,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
             {/* 高级选项 (折叠) */}
             <div className="rounded-xl" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
               <button type="button" onClick={() => setAdvancedOpen(v => !v)}
-                className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[13px] font-medium"
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[length:var(--fs-lg)] font-medium"
                 style={{ color: 'var(--text-secondary)' }}>
                 <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />高级选项</span>
                 <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? '' : '-rotate-90'}`} style={{ color: 'var(--text-muted)' }} />
@@ -646,20 +646,20 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
                 <div className="px-3 pb-3 pt-1 space-y-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   {isDesktop && !flow.localPathVisible && renderLocalPathField()}
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目描述</label>
+                    <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目描述</label>
                     <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
-                      className="w-full h-20 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none" style={inputStyle} />
+                      className="w-full h-20 px-3 py-2 rounded-xl text-[length:var(--fs-lg)] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none" style={inputStyle} />
                   </div>
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                      绑定路径<span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>· Mobius 中枢 agent 工作目录</span>
+                    <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                      绑定路径<span className="ml-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>· Mobius 中枢 agent 工作目录</span>
                     </label>
                     <div className="flex gap-2">
                       <input type="text" value={bindPath}
                         onChange={e => { setBindPath(e.target.value); setBindPathManual(true); setErr('') }}
                         placeholder="点击右侧选择, 或手动输入" className={`${inputCls} font-mono`} style={inputStyle} />
                       <button type="button" onClick={() => setPickerOpen(true)} title="选择路径"
-                        className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[12px] shrink-0 hover:bg-[var(--bg-card-hover)]"
+                        className="h-10 px-3 rounded-xl border flex items-center gap-1 text-[length:var(--fs-md)] shrink-0 hover:bg-[var(--bg-card-hover)]"
                         style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
                         <FolderBrowse className="w-3.5 h-3.5" />
                       </button>
@@ -679,12 +679,12 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
                   </div>
                   <ToggleSwitch checked={researchEnabled}
                     onChange={enabled => { setResearchEnabled(enabled); if (enabled) setDefaultUseWorktree(false) }}
-                    className="flex items-start gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
-                    <span><span className="font-medium">启动研究系统</span><span className="block text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
+                    className="flex items-start gap-3 text-[length:var(--fs-lg)]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+                    <span><span className="font-medium">启动研究系统</span><span className="block text-[length:var(--fs-sm)] mt-0.5" style={{ color: 'var(--text-muted)' }}>开启后可在本项目中创建研究智能体团队</span></span>
                   </ToggleSwitch>
                   {!researchEnabled && (
                     <ToggleSwitch checked={defaultUseWorktree} onChange={setDefaultUseWorktree}
-                      className="flex items-center gap-3 text-[13px]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+                      className="flex items-center gap-3 text-[length:var(--fs-lg)]" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
                       <span>默认使用 git worktree（新建任务时开独立工作区）</span>
                     </ToggleSwitch>
                   )}
@@ -697,9 +697,9 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, initialLocalPath, 
 
           <div className="flex justify-end gap-2 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
             <button type="button" onClick={onBack}
-              className="h-9 px-4 rounded-xl text-[13px] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
+              className="h-9 px-4 rounded-xl text-[length:var(--fs-lg)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
             <button type="button" onClick={next} disabled={loading}
-              className="h-9 px-5 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60 flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
+              className="h-9 px-5 rounded-xl text-[length:var(--fs-lg)] font-semibold text-white disabled:opacity-60 flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
               {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {loading ? '处理中…' : '下一步'}
             </button>
@@ -843,7 +843,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
   }
 
   const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }
-  const inputCls = 'w-full h-10 px-3 rounded-xl text-[13px] outline-none focus:border-blue-500/40 transition-colors'
+  const inputCls = 'w-full h-10 px-3 rounded-xl text-[length:var(--fs-lg)] outline-none focus:border-blue-500/40 transition-colors'
 
   // 提交进度态: 全屏进度条
   if (submitting) {
@@ -852,12 +852,12 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
         style={{ background: 'var(--bg-secondary)' }}>
         <div className="w-full max-w-[420px] text-center">
           <div className="inline-block mb-5"><MobiusLogo size={48} /></div>
-          <h2 className="text-[18px] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>正在创建会话…</h2>
-          <p className="text-[12px] mb-6" style={{ color: 'var(--text-muted)' }}>小莫正在准备您的工作区</p>
+          <h2 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>正在创建会话…</h2>
+          <p className="text-[length:var(--fs-md)] mb-6" style={{ color: 'var(--text-muted)' }}>小莫正在准备您的工作区</p>
           <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--input-bg)' }}>
             <div className="h-full rounded-full transition-[width] duration-150 ease-linear" style={{ width: `${progress}%`, background: '#3b82f6' }} />
           </div>
-          <p className="text-[11px] mt-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>{Math.floor(progress)}%</p>
+          <p className="text-[length:var(--fs-sm)] mt-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>{Math.floor(progress)}%</p>
         </div>
       </div>
     )
@@ -873,7 +873,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
             style={{ color: 'var(--text-muted)' }} title="返回">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page3Title}</h1>
+          <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{flow.page3Title}</h1>
         </div>
 
         <div className="rounded-2xl p-5" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
@@ -889,7 +889,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
             {/* 高级选项 (折叠): session 名称 / 语言 / Skill / Memory / PC 任务模式 */}
             <div className="rounded-xl" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
               <button type="button" onClick={() => setAdvancedOpen(v => !v)}
-                className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[13px] font-medium"
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[length:var(--fs-lg)] font-medium"
                 style={{ color: 'var(--text-secondary)' }}>
                 <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" style={{ color: 'var(--text-muted)' }} />高级选项</span>
                 <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? '' : '-rotate-90'}`} style={{ color: 'var(--text-muted)' }} />
@@ -897,15 +897,15 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
               {advancedOpen && (
                 <div className="px-3 pb-3 pt-1 space-y-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>会话名称</label>
+                    <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>会话名称</label>
                     <input type="text" value={name} onChange={e => { setName(e.target.value); setErr('') }} className={inputCls} style={inputStyle} />
                   </div>
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>语言</label>
-                    <LanguageSelect value={language} onChange={setLanguage} />
+                    <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>语言</label>
+                    <LanguageSelect value={language} onChange={setLanguage} dark={dark} />
                   </div>
                   <div>
-                    <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>Skill / Memory</label>
+                    <label className="block text-[length:var(--fs-md)] mb-1.5" style={{ color: 'var(--text-muted)' }}>Skill / Memory</label>
                     <SkillMemoryPicker skills={availSkills} memories={availMemories}
                       excludedSkills={excludedSkills} excludedMemories={excludedMemories}
                       onToggleSkill={id => toggle(excludedSkills, id, setExcludedSkills)}
@@ -925,9 +925,9 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
 
           <div className="flex justify-end gap-2 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
             <button type="button" onClick={onBack}
-              className="h-9 px-4 rounded-xl text-[13px] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
+              className="h-9 px-4 rounded-xl text-[length:var(--fs-lg)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>返回</button>
             <button type="button" onClick={submit}
-              className="h-9 px-5 rounded-xl text-[13px] font-semibold text-white flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
+              className="h-9 px-5 rounded-xl text-[length:var(--fs-lg)] font-semibold text-white flex items-center gap-1.5 transition-colors" style={{ background: '#3b82f6' }}>
               提交
             </button>
           </div>
@@ -983,15 +983,15 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
             <ChevronLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 pt-0.5">
-            <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h1>
-            {description && <p className="mt-1 text-[12px] leading-5" style={{ color: 'var(--text-muted)' }}>{description}</p>}
+            <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h1>
+            {description && <p className="mt-1 text-[length:var(--fs-md)] leading-5" style={{ color: 'var(--text-muted)' }}>{description}</p>}
           </div>
         </div>
 
         {selectedPath && (
           <div className="mb-3 flex items-center gap-2 rounded-xl px-3.5 py-3" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
             <FolderOpen className="h-4 w-4 shrink-0" style={{ color: 'var(--text-secondary)' }} aria-hidden="true" />
-            <code className="min-w-0 flex-1 truncate text-[12px]" style={{ color: 'var(--text-secondary)' }} title={selectedPath}>{selectedPath}</code>
+            <code className="min-w-0 flex-1 truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-secondary)' }} title={selectedPath}>{selectedPath}</code>
           </div>
         )}
         {error && <div className="mb-3"><ErrBanner>{error}</ErrBanner></div>}
@@ -1001,12 +1001,12 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
             <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
               <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
               <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索项目名称或描述…" autoFocus
-                className="flex-1 bg-transparent text-[12px] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
+                className="flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
             </div>
           </div>
-          {projects.loading && <div className="px-4 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中…</div>}
+          {projects.loading && <div className="px-4 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中…</div>}
           {!projects.loading && filtered.length === 0 && (
-            <div className="px-4 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{q.trim() ? '没有匹配的项目' : '暂无项目'}</div>
+            <div className="px-4 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{q.trim() ? '没有匹配的项目' : '暂无项目'}</div>
           )}
           <div className="max-h-[52vh] overflow-y-auto">
             {filtered.map((p, i) => (
@@ -1020,10 +1020,10 @@ function WelcomeProjectList({ dark, onBack, onPick, title = '进入已创建的�
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     {p.starred && <Star className="h-3 w-3 flex-shrink-0 fill-current" style={{ color: '#f59e0b' }} />}
-                    <span className="block text-[14px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
-                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[10px] flex-shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>研究</span>}
+                    <span className="block text-[length:var(--fs-xl)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
+                    {p.research_enabled && <span className="rounded-full px-1.5 py-0.5 text-[length:var(--fs-xs)] flex-shrink-0" style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>研究</span>}
                   </span>
-                  <span className="mt-0.5 block text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{p.description || '无描述'}</span>
+                  <span className="mt-0.5 block text-[length:var(--fs-md)] truncate" style={{ color: 'var(--text-muted)' }}>{p.description || '无描述'}</span>
                 </span>
                 <ChevronRight className="h-4 w-4 flex-shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--text-muted)' }} />
               </button>

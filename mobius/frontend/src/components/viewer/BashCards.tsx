@@ -49,18 +49,18 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
 
   return (
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
-      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[length:var(--fs-xs)]">
         <div className="min-w-0 flex-1">
           {index != null && (
-            <div className="font-mono text-[10px] text-[var(--text-muted)]">#{index}</div>
+            <div className="font-mono text-[length:var(--fs-xs)] text-[var(--text-muted)]">#{index}</div>
           )}
           {hasDescription && (
-            <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={call.description}>
+            <div className="truncate font-mono text-[length:var(--fs-md)] font-semibold text-[var(--text-secondary)]" title={call.description}>
               {call.description}
             </div>
           )}
           {hasCwd && (
-            <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={call.cwd}>
+            <div className="mt-0.5 truncate font-mono text-[length:var(--fs-xs)] text-[var(--text-muted)]" title={call.cwd}>
               cwd: {call.cwd}
             </div>
           )}
@@ -85,13 +85,13 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
       <div className="max-h-[34rem] overflow-auto">
         {/* 多行命令首屏截断预览 (纯文本带行号), 折叠区里仍给完整高亮版; 单行/短命令直接全量高亮. */}
         {restLines.length > 0 ? (
-          <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+          <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
             <CodePreviewRows lines={previewLines} />
             <details className="border-t border-[var(--border-color)]/60">
-              <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+              <summary className="cursor-pointer px-2 py-1.5 text-[length:var(--fs-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
                 展开剩余 {restLines.length} 行 (含高亮)
               </summary>
-              <div className="jsonl-compact-md !text-[11px]">
+              <div className="jsonl-compact-md !text-[length:var(--fs-sm)]">
                 <Suspense fallback={<CompactPlainTextFallback text={call.command} />}>
                   <CompactMarkdown text={markdownSource} />
                 </Suspense>
@@ -99,7 +99,7 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
             </details>
           </div>
         ) : (
-          <div className="jsonl-compact-md !text-[11px]">
+          <div className="jsonl-compact-md !text-[length:var(--fs-sm)]">
             <Suspense fallback={<CompactPlainTextFallback text={call.command} />}>
               <CompactMarkdown text={markdownSource} />
             </Suspense>
@@ -140,7 +140,7 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
 
   return (
     <div className="border-t border-[var(--border-color)]/70 first:border-t-0">
-      <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-[10px]">
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-[length:var(--fs-xs)]">
         <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]">
           返回结果
           <span className="ml-1 text-[var(--text-muted)]">#{result.lineNo}</span>
@@ -199,9 +199,9 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
         <div className="max-h-[34rem] overflow-auto">
           {stdout && stderr ? (
             <div>
-              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-emerald-300/90">stdout</div>
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[length:var(--fs-xs)] font-mono text-emerald-300/90">stdout</div>
               <ResultTextPreview text={stdout} />
-              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-red-300/90">stderr</div>
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[length:var(--fs-xs)] font-mono text-red-300/90">stderr</div>
               <ResultTextPreview text={stderr} />
             </div>
           ) : (
@@ -209,7 +209,7 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
           )}
         </div>
       ) : (
-        <div className="px-2.5 pb-2 text-[11px] font-mono text-[var(--text-muted)]">
+        <div className="px-2.5 pb-2 text-[length:var(--fs-sm)] font-mono text-[var(--text-muted)]">
           无输出
         </div>
       )}

@@ -454,7 +454,7 @@ export default function IssuePage() {
               <div className="flex-1 min-w-0">
                 <button onClick={goToOverview}
                   data-tour="issue-overview-link"
-                  className={`block w-full text-left text-[13px] font-semibold leading-tight hover:text-blue-400 transition-colors truncate ${issue?.status === 'completed' ? 'line-through' : ''}`}
+                  className={`block w-full text-left text-[length:var(--fs-lg)] font-semibold leading-tight hover:text-blue-400 transition-colors truncate ${issue?.status === 'completed' ? 'line-through' : ''}`}
                   style={{ color: issue?.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)' }}
                   title="返回会话列表">
                   {issue?.title || '加载中...'}
@@ -462,7 +462,7 @@ export default function IssuePage() {
                 {project && (
                   <Link to={`/u/${userParam}/p/${projectId}`}
                     data-tour="project-back-link"
-                    className="text-[11px] hover:text-blue-400 transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
+                    className="text-[length:var(--fs-sm)] hover:text-blue-400 transition-colors truncate" style={{ color: 'var(--text-muted)' }}>
                     ← {project.name}
                   </Link>
                 )}
@@ -477,7 +477,7 @@ export default function IssuePage() {
               </button>
             </div>
             {selectedSession ? (
-              <div className="space-y-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              <div className="space-y-1.5 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 <TruncatedText
                   text={issueSummary || '暂无描述'}
                   lines={2}
@@ -498,11 +498,11 @@ export default function IssuePage() {
               <TruncatedText
                 text={issue.description}
                 lines={3}
-                className="text-[11px] leading-relaxed"
+                className="text-[length:var(--fs-sm)] leading-relaxed"
               />
             )}
             {issue && (
-              <div className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-xs)] mt-2" style={{ color: 'var(--text-muted)' }}>
                 {issue.message_count || 0} 消息 · 活跃 {timeAgo(issue.last_active)}
               </div>
             )}
@@ -526,7 +526,7 @@ export default function IssuePage() {
                     aria-selected={active}
                     aria-controls="issue-sidebar-session-list"
                     onClick={() => selectSessionListMode(mode)}
-                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[11px] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                    className="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-[length:var(--fs-sm)] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
                     style={{
                       color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                       background: active ? 'var(--bg-active)' : 'transparent',
@@ -575,8 +575,8 @@ export default function IssuePage() {
                   className="mt-2 w-full rounded-xl border border-dashed px-3 py-5 text-center transition-colors hover:border-blue-500/35 hover:bg-blue-500/5"
                   style={{ borderColor: 'var(--border-color)' }}>
                   <MessageSquarePlus className="mx-auto mb-2 h-5 w-5 text-blue-400" strokeWidth={1.8} />
-                  <div className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
-                  <div className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>创建第一个会话</div>
+                  <div className="mt-1 text-[length:var(--fs-xs)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     为当前 Issue 开启一次智能体执行
                   </div>
                 </button>
@@ -592,18 +592,18 @@ export default function IssuePage() {
                 )
               })
             ) : recentSessionsLoading ? (
-              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+              <div className="px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
             ) : recentSessionsError ? (
               <div className="px-3 py-8 text-center">
-                <div className="text-[12px]" style={{ color: '#f87171' }}>{recentSessionsError}</div>
+                <div className="text-[length:var(--fs-md)]" style={{ color: '#f87171' }}>{recentSessionsError}</div>
                 <button type="button" onClick={() => setRecentReloadVersion(value => value + 1)}
-                  className="mt-2 rounded-md border px-2 py-1 text-[11px] transition-colors hover:bg-[var(--bg-hover)]"
+                  className="mt-2 rounded-md border px-2 py-1 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}>
                   重新加载
                 </button>
               </div>
             ) : liveRecentSessions.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
+              <div className="px-3 py-8 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无近期会话</div>
             ) : (
               <div aria-label="按项目与任务分组的近期会话" data-testid="issue-recent-session-tree">
                 {recentSessionGroups.map(group => {
@@ -637,12 +637,12 @@ export default function IssuePage() {
                           {isResearch ? <FlaskConical className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[9px] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
-                          <span className="block truncate text-[11px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
+                          <span className="block truncate text-[length:var(--fs-2xs)] leading-3" style={{ color: 'var(--text-muted)' }}>{group.projectName}</span>
+                          <span className="block truncate text-[length:var(--fs-sm)] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{group.subjectTitle}</span>
                         </span>
                         <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
-                          <span className="text-[8px] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
-                          <span className="text-[8px] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                          <span className="text-[length:var(--fs-2xs)] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
+                          <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
                             {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
                           </span>
                         </span>
@@ -803,7 +803,7 @@ function WorkspacePaneLoading({ label }: { label: string }) {
   return (
     <div className="flex h-full min-h-[160px] w-full flex-col items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
       <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-      <div className="text-[12px]">{label}</div>
+      <div className="text-[length:var(--fs-md)]">{label}</div>
     </div>
   )
 }
@@ -839,8 +839,8 @@ function SessionOverview({ sessions, onNewSession, projectId }: {
     <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
       <div className="max-w-5xl mx-auto p-6">
         <div className="mb-5">
-          <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>任务概览</h1>
-          <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          <h1 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>任务概览</h1>
+          <p className="text-[length:var(--fs-md)] mt-1" style={{ color: 'var(--text-muted)' }}>
             {sessions.length === 0
               ? '当前任务还没有会话，新建一个开始执行'
               : `共 ${stats.total} 个会话${stats.running ? ` · ${stats.running} 个执行中` : ''}${stats.completed ? ` · ${stats.completed} 个已完成` : ''} · 从左侧选择会话进入对话`}
@@ -849,10 +849,10 @@ function SessionOverview({ sessions, onNewSession, projectId }: {
 
         {sessions.length === 0 ? (
           <div className="rounded-2xl border-dashed border-2 p-12 text-center" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="text-[14px] mb-3" style={{ color: 'var(--text-muted)' }}>当前任务还没有会话</div>
+            <div className="text-[length:var(--fs-xl)] mb-3" style={{ color: 'var(--text-muted)' }}>当前任务还没有会话</div>
             <button onClick={onNewSession}
               data-tour="issue-empty-create-session"
-              className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
+              className="h-10 px-4 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10">
               <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
               创建第一个Session
             </button>
@@ -871,12 +871,12 @@ function SessionOverview({ sessions, onNewSession, projectId }: {
             <div className="rounded-2xl border p-6 mb-6 flex items-center justify-between gap-4"
               style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
               <div className="min-w-0">
-                <div className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>开启一次智能体执行</div>
-                <div className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>从左侧选择已有会话进入对话，或新建会话</div>
+                <div className="text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>开启一次智能体执行</div>
+                <div className="text-[length:var(--fs-md)] mt-1" style={{ color: 'var(--text-muted)' }}>从左侧选择已有会话进入对话，或新建会话</div>
               </div>
               <button onClick={onNewSession}
                 data-tour="issue-overview-create-session"
-                className="h-10 px-4 rounded-xl text-[13px] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10 flex-shrink-0">
+                className="h-10 px-4 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors inline-flex items-center gap-2 shadow-lg shadow-black/10 flex-shrink-0">
                 <MessageSquarePlus className="h-4 w-4" strokeWidth={2} />
                 新建会话
               </button>
@@ -902,11 +902,11 @@ function OverviewStatCard({ label, value, agentStatus }: {
 }) {
   return (
     <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-      <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="flex items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
         {agentStatus && <AgentStatusDot agentStatus={agentStatus} />}
         {label}
       </div>
-      <div className="text-[22px] font-semibold mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</div>
+      <div className="text-[length:var(--fs-2xl)] font-semibold mt-1 tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</div>
     </div>
   )
 }
@@ -941,7 +941,7 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
         aria-haspopup="menu"
         aria-expanded={open}
         className="inline-flex h-6 max-w-[180px] items-center gap-1 rounded px-1.5 transition-colors hover:bg-[var(--bg-card-hover)]">
-        <span className="truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择会话'}</span>
+        <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{current?.name || '选择会话'}</span>
         <ChevronDown className="w-3 h-3 shrink-0" style={{ color: 'var(--text-muted)' }} />
       </button>
       {open && (
@@ -954,12 +954,12 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="搜索会话..."
-            className="mb-1 h-7 w-full rounded-md px-2 text-[12px] focus:outline-none"
+            className="mb-1 h-7 w-full rounded-md px-2 text-[length:var(--fs-md)] focus:outline-none"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
           <div className="overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>无匹配会话</div>
+              <div className="px-2 py-2 text-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>无匹配会话</div>
             ) : filtered.map(s => (
               <button
                 key={s.session_id}
@@ -968,7 +968,7 @@ function SessionSwitcher({ sessions, currentId, onPick }: {
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
                 style={{ background: s.session_id === currentId ? 'var(--bg-active)' : undefined }}>
                 <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: s.agent_status === 'completed' ? '#4ade80' : 'var(--accent-primary)' }} />
-                <span className="truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                <span className="truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
               </button>
             ))}
           </div>

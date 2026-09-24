@@ -87,8 +87,8 @@ function LoadingPresetModal({
       <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-label="关闭" onClick={onClose} />
       <div className="relative w-[360px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="mb-2 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
-        <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-muted)' }}>
+        <h3 className="mb-2 text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+        <div className="flex items-center gap-2 text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>
           <RefreshCw className="h-4 w-4 animate-spin" />
           <span>{message}</span>
         </div>
@@ -111,9 +111,9 @@ function PresetErrorModal({
       <button type="button" className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-label="关闭" onClick={onClose} />
       <div className="relative w-[380px] max-w-[calc(100vw-32px)] rounded-2xl p-6 shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
-        <h3 className="mb-2 text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>预设配置失败</h3>
-        <p className="mb-5 text-[13px] leading-relaxed text-red-400">{message}</p>
-        <button type="button" onClick={onClose} className="h-9 w-full rounded-xl border text-[13px]"
+        <h3 className="mb-2 text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>预设配置失败</h3>
+        <p className="mb-5 text-[length:var(--fs-lg)] leading-relaxed text-red-400">{message}</p>
+        <button type="button" onClick={onClose} className="h-9 w-full rounded-xl border text-[length:var(--fs-lg)]"
           style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--bg-card-hover)' }}>
           关闭
         </button>
@@ -144,21 +144,21 @@ function DeleteSessionConfirmModal({
         <div className="mb-3 flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫会话</h3>
-            <p className="mt-1 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            <h3 className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>删除当前小莫会话</h3>
+            <p className="mt-1 text-[length:var(--fs-lg)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               保存新的预设后，当前会话「{name}」使用的模型和资料快照会过期。确认后会关闭后台执行，并永久删除这个小莫会话。
             </p>
           </div>
         </div>
-        {error ? <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">{error}</div> : null}
+        {error ? <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)] text-red-300">{error}</div> : null}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} disabled={saving}
-            className="h-9 flex-1 rounded-xl border text-[13px] disabled:opacity-40"
+            className="h-9 flex-1 rounded-xl border text-[length:var(--fs-lg)] disabled:opacity-40"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--bg-card-hover)' }}>
             取消
           </button>
           <button type="button" onClick={onConfirm} disabled={saving}
-            className="h-9 flex-1 rounded-xl bg-red-500 text-[13px] text-white transition-colors hover:bg-red-600 disabled:opacity-40">
+            className="h-9 flex-1 rounded-xl bg-red-500 text-[length:var(--fs-lg)] text-white transition-colors hover:bg-red-600 disabled:opacity-40">
             {saving ? '处理中...' : '删除并保存'}
           </button>
         </div>

@@ -263,13 +263,13 @@ export function ProjectArchitecturePanel({
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>会话预设</div>
-            <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>会话预设</div>
+            <div className="text-[length:var(--fs-sm)] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
               {preset ? `${preset.name} · ${preset.language === 'en' ? 'English' : '中文'} · ${existingSessionActionLabel(preset.existing_session_action)}` : '未配置'}
             </div>
           </div>
           <button onClick={() => setShowPresetModal(true)}
-            className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors inline-flex items-center gap-1.5">
+            className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors inline-flex items-center gap-1.5">
             <Settings className="w-3.5 h-3.5" strokeWidth={1.75} />
             预设配置
           </button>
@@ -279,25 +279,25 @@ export function ProjectArchitecturePanel({
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <button onClick={createOrRefresh}
           disabled={!preset || starting}
-          className="h-9 px-4 rounded-lg text-[13px] btn-primary transition-colors inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+          className="h-9 px-4 rounded-lg text-[length:var(--fs-lg)] btn-primary transition-colors inline-flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
           <RefreshCw className={`w-3.5 h-3.5 ${starting ? 'animate-spin' : ''}`} strokeWidth={1.75} />
           {starting ? '创建中...' : '创建或刷新项目结构图'}
         </button>
-        {err && <div className="mt-3 text-[12px] text-red-400">{err}</div>}
-        {notice && <div className="mt-3 text-[12px] text-emerald-400">{notice}</div>}
+        {err && <div className="mt-3 text-[length:var(--fs-md)] text-red-400">{err}</div>}
+        {notice && <div className="mt-3 text-[length:var(--fs-md)] text-emerald-400">{notice}</div>}
       </div>
 
       <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+            <div className="text-[length:var(--fs-lg)] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
               {figureKind === 'html'
                 ? <FileCode2 className="w-3.5 h-3.5" strokeWidth={1.75} />
                 : <Image className="w-3.5 h-3.5" strokeWidth={1.75} />}
               系统结构剖析图
             </div>
             {imageName && (
-              <div className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-sm)] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {imageName}{figureKind === 'html' ? ' · 单文件 HTML 预览已禁用脚本' : ''}
               </div>
             )}
@@ -305,7 +305,7 @@ export function ProjectArchitecturePanel({
           <div className="flex items-center gap-2 flex-shrink-0">
             {imageUrl && figureKind === 'image' && (
               <a href={imageUrl} target="_blank" rel="noreferrer"
-                className="h-7 px-2 rounded-md text-[11px] border hover:bg-[var(--bg-card-hover)] transition-colors inline-flex items-center gap-1.5"
+                className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border hover:bg-[var(--bg-card-hover)] transition-colors inline-flex items-center gap-1.5"
                 style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>
                 <ExternalLink className="w-3 h-3" strokeWidth={1.75} />
                 打开
@@ -313,23 +313,23 @@ export function ProjectArchitecturePanel({
             )}
             {imageUrl && (
               <a href={imageUrl} download={imageName || 'arch.html'}
-                className="h-7 px-2 rounded-md text-[11px] border hover:bg-[var(--bg-card-hover)] transition-colors inline-flex items-center gap-1.5"
+                className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border hover:bg-[var(--bg-card-hover)] transition-colors inline-flex items-center gap-1.5"
                 style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>
                 <Download className="w-3 h-3" strokeWidth={1.75} />
                 下载
               </a>
             )}
             <button onClick={loadFigure} disabled={imageLoading}
-              className="h-7 px-2 rounded-md text-[11px] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
+              className="h-7 px-2 rounded-md text-[length:var(--fs-sm)] border hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-40"
               style={{ color: 'var(--text-secondary)', borderColor: 'var(--input-border)' }}>
               刷新
             </button>
           </div>
         </div>
         {imageLoading ? (
-          <div className="text-[12px] py-8 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+          <div className="text-[length:var(--fs-md)] py-8 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : imageErr ? (
-          <div className="text-[12px] py-8 text-center text-red-400">{imageErr}</div>
+          <div className="text-[length:var(--fs-md)] py-8 text-center text-red-400">{imageErr}</div>
         ) : imageExists && imageUrl ? (
           figureKind === 'html' ? (
             <iframe
@@ -343,7 +343,7 @@ export function ProjectArchitecturePanel({
             <img src={imageUrl} alt="系统结构剖析图" className="w-full max-h-[70vh] object-contain rounded-lg border" style={{ borderColor: 'var(--border-color)' }} />
           )
         ) : (
-          <div className="text-[12px] py-8 text-center" style={{ color: 'var(--text-muted)' }}>系统结构剖析图不存在或正在绘制中</div>
+          <div className="text-[length:var(--fs-md)] py-8 text-center" style={{ color: 'var(--text-muted)' }}>系统结构剖析图不存在或正在绘制中</div>
         )}
       </div>
 

@@ -224,7 +224,7 @@ export function UserPicker({
         onClick={() => { if (!disabled) { inputRef.current?.focus(); setOpen(true) } }}
       >
         {uniqueSelected.length === 0 && !query && (
-          <span className="text-[12px] px-1" style={{ color: 'var(--placeholder-color)' }}>
+          <span className="text-[length:var(--fs-md)] px-1" style={{ color: 'var(--placeholder-color)' }}>
             {emptyHint}
           </span>
         )}
@@ -234,11 +234,11 @@ export function UserPicker({
           const sub = roleLabel(user)
           return (
             <span key={id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[12px] font-mono"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[length:var(--fs-md)] font-mono"
               style={{ background: 'rgba(59,130,246,0.18)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.35)' }}
               title={text}>
               <span className="max-w-[180px] truncate">{text}</span>
-              {sub && <span className="text-[10px]" style={{ color: 'rgba(96,165,250,0.7)' }}>· {sub}</span>}
+              {sub && <span className="text-[length:var(--fs-xs)]" style={{ color: 'rgba(96,165,250,0.7)' }}>· {sub}</span>}
               {!disabled && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); removeUser(id) }}
                   className="ml-0.5 -mr-1 inline-flex items-center justify-center w-4 h-4 rounded hover:bg-blue-500/30"
@@ -257,7 +257,7 @@ export function UserPicker({
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 min-w-[120px] px-1 py-0.5 text-[12px] font-mono focus:outline-none disabled:cursor-not-allowed"
+          className="flex-1 min-w-[120px] px-1 py-0.5 text-[length:var(--fs-md)] font-mono focus:outline-none disabled:cursor-not-allowed"
           style={{ background: 'transparent', color: 'var(--text-primary)' }}
         />
       </div>
@@ -278,13 +278,13 @@ export function UserPicker({
           }}
         >
           {loading && (
-            <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>搜索中...</div>
+            <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>搜索中...</div>
           )}
           {err && !loading && (
-            <div className="px-3 py-2 text-[12px] text-red-400">{err}</div>
+            <div className="px-3 py-2 text-[length:var(--fs-md)] text-red-400">{err}</div>
           )}
           {!loading && !err && options.length === 0 && (
-            <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>没有匹配的用户</div>
+            <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>没有匹配的用户</div>
           )}
           {!loading && options.map((opt, idx) => {
             const picked = uniqueSelected.includes(opt.id)
@@ -294,7 +294,7 @@ export function UserPicker({
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); addUser(opt) }}
                 onMouseEnter={() => setHighlight(idx)}
-                className="w-full px-3 py-1.5 text-left flex items-center gap-2 text-[12px] font-mono transition-colors"
+                className="w-full px-3 py-1.5 text-left flex items-center gap-2 text-[length:var(--fs-md)] font-mono transition-colors"
                 style={{
                   background: idx === highlight ? 'rgba(59,130,246,0.16)' : 'transparent',
                   color: 'var(--text-primary)',
@@ -304,9 +304,9 @@ export function UserPicker({
               >
                 <span className="truncate flex-1">{labelFor(opt)}</span>
                 {opt.role && (
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{roleLabel(opt)}</span>
+                  <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{roleLabel(opt)}</span>
                 )}
-                {picked && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>已添加</span>}
+                {picked && <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>已添加</span>}
               </button>
             )
           })}

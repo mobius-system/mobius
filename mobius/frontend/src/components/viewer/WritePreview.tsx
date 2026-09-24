@@ -16,12 +16,12 @@ export function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall 
 
   return (
     <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-0 ring-[var(--border-color)]/70">
-      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[length:var(--fs-xs)]">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={writeCall.filePath}>
+          <div className="truncate font-mono text-[length:var(--fs-md)] font-semibold text-[var(--text-secondary)]" title={writeCall.filePath}>
             {basename(writeCall.filePath)}
           </div>
-          <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={writeCall.filePath}>
+          <div className="mt-0.5 truncate font-mono text-[length:var(--fs-xs)] text-[var(--text-muted)]" title={writeCall.filePath}>
             {writeCall.filePath}
           </div>
         </div>
@@ -31,11 +31,11 @@ export function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall 
         <JsonlDownloadButton filePath={writeCall.filePath} />
       </div>
       <div className="max-h-[34rem] overflow-auto">
-        <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+        <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
           <CodePreviewRows lines={previewLines} />
           {restLines.length > 0 && (
             <details className="border-t border-[var(--border-color)]/60">
-              <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+              <summary className="cursor-pointer px-2 py-1.5 text-[length:var(--fs-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
                 展开剩余 {restLines.length} 行
               </summary>
               <CodePreviewRows lines={restLines} startLine={WRITE_PREVIEW_LINE_LIMIT + 1} />

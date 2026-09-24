@@ -119,12 +119,12 @@ export function SessionMentionPicker({
           {selected.map((item) => (
             <div
               key={item.sessionId}
-              className="flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+              className="flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-[length:var(--fs-sm)]"
               style={{ borderColor: 'rgba(59,130,246,0.26)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}
             >
               <Bot className="h-3 w-3 flex-shrink-0 text-blue-400" strokeWidth={1.8} />
               <span className="max-w-44 truncate">@{item.name}</span>
-              <span className="rounded border px-1 py-0.5 text-[9px]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
+              <span className="rounded border px-1 py-0.5 text-[length:var(--fs-2xs)]" style={{ borderColor: 'rgba(59,130,246,0.22)', color: 'var(--text-muted)' }}>
                 {item.mode === 'bidirectional' ? '双向' : '只读'}
               </span>
               <button type="button" onClick={() => remove(item.sessionId)} aria-label={`移除 Session ${item.name}`}

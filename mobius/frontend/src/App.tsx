@@ -49,11 +49,11 @@ class StaleChunkErrorBoundary extends Component<{ children: ReactNode }, { hasEr
           className="flex h-screen w-screen flex-col items-center justify-center gap-3"
           style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}
         >
-          <div className="text-sm">页面加载失败，可能是 Mobius 刚完成一次自我迭代。</div>
+          <div className="text-[length:var(--fs-xl)]">页面加载失败，可能是 Mobius 刚完成一次自我迭代。</div>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="rounded-md border px-4 py-1.5 text-sm transition-colors hover:bg-[var(--bg-hover)]"
+            className="rounded-md border px-4 py-1.5 text-[length:var(--fs-xl)] transition-colors hover:bg-[var(--bg-hover)]"
             style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color-strong)' }}
           >
             立即刷新

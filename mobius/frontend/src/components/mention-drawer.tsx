@@ -380,8 +380,8 @@ export function RemoteFileMentionDrawer({
             <AtSign className="h-4 w-4" strokeWidth={1.8} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{activeLabel}</div>
-            <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>{activeHint}</div>
+            <div className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{activeLabel}</div>
+            <div className="truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{activeHint}</div>
           </div>
           <button
             type="button"
@@ -404,7 +404,7 @@ export function RemoteFileMentionDrawer({
               <button
                 type="button"
                 onClick={() => setActiveTab('files')}
-                className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors"
+                className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-[length:var(--fs-sm)] transition-colors"
                 style={{
                   borderColor: activeTab === 'files' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
                   background: activeTab === 'files' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
@@ -418,7 +418,7 @@ export function RemoteFileMentionDrawer({
             <button
               type="button"
               onClick={() => setActiveTab('agents')}
-              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors ${showFilesTab ? 'flex-1' : 'w-full'}`}
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2 text-[length:var(--fs-sm)] transition-colors ${showFilesTab ? 'flex-1' : 'w-full'}`}
               style={{
                 borderColor: activeTab === 'agents' ? 'rgba(59,130,246,0.55)' : 'var(--border-color)',
                 background: activeTab === 'agents' ? 'rgba(59,130,246,0.12)' : 'var(--bg-primary)',
@@ -432,12 +432,12 @@ export function RemoteFileMentionDrawer({
           {activeTab === 'files' ? (
             <>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>文件来源</span>
+                <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-secondary)' }}>文件来源</span>
                 <button
                   type="button"
                   onClick={() => void loadSources()}
                   disabled={sourcesLoading}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   <RefreshCw className={`h-3 w-3 ${sourcesLoading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
@@ -445,12 +445,12 @@ export function RemoteFileMentionDrawer({
                 </button>
               </div>
               {sourcesLoading && sources.length === 0 ? (
-                <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="flex h-16 items-center justify-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                   <Loader2 className="h-4 w-4 animate-spin" />加载文件来源…
                 </div>
               ) : (
                 <>
-                  {sourcesError && <div className="mb-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">远程来源加载失败：{sourcesError}</div>}
+                  {sourcesError && <div className="mb-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)] text-red-300">远程来源加载失败：{sourcesError}</div>}
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {sourceOptions.map(source => {
                       const active = source.key === selectedSourceKey
@@ -464,10 +464,10 @@ export function RemoteFileMentionDrawer({
                         >
                           <div className="flex items-center gap-2">
                             <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.kind !== 'remote' || source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                            <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
+                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
                             {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
                           </div>
-                          <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
+                          <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
                             {source.kind === 'hub' ? '项目绑定路径' : source.kind === 'local' ? 'Electron 本机路径' : (source.remote_path || '默认登录目录')}
                           </div>
                         </button>
@@ -489,7 +489,7 @@ export function RemoteFileMentionDrawer({
                   maxLength={200}
                   placeholder="搜索会话名称"
                   aria-label="搜索会话"
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[12px] outline-none"
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[length:var(--fs-md)] outline-none"
                   style={{ color: 'var(--text-primary)' }}
                 />
                 {searchLoading ? (
@@ -504,18 +504,18 @@ export function RemoteFileMentionDrawer({
               <div id="mention-agent-session-list" role="tabpanel" className="flex min-h-0 flex-1 flex-col">
               {normalizedSessionQuery ? (
                 searchError ? (
-                  <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">搜索会话失败：{searchError}</div>
+                  <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[length:var(--fs-md)] text-red-300">搜索会话失败：{searchError}</div>
                 ) : !searchSettled || searchLoading ? (
-                  <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex h-16 items-center justify-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                     <Loader2 className="h-4 w-4 animate-spin" />正在搜索会话…
                   </div>
                 ) : searchSessions.length === 0 ? (
-                  <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                  <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                     没有找到匹配的会话，试试会话名称或其他关键词。
                   </div>
                 ) : (
                   <>
-                    <div className="flex min-h-6 flex-shrink-0 items-center justify-between px-1 pb-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <div className="flex min-h-6 flex-shrink-0 items-center justify-between px-1 pb-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                       <span>搜索到 {searchSessions.length} 个会话</span>
                       {searchResult.truncated && <span>仅显示最相关结果</span>}
                     </div>
@@ -529,15 +529,15 @@ export function RemoteFileMentionDrawer({
                   </>
                 )
               ) : recentLoading && recentSessions.length === 0 ? (
-                <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                <div className="flex h-16 items-center justify-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                   <Loader2 className="h-4 w-4 animate-spin" />加载近期会话…
                 </div>
               ) : recentError ? (
-                <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                   近期会话加载失败：{recentError}
                 </div>
               ) : recentGroups.length === 0 ? (
-                <div className="rounded-lg border px-3 py-2 text-[12px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                   暂无近期会话。
                 </div>
               ) : (
@@ -557,7 +557,7 @@ export function RemoteFileMentionDrawer({
         {activeTab === 'files' ? (
           <>
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+              <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                 <FolderOpen className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} />
                 <span className="truncate">{selectedSource?.name || '未选择来源'}</span>
                 {selectedSource && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
@@ -565,7 +565,7 @@ export function RemoteFileMentionDrawer({
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
                 {!selectedSource ? null : !rootState ? (
-                  <div className="flex h-28 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex h-28 items-center justify-center gap-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                     <Loader2 className="h-4 w-4 animate-spin" />加载文件…
                   </div>
                 ) : (
@@ -583,13 +583,13 @@ export function RemoteFileMentionDrawer({
                 )}
               </div>
             </div>
-            <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
               <FileText className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
               点击文件后会替换当前的 <code className="rounded bg-[var(--bg-card-hover)] px-1 py-0.5">@</code> 并回到输入框
             </div>
           </>
         ) : (
-          <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <div className="flex flex-shrink-0 items-center gap-2 border-t px-4 py-3 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             <ArrowLeftRight className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} />
             选择智能体后会插入当前输入框，并把其上下文或双向桥接语义一起发送给后端
           </div>
@@ -610,10 +610,10 @@ export function RemoteFileMentionDrawer({
           >
             <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0">
-                <div id="mention-agent-mode-title" className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div id="mention-agent-mode-title" className="text-[length:var(--fs-2xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   选择连接方式
                 </div>
-                <div className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-muted)' }} title={pendingAgent.name || pendingAgent.session_id}>
+                <div className="mt-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }} title={pendingAgent.name || pendingAgent.session_id}>
                   为「{pendingAgent.name || pendingAgent.session_id}」选择本次 @ 引用的权限
                 </div>
               </div>
@@ -641,11 +641,11 @@ export function RemoteFileMentionDrawer({
                     <div className="h-7 w-7 rounded-md border border-blue-300/40" />
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div className="flex items-center gap-1.5 text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   <Eye className="h-3.5 w-3.5 text-blue-300" strokeWidth={1.8} />
                   只读引用
                 </div>
-                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>带入对方上下文，只查看不发送消息。</div>
+                <div className="mt-1 text-[length:var(--fs-xs)] leading-4" style={{ color: 'var(--text-muted)' }}>带入对方上下文，只查看不发送消息。</div>
               </button>
               <button
                 type="button"
@@ -661,16 +661,16 @@ export function RemoteFileMentionDrawer({
                     <div className="h-7 w-7 rounded-md border border-emerald-300/40" />
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div className="flex items-center gap-1.5 text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>
                   <MessageCircle className="h-3.5 w-3.5 text-emerald-300" strokeWidth={1.8} />
                   开启交流
                 </div>
-                <div className="mt-1 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                <div className="mt-1 text-[length:var(--fs-xs)] leading-4" style={{ color: 'var(--text-muted)' }}>
                   允许当前会话向对方发送交流请求。{pendingAgent.can_communicate === false ? '该智能体不支持交流。' : ''}
                 </div>
               </button>
             </div>
-            <div className="border-t px-5 py-3 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <div className="border-t px-5 py-3 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
               你可以在输入框中的智能体标签上随时调整这次引用的方式。
             </div>
           </div>

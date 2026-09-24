@@ -39,7 +39,7 @@ export function RecentSessionGroupList({
           aria-controls={rowsId}
           aria-label={expanded ? `收起${groupLabel}的${itemLabel}` : `显示${groupLabel}的更多${itemLabel}，还有 ${remainingCount} 个`}
           onClick={() => setExpanded(value => !value)}
-          className="group relative mt-1 flex min-h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-[10px] font-medium transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+          className="group relative mt-1 flex min-h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 text-[length:var(--fs-xs)] font-medium transition-colors hover:bg-[var(--bg-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
           style={{ color: 'var(--text-secondary)' }}
           data-testid="recent-session-group-disclosure"
         >
@@ -48,7 +48,7 @@ export function RecentSessionGroupList({
           <span>{expanded ? '收起' : '显示更多'}</span>
           {!expanded && (
             <span
-              className="inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] tabular-nums"
+              className="inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[length:var(--fs-2xs)] tabular-nums"
               style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}
               aria-hidden="true"
             >

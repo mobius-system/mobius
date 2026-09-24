@@ -142,7 +142,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
     <div data-tour={managerTour} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <h3 className="text-[13px] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+          <h3 className="text-[length:var(--fs-lg)] font-semibold whitespace-nowrap flex-shrink-0" style={{ color: 'var(--text-primary)' }}>{title}</h3>
           <HelpHint text={desc} />
         </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-1">
@@ -157,7 +157,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
             onClick={() => memoryFileRef.current?.click()}
             disabled={memoryFileUploading || (scope === 'project' && !projectId)}
             data-tour={scope === 'user' ? 'user-memory-upload-file' : 'project-memory-upload-file'}
-            className="text-[10.5px] px-1.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+            className="text-[length:var(--fs-xs)] px-1.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
             title="上传本地 .md 文件并创建 Memory, 上限 50MB">
             <Upload className="w-3 h-3" strokeWidth={1.8} />
             {memoryFileUploading ? '上传中...' : '上传'}
@@ -166,7 +166,7 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
             <button onClick={() => setRemoteOpen(true)}
               disabled={!projectId}
               data-tour="project-memory-add-remote"
-              className="text-[10.5px] px-1.5 py-1 rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 border border-cyan-500/20 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+              className="text-[length:var(--fs-xs)] px-1.5 py-1 rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 border border-cyan-500/20 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
               title="从 aimux remote 清单生成项目级 Memory">
               <Server className="w-3 h-3" strokeWidth={1.8} />
               添加远程算力
@@ -174,27 +174,27 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
           )}
           <button onClick={() => setCopyOpen(true)}
             data-tour={copyTour}
-            className="text-[10.5px] px-1.5 py-1 rounded bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20 transition-colors whitespace-nowrap"
+            className="text-[length:var(--fs-xs)] px-1.5 py-1 rounded bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20 transition-colors whitespace-nowrap"
             title="浏览其他用户/项目的 memory 并复制到这里">
             复制
           </button>
           <button onClick={() => setEditing({ mode: 'create' })}
             data-tour={newTour}
             title="直接编辑或粘贴文本创建 Memory"
-            className="text-[10.5px] px-1.5 py-1 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors whitespace-nowrap">
+            className="text-[length:var(--fs-xs)] px-1.5 py-1 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors whitespace-nowrap">
             写入
           </button>
         </div>
       </div>
-      {/* <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>{desc}</p> */}
+      {/* <p className="text-[length:var(--fs-md)] mb-4" style={{ color: 'var(--text-muted)' }}>{desc}</p> */}
       {memoryFileInfo && (
-        <pre className="text-[11px] text-amber-400 mb-3 whitespace-pre-wrap break-all max-h-24 overflow-auto">{memoryFileInfo}</pre>
+        <pre className="text-[length:var(--fs-sm)] text-amber-400 mb-3 whitespace-pre-wrap break-all max-h-24 overflow-auto">{memoryFileInfo}</pre>
       )}
 
       {loading ? (
-        <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       ) : memories.length === 0 ? (
-        <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无 memory, 点击右上角写入或上传</div>
+        <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>暂无 memory, 点击右上角写入或上传</div>
       ) : (
         <div className="space-y-2">
           {memories.map((m: any) => {
@@ -204,21 +204,21 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-[180px] flex-[1_1_180px]">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
-                    <span className="min-w-32 max-w-full flex-[1_1_8rem] text-[13px] font-medium leading-5 break-words truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</span>
+                    <span className="min-w-32 max-w-full flex-[1_1_8rem] text-[length:var(--fs-lg)] font-medium leading-5 break-words truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</span>
                     {typeof m.body_length === 'number' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
+                      <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
                         {m.body_length} 字符
                       </span>
                     )}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
+                    <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
                       {visibilityLabel(m.visibility, m.scope)}
                     </span>
                     {managed && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.10)' }} title="由 project_knowledge.md 自动同步; 编辑会写回源文件, 删除会清掉源文件">自动同步</span>
+                      <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.10)' }} title="由 project_knowledge.md 自动同步; 编辑会写回源文件, 删除会清掉源文件">自动同步</span>
                     )}
                   </div>
                   {m.description && (
-                    <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{m.description}</p>
+                    <p className="text-[length:var(--fs-sm)] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{m.description}</p>
                   )}
                 </div>
                 <div className="ml-auto flex flex-[0_1_auto] flex-wrap items-center justify-end gap-1">
@@ -264,19 +264,19 @@ export function MemoriesManager({ scope, projectId }: { scope: 'user' | 'project
             onClick={() => projectKnowledgeFileRef.current?.click()}
             disabled={projectKnowledgeUploading || !projectId}
             data-tour="project-memory-upload-knowledge"
-            className="text-[11px] px-2.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+            className="text-[length:var(--fs-sm)] px-2.5 py-1 rounded bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
             title="上传本地 project_knowledge.md, 并同步为项目级 Memory, 上限 50MB">
             <Upload className="w-3 h-3" strokeWidth={1.8} />
             {projectKnowledgeUploading ? '上传中...' : '上传项目知识'}
           </button> */}
           <button onClick={refreshProjectKnowledge}
             disabled={projectKnowledgeRefreshing || !projectId}
-            className="text-[11px] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-[length:var(--fs-sm)] px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title={`读取项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/project_knowledge.md, 并同步为项目级 Memory`}>
             {projectKnowledgeRefreshing ? '刷新中...' : '刷新项目知识沉淀'}
           </button>
           {projectKnowledgeInfo && (
-            <span className="text-[11px] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-sm)] truncate max-w-full" style={{ color: 'var(--text-muted)' }}>
               {projectKnowledgeInfo}
             </span>
           )}
@@ -920,29 +920,29 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           className="mt-1 w-4 h-4 accent-cyan-500 cursor-pointer" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[13px] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
+            <span className="text-[length:var(--fs-lg)] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
               {r.status || 'unknown'}{r.cached ? ' [记忆]' : ''}
             </span>
             {typeof r.rtt_ms === 'number' && (
-              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
+              <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{r.rtt_ms}ms</span>
             )}
             {isAnnounce && (
               <button type="button" onClick={() => appendRemoteIdToRequirement(r.name)} disabled={saving}
                 data-tour="remote-compute-append-id"
                 title={`将机器 ID ${r.name} 追加到具体要求末尾`}
                 aria-label={`将机器 ID ${r.name} 追加到具体要求末尾`}
-                className="h-6 px-1.5 text-[10px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
+                className="h-6 px-1.5 text-[length:var(--fs-xs)] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 添加 ID
               </button>
             )}
           </div>
-          <div className="text-[11px] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
+          <div className="text-[length:var(--fs-sm)] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
             {r.user || '-'}@{r.hostname || r.name}:{r.port || 22}
           </div>
           {(testInfo[r.name] || hardwareInfo[r.name]) && (
-            <div className="text-[11px] mt-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[length:var(--fs-sm)] mt-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
               {testInfo[r.name] && <div>测试: {testInfo[r.name]}</div>}
               {hardwareInfo[r.name] && <div>硬件: {hardwareInfo[r.name]}</div>}
             </div>
@@ -954,20 +954,20 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 data-tour="remote-compute-path-input"
                 placeholder="远程路径, 例: /workspace/project"
                 disabled={saving}
-                className="min-w-[220px] flex-1 h-7 px-2 rounded text-[11px] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                className="min-w-[220px] flex-1 h-7 px-2 rounded text-[length:var(--fs-sm)] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
               <button type="button"
                 onClick={() => setPathPicker({ remote: r, path: remotePaths[r.name] || '~' })}
                 disabled={saving || !canBrowseRemote(r)}
                 title={r.cached ? '等待本轮扫描确认后浏览' : (canBrowseRemote(r) ? '浏览远端真实路径' : 'remote 状态不可达, 无法浏览')}
-                className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                className="h-7 px-2 text-[length:var(--fs-xs)] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 <FolderOpen className="w-3 h-3" strokeWidth={1.8} />
                 浏览
               </button>
               {['~', '/workspace', '/root', '/home'].map(p => (
                 <button key={p} type="button" onClick={() => updateRemotePath(r.name, p)} disabled={saving}
-                  className="h-7 px-2 text-[10.5px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                  className="h-7 px-2 text-[length:var(--fs-xs)] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
                   style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                   {p}
                 </button>
@@ -979,7 +979,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           <button onClick={() => testRemote(r.name)} disabled={!!busyName || saving}
             data-tour="remote-compute-test"
             title="aimux remote test"
-            className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
+            className="h-7 px-2 text-[length:var(--fs-sm)] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
             <Activity className="w-3 h-3" strokeWidth={1.8} />
             {busyName === `test:${r.name}` ? '测试中...' : '测试'}
@@ -987,7 +987,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           <button onClick={() => probeHardware(r.name)} disabled={!!busyName || saving}
             data-tour="remote-compute-hardware"
             title="aimux remote hardware"
-            className="h-7 px-2 text-[11px] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
+            className="h-7 px-2 text-[length:var(--fs-sm)] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
             <Cpu className="w-3 h-3" strokeWidth={1.8} />
             {busyName === `hardware:${r.name}` ? '探测中...' : '硬件'}
@@ -1006,10 +1006,10 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
         <div className="flex items-center justify-between px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <Server className="w-4 h-4 text-cyan-400 flex-shrink-0" strokeWidth={1.8} />
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
               {isUpdate ? '更新项目远程算力' : (isAnnounce ? '声明可合作计算机' : '添加远程算力')}
             </span>
-            <span className="text-[11px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               aimux remote
             </span>
           </div>
@@ -1034,7 +1034,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                 role="tab"
                 aria-selected={activeTab === tab}
                 onClick={() => setActiveTab(tab)}
-                className="h-7 px-2.5 text-[11px] rounded border transition-colors"
+                className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded border transition-colors"
                 style={activeTab === tab
                   ? { color: 'var(--text-primary)', borderColor: 'rgba(34,211,238,0.45)', background: 'rgba(34,211,238,0.12)' }
                   : { color: 'var(--text-muted)', borderColor: 'transparent' }}
@@ -1047,7 +1047,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
 
         {isUpdate ? (
           <div className="flex-1 min-h-0 p-5">
-            <label htmlFor="remote-compute-project-update" className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+            <label htmlFor="remote-compute-project-update" className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>
               项目远程算力更新内容（占位）
             </label>
             <textarea
@@ -1058,7 +1058,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
               data-tour="remote-compute-project-update"
               data-text-redaction-ignore="true"
               rows={12}
-              className="w-full h-full min-h-[220px] resize-y px-3 py-2 rounded-lg text-[12px] leading-relaxed focus:outline-none focus:border-cyan-500/30"
+              className="w-full h-full min-h-[220px] resize-y px-3 py-2 rounded-lg text-[length:var(--fs-md)] leading-relaxed focus:outline-none focus:border-cyan-500/30"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
             />
           </div>
@@ -1068,29 +1068,29 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             <div className="px-5 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={toggleAll} disabled={loading || remotes.length === 0}
                 data-tour="remote-compute-select-all"
-                className="h-7 px-2.5 text-[11px] rounded border transition-colors disabled:opacity-40"
+                className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded border transition-colors disabled:opacity-40"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 {allSelected ? '取消全选' : '全选'}
               </button>
               <button onClick={loadRemotes} disabled={loading || saving}
-                className="h-7 px-2.5 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40 inline-flex items-center gap-1"
+                className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40 inline-flex items-center gap-1"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
                 刷新
               </button>
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                 已选 {selectedRemotes.length}/{remotes.length}
               </span>
-              {loading && <span className="text-[10px] ml-auto" style={{ color: 'var(--text-muted)' }}>扫描中...</span>}
+              {loading && <span className="text-[length:var(--fs-xs)] ml-auto" style={{ color: 'var(--text-muted)' }}>扫描中...</span>}
             </div>
 
             <div className="flex-1 overflow-auto p-5 space-y-2">
-              {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
-              {info && <div className="text-[11px] text-emerald-400">{info}</div>}
+              {err && <pre className="text-[length:var(--fs-sm)] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
+              {info && <div className="text-[length:var(--fs-sm)] text-emerald-400">{info}</div>}
               {loading && remotes.length === 0 ? (
-                <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+                <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
               ) : remotes.length === 0 ? (
-                <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>暂无 aimux remote</div>
+                <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>暂无 aimux remote</div>
               ) : (
                 <>
                   {directlyVisibleRemotes.map(renderRemoteRow)}
@@ -1104,9 +1104,9 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                           className="w-full min-h-9 px-3 flex items-center gap-2 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
                           style={{ color: 'var(--text-muted)' }}>
                           <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${collapsed ? '-rotate-90' : ''}`} strokeWidth={1.8} />
-                          <span className="text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{group.label}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded border" style={statusStyle(group.status)}>{group.remotes.length}</span>
-                          <span className="ml-auto text-[10px]">{collapsed ? '展开' : '收起'}</span>
+                          <span className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{group.label}</span>
+                          <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded border" style={statusStyle(group.status)}>{group.remotes.length}</span>
+                          <span className="ml-auto text-[length:var(--fs-xs)]">{collapsed ? '展开' : '收起'}</span>
                         </button>
                         {!collapsed && <div className="p-2 pt-0 space-y-2">{group.remotes.map(renderRemoteRow)}</div>}
                       </div>
@@ -1120,72 +1120,72 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           <div className="min-w-0 flex flex-col min-h-0">
             <div className="p-5 border-b space-y-3" style={{ borderColor: 'var(--border-color)' }}>
               <div className="flex items-baseline justify-between gap-2">
-                <div data-tour="remote-compute-add-form" className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>新增 remote</div>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写 SSH 连接信息，添加后自动测试连通性</span>
+                <div data-tour="remote-compute-add-form" className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>新增 remote</div>
+                <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>填写 SSH 连接信息，添加后自动测试连通性</span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
                 <label htmlFor="remote-compute-add-name" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>别名</span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>别名</span>
                   <input id="remote-compute-add-name" value={addForm.name} onChange={e => updateAddForm({ name: e.target.value })}
                     placeholder="my-server"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-port" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>端口</span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>端口</span>
                   <input id="remote-compute-add-port" value={addForm.port} onChange={e => updateAddForm({ port: e.target.value })}
                     placeholder="22"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-host" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>主机 <span className="text-red-400">*</span></span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>主机 <span className="text-red-400">*</span></span>
                   <input id="remote-compute-add-host" value={addForm.host} onChange={e => updateAddForm({ host: e.target.value })}
                     placeholder="192.168.1.10 或 host.com"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-user" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>用户名 <span className="text-red-400">*</span></span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>用户名 <span className="text-red-400">*</span></span>
                   <input id="remote-compute-add-user" value={addForm.user} onChange={e => updateAddForm({ user: e.target.value })}
                     placeholder="root"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-identity" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>密钥文件</span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>密钥文件</span>
                   <input id="remote-compute-add-identity" value={addForm.identity} onChange={e => updateAddForm({ identity: e.target.value })}
                     placeholder="~/.ssh/id_rsa"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
                 <label htmlFor="remote-compute-add-timeout" className="block">
-                  <span className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>超时</span>
+                  <span className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>超时</span>
                   <input id="remote-compute-add-timeout" value={addForm.timeout} onChange={e => updateAddForm({ timeout: e.target.value })}
                     placeholder="5s"
                     disabled={!!busyName || saving}
-                    className="w-full h-8 px-2.5 rounded text-[12px] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 </label>
               </div>
               <button onClick={addRemote}
                 disabled={!!busyName || saving || !addForm.host.trim() || !addForm.user.trim()}
-                className="h-8 px-3 text-[12px] rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 border border-cyan-500/20 transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
+                className="h-8 px-3 text-[length:var(--fs-md)] rounded bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 border border-cyan-500/20 transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
                 <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
                 {busyName === 'add' ? '添加中...' : '添加并探测'}
               </button>
               {(!addForm.host.trim() || !addForm.user.trim()) && (
-                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>填写带 <span className="text-red-400">*</span> 的主机与用户名后即可添加</div>
+                <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>填写带 <span className="text-red-400">*</span> 的主机与用户名后即可添加</div>
               )}
             </div>
 
             <div className="flex-1 min-h-0 p-5 space-y-3 overflow-auto">
-              <div className="text-[11px] rounded border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+              <div className="text-[length:var(--fs-sm)] rounded border px-3 py-2" style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
                 {isAnnounce
                   ? <>点击确认后，以下内容将作为一条消息发送给当前会话的智能体。</>
                   : <>将同步唯一的项目 Memory：<span className="font-medium" style={{ color: 'var(--text-primary)' }}>Aimux 远程算力清单</span>；旧同名清单会自动移除。</>
@@ -1193,7 +1193,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
               </div>
               {isAnnounce && (
                 <div>
-                  <label htmlFor="remote-compute-announce-requirement" className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                  <label htmlFor="remote-compute-announce-requirement" className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>
                     具体要求（可选）
                   </label>
                   <textarea id="remote-compute-announce-requirement" value={announceRequirement}
@@ -1202,16 +1202,16 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
                     placeholder="例如：请优先在这台机器上执行构建。可点击每台机器旁的“添加 ID”引用它。"
                     disabled={saving}
                     rows={3}
-                    className="w-full resize-y min-h-[72px] px-3 py-2 rounded-lg text-[12px] leading-relaxed focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                    className="w-full resize-y min-h-[72px] px-3 py-2 rounded-lg text-[length:var(--fs-md)] leading-relaxed focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
                     style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-                  <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                     点击机器旁的“添加 ID”会将该机器的 aimux Host ID 追加到这里。
                   </div>
                 </div>
               )}
               <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>{isAnnounce ? '发送内容预览' : 'Memory 文本预览'}</label>
-                <pre data-tour="remote-compute-memory-preview" className="text-[11px] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg border min-h-[220px] max-h-[320px] overflow-auto"
+                <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>{isAnnounce ? '发送内容预览' : 'Memory 文本预览'}</label>
+                <pre data-tour="remote-compute-memory-preview" className="text-[length:var(--fs-sm)] leading-relaxed whitespace-pre-wrap font-mono p-3 rounded-lg border min-h-[220px] max-h-[320px] overflow-auto"
                   style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
                   {selectedRemotes.length > 0 ? bodyPreview : (isAnnounce ? '勾选 remote 后生成声明内容' : '勾选 remote 后生成 Memory 文本')}
                 </pre>
@@ -1222,7 +1222,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
         )}
 
         <div className="flex items-center justify-between gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             {isUpdate
               ? '更新项目远程算力功能暂未接入'
               : selectedRemotes.length > 0
@@ -1231,18 +1231,18 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} disabled={saving}
-              className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
+              className="h-8 px-3 text-[length:var(--fs-md)] rounded border disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
             {isUpdate ? null : isAnnounce ? (
               <button onClick={sendAnnounce} disabled={selectedRemotes.length === 0}
-                className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
+                className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
                 <SendHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
                 发送给当前会话
               </button>
             ) : (
               <button onClick={saveRemoteInventory} disabled={saving || selectedRemotes.length === 0}
                 data-tour="remote-compute-create-memory"
-                className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
+                className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40 inline-flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={1.8} />
                 {saving ? '保存中...' : '保存项目远程清单'}
               </button>
@@ -1312,8 +1312,8 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <FolderOpen className="w-4 h-4 text-cyan-400 flex-shrink-0" strokeWidth={1.8} />
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>选择远程路径</span>
-            <span className="text-[11px] px-2 py-0.5 rounded border font-mono truncate max-w-[260px]"
+            <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>选择远程路径</span>
+            <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded border font-mono truncate max-w-[260px]"
               style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               {remote.name}
             </span>
@@ -1331,39 +1331,39 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
               onChange={e => { setPathInput(e.target.value); setErr('') }}
               onKeyDown={e => { if (e.key === 'Enter' && !loading) loadPath(pathInput) }}
               disabled={loading}
-              className="flex-1 min-w-0 h-8 px-2.5 rounded text-[12px] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+              className="flex-1 min-w-0 h-8 px-2.5 rounded text-[length:var(--fs-md)] font-mono focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
               style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             <button onClick={() => loadPath(pathInput)} disabled={loading}
-              className="h-8 px-3 text-[12px] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+              className="h-8 px-3 text-[length:var(--fs-md)] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
               style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
               {loading ? '打开中...' : '打开'}
             </button>
           </div>
           {currentPath && (
-            <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[length:var(--fs-sm)] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
               当前: {currentPath}
             </div>
           )}
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto p-5 space-y-2">
-          {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
+          {err && <pre className="text-[length:var(--fs-sm)] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
           {loading ? (
-            <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : (
             <>
               {parentPath && parentPath !== currentPath && (
                 <button type="button" onClick={() => loadPath(parentPath)}
-                  className="w-full h-8 px-2.5 rounded border text-[12px] text-left transition-colors hover:bg-[var(--bg-hover)]"
+                  className="w-full h-8 px-2.5 rounded border text-[length:var(--fs-md)] text-left transition-colors hover:bg-[var(--bg-hover)]"
                   style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                   ../
                 </button>
               )}
               {entries.length === 0 ? (
-                <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>当前目录下没有可进入的子目录</div>
+                <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>当前目录下没有可进入的子目录</div>
               ) : entries.map(entry => (
                 <button key={entry.path} type="button" onClick={() => loadPath(entry.path)}
-                  className="w-full h-8 px-2.5 rounded border text-[12px] text-left transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 flex items-center gap-2"
+                  className="w-full h-8 px-2.5 rounded border text-[length:var(--fs-md)] text-left transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 flex items-center gap-2"
                   style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                   <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.8} />
                   <span className="font-mono truncate">{entry.name}</span>
@@ -1375,10 +1375,10 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
 
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <button onClick={onClose}
-            className="h-8 px-3 text-[12px] rounded border"
+            className="h-8 px-3 text-[length:var(--fs-md)] rounded border"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>取消</button>
           <button onClick={() => onSelect(currentPath || pathInput.trim() || '~')} disabled={loading || (!currentPath && !pathInput.trim())}
-            className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40">
+            className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40">
             选择当前路径
           </button>
         </div>
@@ -1484,7 +1484,7 @@ function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, o
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
             {isManagedKnowledge ? '编辑项目知识沉淀' : (mode === 'create' ? '新建 Memory' : '编辑 Memory')}
           </span>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" style={{ color: 'var(--text-muted)' }}>
@@ -1497,7 +1497,7 @@ function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, o
               {([['manual', '直接编辑/粘贴'], ['local', '从本地路径导入']] as const).map(([m, label]) => (
                 <button key={m} onClick={() => { setAddMode(m); setErr(''); setImportInfo('') }} disabled={saving}
                   data-tour={m === 'manual' ? 'memory-editor-manual-tab' : 'memory-editor-local-tab'}
-                  className="text-[11px] px-2.5 py-1 rounded border transition-colors disabled:opacity-40"
+                  className="text-[length:var(--fs-sm)] px-2.5 py-1 rounded border transition-colors disabled:opacity-40"
                   style={addMode === m
                     ? { background: 'var(--accent, #3b82f6)', color: '#fff', borderColor: 'transparent' }
                     : { color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
@@ -1509,7 +1509,7 @@ function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, o
 
           {isLocal ? (
             <div>
-              <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+              <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>
                 服务器本地绝对路径 — 可指向 <code>单个 .md 文件</code> / <code>含多个 .md 的目录 (递归批量)</code>。
                 按 frontmatter 的 <code>name</code>/<code>description</code> + 正文导入, 无 frontmatter 时以文件名为标题、整篇为正文。
                 单个 Markdown 文件上限 50MB; 复制为快照, 与源解耦; 同名条目逐个跳过。
@@ -1520,56 +1520,56 @@ function MemoryEditor({ baseUrl, mode, initial, managedKind, onClose, onSaved, o
                 data-tour="memory-editor-local-input"
                 placeholder="例: /home/alice/my-memories/notes.md 或 /home/alice/my-memories"
                 disabled={saving}
-                className="w-full px-2.5 py-1.5 rounded text-[12px] font-mono focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
+                className="w-full px-2.5 py-1.5 rounded text-[length:var(--fs-md)] font-mono focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
           ) : (
             <>
               <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>
+                <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>
                   {isManagedKnowledge ? '标题 (随项目名自动派生, 不可改)' : '标题 (必填, 用于列表展示, 单行)'}
                 </label>
                 <input autoFocus value={name} onChange={e => { setName(e.target.value); setErr('') }}
                   data-tour="memory-editor-name-input"
                   placeholder="例: 使用简体中文回复"
                   disabled={saving || loading || isManagedKnowledge}
-                  className="w-full px-2.5 py-1.5 rounded text-[12px] focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
+                  className="w-full px-2.5 py-1.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-blue-500/30 disabled:opacity-40"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
                 {isManagedKnowledge && (
-                  <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-[length:var(--fs-xs)] mt-1" style={{ color: 'var(--text-muted)' }}>
                     正文保存后会写回 <code>{`{项目绑定路径}/${HIDDEN_FOLDER_NAME}/project_knowledge.md`}</code> (自动备份历史), 同步刷新本条沉淀.
                   </p>
                 )}
               </div>
               <div>
-                <label className="text-[11px] mb-1 block" style={{ color: 'var(--text-muted)' }}>正文 (Markdown，可直接粘贴文字，保存后写入 .md 文件 body 部分)</label>
+                <label className="text-[length:var(--fs-sm)] mb-1 block" style={{ color: 'var(--text-muted)' }}>正文 (Markdown，可直接粘贴文字，保存后写入 .md 文件 body 部分)</label>
                 <textarea value={body} onChange={e => { setBody(e.target.value); setErr('') }}
                   data-tour="memory-editor-body-input"
                   placeholder={loading ? '加载中...' : '正文内容, 支持 Markdown ...'}
                   disabled={saving || loading}
                   rows={14}
-                  className="w-full px-2.5 py-2 rounded text-[12px] font-mono leading-relaxed focus:outline-none focus:border-blue-500/30 disabled:opacity-40 resize-y"
+                  className="w-full px-2.5 py-2 rounded text-[length:var(--fs-md)] font-mono leading-relaxed focus:outline-none focus:border-blue-500/30 disabled:opacity-40 resize-y"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
               </div>
             </>
           )}
-          {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
-          {importInfo && <pre className="text-[11px] text-amber-400 whitespace-pre-wrap break-all max-h-48 overflow-auto">{importInfo}</pre>}
+          {err && <pre className="text-[length:var(--fs-sm)] text-red-400 whitespace-pre-wrap break-all max-h-40 overflow-auto">{err}</pre>}
+          {importInfo && <pre className="text-[length:var(--fs-sm)] text-amber-400 whitespace-pre-wrap break-all max-h-48 overflow-auto">{importInfo}</pre>}
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <button onClick={onClose} disabled={saving}
-            className="h-8 px-3 text-[12px] rounded border disabled:opacity-40"
+            className="h-8 px-3 text-[length:var(--fs-md)] rounded border disabled:opacity-40"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
             {importInfo ? '关闭' : '取消'}
           </button>
           {isLocal ? (
             <button onClick={submitImportLocal} disabled={saving || !localPath.trim()}
-              className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40">
+              className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40">
               {saving ? '导入中...' : '导入'}
             </button>
           ) : (
             <button onClick={submit} disabled={saving || loading || !name.trim()}
-              className="h-8 px-4 text-[12px] rounded btn-primary transition-colors disabled:opacity-40">
+              className="h-8 px-4 text-[length:var(--fs-md)] rounded btn-primary transition-colors disabled:opacity-40">
               {saving ? '保存中...' : (mode === 'create' ? '创建' : '保存')}
             </button>
           )}

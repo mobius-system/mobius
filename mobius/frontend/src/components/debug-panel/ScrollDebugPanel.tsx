@@ -54,7 +54,7 @@ function FlagChip({ flag }: { flag: DiagFlag }) {
       title={flag.detail || flag.key}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px',
-        borderRadius: 999, fontSize: 10.5, lineHeight: '14px', whiteSpace: 'nowrap',
+        borderRadius: 999, fontSize: 'var(--fs-xs)', lineHeight: '14px', whiteSpace: 'nowrap',
         border: `1px solid ${active ? color : C.border}`,
         background: active ? `${color}1f` : 'transparent',
         color,
@@ -79,16 +79,16 @@ function SectionCard({ section, collapsed, onToggle }: {
         onClick={() => onToggle(section.key)}
         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', cursor: 'pointer', userSelect: 'none' }}
       >
-        <span style={{ color: C.muted, fontSize: 10 }}>{collapsed ? '▶' : '▼'}</span>
-        <span style={{ color: accent, fontWeight: 600, fontSize: 11.5 }}>{section.title}</span>
-        {section.subtitle && <span style={{ color: C.muted, fontSize: 10.5 }}>· {section.subtitle}</span>}
+        <span style={{ color: C.muted, fontSize: 'var(--fs-xs)' }}>{collapsed ? '▶' : '▼'}</span>
+        <span style={{ color: accent, fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{section.title}</span>
+        {section.subtitle && <span style={{ color: C.muted, fontSize: 'var(--fs-xs)' }}>· {section.subtitle}</span>}
       </div>
       {!collapsed && (
         <div style={{ padding: '0 8px 8px' }}>
           {section.rows.map((row) => (
             <div key={row.label} style={{ display: 'flex', gap: 8, padding: '2px 0', borderTop: `1px solid rgba(255,255,255,0.04)` }}>
-              <span style={{ color: C.muted, flex: '0 0 44%', fontSize: 10.5 }}>{row.label}</span>
-              <span style={{ color: toneColor(row.tone), flex: 1, fontSize: 10.5, wordBreak: 'break-all' }}>{row.value}</span>
+              <span style={{ color: C.muted, flex: '0 0 44%', fontSize: 'var(--fs-xs)' }}>{row.label}</span>
+              <span style={{ color: toneColor(row.tone), flex: 1, fontSize: 'var(--fs-xs)', wordBreak: 'break-all' }}>{row.value}</span>
             </div>
           ))}
           {(section.flags || []).length > 0 && (
@@ -183,7 +183,7 @@ export default function ScrollDebugPanel() {
         background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10,
         boxShadow: '0 18px 48px rgba(0,0,0,0.55)', color: C.text,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-        fontSize: 11, backdropFilter: 'blur(6px)',
+        fontSize: 'var(--fs-sm)', backdropFilter: 'blur(6px)',
       }}
     >
       <div
@@ -191,7 +191,7 @@ export default function ScrollDebugPanel() {
         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderBottom: `1px solid ${C.border}`, cursor: 'move' }}
       >
         <span style={{ fontWeight: 700, letterSpacing: 0.3 }}>追底诊断</span>
-        <span style={{ color: C.muted, fontSize: 10 }}>{frontendBuildKind()}</span>
+        <span style={{ color: C.muted, fontSize: 'var(--fs-xs)' }}>{frontendBuildKind()}</span>
         <span style={{ flex: 1 }} />
         <button onClick={copySnapshot} style={btnStyle}>{copied ? '已复制' : '复制'}</button>
         <button onClick={() => clearScrollDebugEvents()} style={btnStyle}>清事件</button>
@@ -201,7 +201,7 @@ export default function ScrollDebugPanel() {
       <div style={{ padding: '6px 9px', borderBottom: `1px solid ${C.border}`, color: toneColor(verdictTone) }}>
         {verdict}
         {blocking.length > 0 && (
-          <div style={{ marginTop: 3, color: C.muted, fontSize: 10 }}>
+          <div style={{ marginTop: 3, color: C.muted, fontSize: 'var(--fs-xs)' }}>
             {blocking.map((f) => `${f.label}: ${f.detail || ''}`).join('  |  ')}
           </div>
         )}
@@ -247,5 +247,5 @@ export function ScrollDebugPanelHost() {
 
 const btnStyle: React.CSSProperties = {
   background: 'transparent', color: C.text, border: `1px solid ${C.border}`,
-  borderRadius: 5, padding: '2px 7px', fontSize: 10.5, cursor: 'pointer', fontFamily: 'inherit',
+  borderRadius: 5, padding: '2px 7px', fontSize: 'var(--fs-xs)', cursor: 'pointer', fontFamily: 'inherit',
 }

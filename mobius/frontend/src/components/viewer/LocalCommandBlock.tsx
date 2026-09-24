@@ -16,14 +16,14 @@ export function JsonEntryLocalCommandBlock({ parts }: { parts: LocalCommandPart[
     : goalSet ? '目标已设置 · Goal Set'
     : '本地命令 · Local Command'
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[12px]">
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[length:var(--fs-md)]">
       <div className="flex items-center gap-2">
         <span className="text-amber-300" aria-hidden="true">{icon}</span>
         <span className="font-semibold text-amber-200">{title}</span>
       </div>
       <div className="mt-2 flex flex-col gap-1">
         {parts.map((p, i) => (
-          <div key={`${p.tag}-${i}`} className="flex min-w-0 gap-2 text-[11px]">
+          <div key={`${p.tag}-${i}`} className="flex min-w-0 gap-2 text-[length:var(--fs-sm)]">
             <span className="flex-shrink-0 font-mono text-amber-300/60">{p.tag}</span>
             <span className="min-w-0 break-words select-text text-amber-100/80">{p.body || '(空)'}</span>
           </div>

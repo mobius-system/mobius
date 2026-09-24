@@ -86,10 +86,10 @@ export function CopyFromCatalogModal({
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
-            <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
               从其他用户/项目复制 {noun}
             </span>
-            <span className="text-[11px] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
               复制到: {targetLabel}
             </span>
           </div>
@@ -101,24 +101,24 @@ export function CopyFromCatalogModal({
         <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <input autoFocus value={q} onChange={e => setQ(e.target.value)}
             placeholder={`搜索 ${noun} 名称 / 描述...`}
-            className="w-full px-2.5 py-1.5 rounded text-[12px] focus:outline-none focus:border-blue-500/30"
+            className="w-full px-2.5 py-1.5 rounded text-[length:var(--fs-md)] focus:outline-none focus:border-blue-500/30"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
-          <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-[length:var(--fs-sm)] mt-2" style={{ color: 'var(--text-muted)' }}>
             复制是快照: 复制后与源彼此独立, 源后续修改不会影响副本. 列表已隐藏你自己的用户级 {noun}.
           </p>
         </div>
 
         <div className="flex-1 overflow-auto p-5 space-y-4">
-          {err && <pre className="text-[11px] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
+          {err && <pre className="text-[length:var(--fs-sm)] text-red-400 whitespace-pre-wrap break-all">{err}</pre>}
           {loading ? (
-            <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : groups.length === 0 ? (
-            <div className="text-[12px] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
               没有可复制的 {noun}{q.trim() ? '(尝试清空搜索)' : ''}
             </div>
           ) : groups.map(g => (
             <div key={g.key}>
-              <div className="text-[13px] font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-lg)] font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
                 {g.label} · {g.rows.length}
               </div>
               <div className="space-y-2">
@@ -130,37 +130,37 @@ export function CopyFromCatalogModal({
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded border"
+                            <span className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded border"
                               style={isProject
                                 ? { color: '#22c55e', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.25)' }
                                 : { color: '#60a5fa', background: 'rgba(96,165,250,0.10)', borderColor: 'rgba(96,165,250,0.25)' }}>
                               {isProject ? '项目级' : '用户级'}
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded"
+                            <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded"
                               style={{ color: '#60a5fa', background: 'rgba(96,165,250,0.08)' }}>
                               {visibilityLabel(it.visibility, it.scope)}
                             </span>
-                            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                               {isProject ? `项目 ${it.owner_id}` : `用户 ${it.owner_id}`}
                               {it.created_by && it.created_by !== it.owner_id ? ` · by ${it.created_by}` : ''}
                             </span>
                             {typeof it.body_length === 'number' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
+                              <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded whitespace-nowrap" style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}>
                                 {it.body_length} 字符
                               </span>
                             )}
                           </div>
                           {it.description && (
-                            <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{it.description}</p>
+                            <p className="text-[length:var(--fs-sm)] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{it.description}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button onClick={() => setViewing({ id: it.id, name: it.name })} title={`查看 ${noun} 内容`}
-                            className="h-7 px-2 text-[11px] rounded border transition-colors hover:bg-[var(--bg-hover)]"
+                            className="h-7 px-2 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-[var(--bg-hover)]"
                             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>查看</button>
                           <button onClick={() => handleCopy(it)} disabled={busyId === it.id || done}
-                            className="h-7 px-2.5 text-[11px] rounded border transition-colors hover:bg-blue-500/10 hover:text-blue-400 disabled:opacity-50"
+                            className="h-7 px-2.5 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-blue-500/10 hover:text-blue-400 disabled:opacity-50"
                             style={done
                               ? { color: '#22c55e', borderColor: 'rgba(34,197,94,0.4)' }
                               : { color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
@@ -178,7 +178,7 @@ export function CopyFromCatalogModal({
 
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <button onClick={onClose}
-            className="h-8 px-4 text-[12px] rounded border"
+            className="h-8 px-4 text-[length:var(--fs-md)] rounded border"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>完成</button>
         </div>
       </div>
@@ -211,15 +211,15 @@ function CatalogBodyViewer({ url, title, onClose }: { url: string; title: string
         onClick={e => e.stopPropagation()}
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
+          <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" style={{ color: 'var(--text-muted)' }}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
         <div className="flex-1 overflow-auto p-5">
-          {loading ? <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-            : err ? <div className="text-[12px] text-red-400">{err}</div>
-            : <pre className="text-[12px] leading-relaxed whitespace-pre-wrap font-mono p-4 rounded-xl border"
+          {loading ? <div className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+            : err ? <div className="text-[length:var(--fs-md)] text-red-400">{err}</div>
+            : <pre className="text-[length:var(--fs-md)] leading-relaxed whitespace-pre-wrap font-mono p-4 rounded-xl border"
                 style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>{body}</pre>}
         </div>
       </div>

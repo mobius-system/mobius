@@ -404,7 +404,7 @@ export function SearchModal({
               onChange={e => onType(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); isQuick ? runQuickSearch(q) : runSearch(q) } }}
               placeholder={isQuick ? '快速搜索项目、任务或会话…' : '深度搜索所有会话内容…'}
-              className="min-w-0 flex-1 bg-transparent text-[13px] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+              className="min-w-0 flex-1 bg-transparent text-[length:var(--fs-lg)] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
               style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
             />
             {isLoading && <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
@@ -413,13 +413,13 @@ export function SearchModal({
               {!isQuick && <>
                 {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
                 <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
-                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
                   style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
                 <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
-                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+                  className="h-7 w-7 flex-shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
                   style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
                 <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
+                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
                   style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
                   {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -440,18 +440,18 @@ export function SearchModal({
 
         {embedded && !isQuick && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
-            <span className="mr-auto min-w-0 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="mr-auto min-w-0 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               深度搜索会话内容
             </span>
             {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
             <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
-              className="h-7 w-7 shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+              className="h-7 w-7 shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
               style={{ color: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: caseSensitive ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: caseSensitive ? 'rgba(96,165,250,0.12)' : 'transparent' }}>Aa</button>
             <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
-              className="h-7 w-7 shrink-0 rounded-md border text-[11px] font-semibold transition-colors"
+              className="h-7 w-7 shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
               style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
             <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-              className="h-7 shrink-0 rounded-lg border px-1.5 text-[11px] cursor-pointer focus:outline-none"
+              className="h-7 shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
               style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
               {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -463,19 +463,19 @@ export function SearchModal({
           {err ? (
             <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
               <AlertCircle className="w-6 h-6" style={{ color: '#ef4444' }} />
-              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{err}</p>
+              <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{err}</p>
             </div>
           ) : !searched ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               {isQuick ? <Zap className="h-7 w-7" style={{ color: '#fbbf24' }} /> : <FileSearch className="h-7 w-7" style={{ color: 'var(--text-muted)' }} />}
-              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{isQuick ? '输入关键词快速定位项目、任务或会话' : '输入关键词搜索会话内容'}</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{isQuick ? '仅匹配名称与描述，响应更快' : `${range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示`}</p>
+              <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{isQuick ? '输入关键词快速定位项目、任务或会话' : '输入关键词搜索会话内容'}</p>
+              <p className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{isQuick ? '仅匹配名称与描述，响应更快' : `${range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示`}</p>
             </div>
           ) : isQuick ? (
             quickResults.projects.length === 0 ? (
               <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
                 <Search className="h-6 w-6" style={{ color: 'var(--text-muted)' }} />
-                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>未找到匹配的项目、任务或会话</p>
+                <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>未找到匹配的项目、任务或会话</p>
               </div>
             ) : (
               <div className="py-1.5">
@@ -485,7 +485,7 @@ export function SearchModal({
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <Search className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>未找到匹配的会话</p>
+              <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>未找到匹配的会话</p>
             </div>
           ) : (
             <div className="py-1.5">
@@ -498,7 +498,7 @@ export function SearchModal({
                     className="w-full text-left px-4 py-2.5 transition-colors hover:bg-[var(--bg-card-hover)] border-b"
                     style={{ borderColor: 'var(--border-color)' }}>
                     {/* 面包屑: 项目 › Issue/Research › Session */}
-                    <div className="flex items-center gap-1 mb-1.5 flex-wrap text-[11px]">
+                    <div className="flex items-center gap-1 mb-1.5 flex-wrap text-[length:var(--fs-sm)]">
                       <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
                         <Folder className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                         <span className="truncate max-w-[160px]">{r.project_name || '(未命名项目)'}</span>
@@ -527,8 +527,8 @@ export function SearchModal({
                             title="查看命中上下文"
                             className="flex items-start gap-2 rounded -mx-1 px-1 py-0.5 cursor-pointer hover:bg-[var(--bg-hover)]"
                           >
-                            <span className="flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded mt-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
-                            <p className="text-[12px] leading-relaxed break-all" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
+                            <span className="flex-shrink-0 text-[length:var(--fs-2xs)] px-1.5 py-0.5 rounded mt-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
+                            <p className="text-[length:var(--fs-md)] leading-relaxed break-all" style={{ color: dark ? '#cbd5e1' : '#334155' }}>
                               <Highlight text={f.snippet} query={q} caseSensitive={caseSensitive} wholeWord={wholeWord} />
                             </p>
                           </div>
@@ -544,7 +544,7 @@ export function SearchModal({
 
         {/* 底部: 扫描统计 */}
         {!isQuick && (meta || searched) && (
-          <div className="shrink-0 px-4 py-2 border-t flex items-center justify-between text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <div className="shrink-0 px-4 py-2 border-t flex items-center justify-between text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             <span>
               {loading && results.length === 0 ? '正在搜索…' : ''}
               {searched && results.length > 0 ? `命中 ${results.length} 个会话${loading ? '…' : ''}` : ''}
@@ -556,7 +556,7 @@ export function SearchModal({
           </div>
         )}
         {isQuick && searched && (
-          <div className="shrink-0 border-t px-4 py-2 text-[10px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <div className="shrink-0 border-t px-4 py-2 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             {quickLoading ? '正在快速搜索…' : `匹配 ${quickResults.project_count} 个项目 · ${quickResults.match_count} 条结果`}
             {quickResults.truncated ? ' · 结果较多，仅显示最相关项' : ''}
           </div>
@@ -596,8 +596,8 @@ function QuickSearchGroup({
     <div className="border-b px-4 py-2.5 last:border-b-0" style={{ borderColor: 'var(--border-color)' }} data-quick-search-result={project.id}>
       <button type="button" onClick={() => onOpen(group)} className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-[var(--bg-card-hover)]">
         <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#60a5fa' }} />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: dark ? '#e2e8f0' : '#1e293b' }}>{project.name || '(未命名项目)'}</span>
-        <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-muted)' }}>{group.total_matches ? `${group.total_matches} 条匹配` : '项目匹配'}</span>
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium" style={{ color: dark ? '#e2e8f0' : '#1e293b' }}>{project.name || '(未命名项目)'}</span>
+        <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{group.total_matches ? `${group.total_matches} 条匹配` : '项目匹配'}</span>
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
       </button>
       {visibleMatches.length > 0 && (
@@ -610,18 +610,18 @@ function QuickSearchGroup({
                 className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-card-hover)]"
                 title={`${hierarchyHitLabel(hit.kind)}：${hit.title}`}>
                 <Icon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : hit.kind === 'issue' ? '#60a5fa' : '#a855f7' }} />
-                <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>{hit.title || '(未命名)'}</span>
-                <span className="flex-shrink-0 rounded px-1 py-0.5 text-[9px]" style={{ color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)' }}>{hierarchyHitLabel(hit.kind)}</span>
+                <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-secondary)' }}>{hit.title || '(未命名)'}</span>
+                <span className="flex-shrink-0 rounded px-1 py-0.5 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)', background: 'rgba(148,163,184,0.10)' }}>{hierarchyHitLabel(hit.kind)}</span>
               </button>
             )
           })}
         </div>
       )}
       {visibleMatches.length < group.total_matches && (
-        <div className="ml-7 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>还有 {group.total_matches - visibleMatches.length} 条匹配</div>
+        <div className="ml-7 mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>还有 {group.total_matches - visibleMatches.length} 条匹配</div>
       )}
       {group.project_match && group.project_matched_fields.length > 0 && (
-        <div className="ml-7 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>项目{group.project_matched_fields.includes('description') ? '描述' : '名称'}命中“{query}”</div>
+        <div className="ml-7 mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>项目{group.project_matched_fields.includes('description') ? '描述' : '名称'}命中“{query}”</div>
       )}
     </div>
   )
@@ -660,11 +660,11 @@ function SearchFragmentPreviewModal({
       >
         <div className="flex items-start justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--border-color)' }}>
           <div className="min-w-0">
-            <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
+            <div className="mb-1 flex items-center gap-2 text-[length:var(--fs-lg)] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>
               <FileSearch className="h-4 w-4 flex-shrink-0 text-blue-400" />
               <span>命中片段预览</span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               <span className="truncate max-w-[150px]">{result.project_name || '(未命名项目)'}</span>
               <ChevronRight className="h-3 w-3 flex-shrink-0" />
               <ScopeIcon className="h-3 w-3 flex-shrink-0" style={{ color: isResearch ? '#10b981' : '#60a5fa' }} />
@@ -680,21 +680,21 @@ function SearchFragmentPreviewModal({
 
         <div className="min-h-0 overflow-y-auto px-5 py-4">
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-[10px] rounded px-1.5 py-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
-            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>命中位置前后的上下文 · 可直接框选复制</span>
+            <span className="text-[length:var(--fs-xs)] rounded px-1.5 py-0.5" style={{ color: rm.color, background: rm.bg }}>{rm.label}</span>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>命中位置前后的上下文 · 可直接框选复制</span>
           </div>
-          <div className="select-text whitespace-pre-wrap break-words rounded-xl border px-4 py-3 text-[13px] leading-7" style={{ color: dark ? '#e2e8f0' : '#1e293b', borderColor: 'var(--border-color)', background: dark ? 'rgba(15,23,42,0.35)' : 'rgba(248,250,252,0.75)' }}>
+          <div className="select-text whitespace-pre-wrap break-words rounded-xl border px-4 py-3 text-[length:var(--fs-lg)] leading-7" style={{ color: dark ? '#e2e8f0' : '#1e293b', borderColor: 'var(--border-color)', background: dark ? 'rgba(15,23,42,0.35)' : 'rgba(248,250,252,0.75)' }}>
             <Highlight text={fragment.snippet} query={query} caseSensitive={caseSensitive} wholeWord={wholeWord} />
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="mt-2 flex items-center gap-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
             <Copy className="h-3 w-3" />
             <span>选择文字后可使用系统复制快捷键。</span>
           </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: 'var(--border-color)' }}>
-          <button type="button" onClick={onBack} className="rounded-lg px-3 py-1.5 text-[12px] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-secondary)' }}>返回搜索结果</button>
-          <button type="button" onClick={onViewInSession} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-blue-400">
+          <button type="button" onClick={onBack} className="rounded-lg px-3 py-1.5 text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-secondary)' }}>返回搜索结果</button>
+          <button type="button" onClick={onViewInSession} data-search-view-session className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-[length:var(--fs-md)] font-medium text-white shadow-sm transition-colors hover:bg-blue-400">
             <span>在会话中查看</span>
             <ArrowUpRight className="h-3.5 w-3.5" />
           </button>

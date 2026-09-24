@@ -37,7 +37,7 @@ function MarkdownImage({ src, alt, node: _node, ...rest }: ComponentPropsWithout
   if (failed) {
     return (
       <span
-        className="inline-flex items-center gap-1 my-1 px-2 py-1 rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] text-[11px] text-[var(--text-muted)] break-all"
+        className="inline-flex items-center gap-1 my-1 px-2 py-1 rounded border border-dashed border-[var(--border-color)] bg-[var(--prose-bg)] text-[length:var(--fs-sm)] text-[var(--text-muted)] break-all"
         title={src}
       >
         ⚠ 图片无法显示 · {alt || src}

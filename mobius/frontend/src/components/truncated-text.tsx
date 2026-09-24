@@ -58,7 +58,7 @@ export function TruncatedText({
             e.stopPropagation()
             setExpanded(false)
           }}
-          className="text-[10px] mt-0.5 hover:text-blue-300 transition-colors"
+          className="text-[length:var(--fs-xs)] mt-0.5 hover:text-blue-300 transition-colors"
           style={{ color: 'var(--text-muted)' }}
         >
           {collapseLabel}
@@ -77,7 +77,7 @@ export function TruncatedText({
             e.stopPropagation()
             setExpanded(true)
           }}
-          className="text-[10px] hover:text-blue-300 transition-colors"
+          className="text-[length:var(--fs-xs)] hover:text-blue-300 transition-colors"
           style={{ color: 'var(--text-muted)' }}
         >
           {detailLabel}

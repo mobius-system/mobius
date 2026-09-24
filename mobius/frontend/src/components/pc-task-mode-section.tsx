@@ -66,14 +66,14 @@ export function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChang
   ]
   return (
     <div>
-      <div className="text-[12px] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>PC 任务模式</div>
+      <div className="text-[length:var(--fs-md)] mb-1.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>PC 任务模式</div>
       <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-2" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
         <Folder className="w-4 h-4 shrink-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
         <div className="flex-1 min-w-0">
-          <div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>本机工作路径</div>
-          <div className="text-[12px] truncate font-mono" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{path || '未绑定'}</div>
+          <div className="text-[length:var(--fs-xs)]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>本机工作路径</div>
+          <div className="text-[length:var(--fs-md)] truncate font-mono" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{path || '未绑定'}</div>
         </div>
-        <button type="button" onClick={choosePath} className="shrink-0 text-[11px] px-2 py-1 rounded border" style={{ borderColor: 'var(--input-border)', color: isDark ? '#93c5fd' : '#2563eb' }}>{path ? '更改' : '选择'}</button>
+        <button type="button" onClick={choosePath} className="shrink-0 text-[length:var(--fs-sm)] px-2 py-1 rounded border" style={{ borderColor: 'var(--input-border)', color: isDark ? '#93c5fd' : '#2563eb' }}>{path ? '更改' : '选择'}</button>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {MODES.map(opt => {
@@ -81,8 +81,8 @@ export function PcTaskModeSection({ projectId, isDark, onModeChange, onPathChang
           const disabled = opt.k !== 'hub' && !aimuxConnected
           return (
             <button key={opt.k} type="button" disabled={disabled} onClick={() => chooseMode(opt.k)} title={disabled ? 'aimux 未连接，此模式不可用' : undefined} className="min-h-14 rounded-xl text-left px-2.5 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: active ? 'rgba(59,130,246,0.12)' : 'var(--input-bg)', border: `1px solid ${active ? '#3b82f6' : 'var(--input-border)'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
-              <div className="text-[12px] font-medium leading-snug">{opt.t}</div>
-              <div className="text-[10px] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.s}</div>
+              <div className="text-[length:var(--fs-md)] font-medium leading-snug">{opt.t}</div>
+              <div className="text-[length:var(--fs-xs)] mt-0.5" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{opt.s}</div>
             </button>
           )
         })}

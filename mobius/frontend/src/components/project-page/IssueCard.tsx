@@ -76,15 +76,15 @@ export function IssueCard({
           <svg className="w-4 h-4 flex-shrink-0" style={{ color: isCompleted ? '#22c55e' : '#60a5fa' }} fill={isCompleted ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
           <Link
             to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
-            className={`min-w-0 flex-1 truncate text-[13px] font-semibold hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
+            className={`min-w-0 flex-1 truncate text-[length:var(--fs-lg)] font-semibold hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}`}
             style={titleColor}>{issue.title}</Link>
           {headerActions}
         </div>
         <div className="flex items-center gap-3 px-3 pb-2 pt-1 pl-9">
           {hasDistinctDescription && (
-            <span className="min-w-0 flex-1 truncate text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{description}</span>
+            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{description}</span>
           )}
-          <span className="ml-auto flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <span className="ml-auto flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             {activeSessionTotal} 执行中 · {sessionTotal} 总会话 · 活跃 {timeAgo(issue.last_active)}
           </span>
         </div>
@@ -101,18 +101,18 @@ export function IssueCard({
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: isCompleted ? '#22c55e' : '#60a5fa' }} fill={isCompleted ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
         <Link
           to={`/u/${userParam}/p/${projectId}/i/${issue.id}`}
-          className="text-[14px] min-w-0 font-semibold flex-1 hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}"
+          className="text-[length:var(--fs-xl)] min-w-0 font-semibold flex-1 hover:text-blue-400 transition-colors ${isCompleted ? 'line-through' : ''}"
           style={titleColor}>{issue.title}</Link>
         {headerActions}
       </div>
 
       {hasDistinctDescription && (
-        <div className="px-4 py-1.5 line-clamp-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+        <div className="px-4 py-1.5 line-clamp-1 text-[length:var(--fs-md)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
           {description}
         </div>
       )}
 
-      <div className="px-4 py-2 flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="px-4 py-2 flex items-center gap-3 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
         <span>{activeSessionTotal} 执行中 · {sessionTotal} 总会话</span>
         <span className="ml-auto">活跃 {timeAgo(issue.last_active)}</span>
       </div>
@@ -120,13 +120,13 @@ export function IssueCard({
       <div className="px-4 py-2 border-t flex-1 overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
         {showingSessionMatches && (
           <div className="mb-2">
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-muted)' }}>
               匹配会话 {searchMatches.length}
             </span>
           </div>
         )}
         {displayedSessions.length === 0 ? (
-          <div className="text-[11px] py-1" style={{ color: 'var(--text-muted)' }}>暂无会话</div>
+          <div className="text-[length:var(--fs-sm)] py-1" style={{ color: 'var(--text-muted)' }}>暂无会话</div>
         ) : (
           <div className="space-y-1">
             {previewSessions.map((s: any) => {
@@ -137,16 +137,16 @@ export function IssueCard({
                   className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors">
                   <AgentStatusDot agentStatus={s.agent_status} className="flex-shrink-0" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px]" style={{ color: 'var(--text-primary)' }}>
+                    <span className="block truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-primary)' }}>
                       <SearchMatchText text={s.name || '未命名会话'} query={showingSessionMatches ? searchQuery : ''} />
                     </span>
                     {showDescription && (
-                      <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      <span className="block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                         <SearchMatchText text={s.description || ''} query={searchQuery} />
                       </span>
                     )}
                   </span>
-                  <span className="text-[10px] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{s.message_count} · {timeAgo(s.last_active)}</span>
+                  <span className="text-[length:var(--fs-xs)] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{s.message_count} · {timeAgo(s.last_active)}</span>
                 </Link>
               )
             })}

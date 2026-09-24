@@ -177,36 +177,36 @@ export function PlanningEditor({ projectId, sessionId }: PlanningEditorProps) {
       <header className="flex items-center justify-between gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
         <div className="flex items-center gap-2 min-w-0">
           <button type="button" onClick={() => setCollapsed(!collapsed)}
-            className="inline-flex h-7 items-center px-2 rounded-md text-[12px] hover:bg-[var(--bg-card-hover)]"
+            className="inline-flex h-7 items-center px-2 rounded-md text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-secondary)' }}
             title={collapsed ? '展开编辑器' : '收起编辑器'}>
             {collapsed ? '▶ 展开' : '▼ 收起'}
           </button>
-          <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+          <span className="text-[length:var(--fs-md)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
             系统宏观规划编辑器
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
+          <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
             project_knowledge.md
           </span>
-          {saving && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>保存中…</span>}
-          {!saving && savedAt && !locked && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>已自动保存</span>}
-          {saveError && <span className="text-[10px] text-red-400">⚠ {saveError}</span>}
+          {saving && <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>保存中…</span>}
+          {!saving && savedAt && !locked && <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>已自动保存</span>}
+          {saveError && <span className="text-[length:var(--fs-xs)] text-red-400">⚠ {saveError}</span>}
         </div>
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={forceSaveNow}
-            className="inline-flex h-7 items-center px-2 rounded-md text-[11px] hover:bg-[var(--bg-card-hover)]"
+            className="inline-flex h-7 items-center px-2 rounded-md text-[length:var(--fs-sm)] hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-secondary)' }}
             title="Ctrl+S 立即保存">
             立即保存
           </button>
           <button type="button" onClick={() => setHistoryOpen(true)}
-            className="inline-flex h-7 items-center px-2 rounded-md text-[11px] hover:bg-[var(--bg-card-hover)]"
+            className="inline-flex h-7 items-center px-2 rounded-md text-[length:var(--fs-sm)] hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-secondary)' }}
             title="查看历史版本">
             历史版本
           </button>
           {locked && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px]"
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[length:var(--fs-sm)]"
               style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24' }}
               title={lockedAt ? `Agent 写入开始于 ${lockedAt}` : 'Agent 正在写入'}>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -218,9 +218,9 @@ export function PlanningEditor({ projectId, sessionId }: PlanningEditorProps) {
       {!collapsed && (
         <div className="p-2">
           {loadError ? (
-            <div className="text-[12px] text-red-400 p-2">加载失败: {loadError}</div>
+            <div className="text-[length:var(--fs-md)] text-red-400 p-2">加载失败: {loadError}</div>
           ) : loading ? (
-            <div className="text-[12px] p-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中…</div>
+            <div className="text-[length:var(--fs-md)] p-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中…</div>
           ) : (
             <PlanningTextarea
               projectId={projectId}
@@ -236,13 +236,13 @@ export function PlanningEditor({ projectId, sessionId }: PlanningEditorProps) {
               }}
             />
           )}
-          <div className="mt-1.5 text-[10px] px-1" style={{ color: 'var(--text-muted)' }}>
+          <div className="mt-1.5 text-[length:var(--fs-xs)] px-1" style={{ color: 'var(--text-muted)' }}>
             编辑后 500ms 自动保存 · Ctrl+S 立即保存 · Agent 写入时只读 · 同步为项目级 Memory 供所有会话检索
           </div>
         </div>
       )}
       {collapsed && (
-        <div className="px-3 py-2 text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+        <div className="px-3 py-2 text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }}>
           {firstLine}
         </div>
       )}
@@ -258,7 +258,7 @@ export function PlanningEditor({ projectId, sessionId }: PlanningEditorProps) {
         />
       )}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-lg text-[12px] shadow-xl"
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-lg text-[length:var(--fs-md)] shadow-xl"
           style={{
             background: toast.kind === 'ok' ? 'rgba(16, 185, 129, 0.95)' : 'rgba(239, 68, 68, 0.95)',
             color: '#fff',
@@ -356,7 +356,7 @@ function PlanningTextarea({
         // 整个文档会被 filter:blur(5px) 遮成不可读 (脱敏默认开启). 作者编辑面需要可读.
         data-text-redaction-ignore="true"
         placeholder="在此编辑项目宏观规划…"
-        className="w-full font-mono text-[12px] leading-relaxed p-3 rounded-lg resize-y"
+        className="w-full font-mono text-[length:var(--fs-md)] leading-relaxed p-3 rounded-lg resize-y"
         style={{
           minHeight: '320px',
           maxHeight: '50vh',
@@ -370,7 +370,7 @@ function PlanningTextarea({
         <button type="button"
           onClick={onNotifyAgent}
           disabled={locked}
-          className="inline-flex h-7 items-center px-2.5 rounded-md text-[11px] hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="inline-flex h-7 items-center px-2.5 rounded-md text-[length:var(--fs-sm)] hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}
           title="把当前规划作为消息发给 Agent 让其据此更新">
           通知 Agent 已更新
@@ -378,7 +378,7 @@ function PlanningTextarea({
       </div>
       {menu && (
         <div
-          className="fixed z-[130] min-w-[180px] rounded-md py-1 shadow-2xl text-[12px]"
+          className="fixed z-[130] min-w-[180px] rounded-md py-1 shadow-2xl text-[length:var(--fs-md)]"
           style={{
             left: Math.min(menu.x, window.innerWidth - 200),
             top: Math.min(menu.y, window.innerHeight - 80),
@@ -487,13 +487,13 @@ function HistoryModal({
       >
         <header className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex items-center gap-2">
-            <span className="text-[14px] font-medium" style={{ color: 'var(--text-primary)' }}>规划历史版本</span>
-            <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
+            <span className="text-[length:var(--fs-xl)] font-medium" style={{ color: 'var(--text-primary)' }}>规划历史版本</span>
+            <span className="text-[length:var(--fs-sm)] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
               保留最近 30 份
             </span>
           </div>
           <button type="button" onClick={onClose}
-            className="h-7 w-7 rounded-md text-[14px] hover:bg-[var(--bg-card-hover)]"
+            className="h-7 w-7 rounded-md text-[length:var(--fs-xl)] hover:bg-[var(--bg-card-hover)]"
             style={{ color: 'var(--text-secondary)' }}
             aria-label="关闭">✕</button>
         </header>
@@ -502,27 +502,27 @@ function HistoryModal({
               否则固定 w-[260px] 侧栏会把 ~343px 宽的弹窗主体里的 diff 挤到 ~83px. */}
           <aside className="w-full sm:w-[260px] max-h-[30vh] sm:max-h-none overflow-y-auto border-b sm:border-b-0 sm:border-r" style={{ borderColor: 'var(--border-color)' }}>
             {loading && (
-              <div className="text-[12px] p-4" style={{ color: 'var(--text-muted)' }}>加载中…</div>
+              <div className="text-[length:var(--fs-md)] p-4" style={{ color: 'var(--text-muted)' }}>加载中…</div>
             )}
             {err && (
-              <div className="text-[12px] p-4 text-red-400">{err}</div>
+              <div className="text-[length:var(--fs-md)] p-4 text-red-400">{err}</div>
             )}
             {!loading && !err && items.length === 0 && (
-              <div className="text-[12px] p-4" style={{ color: 'var(--text-muted)' }}>暂无历史版本</div>
+              <div className="text-[length:var(--fs-md)] p-4" style={{ color: 'var(--text-muted)' }}>暂无历史版本</div>
             )}
             {items.map((it) => {
               const active = selected?.filename === it.filename
               return (
                 <button key={it.filename} type="button"
                   onClick={() => viewSnapshot(it)}
-                  className="block w-full text-left px-3 py-2 text-[12px] border-b hover:bg-[var(--bg-card-hover)]"
+                  className="block w-full text-left px-3 py-2 text-[length:var(--fs-md)] border-b hover:bg-[var(--bg-card-hover)]"
                   style={{
                     borderColor: 'var(--border-color)',
                     background: active ? 'var(--bg-card-hover)' : 'transparent',
                     color: 'var(--text-primary)',
                   }}>
                   <div className="font-medium truncate">{new Date(it.saved_at).toLocaleString()}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  <div className="text-[length:var(--fs-xs)] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                     {formatBytes(it.size)}
                   </div>
                 </button>
@@ -532,31 +532,31 @@ function HistoryModal({
           <section className="flex-1 flex flex-col min-w-0">
             {selected ? (
               <>
-                <div className="flex items-center justify-between px-3 py-2 border-b text-[11px]"
+                <div className="flex items-center justify-between px-3 py-2 border-b text-[length:var(--fs-sm)]"
                   style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                   <span className="truncate">{selected.filename}</span>
                   <button type="button" onClick={restore} disabled={restoring}
-                    className="inline-flex h-7 items-center px-2.5 rounded-md text-[11px] hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+                    className="inline-flex h-7 items-center px-2.5 rounded-md text-[length:var(--fs-sm)] hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
                     style={{ color: '#fbbf24', border: '1px solid var(--border-color)' }}>
                     {restoring ? '回滚中…' : '回滚到此版本'}
                   </button>
                 </div>
                 {restoreErr && (
-                  <div className="px-3 py-1.5 text-[11px] text-red-400 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="px-3 py-1.5 text-[length:var(--fs-sm)] text-red-400 border-b" style={{ borderColor: 'var(--border-color)' }}>
                     ⚠ {restoreErr}
                   </div>
                 )}
                 <div className="flex-1 overflow-auto p-3">
                   {previewLoading ? (
-                    <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中…</div>
+                    <div className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>加载中…</div>
                   ) : (
-                    <pre className="font-mono text-[12px] whitespace-pre-wrap break-words"
+                    <pre className="font-mono text-[length:var(--fs-md)] whitespace-pre-wrap break-words"
                       style={{ color: 'var(--text-primary)' }}>{preview}</pre>
                   )}
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="flex-1 flex items-center justify-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
                 选择左侧任一历史版本以查看内容
               </div>
             )}

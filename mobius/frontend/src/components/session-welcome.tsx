@@ -100,10 +100,10 @@ export function SessionStartModal({
             <Rocket className="w-5 h-5" strokeWidth={1.75} />
           </div>
           <div className="flex-1 min-w-0">
-            <div id="session-start-modal-title" className="text-[15px] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+            <div id="session-start-modal-title" className="text-[length:var(--fs-2xl)] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
               是否开始执行?
             </div>
-            <div className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+            <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               {modalHint}
             </div>
           </div>
@@ -115,12 +115,12 @@ export function SessionStartModal({
           {sessionName && (
             <div className="mb-2">
               <div
-                className="text-[12px] font-medium mb-1"
+                className="text-[length:var(--fs-md)] font-medium mb-1"
                 style={{ color: 'var(--text-muted)' }}
               >
                 Session 目的
               </div>
-              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>
                 {sessionName}
               </div>
             </div>
@@ -128,25 +128,25 @@ export function SessionStartModal({
           {sessionDescription ? (
             <div className={sessionName ? 'mt-2 pt-2 border-t' : ''} style={{ borderColor: 'var(--border-color)' }}>
               <div
-                className="text-[12px] font-medium mb-1"
+                className="text-[length:var(--fs-md)] font-medium mb-1"
                 style={{ color: 'var(--text-muted)' }}
               >
                 待解决的问题
               </div>
-              <div className="text-[12.5px] whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+              <div className="text-[length:var(--fs-md)] whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
                 {sessionDescription}
               </div>
             </div>
           ) : (
             !sessionName && (
-              <div className="text-[12px] italic" style={{ color: 'var(--text-muted)' }}>
+              <div className="text-[length:var(--fs-md)] italic" style={{ color: 'var(--text-muted)' }}>
                 当前 Session 暂未填写目的与描述
               </div>
             )
           )}
         </div>
         {err && (
-          <div className="mb-3 text-[11.5px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          <div className="mb-3 text-[length:var(--fs-sm)] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
             {err}
           </div>
         )}
@@ -155,7 +155,7 @@ export function SessionStartModal({
             type="button"
             onClick={onDismiss}
             disabled={loading}
-            className="px-4 py-2 text-[12.5px] rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
+            className="px-4 py-2 text-[length:var(--fs-md)] rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
           >
             暂不执行
@@ -165,7 +165,7 @@ export function SessionStartModal({
             onClick={handleConfirm}
             disabled={loading}
             data-tour="session-start-confirm"
-            className="px-5 py-2 text-[12.5px] font-medium rounded-full btn-primary transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
+            className="px-5 py-2 text-[length:var(--fs-md)] font-medium rounded-full btn-primary transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
           >
             {loading ? '发送中...' : autoConfirm && autoPending ? `立即执行 (${countdown}s)` : '立即执行!'}
           </button>
@@ -211,7 +211,7 @@ function ScopeBadge({ scope }: { scope: Scope }) {
   const s = SCOPE_STYLE[scope] || SCOPE_STYLE.user
   return (
     <span
-      className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 border"
+      className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0 border"
       style={{ color: s.color, background: s.bg, borderColor: s.border }}
     >
       {s.label}
@@ -243,12 +243,12 @@ function CardList({
         <div className="flex items-center gap-2 min-w-0">
           {icon}
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
-            <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{hint}</div>
+            <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
+            <div className="text-[length:var(--fs-sm)] truncate" style={{ color: 'var(--text-muted)' }}>{hint}</div>
           </div>
         </div>
         <span
-          className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+          className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0"
           style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)' }}
         >
           {loading ? '...' : items.length}
@@ -256,9 +256,9 @@ function CardList({
       </div>
       <div className="flex-1 max-h-72 overflow-auto p-2 space-y-1.5">
         {loading ? (
-          <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+          <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
         ) : items.length === 0 ? (
-          <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+          <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
         ) : (
           items.map((it) => (
             <div
@@ -267,13 +267,13 @@ function CardList({
               style={{ background: 'rgba(255,255,255,0.015)', borderColor: 'rgba(255,255,255,0.04)' }}
             >
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                <span className="text-[length:var(--fs-md)] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                   {it.name}
                 </span>
                 <ScopeBadge scope={it.scope ?? 'user'} />
               </div>
               {it.description && (
-                <p className="text-[10.5px] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                <p className="text-[length:var(--fs-xs)] line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
                   {it.description}
                 </p>
               )}
@@ -447,7 +447,7 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
         type="button"
         onClick={() => setOpen(true)}
         data-tour={isSkill ? 'session-skill-add' : 'session-memory-add'}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-[var(--bg-card-hover)]"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)]"
         style={{ borderColor: 'var(--border-color-strong)', color: accent }}
       >
         <Plus className="h-3.5 w-3.5" strokeWidth={2} />
@@ -465,10 +465,10 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
             <SegBtn active={mode === 'github'} onClick={() => { setMode('github'); setErr('') }} color={accent}>从 GitHub 装</SegBtn>
           </>
         ) : (
-          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>写一条 Memory 或上传文件</span>
+          <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>写一条 Memory 或上传文件</span>
         )}
         {isSkill && <SkillMarketLink className="ml-auto" />}
-        <button type="button" onClick={() => { reset(); setOpen(false) }} className={`${isSkill ? '' : 'ml-auto'} text-[10px] hover:underline`} style={{ color: 'var(--text-muted)' }}>收起</button>
+        <button type="button" onClick={() => { reset(); setOpen(false) }} className={`${isSkill ? '' : 'ml-auto'} text-[length:var(--fs-xs)] hover:underline`} style={{ color: 'var(--text-muted)' }}>收起</button>
       </div>
 
       {mode === 'github' && isSkill ? (
@@ -488,13 +488,13 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
               setErr('')
             }}
             placeholder="可直接粘贴安装命令或 GitHub URL (自动提取); 例: owner/repo 或 owner/repo@skill-name"
-            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            className="w-full rounded border px-2 py-1 text-[length:var(--fs-sm)] outline-none"
             style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           />
           {ghHint && (
-            <div className="break-words text-[9.5px] leading-snug" style={{ color: '#fbbf24' }}>{ghHint}</div>
+            <div className="break-words text-[length:var(--fs-2xs)] leading-snug" style={{ color: '#fbbf24' }}>{ghHint}</div>
           )}
-          <div className="text-[9.5px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+          <div className="text-[length:var(--fs-2xs)] leading-snug" style={{ color: 'var(--text-muted)' }}>
             后端执行 <code className="font-mono">npx skills add</code>, 从 GitHub 拉取并写为{scopedProjectId ? '项目级' : '用户级'} Skill.
           </div>
         </>
@@ -504,7 +504,7 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder={isSkill ? 'Skill 名称 (如 my-skill)' : 'Memory 名称'}
-            className="w-full rounded border px-2 py-1 text-[11px] outline-none"
+            className="w-full rounded border px-2 py-1 text-[length:var(--fs-sm)] outline-none"
             style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           />
           <textarea
@@ -513,7 +513,7 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
             rows={isSkill ? 4 : 3}
             placeholder={isSkill ? 'SKILL.md 正文 (可含 --- frontmatter ---, 否则自动补 name)' : 'Memory 正文'}
             data-text-redaction-ignore="true"
-            className="w-full resize-y rounded border px-2 py-1 font-mono text-[11px] outline-none"
+            className="w-full resize-y rounded border px-2 py-1 font-mono text-[length:var(--fs-sm)] outline-none"
             style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           />
           <input
@@ -526,7 +526,7 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
         </>
       )}
 
-      {err && <div className="break-words text-[10px] text-red-400">{err}</div>}
+      {err && <div className="break-words text-[length:var(--fs-xs)] text-red-400">{err}</div>}
 
       <div className="flex items-center gap-1.5">
         {mode === 'manual' && (
@@ -534,7 +534,7 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
             type="button"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[10.5px] disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[length:var(--fs-xs)] disabled:opacity-50"
             style={{ borderColor: 'var(--border-color-strong)', color: 'var(--text-secondary)' }}
           >
             <Upload className="h-3 w-3" strokeWidth={1.9} /> 上传文件
@@ -544,12 +544,12 @@ function AddSkillMemoryBar({ kind, projectId, onAdded }: { kind: 'skill' | 'memo
           type="button"
           disabled={busy}
           onClick={mode === 'github' ? submitGithub : submitManual}
-          className="btn-primary ml-auto rounded px-3 py-1 text-[10.5px] disabled:opacity-60"
+          className="btn-primary ml-auto rounded px-3 py-1 text-[length:var(--fs-xs)] disabled:opacity-60"
         >
           {busy ? '处理中...' : (mode === 'github' ? '安装' : '添加')}
         </button>
       </div>
-      <div className="text-[9px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+      <div className="text-[length:var(--fs-2xs)] leading-snug" style={{ color: 'var(--text-muted)' }}>
         {scopedProjectId
           ? '添加到当前项目 (项目内所有会话共享). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.'
           : '作为用户级添加 (对你所有任务可用). 添加后在下方列表点「追加」即可注入当前会话, 对后续对话生效.'}
@@ -563,7 +563,7 @@ function SegBtn({ active, onClick, color, children }: { active: boolean; onClick
     <button
       type="button"
       onClick={onClick}
-      className="rounded border px-2 py-0.5 text-[10.5px] transition-colors"
+      className="rounded border px-2 py-0.5 text-[length:var(--fs-xs)] transition-colors"
       style={{
         color: active ? '#fff' : 'var(--text-secondary)',
         borderColor: active ? color : 'var(--border-color)',
@@ -701,14 +701,14 @@ function SessionSearchPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索当前会话"
             aria-label="搜索当前会话"
-            className="h-8 w-full rounded-md border bg-transparent pl-7 pr-2 text-[11px] outline-none focus:border-red-400/70"
+            className="h-8 w-full rounded-md border bg-transparent pl-7 pr-2 text-[length:var(--fs-sm)] outline-none focus:border-red-400/70"
             style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
           />
         </div>
         <button
           type="submit"
           disabled={!sessionId || query.trim().length < 2 || loading}
-          className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-md border px-2.5 text-[11px] font-medium transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex h-8 flex-shrink-0 items-center gap-1 rounded-md border px-2.5 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-45"
           style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.45)' }}
         >
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
@@ -718,16 +718,16 @@ function SessionSearchPanel({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" aria-label="会话内搜索结果">
         {error ? (
-          <div className="py-5 text-center text-[11px] text-red-400">{error}</div>
+          <div className="py-5 text-center text-[length:var(--fs-sm)] text-red-400">{error}</div>
         ) : loading ? (
-          <div className="flex items-center justify-center gap-1.5 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex items-center justify-center gap-1.5 py-5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在搜索当前会话...
           </div>
         ) : searched && hits.length === 0 ? (
-          <div className="py-5 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>当前会话没有命中</div>
+          <div className="py-5 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>当前会话没有命中</div>
         ) : hits.length > 0 ? (
           <>
-            <div className="mb-1 px-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>找到 {hits.length} 个命中，点击定位</div>
+            <div className="mb-1 px-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>找到 {hits.length} 个命中，点击定位</div>
             <div className="space-y-1">
               {hits.map((hit, index) => (
                 <button
@@ -739,17 +739,17 @@ function SessionSearchPanel({
                   className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors hover:bg-red-500/10 ${selectedIndex === index ? 'border-red-500/80 bg-red-500/10' : ''}`}
                   style={{ borderColor: selectedIndex === index ? undefined : 'var(--border-color)' }}
                 >
-                  <div className="mb-0.5 flex items-center gap-1.5 text-[9px]">
+                  <div className="mb-0.5 flex items-center gap-1.5 text-[length:var(--fs-2xs)]">
                     <span className="rounded bg-red-500/15 px-1 py-0.5 text-red-300">{hit.role || '消息'}</span>
                     <span style={{ color: 'var(--text-muted)' }}>{hit.timestamp ? new Date(hit.timestamp).toLocaleString('zh-CN') : `命中 ${index + 1}`}</span>
                   </div>
-                  <div className="line-clamp-3 break-all text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{hit.snippet}</div>
+                  <div className="line-clamp-3 break-all text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{hit.snippet}</div>
                 </button>
               ))}
             </div>
           </>
         ) : (
-          <div className="py-5 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>输入至少 2 个字符搜索本会话全部内容</div>
+          <div className="py-5 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>输入至少 2 个字符搜索本会话全部内容</div>
         )}
       </div>
     </div>
@@ -971,9 +971,9 @@ export function SessionSkillMemoryEditor({
     emptyText: string,
     kind: 'skill' | 'memory',
   ) => {
-    if (loading) return <div className="text-[11px] py-2 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
-    if (error) return <div className="text-[11px] py-2 text-center text-red-400">{error}</div>
-    if (items.length === 0) return <div className="text-[11px] py-2 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+    if (loading) return <div className="text-[length:var(--fs-sm)] py-2 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+    if (error) return <div className="text-[length:var(--fs-sm)] py-2 text-center text-red-400">{error}</div>
+    if (items.length === 0) return <div className="text-[length:var(--fs-sm)] py-2 text-center" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
     return (
       <div className="space-y-1">
         {items.map(it => {
@@ -985,7 +985,7 @@ export function SessionSkillMemoryEditor({
           const btnDisabled = !sessionId || btnState === 'sending' || btnState === 'done'
           return (
             <div key={it.id}
-              className="flex items-start gap-2 px-2 py-1.5 rounded border text-[11px]"
+              className="flex items-start gap-2 px-2 py-1.5 rounded border text-[length:var(--fs-sm)]"
               style={{
                 borderColor: 'var(--border-color)',
                 background: enabled ? 'rgba(255,255,255,0.02)' : 'transparent',
@@ -1003,7 +1003,7 @@ export function SessionSkillMemoryEditor({
                     <div className="flex items-center gap-1.5">
                       <span className="truncate" style={{ color: 'var(--text-primary)' }}>{it.name}</span>
                       <span
-                        className="text-[9px] px-1 py-px rounded flex-shrink-0 border"
+                        className="text-[length:var(--fs-2xs)] px-1 py-px rounded flex-shrink-0 border"
                         style={{
                           color: scopeStyle.color,
                           background: scopeStyle.bg,
@@ -1013,7 +1013,7 @@ export function SessionSkillMemoryEditor({
                       </span>
                     </div>
                     {it.description && (
-                      <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
+                      <div className="text-[length:var(--fs-xs)] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{it.description}</div>
                     )}
                   </div>
                 </div>
@@ -1021,7 +1021,7 @@ export function SessionSkillMemoryEditor({
               <button
                 type="button"
                 onClick={() => setPreviewItem({ kind, item: it })}
-                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors inline-flex items-center gap-1 hover:bg-[var(--bg-card-hover)]"
+                className="flex-shrink-0 text-[length:var(--fs-xs)] px-2 py-0.5 rounded border transition-colors inline-flex items-center gap-1 hover:bg-[var(--bg-card-hover)]"
                 style={{
                   color: 'var(--text-secondary)',
                   borderColor: 'var(--border-color-strong)',
@@ -1036,7 +1036,7 @@ export function SessionSkillMemoryEditor({
                 type="button"
                 disabled={btnDisabled}
                 onClick={() => handleEmphasize(kind, it.id)}
-                className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
+                className="flex-shrink-0 text-[length:var(--fs-xs)] px-2 py-0.5 rounded border transition-colors disabled:opacity-50 disabled:cursor-wait"
                 style={{
                   color: btnState === 'done' ? '#22c55e' : 'var(--text-primary)',
                   borderColor: btnState === 'done' ? 'rgba(34,197,94,0.25)' : 'var(--border-color-strong)',
@@ -1107,7 +1107,7 @@ export function SessionSkillMemoryEditor({
             idleClass="border-transparent"
             onClick={() => setActivePanelAndPersist(activePanel === 'git' ? null : 'git')}
             dataTour="session-git-toggle"
-            badge={gitSources.length > 0 ? <span className="text-[9px] text-amber-300">{gitSources.length}</span> : undefined}
+            badge={gitSources.length > 0 ? <span className="text-[length:var(--fs-2xs)] text-amber-300">{gitSources.length}</span> : undefined}
           />
           <ResourceTabButton
             buttonId="ports"
@@ -1162,7 +1162,7 @@ export function SessionSkillMemoryEditor({
                   type="button"
                   aria-label="查看当前项目知识/任务知识"
                   onClick={onOpenKnowledge}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[11px] transition-colors hover:bg-cyan-500/10"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5 text-[length:var(--fs-sm)] transition-colors hover:bg-cyan-500/10"
                   style={{ borderColor: 'var(--border-color-strong)', color: '#22d3ee' }}
                 >
                   <BookOpen className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -1180,7 +1180,7 @@ export function SessionSkillMemoryEditor({
                     />
                   )
                     : timeActive ? (
-                      <Suspense fallback={<div className="py-6 text-center text-[11px]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
+                      <Suspense fallback={<div className="py-6 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>正在加载耗时面板...</div>}>
                         <TimeConsumePanel sessionId={sessionId} />
                       </Suspense>
                     )
@@ -1189,7 +1189,7 @@ export function SessionSkillMemoryEditor({
                     : (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 px-1 py-0.5">
-                        <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
                           {gitScanMeta.scannedAt ? `${gitScanMeta.cached ? '缓存' : '刚刚扫描'} · ${new Date(gitScanMeta.scannedAt).toLocaleTimeString()}` : '按需扫描中枢、本机与远端'}
                         </span>
                         <button
@@ -1205,13 +1205,13 @@ export function SessionSkillMemoryEditor({
                         </button>
                       </div>
                       {gitLoading && (
-                        <div className="flex items-center justify-center gap-2 py-5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        <div className="flex items-center justify-center gap-2 py-5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
                           <Loader2 className="h-3.5 w-3.5 animate-spin" /> 扫描 Git 仓库...
                         </div>
                       )}
-                      {!gitLoading && gitError && <div className="py-4 text-center text-[11px] text-red-400">{gitError}</div>}
+                      {!gitLoading && gitError && <div className="py-4 text-center text-[length:var(--fs-sm)] text-red-400">{gitError}</div>}
                       {!gitLoading && !gitError && gitSources.length === 0 && (
-                        <div className="rounded-lg border border-dashed px-3 py-5 text-center text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+                        <div className="rounded-lg border border-dashed px-3 py-5 text-center text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
                           当前中枢、本机和已登记远程计算机都没有检测到 Git 仓库
                         </div>
                       )}
@@ -1223,13 +1223,13 @@ export function SessionSkillMemoryEditor({
                         <div key={source.id} className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
                           <div className="flex min-w-0 items-center gap-2">
                             <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
-                            <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
-                            {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{source.branch}</span>}
-                            {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[10px] text-slate-300">无 Git 仓库</span>}
-                            {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">游离 HEAD {source.head}</span>}
+                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
+                            {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[length:var(--fs-xs)] text-amber-300">{source.branch}</span>}
+                            {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[length:var(--fs-xs)] text-slate-300">无 Git 仓库</span>}
+                            {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[length:var(--fs-xs)] text-amber-300">游离 HEAD {source.head}</span>}
                           </div>
-                          <div className="mt-1 truncate font-mono text-[10px]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.path || '路径未知'}</div>
-                          <div className="mt-1 flex items-center gap-2 text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                          <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.path || '路径未知'}</div>
+                          <div className="mt-1 flex items-center gap-2 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>
                             <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
                             {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
                             {source.status && <span>· {source.status}</span>}
@@ -1265,19 +1265,19 @@ export function SessionSkillMemoryEditor({
                   {previewItem.kind === 'skill'
                     ? <Puzzle className="h-4 w-4 flex-shrink-0 text-blue-400" strokeWidth={1.9} />
                     : <BookOpen className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />}
-                  <h3 className="min-w-0 text-[15px] font-semibold leading-6 break-words" style={{ color: 'var(--text-primary)' }}>
+                  <h3 className="min-w-0 text-[length:var(--fs-2xl)] font-semibold leading-6 break-words" style={{ color: 'var(--text-primary)' }}>
                     {previewItem.item.name}
                   </h3>
                   <ScopeBadge scope={previewItem.item.scope} />
                   <span
-                    className="shrink-0 rounded border px-1.5 py-0.5 text-[10px]"
+                    className="shrink-0 rounded border px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.04)' }}
                   >
                     {(previewItem.item.body || '').length} 字
                   </span>
                 </div>
                 {previewItem.item.description && (
-                  <p className="mt-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  <p className="mt-1 text-[length:var(--fs-md)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                     {previewItem.item.description}
                   </p>
                 )}
@@ -1296,7 +1296,7 @@ export function SessionSkillMemoryEditor({
 
             <div className="min-h-0 flex-1 overflow-auto p-5">
               <pre
-                className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[12px] leading-relaxed"
+                className="m-0 min-h-[360px] whitespace-pre-wrap break-words rounded-xl border p-4 text-[length:var(--fs-md)] leading-relaxed"
                 style={{
                   background: 'var(--bg-primary)',
                   borderColor: 'var(--border-color)',
@@ -1347,7 +1347,7 @@ export function SessionSkillMemoryModal({
               : initialPanel === 'memory'
                 ? <Brain className="h-4 w-4 flex-shrink-0 text-cyan-400" strokeWidth={1.9} />
                 : <GitBranch className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.9} />}
-            <h3 className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+            <h3 className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
           </div>
           <button
             type="button"
@@ -1442,10 +1442,10 @@ export function SessionWelcomeCards({ projectId }: { projectId?: string }) {
   return (
     <div className="msg-enter">
       <div className="mb-4 text-center">
-        <div className="text-[13px] font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+        <div className="text-[length:var(--fs-lg)] font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
           Session 尚未开始
         </div>
-        <div className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
           发送第一条消息后, 以下 Memory 与 Skill 将随上下文一起注入到 prompt
         </div>
       </div>
