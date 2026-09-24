@@ -6,8 +6,10 @@ import { TopNav, timeAgo } from '../components/shell'
 import { ResizablePanel, useIsMobile } from '../components/resizable-panel'
 import { usePagination, PaginationControls } from '../components/pagination'
 import {
-  NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
+  RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
+// 「新建会话」入口已由传统 NewSessionModal (第 1 步 / 共 2 步) 换成新建快捷会话菜单 (含 预览 → 传统第 2 步)
+import { CreateSessionForm } from '../components/quick-create-session'
 import { ChatArea, SessionRow } from '../components/chat'
 import { AgentStatusDot } from '../components/AgentStatusDot'
 import { ProjectFilesCard } from '../components/project-files'
@@ -766,16 +768,18 @@ export default function IssuePage() {
         )}
       </div>
 
-      {showNewSession && <NewSessionModal issueId={issueId} projectId={projectId} onClose={() => setShowNewSession(false)}
-        defaultNamePrefix={issue?.title || ''}
-        defaultDescription={issue?.description || ''}
-        defaultModel={project?.default_model ?? null}
-        projectKind={project?.kind}
-        onCreated={(s: any) => {
+      {showNewSession && <CreateSessionForm onClose={() => setShowNewSession(false)}
+        onDone={(s: any) => {
           setShowNewSession(false)
           refreshSessions()
-          goToSession(s.session_id)
-        }} />}
+          if (s?.session_id) goToSession(s.session_id)
+        }}
+        defaultProjectId={projectId}
+        defaultIssueId={issueId}
+        initialPrompt={issue?.description || ''}
+        projectKind={project?.kind}
+        successMode="external"
+      />}
       {editingSession && <RenameSessionModal session={editingSession} onClose={() => setEditingSession(null)}
         onRenamed={(updated: any) => {
           setEditingSession(null)

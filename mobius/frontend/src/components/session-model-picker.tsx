@@ -24,13 +24,13 @@ export type SessionModelOption = {
 }
 
 // 模型 → 后端渠道 (对照 /api/sessions/prompt-stats 的渠道桶)
-type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
-function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
+export type PromptBackendKey = 'codex' | 'claude_code' | 'deepseek_harness'
+export function promptBackendKeyForOption(opt?: SessionModelOption | null): PromptBackendKey {
   if (opt?.backend === 'tmux-codex') return 'codex'
   if (opt?.backend === 'deepseek-harness') return 'deepseek_harness'
   return 'claude_code'
 }
-const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
+export const PROMPT_BACKEND_LABEL: Record<PromptBackendKey, string> = {
   codex: 'Codex',
   claude_code: 'Claude Code',
   deepseek_harness: 'DeepSeek Harness',

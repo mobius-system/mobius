@@ -366,58 +366,18 @@ const LEASE_STALE_MS = 15_000
 const STOP_WAIT_MS = 2_000
 
 const aimuxRuntimeDir = () => path.join(mobiusHome(), 'aimux-runtime')
-const leasePath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lease`)
 const lockPath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lock`)
+const runtimePath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.json`)
 
 async function ensureRuntimeDir(): Promise<void> {
   await fs.mkdir(aimuxRuntimeDir(), { recursive: true, mode: 0o700 })
 }
 
-async function writeLease(hash: string, pid: number, owner: string, metadata: Partial<LeaseRecord> = {}): Promise<void> {
-  await ensureRuntimeDir()
-  await fs.writeFile(leasePath(hash), JSON.stringify({ pid, owners: [owner], ...metadata }), { mode: 0o600 })
-}
-
-interface LeaseRecord { pid: number; owners: string[]; identifier?: string; nonce?: string; startedAt?: number }
-async function readLease(hash: string): Promise<LeaseRecord | null> {
+interface RuntimeRecord { pid?: number; last_feed_watchdog?: number; need_external_restart?: boolean; realtime_healthy_display?: boolean; identifier?: string; launched_at?: number }
+async function readRuntime(hash: string): Promise<RuntimeRecord | null> {
   try {
-    const raw = await fs.readFile(leasePath(hash), 'utf8')
-    try {
-      const value = JSON.parse(raw) as Partial<LeaseRecord>
-      if (Number.isInteger(value.pid) && value.pid! > 0) return { ...value, pid: value.pid!, owners: Array.isArray(value.owners) ? value.owners.filter(Boolean) : [] }
-    } catch {
-      const pid = Number.parseInt(raw, 10)
-      if (Number.isInteger(pid) && pid > 0) return { pid, owners: [] }
-    }
-  } catch {}
-  return null
-}
-
-async function readLeasePid(hash: string): Promise<number | null> {
-  return (await readLease(hash))?.pid ?? null
-}
-
-async function leaseFresh(hash: string): Promise<boolean> {
-  try { return Date.now() - (await fs.stat(leasePath(hash))).mtimeMs <= LEASE_STALE_MS } catch { return false }
-}
-
-async function addLeaseOwner(hash: string, owner: string): Promise<void> {
-  const lease = await readLease(hash)
-  if (!lease) return
-  if (!lease.owners.includes(owner)) lease.owners.push(owner)
-  await fs.writeFile(leasePath(hash), JSON.stringify(lease), { mode: 0o600 })
-}
-
-async function releaseLease(hash: string, owner: string): Promise<{ pid: number | null; last: boolean }> {
-  const lease = await readLease(hash)
-  if (!lease) return { pid: null, last: true }
-  lease.owners = lease.owners.filter(item => item !== owner)
-  if (lease.owners.length > 0) {
-    await fs.writeFile(leasePath(hash), JSON.stringify(lease), { mode: 0o600 })
-    return { pid: lease.pid, last: false }
-  }
-  await fs.rm(leasePath(hash), { force: true }).catch(() => {})
-  return { pid: lease.pid, last: true }
+    return JSON.parse(await fs.readFile(runtimePath(hash), 'utf8')) as RuntimeRecord
+  } catch { return null }
 }
 
 async function withLeaseLock<T>(hash: string, action: () => Promise<T>): Promise<T> {
@@ -432,8 +392,15 @@ async function withLeaseLock<T>(hash: string, action: () => Promise<T>): Promise
 /** Bump the lease mtime so the daemon sees "someone still wants me". */
 async function touchLease(hash: string): Promise<void> {
   await ensureRuntimeDir()
-  const now = new Date()
-  try { await fs.utimes(leasePath(hash), now, now) } catch { /* no lease yet (not spawned) */ }
+  const file = runtimePath(hash)
+  try {
+    const raw = await fs.readFile(file, 'utf8')
+    const state = JSON.parse(raw) as Record<string, unknown>
+    state.last_feed_watchdog = Date.now()
+    const tmp = `${file}.tmp-${process.pid}`
+    await fs.writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
+    await fs.rename(tmp, file)
+  } catch { /* AIMUX has not written runtime state yet */ }
 }
 
 function pidAlive(pid: number): boolean {
@@ -464,12 +431,14 @@ export function reverseConnectArgs(
   token: string,
   platform: NodeJS.Platform = process.platform,
   silentFlag: string | null = null,
+  runtimeFile: string | null = null,
 ): string[] {
   return [
     'reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`,
     '--identifier', identifier,
     '--token', token,
     '--replace',
+    ...(runtimeFile ? ['--runtime', runtimeFile, '--watchdog', runtimeFile] : []),
     ...(platform === 'win32' && silentFlag ? [silentFlag] : []),
   ]
 }
@@ -572,8 +541,6 @@ export class AimuxSupervisor {
   private leaseTimer: ReturnType<typeof setTimeout> | null = null
   private probeTimer: ReturnType<typeof setTimeout> | null = null
   private bridgeFailures = 0
-  private readonly nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  private readonly owner = `${process.pid}-${Math.random().toString(36).slice(2)}`
   private opts: SupervisorOptions
   private hash: string
   constructor(opts: SupervisorOptions) { this.opts = opts; this.hash = aimuxWorkspaceHash() }
@@ -589,20 +556,18 @@ export class AimuxSupervisor {
   private async ensureDaemon(): Promise<void> {
     await withLeaseLock(this.hash, async () => {
       if (this.stopping) return
-      const current = await readLease(this.hash)
+      const current = await readRuntime(this.hash)
       const pid = current?.pid ?? null
-      if (pid !== null && pidAlive(pid) && await leaseFresh(this.hash)) {
+      if (current && pid !== null && pidAlive(pid) && current.need_external_restart !== true) {
         const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier, 1500))
         const connected = typeof raw === 'boolean' ? raw : raw.connected
         if (connected) {
-          if (!current!.owners.includes(this.owner)) current!.owners.push(this.owner)
-          await fs.writeFile(leasePath(this.hash), JSON.stringify(current), { mode: 0o600 })
+          await touchLease(this.hash)
           this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `AIMUX bridge 已连接 · ${this.opts.identifier}`, identifier: this.opts.identifier })
           return
         }
       }
       if (pid !== null && pidAlive(pid)) { try { process.kill(pid, 'SIGTERM') } catch {} ; await waitForExit(pid) }
-      await fs.rm(leasePath(this.hash), { force: true }).catch(() => {})
       await this.spawnDaemonLocked()
     })
   }
@@ -618,13 +583,14 @@ export class AimuxSupervisor {
   private async spawnDaemonLocked(): Promise<void> {
       if (this.stopping) return
       // Re-check under the lock — another TUI may have spawned while we waited.
-      const pid = await readLeasePid(this.hash)
-      if (pid !== null && pidAlive(pid)) { await addLeaseOwner(this.hash, this.owner); return }
+      const current = await readRuntime(this.hash)
+      const pid = current?.pid ?? null
+      if (pid !== null && pidAlive(pid) && current?.need_external_restart !== true) { await touchLease(this.hash); return }
       const { server, token, identifier, onStatus } = this.opts
       onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
-      const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token))
+      const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token, process.platform, null, runtimePath(this.hash)))
       child.on('error', (e: Error) => { appendAimuxLog(installLogQueue, `\n[aimux spawn error] ${e.stack || e.message}\n`) })
-      await writeLease(this.hash, child.pid ?? 0, this.owner, { identifier, nonce: this.nonce, startedAt: Date.now() })
+      await fs.mkdir(aimuxRuntimeDir(), { recursive: true })
       child.unref?.()
       this.reconnectAttempt = 0
   }
@@ -648,23 +614,25 @@ export class AimuxSupervisor {
   /** Probe the bridge; refresh on auth error, respawn only when the daemon died. */
   private async checkDaemon(): Promise<void> {
     if (this.stopping) return
-    const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier))
-    const probe: AimuxBridgeProbe = typeof raw === 'boolean' ? { connected: raw, authError: false } : raw
-    if (this.stopping) return
-    if (probe.authError) {
-      await this.refreshCredentials('JWT 已过期')
+      const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier))
+      const probe: AimuxBridgeProbe = typeof raw === 'boolean' ? { connected: raw, authError: false } : raw
+      if (this.stopping) return
+      if (probe.authError) {
+      await this.setRuntimeRestartRequested()
+        await this.refreshCredentials('JWT 已过期')
     } else if (probe.connected) {
       this.reconnectAttempt = 0
       this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `心跳正常 · ${this.opts.identifier}`, identifier: this.opts.identifier })
       this.bridgeFailures = 0
     } else {
       this.bridgeFailures += 1
-      const pid = await readLeasePid(this.hash)
+      await this.updateRuntimeHealth(false)
+      const runtime = await readRuntime(this.hash)
+      const pid = runtime?.pid ?? null
       if (pid === null || !pidAlive(pid) || this.bridgeFailures >= BRIDGE_FAILURE_LIMIT) {
         this.reconnectAttempt += 1
         this.opts.onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX bridge 无响应，重启连接中（第 ${this.reconnectAttempt} 次）…`, identifier: this.opts.identifier, attempt: this.reconnectAttempt })
         if (pid !== null && pidAlive(pid)) { try { process.kill(pid, 'SIGTERM') } catch {} }
-        await fs.rm(leasePath(this.hash), { force: true }).catch(() => {})
         this.bridgeFailures = 0
         await this.spawnDaemon()
       } else {
@@ -673,6 +641,30 @@ export class AimuxSupervisor {
       }
     }
     this.scheduleProbe()
+  }
+
+  private async updateRuntimeHealth(healthy: boolean): Promise<void> {
+    const file = runtimePath(this.hash)
+    try {
+      const state = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>
+      state.realtime_healthy_display = healthy
+      if (healthy) state.last_healthy_heartbeat = Date.now()
+      const tmp = `${file}.tmp-${process.pid}`
+      await fs.writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
+      await fs.rename(tmp, file)
+    } catch {}
+  }
+
+  private async setRuntimeRestartRequested(): Promise<void> {
+    const file = runtimePath(this.hash)
+    try {
+      const state = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>
+      state.need_external_restart = true
+      state.realtime_healthy_display = false
+      const tmp = `${file}.tmp-${process.pid}`
+      await fs.writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
+      await fs.rename(tmp, file)
+    } catch {}
   }
 
   private async refreshCredentials(reason: string): Promise<void> {
@@ -703,11 +695,7 @@ export class AimuxSupervisor {
     this.leaseTimer = null
     if (this.probeTimer) clearTimeout(this.probeTimer)
     this.probeTimer = null
-    const release = await withLeaseLock(this.hash, () => releaseLease(this.hash, this.owner))
-    if (release.last && release.pid !== null && pidAlive(release.pid)) {
-      try { process.kill(release.pid, 'SIGTERM') } catch {}
-    }
-    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: release.last ? 'AIMUX 已停止' : 'AIMUX 已停止（其他 TUI 仍在使用）', identifier: this.opts.identifier })
+    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX watchdog 将在续租超时后停止', identifier: this.opts.identifier })
   }
 }
 
@@ -754,7 +742,7 @@ export async function startAimuxConnection(opts: {
     const silentFlag = cachedSilentFlag
     supervisor = new AimuxSupervisor({
       server: opts.server, token: opts.token, identifier, onStatus, refreshToken: opts.refreshToken,
-      spawnProcess: token => spawnDetachedDaemon(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag)),
+      spawnProcess: token => spawnDetachedDaemon(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag, runtimePath(aimuxWorkspaceHash()))),
     })
     await supervisor.start()
   })().finally(() => { installing = null })

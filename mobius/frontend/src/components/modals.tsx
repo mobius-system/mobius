@@ -2046,9 +2046,12 @@ export function NewSessionModal({
   modalTitle,
   continueFromSessionId,
   defaultModel,
+  initialStep,
+  initialValues,
+  onBack,
 }: {
   issueId?: string; researchId?: string; projectId?: string; existingSessions?: any[];
-  onClose: () => void; onCreated: (s: any) => void;
+  onClose: () => void; onCreated: (s: any, meta?: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] }) => void;
   defaultName?: string; defaultDescription?: string; defaultNamePrefix?: string
   entityLabel?: string
   mode?: 'create' | 'preset'
@@ -2064,6 +2067,22 @@ export function NewSessionModal({
   modalTitle?: string
   continueFromSessionId?: string
   defaultModel?: string | null
+  /** 直入第 2 步 (新建快捷会话「预览」入口): 挂载后自动拉预览配置 */
+  initialStep?: 1 | 2
+  /** 外部表单传入的权威初值; 传入后跳过本组件自己的 localStorage 草稿读写 */
+  initialValues?: {
+    name?: string
+    desc?: string
+    model?: string
+    language?: SessionLanguage
+    defer_purpose?: boolean
+    excluded_skill_ids?: string[]
+    excluded_memory_ids?: string[]
+    mentions?: SessionMentionSelection[]
+    attachments?: Attachment[]
+  }
+  /** 提供时第 2 步「上一步」返回外部表单; 预览加载失败也带错误返回 */
+  onBack?: (payload?: { err?: string; excluded_skill_ids?: string[]; excluded_memory_ids?: string[] }) => void
 }) {
   const isResearch = !!researchId
   const isPresetMode = mode === 'preset'
@@ -2078,7 +2097,7 @@ export function NewSessionModal({
     : continueFromSessionId
       ? `continue-session:v2:${continueFromSessionId}`
       : `new-session:${isResearch ? `r:${researchId}` : `i:${issueId}`}`
-  const initialDraft = isPresetMode ? null : draftLoad<{
+  const initialDraft = isPresetMode || initialValues ? null : draftLoad<{
     name?: string
     desc?: string
     model?: ModelKey
@@ -2096,8 +2115,8 @@ export function NewSessionModal({
   const requiredSessionSkill = isExtensionProject
     ? { dirName: 'mobius-extension', name: 'mobius-extension', label: 'mobius-extension' }
     : requiredSkill
-  const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [name, setName] = useState(() => initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix))
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep === 2 ? 2 : 1)
+  const [name, setName] = useState(() => initialValues?.name ?? (initialPreset?.name || initialDraft?.name || defaultName || formatDefaultSessionName(defaultNamePrefix)))
   // PC 任务模式: work_mode (hub/pc/dual) + aimux_id. 桌面端初值 'dual' (默认双侧, 避免 mount 秒提交时 null 导致 UI 与必选逻辑不一致); web 端恒 null → 不注入、不影响 skill.
   const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
     typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop ? 'dual' : null
@@ -2118,11 +2137,12 @@ export function NewSessionModal({
       setName(prev => prev && !prev.includes(tag) ? `${prev} ${tag}` : prev)
     })
   }, [])
-  const [desc, setDesc] = useState(initialPreset?.description || initialDraft?.desc || defaultDescription || '')
+  const [desc, setDesc] = useState(() => initialValues?.desc ?? (initialPreset?.description || initialDraft?.desc || defaultDescription || ''))
   const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
-    Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
+    Array.isArray(initialValues?.mentions) ? initialValues.mentions
+      : Array.isArray(initialDraft?.mentions) ? initialDraft.mentions : [],
   )
-  const [deferPurpose, setDeferPurpose] = useState(false)
+  const [deferPurpose, setDeferPurpose] = useState(!!initialValues?.defer_purpose)
   const [role, setRole] = useState<'chief_researcher' | 'research_assistant'>(
     initialPreset?.role || initialDraft?.role || (isResearch && !chiefExists ? 'chief_researcher' : 'research_assistant')
   )
@@ -2134,7 +2154,7 @@ export function NewSessionModal({
   // 草稿中的 model 只有 model_touched=true (用户手动选过) 才视为权威; 否则只是历次默认值
   // 的快照, 会把模型钉在过期值上 (管理员改了项目/全局默认也不生效). 旧草稿无 model_touched → 忽略.
   // preset 模式 (架构/小莫预设) 下, 预设自带 model 视为权威, 优先于其他优先级.
-  const modelUserTouchedRef = useRef(false)
+  const modelUserTouchedRef = useRef(!!initialValues?.model)
   const [scopeLastModel, setScopeLastModel] = useState('')
   const [globalDefaultModel, setGlobalDefaultModel] = useState('')
   // 仅当用户手动选过模型才视为权威, 避免过期草稿的快照钉死模型.
@@ -2149,7 +2169,7 @@ export function NewSessionModal({
       fallback: DEFAULT_SESSION_MODEL,
     })
   }, [isPresetMode, initialPreset?.model, draftModelDeliberate, scopeLastModel, defaultModel, globalDefaultModel])
-  const [model, setModel] = useState<ModelKey>(resolvedDefaultModel)
+  const [model, setModel] = useState<ModelKey>((initialValues?.model as ModelKey | undefined) || resolvedDefaultModel)
   useEffect(() => {
     let alive = true
     fetchGlobalDefaultModel().then(v => { if (alive) setGlobalDefaultModel(v) })
@@ -2160,7 +2180,7 @@ export function NewSessionModal({
     setModel(resolvedDefaultModel)
   }, [resolvedDefaultModel])
   // 注入上下文语言, 创建时定型 (默认中文).
-  const [language, setLanguage] = useState<SessionLanguage>(initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
+  const [language, setLanguage] = useState<SessionLanguage>(initialValues?.language || initialPreset?.language || initialDraft?.language || DEFAULT_SESSION_LANGUAGE)
   const [personality, setPersonality] = useState<string>(initialPreset?.personality || personalityOptions[0]?.key || 'balanced')
   const [existingSessionAction, setExistingSessionAction] = useState<ExistingSessionAction>(
     () => normalizeExistingSessionAction(initialPreset?.existing_session_action)
@@ -2190,7 +2210,7 @@ export function NewSessionModal({
   const [projectMemoryCatalog, setProjectMemoryCatalog] = useState<any[]>([])
   const { theme } = useStore()
   const isDark = theme !== 'light'
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>(Array.isArray(initialValues?.attachments) ? initialValues.attachments : [])
   const canDeferPurpose = !isPresetMode
   const submittedDescription = canDeferPurpose && deferPurpose ? '' : desc
 
@@ -2247,7 +2267,7 @@ export function NewSessionModal({
   }, [])
 
   useEffect(() => {
-    if (!isPresetMode) {
+    if (!isPresetMode && !initialValues) {
       draftSave(DRAFT_KEY, {
         name,
         desc,
@@ -2458,8 +2478,11 @@ export function NewSessionModal({
           : (defaults.excluded_skill_ids || [])
         ).filter(id => availableSkillIds.has(id))
       )
-      if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_skill_ids) {
-        defaultSkillEx = new Set(initialDraft.excluded_skill_ids.filter(id => availableSkillIds.has(id)))
+      // 外部表单 (新建快捷会话) 传入的勾选快照优先; 其次本组件草稿 (selection_ready).
+      const inheritedSkillExIds = initialValues?.excluded_skill_ids
+        ?? (initialDraft?.selection_ready ? initialDraft.excluded_skill_ids : undefined)
+      if (!isPresetMode && inheritedSkillExIds) {
+        defaultSkillEx = new Set(inheritedSkillExIds.filter(id => availableSkillIds.has(id)))
       }
       // "修改模型并继续" 默认不选中任何 Skill/Memory: 这里先按"全不选"排除全集 (必选内置 Skill 由下方
       // requiredSessionSkillIds 放回). 用户在本弹窗内勾选过的草稿 (selection_ready) 优先, 不覆盖.
@@ -2476,8 +2499,10 @@ export function NewSessionModal({
           : (defaults.excluded_memory_ids || [])
         ).filter(id => availableMemoryIds.has(id))
       )
-      if (!isPresetMode && initialDraft?.selection_ready && initialDraft.excluded_memory_ids) {
-        defaultMemoryEx = new Set(initialDraft.excluded_memory_ids.filter(id => availableMemoryIds.has(id)))
+      const inheritedMemoryExIds = initialValues?.excluded_memory_ids
+        ?? (initialDraft?.selection_ready ? initialDraft.excluded_memory_ids : undefined)
+      if (!isPresetMode && inheritedMemoryExIds) {
+        defaultMemoryEx = new Set(inheritedMemoryExIds.filter(id => availableMemoryIds.has(id)))
       }
       if (continueResetSelection) {
         defaultMemoryEx = new Set(availableMemoryIds)
@@ -2492,10 +2517,20 @@ export function NewSessionModal({
       setExcludedMemories(defaultMemoryEx)
       setPreview(p0)
     } catch (e: any) {
-      setErr(e?.message || '加载预览失败')
-      setStep(1)
+      const message = e?.message || '加载预览失败'
+      // 外部表单入口 (新建快捷会话「预览」) 失败时退回外部表单并带回错误, 不落入本组件第 1 步
+      if (onBack) onBack({ err: message })
+      else { setErr(message); setStep(1) }
     } finally { setPreviewLoading(false) }
   }
+
+  // 直入第 2 步 (新建快捷会话「预览」入口): 挂载后立即拉预览配置
+  useEffect(() => {
+    if (initialStep !== 2) return
+    goPreview()
+    // 仅挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Step 2 内勾选状态变更 → 即时拉新 preview, 不阻塞 UI (lastSent 防竞态)
   const toggleSkill = async (id: string) => {
@@ -2636,9 +2671,9 @@ export function NewSessionModal({
             ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
           }),
         })
-        draftClear(DRAFT_KEY)
+        if (!initialValues) draftClear(DRAFT_KEY)
         if (deferPurpose) markFireAndForgetSession(s?.session_id)
-        onCreated(s)
+        onCreated(s, { excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories) })
         return
       }
       const endpoint = `/api/issues/${issueId}/sessions`
@@ -2654,9 +2689,9 @@ export function NewSessionModal({
             ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
         }),
       })
-      draftClear(DRAFT_KEY)
+      if (!initialValues) draftClear(DRAFT_KEY)
       if (deferPurpose) markFireAndForgetSession(s?.session_id)
-      onCreated(s)
+      onCreated(s, { excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories) })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
@@ -3296,7 +3331,10 @@ export function NewSessionModal({
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setStep(1)} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
+              <button onClick={() => onBack
+                // 带回第 2 步里改过的勾选, 外部表单 (新建快捷会话) 接管后续创建
+                ? onBack({ excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories) })
+                : setStep(1)} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
               <button onClick={submit} disabled={loading || previewLoading}
                 data-tour="session-submit"
                 className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">

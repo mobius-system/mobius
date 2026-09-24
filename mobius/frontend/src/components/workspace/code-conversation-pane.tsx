@@ -1,7 +1,7 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, Laptop, Server, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Network, Plus, Check } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check } from 'lucide-react'
 import { api } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
@@ -90,6 +90,11 @@ function fileSourceStorageKey(projectId: string) {
 function remoteMachineStorageKey(projectId: string) {
   return `mobius:ui:cc-remote-machine:${projectId}`
 }
+
+// 文件位置下拉框里中枢/本地的合成值 (远程机器直接用机器名, 天然不冲突)。
+// Synthetic option values for hub/local in the location select; remote machines use their own names
+const LOCATION_HUB = '__hub__'
+const LOCATION_LOCAL = '__local__'
 
 function loadFileSource(projectId: string): FileSource {
   try {
@@ -400,24 +405,27 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     })
   }
 
-  const chooseSource = useCallback((next: FileSource) => {
-    if (next === source) return
-    if (next === 'local' && !isDesktop) return
+  // 统一位置选择 (原「中枢/本地/远程」tab 与「远程机器」下拉合并后唯一入口):
+  // 值为 LOCATION_HUB / LOCATION_LOCAL 或远程机器名, 一次完成来源与机器切换。
+  // Unified location picker after merging the source tabs into the select: one value
+  // switches both the file source and the remote machine, with a single unsaved-confirm
+  const chooseLocation = useCallback((next: string) => {
+    const nextSource: FileSource = next === LOCATION_HUB ? 'hub' : (next === LOCATION_LOCAL ? 'local' : 'remote')
+    if (nextSource === 'local' && !isDesktop) return
+    if (nextSource === source && (nextSource !== 'remote' || next === remoteName)) return
     if (dirty && selected) {
-      if (!window.confirm(`「${selected.name}」有未保存的修改，切换文件来源将丢弃。确定切换？`)) return
+      const action = nextSource === source ? '切换远程机器' : '切换文件来源'
+      if (!window.confirm(`「${selected.name}」有未保存的修改，${action}将丢弃。确定切换？`)) return
     }
-    setSourceState(next)
-    try { localStorage.setItem(fileSourceStorageKey(projectId), next) } catch { /* 静默 */ }
-  }, [dirty, isDesktop, projectId, selected, source])
-
-  const chooseRemoteMachine = useCallback((next: string) => {
-    if (!next || next === remoteName) return
-    if (dirty && selected) {
-      if (!window.confirm(`「${selected.name}」有未保存的修改，切换远程机器将丢弃。确定切换？`)) return
+    if (nextSource !== source) {
+      setSourceState(nextSource)
+      try { localStorage.setItem(fileSourceStorageKey(projectId), nextSource) } catch { /* 静默 */ }
     }
-    setRemoteName(next)
-    try { localStorage.setItem(remoteMachineStorageKey(projectId), next) } catch { /* 静默 */ }
-  }, [dirty, projectId, remoteName, selected])
+    if (nextSource === 'remote' && next && next !== remoteName) {
+      setRemoteName(next)
+      try { localStorage.setItem(remoteMachineStorageKey(projectId), next) } catch { /* 静默 */ }
+    }
+  }, [dirty, isDesktop, projectId, remoteName, selected, source])
 
   const chooseLocalPath = useCallback(async () => {
     if (!desktop?.pickDirectory || !desktop.confirmProjectPath) return
@@ -947,84 +955,40 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           </button>
         </div>
         <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }} data-tour="workspace-file-source-tabs">
-            <div className={`grid gap-1 ${isDesktop ? 'grid-cols-3' : 'grid-cols-2'}`}>
-              <button
-                type="button"
-                onClick={() => chooseSource('hub')}
-                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
-                style={{
-                  borderColor: source === 'hub' ? 'var(--accent-primary)' : 'var(--input-border)',
-                  background: source === 'hub' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
-                  color: source === 'hub' ? 'var(--text-primary)' : 'var(--text-muted)',
-                }}
-                title="浏览 Mobius 中枢项目路径"
+            {/* 文件位置统一入口: 中枢 / 本地(桌面) / 远程机器 合并在同一个下拉框 (原 tab 行已并入) */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={source === 'remote' ? remoteName : (source === 'local' ? LOCATION_LOCAL : LOCATION_HUB)}
+                onChange={event => chooseLocation(event.target.value)}
+                aria-label="文件来源"
+                data-tour="workspace-remote-machine-select"
+                className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[length:var(--fs-sm)] focus:outline-none"
+                style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
               >
-                <Server className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">中枢</span>
-              </button>
-              {isDesktop && (
-                <button
-                  type="button"
-                  onClick={() => chooseSource('local')}
-                  className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
-                  style={{
-                    borderColor: source === 'local' ? 'var(--accent-primary)' : 'var(--input-border)',
-                    background: source === 'local' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
-                    color: source === 'local' ? 'var(--text-primary)' : 'var(--text-muted)',
-                  }}
-                  title="浏览这台电脑绑定的本地工作路径"
-                >
-                  <Laptop className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span className="truncate">本地</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => chooseSource('remote')}
-                className="inline-flex h-7 min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 text-[length:var(--fs-sm)] transition-colors"
-                style={{
-                  borderColor: source === 'remote' ? 'var(--accent-primary)' : 'var(--input-border)',
-                  background: source === 'remote' ? 'color-mix(in srgb, var(--accent-primary) 14%, transparent)' : 'var(--input-bg)',
-                  color: source === 'remote' ? 'var(--text-primary)' : 'var(--text-muted)',
-                }}
-                title="浏览当前项目已注册远程算力的文件"
-                data-tour="workspace-file-source-remote"
-              >
-                <Network className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">远程</span>
-              </button>
-            </div>
-            {source === 'remote' && (
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <select
-                  value={remoteName}
-                  onChange={event => chooseRemoteMachine(event.target.value)}
-                  disabled={!remoteSourcesLoaded || remoteSources.length === 0}
-                  aria-label="远程机器"
-                  data-tour="workspace-remote-machine-select"
-                  className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[length:var(--fs-sm)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-55"
-                  style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
-                >
-                  {remoteSources.length === 0 && <option value="">未注册远程机器</option>}
+                <option value={LOCATION_HUB}>中枢</option>
+                {isDesktop && <option value={LOCATION_LOCAL}>本地</option>}
+                <optgroup label="远程机器">
+                  {!remoteSourcesLoaded && <option value="" disabled>加载中…</option>}
+                  {remoteSourcesLoaded && remoteSources.length === 0 && <option value="" disabled>未注册远程机器</option>}
                   {remoteSources.map(remote => (
                     <option key={remote.name} value={remote.name}>
                       {remote.name}{remote.status ? ` · ${remote.status}` : ''}
                     </option>
                   ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setRemoteAddOpen(true)}
-                  title="打开项目设置 · 添加远程算力"
-                  aria-label="打开项目设置 · 添加远程算力"
-                  data-tour="workspace-remote-machine-add"
-                  className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)]"
-                  style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
-                >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
-                </button>
-              </div>
-            )}
+                </optgroup>
+              </select>
+              <button
+                type="button"
+                onClick={() => setRemoteAddOpen(true)}
+                title="打开项目设置 · 添加远程算力"
+                aria-label="打开项目设置 · 添加远程算力"
+                data-tour="workspace-remote-machine-add"
+                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+            </div>
             <div className="mt-1.5 flex items-center gap-1.5">
               {source === 'remote' && remoteRootEditing ? (
                 <input
