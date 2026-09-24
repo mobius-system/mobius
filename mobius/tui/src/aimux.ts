@@ -32,7 +32,7 @@ export type AimuxLauncher =
   | { kind: 'exe'; path: string }
   | { kind: 'module'; python: string }
 
-const AIMUX_TARGET_VERSION = '0.1.38'
+const AIMUX_TARGET_VERSION = '0.1.39'
 const AIMUX_PACKAGE = `aimux==${AIMUX_TARGET_VERSION}`
 const WIN = process.platform === 'win32'
 const venvDir = () => path.join(mobiusHome(), 'aimux-venv')
@@ -92,7 +92,7 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 解压到 ~/.mobius/python-bundle/ 后用 `<python> -m aimux` 运行，彻底绕开宿主机
 // 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
-const BUNDLE_VER = '8'
+const BUNDLE_VER = '9'
 const BUNDLE_AIMUX_VERSION = AIMUX_TARGET_VERSION
 /** Version expected from the installed or bundled AIMUX runtime. */
 export const AIMUX_VERSION = BUNDLE_AIMUX_VERSION
@@ -370,17 +370,24 @@ async function readRuntime(hash: string): Promise<RuntimeRecord | null> {
   } catch { return null }
 }
 
+/**
+ * Feed the daemon's watchdog. `last_feed_watchdog` is the liveness signal the
+ * daemon reads, so a feed must never be dropped just because the daemon has
+ * not written its runtime state yet — that would be a missed heartbeat.
+ */
 async function touchWatchdog(hash: string): Promise<void> {
   await ensureRuntimeDir()
   const file = runtimePath(hash)
+  let state: Record<string, unknown> = {}
   try {
-    const raw = await fs.readFile(file, 'utf8')
-    const state = JSON.parse(raw) as Record<string, unknown>
-    state.last_feed_watchdog = Date.now()
+    state = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>
+  } catch { /* AIMUX has not written runtime state yet — start a fresh record */ }
+  state.last_feed_watchdog = Date.now()
+  try {
     const tmp = `${file}.tmp-${process.pid}`
     await fs.writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
     await fs.rename(tmp, file)
-  } catch { /* AIMUX has not written runtime state yet */ }
+  } catch { /* directory not writable; nothing useful to do here */ }
 }
 
 function pidAlive(pid: number): boolean {

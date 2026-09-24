@@ -112,16 +112,24 @@ export class AimuxSupervisor {
     });
   }
 
+  /**
+   * Feed the daemon's watchdog. `last_feed_watchdog` is the liveness signal the
+   * daemon reads, so a feed must never be dropped just because the daemon has
+   * not written its runtime state yet — that would be a missed heartbeat.
+   */
   private startWatchdogFeed(): void {
     const feed = () => {
       if (this.stopping) return;
+      let state: Record<string, unknown> = {};
       try {
-        const state = JSON.parse(fs.readFileSync(this.opts.runtimePath, "utf8")) as Record<string, unknown>;
-        state.last_feed_watchdog = Date.now();
+        state = JSON.parse(fs.readFileSync(this.opts.runtimePath, "utf8")) as Record<string, unknown>;
+      } catch { /* AIMUX has not written the runtime yet — start a fresh record */ }
+      state.last_feed_watchdog = Date.now();
+      try {
         const tmp = `${this.opts.runtimePath}.tmp-${process.pid}`;
         fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
         fs.renameSync(tmp, this.opts.runtimePath);
-      } catch { /* AIMUX writes the runtime after spawn */ }
+      } catch { /* directory not writable; nothing useful to do here */ }
     };
     feed();
     this.watchdogTimer = setInterval(feed, 5000);
