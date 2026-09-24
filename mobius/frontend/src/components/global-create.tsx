@@ -1733,11 +1733,11 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                 value={deviceOverride ?? DEVICE_AUTO}
                 onChange={v => setDeviceOverride(v === DEVICE_AUTO ? null : v)}
                 dark={dark}
-                placeholder="— 不指定设备 —"
+                placeholder="— 中枢 —"
                 emptyText="暂无可协作设备"
                 options={[
                   // 桌面端默认绑定的是本机标识, web 端没有"本机"概念 → 同一个默认项按平台措辞
-                  { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '不指定设备', description: aimuxId ? `当前: ${aimuxId}` : '不带协作设备创建' },
+                  { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '中枢', description: aimuxId ? `当前: ${aimuxId}` : '只在莫比乌斯中枢上工作' },
                   // 离线设备仍可选 (与头部切换设备一致: 断开时仍可依托中枢继续执行任务), 只标状态不置灰
                   // Offline devices stay selectable — they are flagged, not disabled, matching the header switcher
                   ...bridgeDevices.map(d => ({

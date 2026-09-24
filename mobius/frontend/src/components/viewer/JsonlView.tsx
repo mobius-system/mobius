@@ -16,10 +16,9 @@ import { mergeBashToolResultItems } from './entry-extract'
 import { collectResolvedCallIds } from './tool-status'
 import { RoundGroup } from './RoundGroups'
 import { isHiddenJsonlNoiseEntry } from './entry-classify'
-import { extractInitialContext } from './initial-context'
 import { filterDisplayDuplicates } from './display-dedup'
 import { computeCollapsedByForgottenFlag } from './fold-rules'
-import { hideRepeatedEncryptedReasoning } from './visibility-rules'
+import { hideRepeatedEncryptedReasoning, initialContextIndex } from './visibility-rules'
 import { buildTaskPlans } from './task-progress'
 import { PendingQueueCard } from './PendingQueueCard'
 import type { HistorySnapshot, SessionHistoryStore } from '../../services/agent-history-store'
@@ -220,8 +219,9 @@ function buildRoundFromEntries(entries: AnyEntry[], roundNum: number, baseLineNo
   )
   // 特殊规则 (仅第一轮 / group 1): 一旦出现"初始模式"卡片 (extractInitialContext 命中),
   // 隐藏它之前的所有卡片 —— 初始上下文之前的 setup 噪声 / 边车原文卡不再展示.
+  // 规则本体在 visibility-rules, 概览浮窗复用同一份, 防止两处口径漂移.
   if (roundNum === 1) {
-    const initialIndex = visible.findIndex((item) => extractInitialContext(item.entry) !== null)
+    const initialIndex = initialContextIndex(visible.map((item) => item.entry))
     if (initialIndex > 0) visible = visible.slice(initialIndex)
   }
   // 回收占位条目: at = 提示行要插在 items 中的下标.

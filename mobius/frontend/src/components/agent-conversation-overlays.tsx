@@ -5,6 +5,8 @@ import { uploadAttachmentFile } from './attachments'
 import { EntryCardWithImages } from './viewer/RoundGroups'
 import { mergeBashToolResultItems } from './viewer/entry-extract'
 import { isHiddenJsonlNoiseEntry } from './viewer/entry-classify'
+import { filterDisplayDuplicates } from './viewer/display-dedup'
+import { hideRepeatedEncryptedReasoning, trimBeforeInitialContext } from './viewer/visibility-rules'
 import { pollRecursive } from '../services/polling'
 import { clampOverlayToBounds, resolveOverlayCollisions, type OverlayCollisionItem } from '../services/overlay-collision'
 import { getHistoryStore } from '../services/agent-history-store'
@@ -224,10 +226,20 @@ function writePins(value: Set<string>) {
 }
 function isExecuting(session: OverlaySession) { return session.active }
 
+// 浮窗取卡片必须走常规对话视图的同一套筛选口径 (viewer/display-dedup 与 viewer/visibility-rules),
+// 否则首轮浮窗会露出常规视图早已隐藏的启动噪声卡片 (skills 清单 / 多智能体角色 / 边车原文卡).
 function visibleOverlayEntries(raw: AnyEntry[]): AnyEntry[] {
   const source = Array.isArray(raw) ? raw : []
-  const merged = mergeBashToolResultItems(source.slice(-80), Math.max(0, source.length - 80))
-  return merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)).slice(-10).map((item) => item.entry)
+  const start = Math.max(0, source.length - 80)
+  // 窗口内一旦出现"初始模式"卡片, 它之前的卡片与常规视图一样整段隐藏
+  // Once round 1's initial-context card is in the window, everything before it hides too
+  const windowed = trimBeforeInitialContext(source.slice(start))
+  // 去重 → 合并 tool_result → 噪声过滤 → 连续加密 reasoning 折叠, 顺序与常规视图一致
+  // Dedup → merge tool results → noise filter → collapse encrypted reasoning, same order as the viewer
+  const deduped = filterDisplayDuplicates(windowed)
+  const merged = mergeBashToolResultItems(deduped, start)
+  const visible = hideRepeatedEncryptedReasoning(merged.filter((item) => !isHiddenJsonlNoiseEntry(item.entry)))
+  return visible.slice(-10).map((item) => item.entry)
 }
 
 // 协商/SSE 重连期间，history store 可能短暂只有组元数据，flattenEntries()
