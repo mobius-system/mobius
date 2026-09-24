@@ -360,8 +360,9 @@ export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd()
 //                  content = the daemon's pid (for dead-process detection).
 //   <hash>.lock  — short-lived spawn lock (proper-lockfile), so exactly one TUI
 //                  spawns at a time and a crashed spawner never wedges the lock.
-const LEASE_TIMEOUT_MS = 10 * 60 * 1000 // daemon is orphaned after 10 min without a renew
 const LEASE_RENEW_MS = 5_000            // adopters renew the lease every 5s
+const BRIDGE_FAILURE_LIMIT = 3          // a live PID with no bridge is stale
+const LEASE_STALE_MS = 15_000
 
 const aimuxRuntimeDir = () => path.join(mobiusHome(), 'aimux-runtime')
 const leasePath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lease`)
@@ -371,16 +372,60 @@ async function ensureRuntimeDir(): Promise<void> {
   await fs.mkdir(aimuxRuntimeDir(), { recursive: true, mode: 0o700 })
 }
 
-async function writeLease(hash: string, pid: number): Promise<void> {
+async function writeLease(hash: string, pid: number, owner: string): Promise<void> {
   await ensureRuntimeDir()
-  await fs.writeFile(leasePath(hash), String(pid), { mode: 0o600 })
+  await fs.writeFile(leasePath(hash), JSON.stringify({ pid, owners: [owner] }), { mode: 0o600 })
+}
+
+interface LeaseRecord { pid: number; owners: string[] }
+async function readLease(hash: string): Promise<LeaseRecord | null> {
+  try {
+    const raw = await fs.readFile(leasePath(hash), 'utf8')
+    try {
+      const value = JSON.parse(raw) as Partial<LeaseRecord>
+      if (Number.isInteger(value.pid) && value.pid! > 0) return { pid: value.pid!, owners: Array.isArray(value.owners) ? value.owners.filter(Boolean) : [] }
+    } catch {
+      const pid = Number.parseInt(raw, 10)
+      if (Number.isInteger(pid) && pid > 0) return { pid, owners: [] }
+    }
+  } catch {}
+  return null
 }
 
 async function readLeasePid(hash: string): Promise<number | null> {
-  try {
-    const pid = Number.parseInt(await fs.readFile(leasePath(hash), 'utf8'), 10)
-    return Number.isInteger(pid) && pid > 0 ? pid : null
-  } catch { return null }
+  return (await readLease(hash))?.pid ?? null
+}
+
+async function leaseFresh(hash: string): Promise<boolean> {
+  try { return Date.now() - (await fs.stat(leasePath(hash))).mtimeMs <= LEASE_STALE_MS } catch { return false }
+}
+
+async function addLeaseOwner(hash: string, owner: string): Promise<void> {
+  const lease = await readLease(hash)
+  if (!lease) return
+  if (!lease.owners.includes(owner)) lease.owners.push(owner)
+  await fs.writeFile(leasePath(hash), JSON.stringify(lease), { mode: 0o600 })
+}
+
+async function releaseLease(hash: string, owner: string): Promise<{ pid: number | null; last: boolean }> {
+  const lease = await readLease(hash)
+  if (!lease) return { pid: null, last: true }
+  lease.owners = lease.owners.filter(item => item !== owner)
+  if (lease.owners.length > 0) {
+    await fs.writeFile(leasePath(hash), JSON.stringify(lease), { mode: 0o600 })
+    return { pid: lease.pid, last: false }
+  }
+  await fs.rm(leasePath(hash), { force: true }).catch(() => {})
+  return { pid: lease.pid, last: true }
+}
+
+async function withLeaseLock<T>(hash: string, action: () => Promise<T>): Promise<T> {
+  await ensureRuntimeDir()
+  const release = await lockfile.lock(lockPath(hash), {
+    stale: 30_000,
+    retries: { retries: 30, factor: 1.2, minTimeout: 100, maxTimeout: 1000 },
+  }).catch(() => null)
+  try { return await action() } finally { if (release) await release() }
 }
 
 /** Bump the lease mtime so the daemon sees "someone still wants me". */
@@ -519,6 +564,8 @@ export class AimuxSupervisor {
   private reconnectAttempt = 0
   private leaseTimer: ReturnType<typeof setTimeout> | null = null
   private probeTimer: ReturnType<typeof setTimeout> | null = null
+  private bridgeFailures = 0
+  private readonly owner = `${process.pid}-${Math.random().toString(36).slice(2)}`
   private opts: SupervisorOptions
   private hash: string
   constructor(opts: SupervisorOptions) { this.opts = opts; this.hash = aimuxWorkspaceHash() }
@@ -533,34 +580,33 @@ export class AimuxSupervisor {
   /** Adopt an existing daemon if one is alive; otherwise spawn (under the lock). */
   private async ensureDaemon(): Promise<void> {
     const pid = await readLeasePid(this.hash)
-    if (pid !== null && pidAlive(pid)) {
-      this.opts.onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX 守护进程已在运行，采用中…', identifier: this.opts.identifier })
-      return
+    if (pid !== null && pidAlive(pid) && await leaseFresh(this.hash)) {
+      const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier, 1500))
+      const connected = typeof raw === 'boolean' ? raw : raw.connected
+      if (connected) {
+        await addLeaseOwner(this.hash, this.owner)
+        this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `AIMUX bridge 已连接 · ${this.opts.identifier}`, identifier: this.opts.identifier })
+        return
+      }
     }
+    await fs.rm(leasePath(this.hash), { force: true }).catch(() => {})
     await this.spawnDaemon()
   }
 
   /** Spawn the detached daemon exactly once, serialized by the path lock. */
   private async spawnDaemon(): Promise<void> {
-    await ensureRuntimeDir()
-    const release = await lockfile.lock(lockPath(this.hash), {
-      stale: 30_000,
-      retries: { retries: 30, factor: 1.2, minTimeout: 100, maxTimeout: 1000 },
-    }).catch(() => null)
-    try {
+    await withLeaseLock(this.hash, async () => {
       // Re-check under the lock — another TUI may have spawned while we waited.
       const pid = await readLeasePid(this.hash)
-      if (pid !== null && pidAlive(pid)) return
+      if (pid !== null && pidAlive(pid)) { await addLeaseOwner(this.hash, this.owner); return }
       const { server, token, identifier, onStatus } = this.opts
       onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
       const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token))
       child.on('error', (e: Error) => { appendAimuxLog(installLogQueue, `\n[aimux spawn error] ${e.stack || e.message}\n`) })
-      await writeLease(this.hash, child.pid ?? 0)
+      await writeLease(this.hash, child.pid ?? 0, this.owner)
       child.unref?.()
       this.reconnectAttempt = 0
-    } finally {
-      if (release) await release()
-    }
+    })
   }
 
   /** Renew the lease every 5s while this TUI is alive. */
@@ -590,11 +636,16 @@ export class AimuxSupervisor {
     } else if (probe.connected) {
       this.reconnectAttempt = 0
       this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `心跳正常 · ${this.opts.identifier}`, identifier: this.opts.identifier })
+      this.bridgeFailures = 0
     } else {
+      this.bridgeFailures += 1
       const pid = await readLeasePid(this.hash)
-      if (pid === null || !pidAlive(pid)) {
+      if (pid === null || !pidAlive(pid) || this.bridgeFailures >= BRIDGE_FAILURE_LIMIT) {
         this.reconnectAttempt += 1
-        this.opts.onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX 守护进程已退出，重连中（第 ${this.reconnectAttempt} 次）…`, identifier: this.opts.identifier, attempt: this.reconnectAttempt })
+        this.opts.onStatus({ state: 'failed', phase: 'retrying', detail: `AIMUX bridge 无响应，重启连接中（第 ${this.reconnectAttempt} 次）…`, identifier: this.opts.identifier, attempt: this.reconnectAttempt })
+        if (pid !== null && pidAlive(pid)) { try { process.kill(pid, 'SIGTERM') } catch {} }
+        await fs.rm(leasePath(this.hash), { force: true }).catch(() => {})
+        this.bridgeFailures = 0
         await this.spawnDaemon()
       } else {
         // Daemon alive but stream down → transient; its own reconnect handles it.
@@ -632,9 +683,11 @@ export class AimuxSupervisor {
     this.leaseTimer = null
     if (this.probeTimer) clearTimeout(this.probeTimer)
     this.probeTimer = null
-    // The daemon is shared: do NOT kill it. It self-terminates when the lease
-    // expires (no TUI renewing it for 10 minutes).
-    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX 已停止（守护进程继续运行）', identifier: this.opts.identifier })
+    const release = await withLeaseLock(this.hash, () => releaseLease(this.hash, this.owner))
+    if (release.last && release.pid !== null && pidAlive(release.pid)) {
+      try { process.kill(release.pid, 'SIGTERM') } catch {}
+    }
+    this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: release.last ? 'AIMUX 已停止' : 'AIMUX 已停止（其他 TUI 仍在使用）', identifier: this.opts.identifier })
   }
 }
 

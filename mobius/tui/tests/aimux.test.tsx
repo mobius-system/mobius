@@ -110,6 +110,65 @@ async function testJwtRefreshViaProbe() {
   }
 }
 
+async function testLastTuiStopsDaemon() {
+  console.log('\n[AIMUX 3c] daemon ownership and shutdown')
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-owner-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  const daemon = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+  const fakePid = daemon.pid!
+  const make = () => new AimuxSupervisor({
+    server: 'https://mobius.test', token: 'jwt-test', identifier: 'tui-owner',
+    probeConnection: async () => ({ connected: true, authError: false }),
+    spawnProcess: () => { const c = fakeChild(() => {}); c.pid = fakePid; return c },
+    onStatus: () => {},
+  })
+  const first = make()
+  const second = make()
+  try {
+    await first.start()
+    await second.start()
+    await first.stop()
+    ok(pidAliveForTest(fakePid), 'stopping one of two TUI owners keeps the shared daemon alive')
+    await second.stop()
+    await delay(20)
+    ok(!pidAliveForTest(fakePid), 'last TUI owner terminates the daemon')
+    ok((await fs.readdir(path.join(home, 'aimux-runtime'))).every(name => !name.endsWith('.lease')), 'last owner removes the lease file')
+  } finally {
+    if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
+    try { daemon.kill('SIGKILL') } catch {}
+    await fs.rm(home, { recursive: true, force: true })
+  }
+}
+
+function pidAliveForTest(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
+async function testUnresponsiveLiveDaemonRestarts() {
+  console.log('\n[AIMUX 3d] stale live PID recovery')
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-aimux-stale-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  let spawns = 0
+  const supervisor = new AimuxSupervisor({
+    server: 'https://mobius.test', token: 'jwt-test', identifier: 'tui-stale',
+    heartbeatIntervalMs: 5,
+    probeConnection: async () => ({ connected: false, authError: false }),
+    spawnProcess: () => { spawns += 1; const c = fakeChild(() => {}); c.pid = process.pid; return c },
+    onStatus: () => {},
+  })
+  try {
+    await supervisor.start()
+    for (let i = 0; i < 100 && spawns < 2; i += 1) await delay(5)
+    ok(spawns >= 2, 'three failed bridge probes restart an apparently live daemon')
+    await supervisor.stop()
+  } finally {
+    if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome
+    await fs.rm(home, { recursive: true, force: true })
+  }
+}
+
 async function testBundleArchAndUrl() {
   console.log('\n[AIMUX 4] Plan B bundle arch / url')
   const arch = bundleArch()
@@ -233,6 +292,8 @@ async function main() {
   await testProbeContract()
   await testAdoptOrSpawn()
   await testJwtRefreshViaProbe()
+  await testLastTuiStopsDaemon()
+  await testUnresponsiveLiveDaemonRestarts()
   await testBundleArchAndUrl()
   await testSpawnLauncher()
   testReverseConnectArgs()
