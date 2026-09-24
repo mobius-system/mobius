@@ -12,7 +12,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import extract from 'extract-zip'
-import lockfile from 'proper-lockfile'
 import { mobiusHome } from './config.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
@@ -338,7 +337,7 @@ function currentUsername(): string {
   try { return os.userInfo().username } catch { return process.env.USER || process.env.USERNAME || 'user' }
 }
 
-/** Per (username, workspace) hash — reused by the identifier and the lease/lock filenames. */
+/** Per (username, workspace) hash — reused by the identifier and runtime JSON path. */
 export function aimuxWorkspaceHash(username = currentUsername(), cwd = process.cwd()): string {
   return createHash('sha256').update(`${username}:${path.resolve(cwd)}`).digest('hex').slice(0, 10)
 }
@@ -353,20 +352,11 @@ export function tuiAimuxIdentifier(hostname = os.hostname(), cwd = process.cwd()
   return `tui-${host || 'pc'}-${aimuxWorkspaceHash(username, cwd)}`
 }
 
-// ── shared-daemon coordination files (one reverse connect per user+workspace) ──
-// The reverse connect is a detached daemon shared by every TUI in the same
-// user+workspace. Two files coordinate it, both under ~/.mobius/aimux-runtime/:
-//   <hash>.lease — mtime = "some TUI renewed me recently" (liveness heartbeat);
-//                  content = the daemon's pid (for dead-process detection).
-//   <hash>.lock  — short-lived spawn lock (proper-lockfile), so exactly one TUI
-//                  spawns at a time and a crashed spawner never wedges the lock.
+// ── shared daemon runtime JSON (one reverse connect per user+workspace) ──
 const LEASE_RENEW_MS = 5_000
 const BRIDGE_FAILURE_LIMIT = 3
-const LEASE_STALE_MS = 15_000
-const STOP_WAIT_MS = 2_000
 
 const aimuxRuntimeDir = () => path.join(mobiusHome(), 'aimux-runtime')
-const lockPath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.lock`)
 const runtimePath = (hash: string) => path.join(aimuxRuntimeDir(), `${hash}.json`)
 
 async function ensureRuntimeDir(): Promise<void> {
@@ -380,17 +370,7 @@ async function readRuntime(hash: string): Promise<RuntimeRecord | null> {
   } catch { return null }
 }
 
-async function withLeaseLock<T>(hash: string, action: () => Promise<T>): Promise<T> {
-  await ensureRuntimeDir()
-  const release = await lockfile.lock(lockPath(hash), {
-    stale: 30_000,
-    retries: { retries: 30, factor: 1.2, minTimeout: 100, maxTimeout: 1000 },
-  }).catch(() => null)
-  try { return await action() } finally { if (release) await release() }
-}
-
-/** Bump the lease mtime so the daemon sees "someone still wants me". */
-async function touchLease(hash: string): Promise<void> {
+async function touchWatchdog(hash: string): Promise<void> {
   await ensureRuntimeDir()
   const file = runtimePath(hash)
   try {
@@ -407,11 +387,6 @@ function pidAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch { return false }
 }
 
-async function waitForExit(pid: number, timeoutMs = STOP_WAIT_MS): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (pidAlive(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
-  return !pidAlive(pid)
-}
 
 /**
  * Build the reverse-connect command in one place. On Windows the bridge shells
@@ -530,15 +505,14 @@ interface SupervisorOptions {
  * The daemon is spawned detached (survives this TUI) and shared by every TUI in
  * the same user+workspace. Two files under ~/.mobius/aimux-runtime/ coordinate
  * it: a lease (mtime = "a TUI renewed me recently", content = daemon pid) and a
- * short-lived spawn lock (proper-lockfile). A TUI only spawns when no live daemon
- * is found; otherwise it adopts and keeps renewing the lease. The daemon is never
- * killed on TUI exit — it is torn down when the lease expires (handled by aimux).
+ * runtime JSON is the shared watchdog state. A TUI only spawns when no live
+ * daemon is found; otherwise it feeds the watchdog and reuses it.
  */
 export class AimuxSupervisor {
   private stopping = false
   private refreshingToken = false
   private reconnectAttempt = 0
-  private leaseTimer: ReturnType<typeof setTimeout> | null = null
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null
   private probeTimer: ReturnType<typeof setTimeout> | null = null
   private bridgeFailures = 0
   private opts: SupervisorOptions
@@ -554,43 +528,27 @@ export class AimuxSupervisor {
 
   /** Adopt an existing daemon if one is alive; otherwise spawn (under the lock). */
   private async ensureDaemon(): Promise<void> {
-    await withLeaseLock(this.hash, async () => {
-      if (this.stopping) return
-      const current = await readRuntime(this.hash)
-      const pid = current?.pid ?? null
-      if (current && pid !== null && pidAlive(pid) && (current.need_external_restart !== true || current.realtime_healthy_display === undefined)) {
-        const raw = await (this.opts.probeConnection?.() ?? probeAimuxBridge(this.opts.server, this.opts.token, this.opts.identifier, 1500))
-        const connected = typeof raw === 'boolean' ? raw : raw.connected
-        if (connected) {
-          await touchLease(this.hash)
-          this.opts.onStatus({ state: 'connected', phase: 'connected', detail: `AIMUX bridge 已连接 · ${this.opts.identifier}`, identifier: this.opts.identifier })
-          return
-        }
-      }
-      if (pid !== null && pidAlive(pid)) { try { process.kill(pid, 'SIGTERM') } catch {} ; await waitForExit(pid) }
-      await this.spawnDaemonLocked()
-    })
+    if (this.stopping) return
+    const current = await readRuntime(this.hash)
+    const pid = current?.pid ?? null
+    if (current && pid !== null && pidAlive(pid)) {
+      await touchWatchdog(this.hash)
+      this.opts.onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX runtime 已存在，复用中…', identifier: this.opts.identifier })
+      return
+    }
+    await this.spawnDaemon()
   }
 
   /** Spawn the detached daemon exactly once, serialized by the path lock. */
   private async spawnDaemon(): Promise<void> {
     if (this.stopping) return
-    await withLeaseLock(this.hash, async () => {
-      await this.spawnDaemonLocked()
-    })
-  }
-
-  private async spawnDaemonLocked(): Promise<void> {
-      if (this.stopping) return
-      // Re-check under the lock — another TUI may have spawned while we waited.
       const current = await readRuntime(this.hash)
       const pid = current?.pid ?? null
-      if (pid !== null && pidAlive(pid) && (current?.need_external_restart !== true || current?.realtime_healthy_display === undefined)) { await touchLease(this.hash); return }
+      if (pid !== null && pidAlive(pid)) { await touchWatchdog(this.hash); return }
       const { server, token, identifier, onStatus } = this.opts
       onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
       const child = this.opts.spawnProcess?.(token) ?? spawnDetachedDaemon({ kind: 'exe', path: aimuxExe() }, reverseConnectArgs(server, identifier, token, process.platform, null, runtimePath(this.hash)))
       child.on('error', (e: Error) => { appendAimuxLog(installLogQueue, `\n[aimux spawn error] ${e.stack || e.message}\n`) })
-      await fs.mkdir(aimuxRuntimeDir(), { recursive: true })
       child.unref?.()
       this.reconnectAttempt = 0
   }
@@ -599,11 +557,11 @@ export class AimuxSupervisor {
   private startLeaseRenewal(): void {
     const tick = () => {
       if (this.stopping) return
-      void touchLease(this.hash).catch(() => {})
-      this.leaseTimer = setTimeout(tick, LEASE_RENEW_MS)
+      void touchWatchdog(this.hash).catch(() => {})
+      this.watchdogTimer = setTimeout(tick, LEASE_RENEW_MS)
     }
-    void touchLease(this.hash).catch(() => {})
-    this.leaseTimer = setTimeout(tick, LEASE_RENEW_MS)
+    void touchWatchdog(this.hash).catch(() => {})
+    this.watchdogTimer = setTimeout(tick, LEASE_RENEW_MS)
   }
 
   private scheduleProbe(): void {
@@ -691,8 +649,8 @@ export class AimuxSupervisor {
 
   async stop(): Promise<void> {
     this.stopping = true
-    if (this.leaseTimer) clearTimeout(this.leaseTimer)
-    this.leaseTimer = null
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer)
+    this.watchdogTimer = null
     if (this.probeTimer) clearTimeout(this.probeTimer)
     this.probeTimer = null
     this.opts.onStatus({ state: 'stopped', phase: 'idle', detail: 'AIMUX watchdog 将在续租超时后停止', identifier: this.opts.identifier })
