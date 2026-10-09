@@ -26,74 +26,95 @@
 
 ## 2. 权限模型
 
-### 2.1 角色（本次**简化**）
+### 2.1 角色
 
 | 维度 | 取值 | 说明 |
 |---|---|---|
-| 系统角色 | **`admin` / `user`** | `admin` 全局；`user` 普通用户。**取消 `developer`** |
-| 项目内角色 | **`owner` / `developer` / `viewer`** | `developer` = 可读写可跑会话；`viewer` = 只读。**取消 `manager` / `member`** |
+| 系统角色 | **`admin` / `user`** | **取消 `developer`** |
+| 项目内角色 | **`owner` / `developer` / `viewer`** | **取消 `manager` / `member`** |
+| 非成员 | 不是角色，是「**没有显式记录**」时的默认态 | 见 §2.3 |
 
-**三条新规**：
+### 2.2 默认权限规则（无显式记录时）
 
-1. **`admin` 对所有项目拥有 `owner` 同等权限**（不区分是否项目成员）
-2. **只有 `admin` 能创建扩展项目**（`kind='extension'`），`user` 不能
-3. **`user` 在所有扩展项目中锁死 `viewer` 权限** —— 不可被提升为 `owner` / `developer`
+| 项目类型 | 创建者 | 其他人 | 效果 |
+|---|---|---|---|
+| **扩展项目**（`kind='extension'`） | `owner` | **`viewer`** | 创建后**其他人可见**（只读） |
+| **普通项目** | `owner` | **非成员** | 创建后**其他人不可见 —— 包括 `admin`** |
 
-### 2.2 三条归属关系
+**owner 三条硬规则**：**唯一**（一个项目只能有一个 owner）· **不可退出** · **不可变更**（谁都不能改 owner）。
 
-- **项目创建者**（`projects.created_by`）—— 对项目**及其内部所有会话**有全部权限（含操作他人会话）
-- **会话归属者**（`sessions_v2.user_id`）—— 决定 Agent 以谁的身份、在谁的沙盒里运行
-- **资源创建者**（`issue.created_by` / `research.created_by`）—— 见 §3.4
+> ⚠️ **本次反转**：此前定的「`admin` 对所有项目拥有 `owner` 同等权限」**已作废**。
+> 新规则：`admin` 也走默认规则（普通项目里 = 非成员 → 不可见）；但 `admin` 多一项特权 ——
+> **可随时去管理中心给自己加权限**。影响：`access-control.ts` 里 `if (role === 'admin') return true` 短路要删掉。
 
-### 2.3 目标状态：谁能对什么做什么
+### 2.3 显式记录 vs 默认规则
 
-| 能力 | admin | owner | developer | viewer | 非成员 |
+项目里存「**显式权限记录**」；**某用户没有记录 → 按 §2.2 默认规则判断**。
+
+| 情况 | 判定 |
+|---|---|
+| 有显式记录 | 按记录的值（`developer` / `viewer` / **显式排除**） |
+| 无显式记录 | 按 §2.2 默认规则 |
+| `owner` | 由 `projects.created_by` 决定，**不入记录表** |
+
+**为什么这样设计**：① 新建用户不用补记录，默认规则自动生效；② 权限中途被改只改显式记录，不污染默认规则。
+**「显式排除」的用途**：覆盖默认（例如扩展项目默认 viewer，要把某人设为不可见就得显式写排除）。
+
+### 2.4 目标状态矩阵
+
+| 能力 | admin（默认） | owner | developer | viewer | 非成员 |
 |---|---|---|---|---|---|
-| 读项目 | ✔ | ✔ | ✔ | ✔ | ✖ |
-| 项目文件 —— 写 | ✔ | ✔ | ✔ | **✖** | ✖ |
-| 建任务单 / 跑会话 | ✔ | ✔ | ✔ | **✖** | ✖ |
-| 管成员 / 项目设置 | ✔ | ✔ | **✖** | ✖ | ✖ |
-| 删除项目 | ✔ | ✔ | **✖** | ✖ | ✖ |
-| 项目内**他人**会话 | 全权 | **全权**（含下发指令） | 读 | 读 | ✖ |
-| **创建扩展项目** | ✔ | **✖** | ✖ | ✖ | ✖ |
-| **扩展项目内的权限** | **≡ owner** | — | — | — | — |
+| 读项目（普通项目） | **✖** | ✔ | ✔ | ✔ | ✖ |
+| 读项目（扩展项目） | **✖** | ✔ | ✔ | ✔ | ✖（除非显式排除） |
+| 项目文件 —— 写 | — | ✔ | ✔ | ✖ | ✖ |
+| 建任务单 / 跑会话 | — | ✔ | ✔ | ✖ | ✖ |
+| 调整他人权限 | **✔（特权）** | 部分（见 §2.5） | ✖ | ✖ | ✖ |
+| 删除项目 | — | ✔ | ✖ | ✖ | ✖ |
+| **创建扩展项目** | ✔ | ✖ | ✖ | ✖ | ✖ |
 
-> **扩展项目例外（硬规则）**：非 `admin` 者一律按 `viewer` 对待 ——
-> 无论其在成员表里是什么、也无论是否被添加为成员。
-> 因此**全部 64 个扩展项目对每个 `user` 都是只读可见**，且不可能被提升。
+> `admin` 列为**默认**状态；admin 经管理中心给自己加权限后，即等同于对应项目角色。
 
-### 2.4 三条原则
+### 2.5 权限调整矩阵
 
-1. **无 default-allow**：鉴权失败即拒绝，不设"兜底放行"。
-2. **先鉴权、后业务**：每个入口先定"调用者是谁、能碰什么"，再进业务逻辑。
-3. **归属即边界**：资源归属者与项目成员身份共同决定可见性；**脱离项目即失效**（§3.4）。
+| 操作者 | 被操作对象 | 允许范围 |
+|---|---|---|
+| **`admin`**（无论是否该项目 owner） | 任意 **owner** | ✖ 不可调整 —— owner 不可变更 |
+| | 任意**非 owner** | ✔ 自由：`developer` / `viewer` / 非成员 |
+| **普通用户 · owner** | 任意 **owner** | ✖ 不可调整 |
+| | **`admin`** · 非 owner | ⚠ **只能提高、不能降低**：非成员→viewer/developer；viewer→developer 允许，反过来禁止 |
+| | **普通用户** · 非 owner | ✔ 自由 |
+| **普通用户 · 非 owner** | **只能操作自己** | ⚠ **只能降低、不能提高**：developer→viewer/非成员；viewer→非成员 |
 
-### 2.5 角色迁移（存量数据）
+**两条保护性设计**：① 普通用户-owner **不能降低 admin 的权限**（平台管理员不会被租户锁在项目外）；
+② 普通用户-非 owner **只能降低自己**（相当于主动退出/降级，但不能自我提权）。
 
-已查生产库，存量极小且**无损失**：
+### 2.6 隐藏列表（与权限正交）
+
+每个用户可**主动隐藏**自己看到的部分项目 —— **纯展示偏好，完全不影响其在项目中的权限**（仍能被 @、仍能被加权限）。
+
+### 2.7 角色迁移（存量数据）
 
 | 旧值 | 新值 | 数量 | 说明 |
 |---|---|---|---|
-| 系统 `developer` | → `user` | **6 人** | 已核实：**这 6 人一个扩展项目都没建过**（64 个全部由 `system` 创建）→ 迁移零损失 |
-| 项目 `manager` | → `owner` | 1 条 | 保留其"管成员"能力 |
-| 项目 `member` | → `developer` | 3 条 | 能力不变（读写 + 跑会话） |
-| 项目 `owner` / `viewer` | 不变 | 312 / 11 | — |
+| 系统 `developer` | → `user` | **6 人** | 已核实：这 6 人**一个扩展项目都没建过** → 零损失 |
+| 项目 `manager` | → `developer` | 1 条 | 新模型只有 3 档，落到最高的非 owner 档 |
+| 项目 `member` | → `developer` | 3 条 | 能力不变 |
+| 项目 `owner` 记录行 | **删除** | 312 条 | owner 由 `projects.created_by` 决定，不入记录表 → 冗余行清理 |
+| 项目 `viewer` | 不变 | 11 条 | 转为显式记录 |
 
-### 2.6 代码改动点
+### 2.8 代码改动点
 
 | 位置 | 改动 |
 |---|---|
 | `schema.sql:33` | 系统角色 CHECK → `('admin','user')` |
-| `schema.sql:122` | 项目角色 CHECK → `('owner','developer','viewer')` |
-| `backend/repositories/users.ts:26` | 迁移重建表的 CHECK 同步 |
-| `backend/repositories/users.ts:317`、`backend/types/rows.ts:48` | TS 类型 `'admin' \| 'developer' \| 'user'` → `'admin' \| 'user'` |
+| `schema.sql:122` | 项目角色 CHECK → `('developer','viewer','none')`（`none` = 显式排除） |
+| `backend/repositories/users.ts:26,317`、`types/rows.ts:48` | 去 `developer` 类型 |
 | `backend/routes/admin.ts:106-107` | `normalizeEmployeeRole` 只接受 `admin` / `user` |
 | `backend/routes/projects.ts:2173` | 建扩展项目 → **仅 `admin`** |
-| `backend/services/session-context-sections.ts:155,161` | 角色渲染去掉"开发者"分支（管理员 / 普通用户） |
-| `backend/repositories/project-memberships.ts:8,15,22,39` | `PROJECT_ROLE_RANK` / `LABELS` / `ROLE_SET` / `normalizeRole` 默认值 |
-| `backend/services/access-control.ts:281,295` | `canManageProject` → **仅 `owner`**；`projectAllowsReaderWrite` → `owner \| developer` |
-| `backend/repositories/project-memberships.ts:251` | `canManage` → **仅 `owner`** |
-| `access-control.ts` 全项目读取路径 | 新增**扩展项目例外**：非 admin 恒 viewer |
+| `backend/services/access-control.ts` **全项目读取路径** | **删掉 `if (user.role === 'admin') return true` 短路**；改为「显式记录 → 否则默认规则」两段式 |
+| `services/access-control.ts` 新增 | ① `defaultRoleFor(user, project)` ② `effectiveRole(user, project)` ③ `canAdjustPermission(operator, target, project, to)` |
+| `repositories/project-memberships.ts` | 角色集合改 3 档；owner 不再入表 |
+| `services/session-context-sections.ts:155,161` | 角色渲染去掉"开发者"分支 |
 
 ---
 
@@ -267,7 +288,9 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 >
 > **规模**：约 6 个文件，集中在 4.1 / 4.2 / 4.3 三组。
 
-### 4.1 用户创建与管理（系统角色：去 `developer`）
+> **完整菜单清单（逐项标注更改计划）见 HTML 版 §4.1**。以下为需要改动的细则。
+
+### 4.2 用户创建与管理（系统角色：去 `developer`）
 
 | 界面 | 文件 : 行 | 现状 | 要改成 |
 |---|---|---|---|
@@ -368,6 +391,9 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | **N~Q** | Agent | 沙盒接入（deny 列表 / 注入点 / 开关 / 自检） | 功能 |
 | **R** | 接口 | 后端下发统一「权限块」（项目 / 会话 / 问题 / 研究各返回体） | 功能 |
 | **S** | 前端 | 前端适配：角色集合与文案、扩展项目只读钳制、角色枚举收口 | 功能 |
+| **T** | 权限 | 「**默认规则 + 显式记录**」两段式判定；**删掉 admin 短路**；owner 不入表 | 🔴 安全 |
+| **U** | 权限 | **权限调整矩阵** + 管理中心新增「**用户与权限**」Tab | 🔴 安全 |
+| **V** | 前端 | **隐藏列表**（用户级展示偏好，与权限正交） | 功能 |
 
 ---
 
@@ -376,11 +402,16 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | # | 决策 | 影响 |
 |---|---|---|
 | 1 | 项目创建者对项目内**所有**会话有全部权限 | **保持现状**，不改 `canOperateSession` |
-| 2 | 扩展项目：管理员 ≡ owner；**`user` 锁死 viewer**（不可提升） | 见 **B** |
+| 2 | 扩展项目：**默认** 创建者 owner、**其他人 viewer**（对普通用户可见）；不可被提升 | 见 §2.2 / **B** |
 | 10 | 系统角色简化为 `admin` / `user`（取消 `developer`） | 见 §2.6；迁移见 §2.5 |
 | 11 | 项目内角色简化为 `owner` / `developer` / `viewer`（取消 `manager` / `member`） | 见 §2.6 |
-| 12 | `admin` 对所有项目拥有 `owner` 同等权限 | 见 §2.3 |
-| 13 | 仅 `admin` 可创建扩展项目 | 见 §2.6 |
+| 12 | ~~`admin` 对所有项目拥有 `owner` 同等权限~~ **已作废**：admin 也走默认规则，但可去管理中心给自己加权限 | 见 §2.2 / **T** |
+| 13 | 仅 `admin` 可创建扩展项目 | 见 §2.8 |
+| 14 | **默认权限规则**：扩展→其他人 viewer；普通→其他人非成员 | 见 §2.2 |
+| 15 | **显式记录优先，否则默认规则** | 见 §2.3 / **T** |
+| 16 | **权限调整矩阵** | 见 §2.5 / **U** |
+| 17 | 隐藏列表：纯展示偏好，**不影响权限** | 见 §2.6 / **V** |
+| 18 | 管理中心**新增「用户与权限」Tab** | 见 §4.6 / **U** |
 | 3 | 只读成员：**不能对话、不能改删文件** | 见 C、D |
 | 4 | `bindPathManual` 普通用户堵掉、仅管理员保留 | 见 A |
 | 5 | 公用 `/tmp`、`~/.claude` 隔离**延后** | 见 §6 |
