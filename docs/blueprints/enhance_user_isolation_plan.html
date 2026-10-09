@@ -150,7 +150,7 @@
   <div class="meta">
     <span>日期：2026-10-09</span>
     <span>范围：mobius 后端 + 全部 HTTP endpoint</span>
-    <span>整改编号 A ~ Q</span>
+    <span>整改编号 A ~ S</span>
   </div>
 </header>
 
@@ -482,9 +482,132 @@
   </div>
 </section>
 
+<!-- ============ FRONTEND ============ -->
+<section>
+  <h2><span class="n">4</span>前端适配</h2>
+
+  <div class="box bad">
+    <span class="t">先明确性质</span>
+    前端改动只解决<b>用户体验</b>（不让用户点了才报错）。<b>真正的门禁是后端 A ~ Q</b> ——
+    前端一处不改也不影响安全；反过来，<b>只改前端等于没改</b>。
+  </div>
+
+  <div class="box ok">
+    <span class="t">现状：前端没有集中的权限逻辑（这是对的）</span>
+    它是「<b>后端下发标志、前端只管渲染</b>」的模式 —— 例如 <code>issue.can_manage</code> 由后端算好下发。
+    本次<b>沿用并强化</b>这个模式，而不是在前端另造一套规则（两套规则必然随时间跑偏）。
+  </div>
+
+  <p><b>改动规模</b>：约 <b>6 个文件</b>，集中在下面 A / B / C 三组；D 组基本不用改。</p>
+
+  <h3>4.1 用户创建与管理（系统角色：去 <code>developer</code>）</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">界面</th><th style="width:26%">文件 : 行</th><th style="width:24%">现状</th><th>要改成</th></tr></thead>
+    <tbody>
+      <tr><td>用户列表 · 角色徽章（三色）</td><td><code>components/panels.tsx:795</code>、<code>1142</code></td><td><code>admin</code> 琥珀 / <code>developer</code> 紫 / <code>user</code> 青</td><td>去掉紫档，两档</td></tr>
+      <tr><td>用户列表 · 角色文案</td><td><code>panels.tsx:803</code>、<code>1143</code></td><td>管理员 / <b>开发者</b> / 成员</td><td>去掉"开发者"；"成员"→<b>普通用户</b></td></tr>
+      <tr><td>新建用户 · 角色下拉</td><td><code>panels.tsx:1041</code></td><td>接受 <code>admin</code>/<code>developer</code></td><td>只 <code>admin</code>/<code>user</code></td></tr>
+      <tr><td>编辑用户 · 角色下拉</td><td><code>panels.tsx:407</code>、<code>1200</code></td><td>同上</td><td>同上</td></tr>
+      <tr><td>用户类型定义</td><td><code>panels.tsx:294</code>、<code>330</code></td><td><code>'user' | 'developer' | 'admin'</code></td><td><code>'user' | 'admin'</code></td></tr>
+      <tr><td><span class="pill p-bad">协议串</span> <b>命令文本解析</b></td><td><code>panels.tsx:358-360</code></td><td>从命令里解析角色 token（含 <code>developer</code>）</td><td><b>不擅自改</b> —— 需先确认外部调用方是否按 <code>developer</code> 拼命令</td></tr>
+      <tr><td>用户组</td><td><code>panels.tsx:296-298</code>、<code>330</code>、<code>363-376</code></td><td><code>group_id</code> / <code>group_name</code></td><td><b>不受影响</b>（保留）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.2 项目权限配置（项目角色：四档 → 三档）</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">界面</th><th style="width:26%">文件 : 行</th><th style="width:24%">现状</th><th>要改成</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6" style="vertical-align:top"><b>项目团队面板</b><br><code>ProjectTeamPanel.tsx</code></td>
+          <td><code>:5</code> 角色类型</td><td><code>'owner'|'manager'|'member'|'viewer'</code></td><td><code>'owner'|'developer'|'viewer'</code></td></tr>
+      <tr><td><code>:25-29</code> 角色文案表</td><td>负责人 / 项目管理员 / 项目成员 / 项目访客</td><td>负责人 / <b>项目开发者</b> / 项目访客</td></tr>
+      <tr><td><code>:33</code> 可切换角色顺序</td><td><code>['member','manager','viewer','owner']</code></td><td><code>['developer','viewer','owner']</code></td></tr>
+      <tr><td><code>:35-39</code> 徽章配色表</td><td>4 个键</td><td>3 个键</td></tr>
+      <tr><td><code>:45-48</code> 筛选 Tab</td><td>负责人 / 管理员 / 成员 / 访客</td><td>负责人 / 开发者 / 访客</td></tr>
+      <tr><td><code>:61</code> 计数初始值</td><td><code>{owner,manager,member,viewer}</code></td><td>3 个键</td></tr>
+
+      <tr><td rowspan="4" style="vertical-align:top"><b>成员邀请</b><br><code>project-member-invite.tsx</code></td>
+          <td><code>:5</code> 角色类型</td><td><code>'viewer'|'member'|'manager'</code></td><td><code>'viewer'|'developer'</code>（邀请不含 owner）</td></tr>
+      <tr><td><code>:17-19</code> 选项与提示</td><td>项目成员(可读可写) / 项目管理员(可管理成员) / 项目访客(只读)</td><td>项目开发者(可读可写) / 项目访客(只读)</td></tr>
+      <tr><td><code>:26-28</code> 筛选 Tab</td><td>管理员 / 成员 / 访客</td><td>开发者 / 访客</td></tr>
+      <tr><td><code>:21</code> 默认角色</td><td><code>'member'</code></td><td><code>'developer'</code></td></tr>
+
+      <tr><td>项目设置 · 权限设置文案</td><td><code>ProjectSettingsPanel.tsx:846-847</code>、<code>898</code></td><td>提示写死 <code>owner/manager/member/viewer</code></td><td>改为 <code>owner/developer/viewer</code></td></tr>
+      <tr><td>项目可见性</td><td><code>ProjectSettingsPanel.tsx:91-92</code></td><td>private / public（注释标明<b>已退役</b>，改纯成员制）</td><td>建议顺手清理</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.3 扩展项目（新增：普通用户锁死只读）</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:28%">界面</th><th style="width:24%">文件 : 行</th><th style="width:22%">现状</th><th>要改成</th></tr></thead>
+    <tbody>
+      <tr><td><b>新建项目 · 扩展项目入口</b></td><td><code>new-project-modal.tsx:98</code></td><td><code>role === 'admin' || 'developer'</code></td><td><b>仅 <code>admin</code></b></td></tr>
+      <tr><td><b>扩展项目内的运行入口</b></td><td><code>ProjectItemsPanel.tsx:89</code></td><td>只看 <code>kind === 'extension'</code></td><td>叠加<b>权限钳制</b>：普通用户隐藏写 / 跑入口</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.4 Skill / Memory 配置（基本不受影响）</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:28%">界面</th><th style="width:24%">文件</th><th style="width:24%">现状</th><th>判断</th></tr></thead>
+    <tbody>
+      <tr><td>Skill 管理</td><td><code>components/skills.tsx</code></td><td>scope 只有 <code>user</code> / <code>project</code> 两档</td><td><b>与角色模型正交，不用改</b></td></tr>
+      <tr><td>Memory 管理</td><td><code>components/memories.tsx</code></td><td>同上</td><td><b>不用改</b></td></tr>
+      <tr><td><b>上下文项访问配置弹窗</b></td><td><code>components/context-access.tsx:15,55,81-82</code></td><td>只有两档：<b>创建者</b>（全权）+ <b>访客</b>（可读可用不可改）；访客即 <code>allow_user_ids</code></td><td><b>与项目角色正交</b>。是否跟着调整，<b>待定</b></td></tr>
+      <tr><td>ContextPanel 角色文案</td><td><code>pages/ContextPanel.tsx:130</code></td><td><code>role==='admin' ? '管理员' : '成员'</code></td><td>文案"成员"→"普通用户"</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.5 其它（不受影响）</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:28%">项</th><th style="width:24%">文件 : 行</th><th>判断</th></tr></thead>
+    <tbody>
+      <tr><td>管理中心入口</td><td><code>shell.tsx:1510</code></td><td><code>role === 'admin'</code> —— <b>不受影响</b></td></tr>
+      <tr><td>管理员按钮</td><td><code>ProjectSettingsPanel.tsx:880</code></td><td><code>role === 'admin'</code> —— <b>不受影响</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.6 配套后端改动</h3>
+  <div class="box note">
+    <span class="t">R　后端下发统一「权限块」</span>
+    在后端各返回体（项目 / 会话 / 问题 / 研究）里附带由 <code>access-control.ts</code>
+    <b>同一批函数</b>算出的结果，前端只渲染、不重算：
+    <pre><code>"permissions": {
+  "effective_role": "viewer",      <span class="cmt">// 扩展项目里 user 恒为 viewer（钳制在此实现）</span>
+  "can_read": true,
+  "can_write_files": false,
+  "can_run_session": false,
+  "can_manage_members": false,
+  "can_manage_project": false,
+  "can_delete": false
+}</code></pre>
+    外加全局的 <code>me.permissions.can_create_extension_project</code>。<br>
+    <b>关键</b>：扩展项目「<code>user</code> 锁死 viewer」的钳制<b>只在这一处实现</b>，前端各处判断自然跟着对。
+  </div>
+
+  <h3>4.7 建议：角色枚举收口</h3>
+  <p>当前项目角色在 <b>3 个文件各写了一份</b>（TeamPanel / member-invite / SettingsPanel 文案），
+  系统角色在 2 处 —— 本次改完，下次再动角色还得同步 5 处。</p>
+  <div class="box ok">
+    <span class="t">做法</span>
+    新增 <code>frontend/src/constants/roles.ts</code>：角色集合、标签、配色、选项<b>只在这里定义</b>，
+    三处引用。这样本次改动量再降一半，以后也不会漏。
+  </div>
+
+  <h3>4.8 验证</h3>
+  <p>按简易模式 SOP：改码 → playwright 截图（<code>127.0.0.1:45618</code>，<code>fuqingxu/fuqingxu</code>）→
+  <code>display_images</code> 展示 → 不满足则重来 → 通过后 <code>python3 start.py</code> 部署。</p>
+  <p>重点验证三个界面：</p>
+  <ol>
+    <li><b>项目团队面板</b> —— 角色下拉只剩 owner / developer / viewer</li>
+    <li><b>用户管理面板</b> —— 系统角色只剩 管理员 / 普通用户</li>
+    <li><b>扩展项目页面</b> —— 以普通用户登录，写 / 跑入口<b>全部消失</b>，只剩只读浏览</li>
+  </ol>
+</section>
+
+
 <!-- ============ 4 ============ -->
 <section>
-  <h2><span class="n">4</span>整改清单（汇总）</h2>
+  <h2><span class="n">5</span>整改清单（汇总）</h2>
   <div class="tw"><table>
     <thead><tr><th style="width:8%">编号</th><th style="width:16%">功能区</th><th>内容</th><th style="width:14%">类型</th></tr></thead>
     <tbody>
@@ -503,13 +626,15 @@
       <tr><td><b>L</b></td><td>研究</td><td>黑板 <code>author</code>/<code>session_id</code> 改服务端注入</td><td><span class="pill p-mute">加固</span></td></tr>
       <tr><td><b>M</b></td><td>项目</td><td>存量 <code>bind_path</code> 扫描</td><td><span class="pill p-mute">运维</span></td></tr>
       <tr><td><b>N~Q</b></td><td>Agent</td><td>沙盒接入（deny 列表 / 注入点 / 开关 / 自检）</td><td><span class="pill p-mute">功能</span></td></tr>
+      <tr><td><b>R</b></td><td>接口</td><td>后端下发统一「权限块」（项目 / 会话 / 问题 / 研究各返回体）</td><td><span class="pill p-mute">功能</span></td></tr>
+      <tr><td><b>S</b></td><td>前端</td><td>前端适配：角色集合与文案、扩展项目只读钳制、角色枚举收口</td><td><span class="pill p-mute">功能</span></td></tr>
     </tbody>
   </table></div>
 </section>
 
 <!-- ============ 5 ============ -->
 <section>
-  <h2><span class="n">5</span>已拍板的策略边界</h2>
+  <h2><span class="n">6</span>已拍板的策略边界</h2>
   <div class="tw"><table>
     <thead><tr><th style="width:5%">#</th><th style="width:46%">决策</th><th>落地</th></tr></thead>
     <tbody>
@@ -532,7 +657,7 @@
 
 <!-- ============ 6 ============ -->
 <section>
-  <h2><span class="n">6</span>已知并接受的缺口</h2>
+  <h2><span class="n">7</span>已知并接受的缺口</h2>
   <p>以下<b>延后，不阻塞本轮</b>：</p>
   <div class="tw"><table>
     <thead><tr><th style="width:26%">缺口</th><th>后果</th></tr></thead>
@@ -548,7 +673,7 @@
 
 <!-- ============ 7 ============ -->
 <section>
-  <h2><span class="n">7</span>分阶段与验收</h2>
+  <h2><span class="n">8</span>分阶段与验收</h2>
 
   <h3>7.1 阶段</h3>
   <div class="tw"><table>

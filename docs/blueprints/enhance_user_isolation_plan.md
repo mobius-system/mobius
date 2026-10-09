@@ -37,7 +37,7 @@
 
 1. **`admin` 对所有项目拥有 `owner` 同等权限**（不区分是否项目成员）
 2. **只有 `admin` 能创建扩展项目**（`kind='extension'`），`user` 不能
-3. **`user` 在所有扩展项目中**锁死 `viewer`** 权限** —— 不可被提升为 `owner` / `developer`
+3. **`user` 在所有扩展项目中锁死 `viewer` 权限** —— 不可被提升为 `owner` / `developer`
 
 ### 2.2 三条归属关系
 
@@ -257,7 +257,97 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 4. 整改清单（汇总）
+## 4. 前端适配
+
+> **性质**：前端改动只解决**用户体验**（不让用户点了才报错）。**真正的门禁是后端 A ~ Q** ——
+> 前端一处不改也不影响安全；反过来，**只改前端等于没改**。
+>
+> **现状**：前端没有集中的权限逻辑，是「**后端下发标志、前端只管渲染**」的模式
+> （例如 `issue.can_manage` 由后端算好下发）。本次**沿用并强化**，不另造一套规则。
+>
+> **规模**：约 6 个文件，集中在 4.1 / 4.2 / 4.3 三组。
+
+### 4.1 用户创建与管理（系统角色：去 `developer`）
+
+| 界面 | 文件 : 行 | 现状 | 要改成 |
+|---|---|---|---|
+| 用户列表 · 角色徽章（三色） | `panels.tsx:795`、`1142` | admin 琥珀 / developer 紫 / user 青 | 去掉紫档，两档 |
+| 用户列表 · 角色文案 | `panels.tsx:803`、`1143` | 管理员 / **开发者** / 成员 | 去"开发者"；"成员"→**普通用户** |
+| 新建用户 · 角色下拉 | `panels.tsx:1041` | 接受 admin/developer | 只 admin/user |
+| 编辑用户 · 角色下拉 | `panels.tsx:407`、`1200` | 同上 | 同上 |
+| 用户类型定义 | `panels.tsx:294`、`330` | `'user' \| 'developer' \| 'admin'` | `'user' \| 'admin'` |
+| ⚠️ **命令文本解析（协议串）** | `panels.tsx:358-360` | 从命令里解析角色 token（含 developer） | **不擅自改** —— 需先确认外部调用方 |
+| 用户组 | `panels.tsx:296-298`、`330`、`363-376` | group_id / group_name | **不受影响**（保留） |
+
+### 4.2 项目权限配置（项目角色：四档 → 三档）
+
+| 界面 | 文件 : 行 | 现状 | 要改成 |
+|---|---|---|---|
+| 项目团队面板 · 角色类型 | `ProjectTeamPanel.tsx:5` | `'owner'\|'manager'\|'member'\|'viewer'` | `'owner'\|'developer'\|'viewer'` |
+| ├ 角色文案表 | `:25-29` | 负责人 / 项目管理员 / 项目成员 / 项目访客 | 负责人 / **项目开发者** / 项目访客 |
+| ├ 可切换角色顺序 | `:33` | `['member','manager','viewer','owner']` | `['developer','viewer','owner']` |
+| ├ 徽章配色表 | `:35-39` | 4 个键 | 3 个键 |
+| ├ 筛选 Tab | `:45-48` | 负责人 / 管理员 / 成员 / 访客 | 负责人 / 开发者 / 访客 |
+| └ 计数初始值 | `:61` | `{owner,manager,member,viewer}` | 3 个键 |
+| 成员邀请 · 角色类型 | `project-member-invite.tsx:5` | `'viewer'\|'member'\|'manager'` | `'viewer'\|'developer'`（邀请不含 owner） |
+| ├ 选项与提示 | `:17-19` | 成员(可读可写) / 管理员(可管理成员) / 访客(只读) | 开发者(可读可写) / 访客(只读) |
+| ├ 筛选 Tab | `:26-28` | 管理员 / 成员 / 访客 | 开发者 / 访客 |
+| └ 默认角色 | `:21` | `'member'` | `'developer'` |
+| 项目设置 · 权限设置文案 | `ProjectSettingsPanel.tsx:846-847`、`898` | 写死 owner/manager/member/viewer | 改为 owner/developer/viewer |
+| 项目可见性 | `ProjectSettingsPanel.tsx:91-92` | private / public（**已退役**） | 建议顺手清理 |
+
+### 4.3 扩展项目（新增：普通用户锁死只读）
+
+| 界面 | 文件 : 行 | 现状 | 要改成 |
+|---|---|---|---|
+| **新建项目 · 扩展项目入口** | `new-project-modal.tsx:98` | `role === 'admin' \|\| 'developer'` | **仅 `admin`** |
+| **扩展项目内的运行入口** | `ProjectItemsPanel.tsx:89` | 只看 `kind === 'extension'` | 叠加**权限钳制**：普通用户隐藏写 / 跑入口 |
+
+### 4.4 Skill / Memory 配置（基本不受影响）
+
+| 界面 | 文件 | 现状 | 判断 |
+|---|---|---|---|
+| Skill 管理 | `components/skills.tsx` | scope 只有 user / project 两档 | **与角色模型正交，不用改** |
+| Memory 管理 | `components/memories.tsx` | 同上 | **不用改** |
+| 上下文项访问配置弹窗 | `components/context-access.tsx:15,55,81-82` | 只有创建者（全权）+ 访客（可读可用不可改）；访客即 `allow_user_ids` | **与项目角色正交**，是否调整**待定** |
+| ContextPanel 角色文案 | `pages/ContextPanel.tsx:130` | `role==='admin' ? '管理员' : '成员'` | 文案"成员"→"普通用户" |
+
+### 4.5 其它（不受影响）
+
+管理中心入口 `shell.tsx:1510`、管理员按钮 `ProjectSettingsPanel.tsx:880` —— 均为 `role === 'admin'`，不受影响。
+
+### 4.6 配套后端改动：R　下发统一「权限块」
+
+后端在各返回体（项目 / 会话 / 问题 / 研究）附带由 `access-control.ts` **同一批函数**算出的结果：
+
+```json
+"permissions": {
+  "effective_role": "viewer",      // 扩展项目里 user 恒为 viewer（钳制在此实现）
+  "can_read": true, "can_write_files": false, "can_run_session": false,
+  "can_manage_members": false, "can_manage_project": false, "can_delete": false
+}
+```
+
+外加全局的 `me.permissions.can_create_extension_project`。
+**关键**：扩展项目「`user` 锁死 viewer」的钳制**只在这一处实现**，前端各处判断自然跟着对。
+
+### 4.7 建议：角色枚举收口
+
+当前项目角色在 **3 个文件各写一份**（TeamPanel / member-invite / SettingsPanel 文案），系统角色在 2 处。
+建议新增 `frontend/src/constants/roles.ts`：角色集合、标签、配色、选项**只在这里定义**，三处引用。
+本次改动量再降一半，以后也不会漏。
+
+### 4.8 验证
+
+按简易模式 SOP：改码 → playwright 截图（`127.0.0.1:45618`，`fuqingxu/fuqingxu`）→ `display_images` 展示 →
+不满足则重来 → 通过后 `python3 start.py` 部署。
+
+重点验证三个界面：① 项目团队面板角色下拉只剩 owner/developer/viewer；
+② 用户管理面板系统角色只剩 管理员/普通用户；③ 扩展项目页面以普通用户登录，写 / 跑入口全部消失。
+
+---
+
+## 5. 整改清单（汇总）
 
 | 编号 | 功能区 | 内容 | 类型 |
 |---|---|---|---|
@@ -276,10 +366,12 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | **L** | 研究 | 黑板 `author`/`session_id` 改服务端注入 | 🟡 加固 |
 | **M** | 项目 | 存量 `bind_path` 扫描 | 运维 |
 | **N~Q** | Agent | 沙盒接入（deny 列表 / 注入点 / 开关 / 自检） | 功能 |
+| **R** | 接口 | 后端下发统一「权限块」（项目 / 会话 / 问题 / 研究各返回体） | 功能 |
+| **S** | 前端 | 前端适配：角色集合与文案、扩展项目只读钳制、角色枚举收口 | 功能 |
 
 ---
 
-## 5. 已拍板的策略边界
+## 6. 已拍板的策略边界
 
 | # | 决策 | 影响 |
 |---|---|---|
@@ -299,7 +391,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 6. 已知并接受的缺口（延后，不阻塞本轮）
+## 7. 已知并接受的缺口（延后，不阻塞本轮）
 
 | 缺口 | 后果 |
 |---|---|
@@ -311,7 +403,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 7. 分阶段与验收
+## 8. 分阶段与验收
 
 ### 7.1 阶段
 
