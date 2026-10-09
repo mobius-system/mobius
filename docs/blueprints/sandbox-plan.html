@@ -916,6 +916,344 @@ mobius-landlock --check      <span class="cmt"># 退出码 0 = 可用；非 0 = 
   <p>本次决定<b>放弃自定义话术</b>，因此不引入 LD_PRELOAD，保持方案最简。</p>
 </section>
 
+<!-- ============ 附录 ============ -->
+<section>
+  <h2><span class="n">A</span>附录：驱动完整源码</h2>
+  <p>即上表实测所用的 <code>mobius-landlock</code>（共 330 行，纯标准库，
+  仅用 <code>ctypes</code> 直调内核 syscall 444 / 445 / 446）。两个模式：
+  <code>--check</code> 自检、<code>--policy &lt;文件&gt; -- &lt;命令&gt;</code> 应用沙盒后 exec。</p>
+  <pre><code>#!/usr/bin/env python3
+"""mobius-landlock — Landlock 黑名单启动器 / 内核能力自检
+
+用法:
+  mobius-landlock --check
+        内核能力自检。在【子进程】里跑完整流程，退出码 0=可用，非 0=不可用。
+        （必须子进程：landlock_restrict_self 是永久自缚，在主进程里调会锁死调用者。）
+
+  mobius-landlock --policy FILE [--stats] -- CMD [ARG...]
+        应用黑名单沙盒后 exec CMD。
+
+策略文件格式（每行一条，'#' 起头为注释）:
+  deny /abs/path
+
+语义: 默认【全可访问】，只把 deny 路径及其子树排除。
+实现: Landlock 规则只增不减（并集），故用【枚举】表达"除 X 外全部"：
+      从 / 起，某目录下无 deny 则整片授予、不再下探；有 deny 才逐子项递归。
+"""
+import ctypes
+import ctypes.util
+import errno
+import os
+import shutil
+import stat
+import sys
+import tempfile
+
+# ---- 内核接口常量 ----
+SYS_CREATE_RULESET, SYS_ADD_RULE, SYS_RESTRICT_SELF = 444, 445, 446
+CREATE_RULESET_VERSION = 1
+RULE_PATH_BENEATH = 1
+PR_SET_NO_NEW_PRIVS = 38
+
+R = {  # Landlock 文件系统权限位
+    "EXECUTE": 1 &lt;&lt; 0, "WRITE_FILE": 1 &lt;&lt; 1, "READ_FILE": 1 &lt;&lt; 2,
+    "READ_DIR": 1 &lt;&lt; 3, "REMOVE_DIR": 1 &lt;&lt; 4, "REMOVE_FILE": 1 &lt;&lt; 5,
+    "MAKE_CHAR": 1 &lt;&lt; 6, "MAKE_DIR": 1 &lt;&lt; 7, "MAKE_REG": 1 &lt;&lt; 8,
+    "MAKE_SOCK": 1 &lt;&lt; 9, "MAKE_FIFO": 1 &lt;&lt; 10, "MAKE_BLOCK": 1 &lt;&lt; 11,
+    "MAKE_SYM": 1 &lt;&lt; 12, "REFER": 1 &lt;&lt; 13, "TRUNCATE": 1 &lt;&lt; 14,
+    "IOCTL_DEV": 1 &lt;&lt; 15,
+}
+
+libc = ctypes.CDLL(None, use_errno=True)
+
+
+class RulesetAttr(ctypes.Structure):
+    _fields_ = [("handled_access_fs", ctypes.c_uint64),
+                ("handled_access_net", ctypes.c_uint64),
+                ("scoped", ctypes.c_uint64)]
+
+
+class PathBeneathAttr(ctypes.Structure):
+    _fields_ = [("allowed_access", ctypes.c_uint64),
+                ("parent_fd", ctypes.c_int32),
+                ("reserved", ctypes.c_uint32)]
+
+
+def abi_version():
+    """返回内核 Landlock ABI 版本；不可用时抛 OSError。"""
+    r = libc.syscall(SYS_CREATE_RULESET, None, 0, CREATE_RULESET_VERSION)
+    if r &lt; 0:
+        e = ctypes.get_errno()
+        raise OSError(e, f"landlock_create_ruleset(VERSION): {os.strerror(e)}")
+    return r
+
+
+def fs_mask_for(abi):
+    """按 ABI 取可用的最大权限位集合（位越界会导致 EINVAL）。"""
+    mask = (1 &lt;&lt; 13) - 1                      # ABI1: 位 0..12
+    if abi &gt;= 2:
+        mask |= R["REFER"]
+    if abi &gt;= 3:
+        mask |= R["TRUNCATE"]
+    if abi &gt;= 5:
+        mask |= R["IOCTL_DEV"]
+    return mask
+
+
+def mask_for(abi, is_dir):
+    """普通文件只接受 EXECUTE/WRITE_FILE/READ_FILE/TRUNCATE（内核 landlock.h 明载），
+    对文件用目录级权限位会被内核判 EINVAL。"""
+    m = fs_mask_for(abi)
+    if is_dir:
+        return m
+    file_ok = R["EXECUTE"] | R["WRITE_FILE"] | R["READ_FILE"] | R["TRUNCATE"]
+    return m &amp; file_ok
+
+
+def ruleset_size_for(abi):
+    """struct 大小必须匹配内核支持的最大值：传大了 E2BIG，传小了丢字段。"""
+    if abi &lt;= 3:
+        return 8                              # 仅 handled_access_fs
+    if abi &lt;= 5:
+        return 16                             # + handled_access_net
+    return 24                                 # + scoped
+
+
+class DenySpec:
+    """解析后的策略：规范化的 deny 路径集合。"""
+
+    def __init__(self, paths):
+        self.raw = list(paths)
+        self.missing = []
+        self.resolved = []
+        for p in self.raw:
+            ap = os.path.abspath(p)
+            if not os.path.exists(ap):
+                self.missing.append(ap)
+                continue
+            self.resolved.append(os.path.realpath(ap))
+        # 去掉被其它 deny 覆盖的路径（冗余规则）
+        dedup = []
+        for p in sorted(set(self.resolved), key=len):
+            if not any(p == q or p.startswith(q + os.sep) for q in dedup):
+                dedup.append(p)
+        self.paths = dedup
+
+
+def parse_policy(path):
+    paths = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not line.startswith("deny "):
+                raise ValueError(f"策略文件格式错误（应为 'deny &lt;路径&gt;'）: {line!r}")
+            paths.append(line[5:].strip())
+    return DenySpec(paths)
+
+
+def build_ruleset(spec, log):
+    """建 ruleset 并按枚举法授予。返回 (ruleset_fd, 授予条数, 统计)。"""
+    abi = abi_version()
+    size = ruleset_size_for(abi)
+    attr = RulesetAttr(handled_access_fs=fs_mask_for(abi))
+    fd = libc.syscall(SYS_CREATE_RULESET, ctypes.byref(attr), size, 0)
+    if fd &lt; 0:
+        e = ctypes.get_errno()
+        raise OSError(e, f"landlock_create_ruleset: {os.strerror(e)}")
+
+    stats = {"granted": 0, "skipped_unlistable": 0, "skipped_symlink": 0,
+             "deny_roots": len(spec.paths)}
+
+    def inside(p, root):
+        # root 为 "/" 时特判：一切都在它里面（否则 "/"+sep 会变成 "//"）
+        if root == os.sep:
+            return True
+        return p == root or p.startswith(root + os.sep)
+
+    def has_deny_below(p):
+        return any(inside(d, p) and d != p for d in spec.paths)
+
+    def grant(p, is_dir):
+        try:
+            pfd = os.open(p, os.O_PATH | os.O_CLOEXEC)
+        except OSError:
+            stats["skipped_unlistable"] += 1
+            return
+        try:
+            pb = PathBeneathAttr(allowed_access=mask_for(abi, is_dir),
+                                 parent_fd=pfd, reserved=0)
+            r = libc.syscall(SYS_ADD_RULE, fd, RULE_PATH_BENEATH,
+                             ctypes.byref(pb), 0)
+            if r &lt; 0:
+                e = ctypes.get_errno()
+                raise OSError(e, f"landlock_add_rule {p}: {os.strerror(e)}")
+        finally:
+            os.close(pfd)
+        stats["granted"] += 1
+
+    def walk(p):
+        """p 已确认为目录"""
+        if any(inside(p, d) for d in spec.paths):
+            return                                    # 在 deny 之内：不授予
+        if not has_deny_below(p):
+            grant(p, True)                            # 下面无 deny：整片授予
+            return
+        try:
+            entries = os.listdir(p)
+        except OSError as e:
+            # 列不出来就无法判断下面有没有 deny → 不授予（fail-closed）并记数
+            stats["skipped_unlistable"] += 1
+            log(f"[warn] 无法列目录，按 fail-closed 处理（不授予）: {p} ({e})")
+            return
+        for name in entries:
+            c = os.path.join(p, name)
+            try:
+                st = os.lstat(c)
+            except OSError:
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                # 软链一律不授予：O_PATH 打开会跟随到目标，若目标是 deny 目录
+                # 就等于把 deny 撤销了。不授予也安全 —— 软链自身的可访问性由
+                # 其父目录的授予覆盖，而跟随后的访问按【解析后的目标】判定。
+                stats["skipped_symlink"] += 1
+                continue
+            if stat.S_ISDIR(st.st_mode):
+                walk(c)
+            else:
+                grant(c, False)                       # 普通文件用文件级权限位
+
+    walk(os.sep)
+    return fd, stats, abi
+
+
+def apply(spec, log):
+    fd, stats, abi = build_ruleset(spec, log)
+    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        e = ctypes.get_errno()
+        raise OSError(e, f"prctl(PR_SET_NO_NEW_PRIVS): {os.strerror(e)}")
+    if libc.syscall(SYS_RESTRICT_SELF, fd, 0) != 0:
+        e = ctypes.get_errno()
+        raise OSError(e, f"landlock_restrict_self: {os.strerror(e)}")
+    os.close(fd)
+    return stats, abi
+
+
+def do_check():
+    """在子进程里跑完整流程验证内核能力。返回 0/非 0。"""
+    pid = os.fork()
+    if pid == 0:                                      # 子进程：可安全自缚
+        # os._exit 不刷 stdio 缓冲，必须直接用 os.write 落盘
+        def emit(s, fd=1):
+            os.write(fd, s.encode("utf-8", "replace"))
+
+        try:
+            abi = abi_version()
+            if abi &lt; 1:
+                emit("FAIL abi&lt;1\n", 2)
+                os._exit(11)
+            # 用一个真实存在的临时目录当 deny，让枚举真正走一遍递归分支
+            probe_dir = tempfile.mkdtemp(prefix="mobius-landlock-probe-")
+            spec = DenySpec([probe_dir])
+            fd, stats, _ = build_ruleset(spec, lambda m: None)
+            shutil.rmtree(probe_dir, ignore_errors=True)
+            if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+                emit("FAIL prctl(PR_SET_NO_NEW_PRIVS)\n", 2)
+                os._exit(12)
+            if libc.syscall(SYS_RESTRICT_SELF, fd, 0) != 0:
+                emit("FAIL landlock_restrict_self\n", 2)
+                os._exit(13)
+            os.close(fd)
+            if stats["granted"] &lt;= 0:
+                emit("FAIL granted=0（等于没有沙盒）\n", 2)
+                os._exit(14)
+            emit(f"OK landlock abi=v{abi} granted={stats['granted']}\n")
+            os._exit(0)
+        except OSError as e:
+            emit(f"FAIL {e}\n", 2)
+            os._exit(20)
+        except Exception as e:                        # noqa: BLE001
+            emit(f"FAIL {type(e).__name__}: {e}\n", 2)
+            os._exit(21)
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status)
+
+
+def main(argv):
+    if len(argv) &lt; 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+
+    if argv[1] == "--check":
+        return do_check()
+
+    if argv[1] != "--policy":
+        print(f"未知参数: {argv[1]}", file=sys.stderr)
+        return 2
+
+    policy, show_stats, cmd = None, False, []
+    i = 2
+    while i &lt; len(argv):
+        a = argv[i]
+        if a == "--":
+            cmd = argv[i + 1:]
+            break
+        if a == "--stats":
+            show_stats = True
+        elif policy is None:
+            policy = a
+        else:
+            print(f"多余参数: {a}", file=sys.stderr)
+            return 2
+        i += 1
+
+    if not policy or not cmd:
+        print("用法: mobius-landlock --policy FILE [--stats] -- CMD ...",
+              file=sys.stderr)
+        return 2
+
+    def log(m):
+        print(m, file=sys.stderr)
+
+    try:
+        spec = parse_policy(policy)
+        for m in spec.missing:
+            log(f"[warn] deny 路径不存在，已跳过: {m}")
+        stats, abi = apply(spec, log)
+    except Exception as e:                            # noqa: BLE001
+        log(f"[fatal] 沙盒应用失败: {type(e).__name__}: {e}")
+        return 1
+
+    if stats["granted"] &lt;= 0:
+        # 授了 0 条规则 = 整盘放行，等于没有沙盒 → 拒绝执行（fail-closed）
+        log("[fatal] 未授予任何规则，判定为沙盒失效，拒绝启动")
+        return 1
+    if spec.paths and stats["granted"] == 1:
+        # 有 deny 却只授出 1 条 = 根目录被误判为"下面没有 deny" → 整盘放行。
+        # 这是枚举失效的典型签名（历史 bug："/" + os.sep 变 "//"），必须拦下。
+        log("[fatal] 有 deny 路径却只授予 1 条规则，判定为枚举失效（疑似整盘放行），拒绝启动")
+        return 1
+    if spec.raw and not spec.paths:
+        # 策略里写了 deny，却一条都解析不出（路径全不存在）→ 实际等于无限制。
+        # 这属于 fail-open，不能放行：上游给错了路径就不该静默降级。
+        log(f"[fatal] 策略含 {len(spec.raw)} 条 deny 但全部无法解析（路径不存在），"
+            f"拒绝启动（fail-closed）")
+        return 1
+    if show_stats:
+        log(f"[mobius-landlock] abi=v{abi} deny={stats['deny_roots']} "
+            f"granted={stats['granted']} symlink_skipped={stats['skipped_symlink']} "
+            f"unlistable={stats['skipped_unlistable']}")
+
+    os.execvp(cmd[0], cmd)
+    return 127                                        # 不可达
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
+</code></pre>
+</section>
+
 <footer>
   mobius 用户隔离重构 · Agent 文件系统沙盒实施方案 · 2026-10-09
 </footer>
