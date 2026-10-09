@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 文件系统沙盒 —— 详细实施方案</title>
+<style>
+  :root{
+    --ink:#151b26; --ink-2:#3d4757; --ink-3:#6b7688;
+    --bg:#f7f8fa; --card:#ffffff; --line:#e3e7ee; --line-2:#eef1f6;
+    --accent:#3355cc; --accent-bg:#eef2ff;
+    --ok:#1a7f52; --ok-bg:#e9f7f0;
+    --warn:#9a6200; --warn-bg:#fff7e6;
+    --bad:#b3261e; --bad-bg:#fdecea;
+    --mono:"SFMono-Regular",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",
+           "Microsoft YaHei","Noto Sans SC","Source Han Sans SC",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.85;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:56px 28px 96px}
+
+  /* ---------- hero ---------- */
+  .hero{margin-bottom:44px}
+  .eyebrow{
+    display:inline-block;font-size:12px;letter-spacing:.14em;font-weight:600;
+    color:var(--accent);background:var(--accent-bg);
+    padding:5px 12px;border-radius:999px;margin-bottom:18px;
+  }
+  h1{font-size:34px;line-height:1.3;margin:0 0 14px;letter-spacing:-.01em;font-weight:700}
+  .lede{font-size:17px;color:var(--ink-2);margin:0 0 26px;max-width:60ch}
+  .hero-oneline{
+    border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 10px 10px 0; padding:18px 22px;
+    font-size:16px; color:var(--ink); box-shadow:0 1px 2px rgba(21,27,38,.05);
+  }
+  .meta{
+    margin-top:22px;font-size:13px;color:var(--ink-3);
+    display:flex;flex-wrap:wrap;gap:8px 20px;
+  }
+
+  /* ---------- sections ---------- */
+  section{margin:0 0 46px}
+  h2{
+    font-size:22px;margin:0 0 18px;padding-bottom:11px;font-weight:650;
+    border-bottom:1px solid var(--line);letter-spacing:-.005em;
+  }
+  h2 .n{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:27px;height:27px;margin-right:11px;vertical-align:2px;
+    background:var(--ink);color:#fff;border-radius:7px;
+    font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;
+  }
+  h3{font-size:17px;margin:30px 0 12px;font-weight:650;color:var(--ink)}
+  h3:first-child{margin-top:0}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 16px;padding-left:24px}
+  li{margin-bottom:7px}
+  li>ul,li>ol{margin-top:7px;margin-bottom:4px}
+  strong{font-weight:650}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(51,85,204,.3)}
+  a:hover{border-bottom-color:var(--accent)}
+
+  /* ---------- code ---------- */
+  code{
+    font-family:var(--mono);font-size:.875em;background:#f0f2f6;
+    padding:2px 6px;border-radius:5px;color:#28324a;word-break:break-word;
+  }
+  pre{
+    background:#1c2230;color:#e6eaf2;padding:18px 20px;border-radius:10px;
+    overflow-x:auto;margin:0 0 18px;font-size:13.5px;line-height:1.7;
+    font-family:var(--mono);box-shadow:0 1px 3px rgba(21,27,38,.12);
+  }
+  pre code{background:none;padding:0;color:inherit;font-size:1em}
+  .cmt{color:#8d9ab3}
+
+  /* ---------- tables ---------- */
+  .tw{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:520px}
+  th,td{padding:11px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-2)}
+  th{background:#f4f6fa;font-weight:650;font-size:13.5px;color:var(--ink-2);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:12.8px}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* ---------- callouts ---------- */
+  .box{border-radius:10px;padding:16px 20px;margin:0 0 18px;font-size:15px;border:1px solid}
+  .box p:last-child,.box ul:last-child,.box ol:last-child{margin-bottom:0}
+  .box .t{font-weight:650;display:block;margin-bottom:6px;font-size:14px;letter-spacing:.01em}
+  .warn{background:var(--warn-bg);border-color:#f0dcb0;color:#5c3d00}
+  .warn .t{color:var(--warn)}
+  .bad{background:var(--bad-bg);border-color:#f3c9c4;color:#7a1a15}
+  .bad .t{color:var(--bad)}
+  .ok{background:var(--ok-bg);border-color:#bfe5d3;color:#0f5136}
+  .ok .t{color:var(--ok)}
+  .note{background:var(--accent-bg);border-color:#ccd8fb;color:#233a80}
+  .note .t{color:var(--accent)}
+
+  /* ---------- pills ---------- */
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap;line-height:1.7}
+  .p-ok{background:var(--ok-bg);color:var(--ok)}
+  .p-bad{background:var(--bad-bg);color:var(--bad)}
+  .p-warn{background:var(--warn-bg);color:var(--warn)}
+  .p-mute{background:#eef1f6;color:var(--ink-3)}
+
+  /* ---------- flow ---------- */
+  .flow{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}
+  .step{
+    flex:1 1 150px;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:13px 15px;font-size:13.5px;line-height:1.6;
+  }
+  .step b{display:block;font-size:12px;color:var(--accent);letter-spacing:.08em;margin-bottom:4px}
+
+  hr{border:none;border-top:1px solid var(--line);margin:46px 0}
+  footer{font-size:13px;color:var(--ink-3);text-align:center;padding-top:8px}
+
+  @media (max-width:640px){
+    .wrap{padding:34px 18px 64px}
+    h1{font-size:26px}
+    h2{font-size:19px}
+    body{font-size:15px}
+  }
+  @media print{
+    body{background:#fff}
+    .wrap{max-width:none;padding:0}
+    pre{background:#f4f6fa;color:#1c2230;border:1px solid var(--line);box-shadow:none}
+    .cmt{color:#7a849b}
+    section{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <span class="eyebrow">用户隔离重构 · 设计方案</span>
+  <h1>Agent 文件系统沙盒<br>详细实施方案</h1>
+  <p class="lede">限制 mobius spawn 的 AI Agent 只能读写指定路径，防止跨用户访问。<br>本方案为<strong>纯 Landlock 黑名单</strong>方案，经实测选型确定。</p>
+  <div class="hero-oneline">
+    <strong>一句话：</strong>用一个 Python 脚本（ctypes 直调内核），在 Agent 启动前把「除其他用户工作路径外的一切」授予它，然后 exec。
+    宿主与容器通用、零构建、零特权；启动时自检内核能力，任何问题即回退到「不允许创建普通用户」。
+    代价是只能用内核给的 <code>Permission denied</code>。
+  </div>
+  <div class="meta">
+    <span>定稿日期：2026-10-09</span>
+    <span>适用范围：mobius spawn 的全部 Agent（claude-code / codex / deepseek-harness）</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section>
+  <h2><span class="n">1</span>为什么是 Landlock（选型结论）</h2>
+
+  <p>需求有三条硬约束：<strong>宿主机与 Docker 容器内都要能用</strong>、<strong>安装极简</strong>、<strong>按路径限制文件系统</strong>。三条约束逐一把其他方案排除：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>方案</th><th>宿主机</th><th>默认 Docker 容器</th><th>判定</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>bubblewrap</b><br><span class="p-mute">mount namespace 掩码</span></td>
+        <td><span class="p-bad">需解锁 userns</span></td>
+        <td><span class="p-bad">需容器放权</span></td>
+        <td>黑名单最干净，但两处都要改系统配置，且<b>无法自定义错误</b> → 排除</td>
+      </tr>
+      <tr>
+        <td><b>Sandlock</b><br><span class="p-mute">Landlock + seccomp 监督进程</span></td>
+        <td><span class="p-ok">可用</span></td>
+        <td><span class="p-bad">连启动都失败</span></td>
+        <td>容器内 <code>pidfd_getfd</code> 被 Docker 默认策略拦死 → 排除</td>
+      </tr>
+      <tr>
+        <td><b>纯 Landlock</b></td>
+        <td><span class="p-ok">可用</span></td>
+        <td><span class="p-ok">实测通过，零放权</span></td>
+        <td><b>唯一同时满足两处、且零配置的方案</b> → 选定</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>1.1 关键实测证据</h3>
+
+  <p><strong>① Sandlock 在默认容器里根本起不来</strong>（连"只跑 echo"的对照组都失败）：</p>
+  <pre><code>Error: process error: child process error:
+       pidfd_getfd: Operation not permitted (os error 1)</code></pre>
+
+  <p>定位结论：单独加 <code>--security-opt seccomp=unconfined</code> 即可救活，加 <code>apparmor=unconfined</code> 无效 ⇒ <strong>元凶就是 Docker 默认的 seccomp 策略</strong>。</p>
+
+  <p><strong>② 所有"监督进程类"方案在容器内全军覆没</strong> —— 监督进程必须读取被测进程内存里的路径，而所有手段都被堵死：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>读取手段</th><th>默认容器内结果</th></tr></thead>
+    <tbody>
+      <tr><td><code>pidfd_getfd</code></td><td><span class="p-bad">Operation not permitted</span></td></tr>
+      <tr><td><code>/proc/&lt;子进程&gt;/mem</code></td><td><span class="p-bad">Permission denied</span>（实测，父读子亦被拒）</td></tr>
+      <tr><td><code>process_vm_readv</code> / <code>ptrace</code></td><td><span class="p-bad">Docker 默认策略拦截</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <p><strong>③ Landlock 在默认容器内完全生效</strong>（只授权 alice、不给 bob）：</p>
+  <pre><code>读 alice        → alice-data            <span class="cmt">✅ 正常</span>
+读 bob          → Permission denied     <span class="cmt">✅ 拦截</span>
+写 bob          → Permission denied     <span class="cmt">✅ 拦截</span>
+建目录 in bob   → Permission denied     <span class="cmt">✅ 拦截</span>
+列目录 bob      → Permission denied     <span class="cmt">✅ 拦截</span></code></pre>
+
+  <div class="box note">
+    <span class="t">为什么不用 seccomp</span>
+    seccomp 的黑名单是<b>清单式</b>的 —— 只有列进清单的系统调用才会被拦截。实测 Sandlock 漏掉了
+    <code>mkdirat</code> / <code>symlinkat</code> / <code>fchmodat</code>，可被用于创建目录、软链、修改他人文件权限。
+    而 Landlock 按<b>路径</b>判定，不存在清单，<b>天然没有这类缺口</b>。
+  </div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+  <h2><span class="n">2</span>已定稿的决策清单</h2>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">项目</th><th>决策</th></tr></thead>
+    <tbody>
+      <tr><td>沙盒机制</td><td><b>纯 Landlock</b>；放弃 seccomp / bubblewrap / 自定义错误话术</td></tr>
+      <tr><td>策略语义</td><td><b>黑名单</b>：默认可访问系统任意文件（受 Linux DAC 限制），只拉黑其他用户的工作路径</td></tr>
+      <tr><td>错误表现</td><td>接受内核给出的 <code>EACCES / Permission denied</code>，不做自定义话术</td></tr>
+      <tr><td>管理员</td><td><b>不套沙盒</b></td></tr>
+      <tr><td>判定基准</td><td>按「<b>会话归谁</b>」判定（会话归属者的角色），不按「谁在操作」</td></tr>
+      <tr><td>切换开关</td><td>普通用户<b>强制开启</b>；管理员<b>默认关闭</b></td></tr>
+      <tr><td><code>bindPathManual</code></td><td>普通用户<b>堵掉</b>；<b>仅管理员保留</b></td></tr>
+      <tr><td>插件项目</td><td>管理员读写、普通用户只读（当前<b>未实现</b>，需新增规则）</td></tr>
+      <tr><td>只读成员</td><td><b>不能对话</b>（含研究会话）、<b>不能改删文件</b></td></tr>
+      <tr><td>被踢成员</td><td>断掉其在项目内旧 issue / research 的访问</td></tr>
+      <tr><td>存量数据</td><td>扫一遍已有项目，找出 <code>bind_path</code> 绑到不该绑位置的项目</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+  <h2><span class="n">3</span>沙盒实现</h2>
+
+  <h3>3.1 启动器（新建，单个 Python 脚本）</h3>
+
+  <p>用 <b>ctypes 直调内核</b>（syscall 444 / 445 / 446），<b>不需要编译、零第三方依赖</b>。
+     一次编写，宿主与容器共用同一份文件 —— 两处都已有 <code>python3</code>：
+     本机 <code>/usr/bin/python3</code>；mobius 容器 <code>mobius-system-base</code> 内为 <b>Python 3.11.2</b>。</p>
+
+  <pre><code><span class="cmt"># 应用沙盒并执行目标命令</span>
+mobius-landlock --policy &lt;策略文件&gt; -- &lt;命令&gt; [参数...]
+
+<span class="cmt"># 内核能力自检（mobius 启动时调用；详见 4.2）</span>
+mobius-landlock --check      <span class="cmt"># 退出码 0 = 可用；非 0 = 不可用</span></code></pre>
+
+  <div class="box note">
+    <span class="t">为什么是 Python 而不是编译型语言</span>
+    零构建、零依赖、迭代快 —— <b>枚举算法才是真正的风险点</b>（见 3.2 的自检提示），改起来越轻越好。
+    代价是每次 spawn 多约 30ms 解释器启动开销（可忽略）。
+    后期若要压开销：镜像里已装 <code>g++/make</code>、本机 <code>gcc 13.3</code> 亦可用，可翻成 C 二进制 —— 那是第二步，本次不做。
+  </div>
+
+  <div class="flow">
+    <div class="step"><b>STEP 1</b>读策略文件（每行一条 <code>deny &lt;绝对路径&gt;</code>），全部 realpath 规范化</div>
+    <div class="step"><b>STEP 2</b>查 Landlock ABI，建 ruleset（按 ABI 取可用的最大权限集）</div>
+    <div class="step"><b>STEP 3</b>枚举式授予（黑名单核心，见 3.2）</div>
+    <div class="step"><b>STEP 4</b><code>prctl(PR_SET_NO_NEW_PRIVS, 1)</code></div>
+    <div class="step"><b>STEP 5</b><code>landlock_restrict_self</code></div>
+    <div class="step"><b>STEP 6</b><code>execvp(cmd)</code> 执行目标命令</div>
+  </div>
+
+  <h3>3.2 枚举式授予算法（黑名单如何实现）</h3>
+
+  <p>Landlock 的规则<b>只能加、不能减</b>（多条规则取并集），因此"允许全部、只排除 X"必须靠<b>枚举</b>做出来：</p>
+
+  <pre><code>从 "/" 开始递归：
+
+  · 某路径 <b>在任一 deny 之内</b>   → 不授予，也不再向下
+  · 某路径 <b>下面没有</b> deny 路径  → 授予全部权限，<b>不再向下枚举</b>
+  · 某路径 <b>下面有</b> deny 路径    → 只枚举它的子项，逐个递归
+
+细节：用 lstat，<b>不跟随软链</b>（避免环与无限递归）；
+      /proc、/sys、/dev 下无 deny → 整片授予，不递归。</code></pre>
+
+  <div class="box warn">
+    <span class="t">⚠️ 必须自检：授予规则条数</span>
+    枚举逻辑写错会<b>静默整盘放行</b>（等于没有沙盒）。本方案的 POC 第一版就因
+    <code>"/" + os.sep</code> 变成 <code>"//"</code> 导致判定失效，<b>只授予了 1 条规则</b>。
+    启动器必须统计并输出授予条数，作为第一道验收。
+  </div>
+
+  <h3>3.3 为什么不需要枚举白名单</h3>
+
+  <p>因为语义是"默认可访问、只减不增"：<b>授满除 deny 之外的所有路径</b>。所以<b>不需要知道 Agent 需要什么</b> ——
+  系统目录、<code>/tmp</code>、<code>~/.claude</code>、node/claude 二进制、工作区，全都自动可用。</p>
+
+  <p>这是黑名单方案相对白名单的最大优势：<b>杜绝了"漏了某条依赖导致 Agent 跑不起来"</b>。</p>
+
+  <h3>3.4 黑名单如何计算（后端，每次 spawn 现算）</h3>
+
+  <p>以会话归属者 <code>U</code> 为准：</p>
+
+  <pre><code>deny(U) = { 每个 V≠U 的 users.work_dir }
+        ∪ { 每个 U 无写权限的 projects.bind_path }</code></pre>
+
+  <ul>
+    <li>普通用户的项目因 <code>bindPathManual</code> 已堵掉，<code>bind_path</code> 必在自己的 work_dir 内 → 已被第一条覆盖</li>
+    <li>第二条专门兜住<b>管理员手动绑到外部的项目</b></li>
+    <li>用<b>策略文件</b>传递而非命令行参数（列表可能很长，且避免暴露在 <code>ps</code> 输出里）</li>
+  </ul>
+
+  <h3>3.5 注入点（只有 3 处）</h3>
+
+  <div class="tw"><table>
+    <thead><tr><th>文件</th><th>行</th><th>现状 → 改法</th></tr></thead>
+    <tbody>
+      <tr><td><code>agents/tmux-claude-code.ts</code></td><td class="num">~1867</td><td><code>bash -lc cmd</code> → <code>mobius-landlock --policy F -- bash -lc cmd</code></td></tr>
+      <tr><td><code>agents/tmux-codex.ts</code></td><td class="num">~1678</td><td>同上</td></tr>
+      <tr><td><code>agents/deepseek-harness.ts</code></td><td class="num">~257</td><td>直接 <code>spawn</code> → 改为 <code>spawn(launcher, [...])</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+  <h2><span class="n">4</span>开关与启动自检</h2>
+
+  <h3>4.1 两个开关</h3>
+
+  <div class="tw"><table>
+    <thead><tr><th>配置项</th><th>默认</th><th>语义</th></tr></thead>
+    <tbody>
+      <tr><td><code>AGENT_SANDBOX_ENFORCE_USERS</code></td><td><code>true</code></td><td>普通用户的 Agent <b>强制</b>套沙盒（无用户级关闭途径）</td></tr>
+      <tr><td><code>AGENT_SANDBOX_ADMIN</code></td><td><code>false</code></td><td>管理员的 Agent 是否套沙盒</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>判定：<code>role = 会话归属者的角色</code> → 管理员看第二个开关；非管理员恒套。</p>
+
+  <div class="box warn">
+    <span class="t">⚠️ 本项目 env 的"三道闸"</span>
+    新增环境变量必须<b>同时</b>修改三个位置，漏一道会静默回落到默认值：<br>
+    <code>boot_utils.py</code> 的 <code>RUNTIME_SETTINGS</code> ·
+    <code>ecosystem.config.js</code> 的 <code>envKeys</code> ·
+    <code>backend/config.js</code>
+  </div>
+
+  <h3>4.2 启动自检与失败回退（fail-closed）</h3>
+
+  <p><b>mobius 启动时</b>调用 <code>mobius-landlock --check</code> 探测内核能力。任一项失败即置「沙盒不可用」标志：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:52%">探测项</th><th>失败含义</th></tr></thead>
+    <tbody>
+      <tr><td><code>landlock_create_ruleset(NULL, 0, VERSION)</code> 返回 ABI 版本</td><td>内核不支持，或被安全策略挡</td></tr>
+      <tr><td>建 ruleset + 加一条规则 + <code>landlock_restrict_self</code> 全部成功</td><td>权限不足或 LSM 配置问题</td></tr>
+      <tr><td><code>prctl(PR_SET_NO_NEW_PRIVS)</code> 可置位</td><td>同上</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="box bad">
+    <span class="t">⚠️ 自检必须在子进程里执行</span>
+    <code>landlock_restrict_self</code> 是<b>永久自缚</b>的。如果在 mobius 主进程里调用，
+    会把后端自己锁死在沙盒里。自检必须 fork 出子进程来跑。
+  </div>
+
+  <p><b>失败回退行为</b>：进入「<b>不允许创建普通用户</b>」状态 —— 注册 / 开通普通用户的入口一律拒绝，
+  并在管理界面与日志中给出明确原因。</p>
+
+  <div class="box note">
+    <span class="t">建议补一条（待确认）</span>
+    只禁「创建」还不够：若 Landlock 在<b>启动之后</b>才出问题，<b>已存在的普通用户</b>仍会拿到无沙盒的 Agent。
+    因此建议再加一道 —— <b>spawn 时套沙盒失败就拒绝启动该 Agent</b>（而不是降级放行）。
+    两条合起来才是真正闭环的 fail-closed。
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+  <h2><span class="n">5</span>后端修复清单</h2>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:8%">#</th><th style="width:34%">内容</th><th>位置</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>A</b></td>
+        <td><code>bindPathManual</code> 仅管理员可用</td>
+        <td><code>routes/projects.ts:2216-2218</code>、<code>:2723-2726</code>（读 body 处加角色判定）</td>
+      </tr>
+      <tr>
+        <td><b>B</b></td>
+        <td>插件项目：管理员读写 / 普通用户只读</td>
+        <td><code>services/access-control.ts</code>（现对 extension <b>零特殊处理</b>，需新增）</td>
+      </tr>
+      <tr>
+        <td><b>C</b></td>
+        <td>只读成员不能开研究会话</td>
+        <td><code>access-control.ts:370-372</code> <code>canCreateSessionForResearch</code> 加写闸<br>（issue 侧已有 v3 gate 可照抄）</td>
+      </tr>
+      <tr>
+        <td><b>D</b></td>
+        <td>只读成员不能改删文件</td>
+        <td>文件写端点的 <code>loadReadableProject</code>（<b>37 处</b>）换成写权限 gate<br>（对照现有 7 处 <code>loadManageableProject</code>）</td>
+      </tr>
+      <tr>
+        <td><b>E</b></td>
+        <td>被踢成员断权</td>
+        <td><code>access-control.ts</code> 的 <code>created_by</code> 短路追加「仍是项目成员」条件<br>（<code>canReadIssue:317</code> / <code>canManageIssue:334</code> / <code>canReadResearch:342</code> / <code>canManageResearch:359</code>）</td>
+      </tr>
+      <tr>
+        <td><b>F</b></td>
+        <td>存量扫描</td>
+        <td>脚本：列出 <code>bind_path</code> 不在其 owner <code>work_dir</code> 内的项目</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="box note">
+    <span class="t">E 的待定项</span>
+    用户<b>自己创建的会话</b>是否也断？倾向<b>保留</b>（那是他自己的对话记录），只断项目内的 issue / research。
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+  <h2><span class="n">6</span>分阶段实施</h2>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:10%">阶段</th><th style="width:46%">内容</th><th>产出</th></tr></thead>
+    <tbody>
+      <tr><td><b>P0</b></td><td>启动器 Python 脚本（含 <code>--check</code> 模式）+ 枚举自检 + 边界测试</td><td>可运行的 <code>mobius-landlock</code></td></tr>
+      <tr><td><b>P1</b></td><td>后端修复 A ~ F</td><td>修复提交 + 扫描报告</td></tr>
+      <tr><td><b>P2</b></td><td>接入 3 个注入点 + 两个开关（含三道闸）+ <b>启动自检与失败回退</b></td><td>沙盒生效</td></tr>
+      <tr><td><b>P3</b></td><td>打包进容器镜像（Dockerfile 增加 COPY）+ 部署</td><td>上线</td></tr>
+      <tr><td><b>P4</b></td><td>端到端验证</td><td>验证报告</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+  <h2><span class="n">7</span>验证清单（必须逐条通过）</h2>
+
+  <h3>启动器</h3>
+  <ol>
+    <li>授予规则条数 &gt; 1（防止"静默整盘放行"）</li>
+    <li>跨用户：读 / 写 / 删 / 改名 / 建目录 / 建软链 → 全部 <code>EACCES</code></li>
+    <li>软链逃逸（在自有目录建软链指向他人目录）→ 拒绝</li>
+    <li>自己的目录、<code>/tmp</code>、<code>/etc</code>、<code>/usr</code>、<code>/proc</code> → 正常</li>
+    <li><code>node</code> / <code>claude</code> / <code>tmux</code> 能正常执行</li>
+    <li><b>宿主机 + 默认容器内</b>各跑一遍（容器内已验证 Landlock 可用、零放权）</li>
+    <li>多个 deny 路径 / deny 嵌套 / 不存在的 deny 路径</li>
+  </ol>
+
+  <h3>接入与自检</h3>
+  <ol start="8">
+    <li>普通用户会话：Agent 读不到他人目录；管理员会话：不受限</li>
+    <li>Agent 正常完成一次真实任务（编译、跑测试、联网），不被沙盒误伤</li>
+    <li>新会话、续跑、deepseek-harness 三条路径都套上</li>
+    <li><b>自检</b>：<code>--check</code> 在可用环境返回 0；在不可用环境返回非 0</li>
+    <li><b>回退</b>：强制自检失败 → 普通用户创建入口被拒、管理员不受影响、日志有明确原因</li>
+    <li><b>自检不污染主进程</b>：自检结束后 mobius 主进程仍能正常读写任意路径（未被自缚）</li>
+  </ol>
+
+  <h3>后端修复</h3>
+  <ol start="14"><li>各修复项配一条针对性的用例</li></ol>
+</section>
+
+<!-- ============ 8 ============ -->
+<section>
+  <h2><span class="n">8</span>已知并接受的缺口</h2>
+
+  <p>以下为<b>有意识的延后</b>，非疏漏，一并记录在案：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">缺口</th><th>后果</th><th style="width:16%">状态</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>/tmp</code> 共享</td>
+        <td>Agent 可读 <code>/tmp/tmux-&lt;uid&gt;/</code> 插座 → <b>可偷看其他用户的 AI 面板</b>（已实测拿到内容）</td>
+        <td><span class="p-warn">决定延后</span></td>
+      </tr>
+      <tr>
+        <td><code>~/.claude</code> 共享</td>
+        <td>任一 Agent 可读<b>全体用户的提问历史、会话转录、凭据</b></td>
+        <td><span class="p-warn">决定延后</span></td>
+      </tr>
+      <tr>
+        <td><code>chmod</code> / <code>stat</code></td>
+        <td>挡不住（内核无对应权限位；Landlock man page 的 CAVEATS 明载）</td>
+        <td><span class="p-mute">已认可</span></td>
+      </tr>
+      <tr>
+        <td>无自定义错误话术</td>
+        <td>被拦时只有 <code>Permission denied</code>，AI 无法从错误码区分是沙盒还是文件权限</td>
+        <td><span class="p-mute">本次放弃</span></td>
+      </tr>
+      <tr>
+        <td>无拒绝审计日志</td>
+        <td>事后查不到"某条命令为何失败"</td>
+        <td><span class="p-mute">同上</span></td>
+      </tr>
+      <tr>
+        <td>枚举的"新路径"</td>
+        <td>spawn 之后<b>新出现的顶层路径</b>不在授予集内 → 会被拒（fail-closed）</td>
+        <td><span class="p-mute">每次 spawn 重算，可接受</span></td>
+      </tr>
+    </tbody>
+  </table></div>
+</section>
+
+<hr>
+
+<section>
+  <h2><span class="n">9</span>为什么不用 seccomp 做自定义错误（补充说明）</h2>
+
+  <p>内核在系统调用失败时<b>只返回一个数字</b>（错误码），<b>没有任何通道能传文字</b>：</p>
+
+  <pre><code>内核返回的:   13
+程序打印的:   "Permission denied"   <span class="cmt">← 程序自己按 13 查表查出来的</span></code></pre>
+
+  <p>因此程序打印什么，<b>100% 由程序自己决定</b>，内核插不上嘴。即使修改 Landlock 内核代码，能改的也只有"数字是几"。</p>
+
+  <p>内核唯一能带任意文字的通道是<b>审计子系统（audit）</b>，但它通向系统审计日志而非 Agent 终端，且需要<b>自行编译分发内核</b>——技术上可行，实践上不可行。</p>
+
+  <p>真正可行的自定义话术只有两条路，而它们在容器约束下只剩一条：</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>在哪做</th><th>手段</th><th>容器内</th></tr></thead>
+    <tbody>
+      <tr><td>进程内</td><td>LD_PRELOAD 小动态库</td><td><span class="p-ok">可用</span></td></tr>
+      <tr><td>进程外</td><td>seccomp 监督进程</td><td><span class="p-bad">被堵死（实测）</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <p>本次决定<b>放弃自定义话术</b>，因此不引入 LD_PRELOAD，保持方案最简。</p>
+</section>
+
+<footer>
+  mobius 用户隔离重构 · Agent 文件系统沙盒实施方案 · 2026-10-09
+</footer>
+
+</div>
+</body>
+</html>
