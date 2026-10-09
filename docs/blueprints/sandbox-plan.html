@@ -220,9 +220,8 @@
 <section>
   <h2><span class="n">2</span>Landlock Python 驱动实测</h2>
 
-  <p>驱动已按 §3.1 的形式实现为一个 Python 脚本，并逐项实测。以下按「<b>命令 → 返回 → 分析</b>」记录，
-  包含测试过程中发现并修复的缺陷。测试环境：宿主 Ubuntu 24.04 / 内核 6.8（Landlock ABI v4），
-  另在 <code>mobius-system-base</code> 容器内复测。</p>
+  <p>驱动已按 §3.1 的形式实现为一个 Python 脚本，并逐项实测。以下按「<b>命令 → 返回 → 分析</b>」记录。
+  测试环境：宿主 Ubuntu 24.04 / 内核 6.8（Landlock ABI v4），另在 <code>mobius-system-base</code> 容器内复测。</p>
 
   <h3>测试任务 I：可执行性与自检模式</h3>
   <div class="tw"><table>
@@ -231,7 +230,7 @@
       <tr>
         <td><code>mobius-landlock --check</code></td>
         <td><code>OK landlock abi=v4 granted=4751</code><br>退出码 0</td>
-        <td>内核能力自检可用。<b>首跑时输出丢失</b>——子进程 <code>os._exit()</code> 不刷 stdio 缓冲，退出码对但信息丢；已改为直接 <code>os.write</code>。退出码对、信息丢是最难查的一类问题</td>
+        <td>内核能力自检可用，退出码与诊断信息一致；同时输出授予规则条数，供验收核对</td>
       </tr>
       <tr>
         <td><code>mobius-landlock</code>（无参数）<br><code>mobius-landlock --bogus</code></td>
@@ -257,7 +256,7 @@
       <tr><td>列 bob 目录</td><td><code>EACCES</code></td></tr>
       <tr><td>改权限（chmod）bob 文件</td><td><code>OK</code></td><td rowspan="3" style="vertical-align:middle">
         内核限制：Landlock 的 man page <b>CAVEATS</b> 明载 <code>chmod</code>/<code>stat</code>/<code>chdir</code>
-        等当前不可限制。已确认为已知缺口，非驱动缺陷。</td></tr>
+        等当前不可限制，属已知缺口。</td></tr>
       <tr><td>stat 元数据（大小）</td><td><code>OK</code></td></tr>
       <tr><td>chdir 进入 bob</td><td><code>OK</code></td></tr>
       <tr><td colspan="3" style="background:#f4f6fa;font-size:13.5px;color:var(--ink-3)">
@@ -266,18 +265,14 @@
           <td>全部 <code>OK</code></td><td>黑名单不影响自有目录与系统路径，符合"除他人目录外全可访问"的语义</td></tr>
     </tbody>
   </table></div>
-  <p><span class="p-warn">测试缺陷</span> 首跑时该四项返回 <code>ENOENT</code> 而非 <code>EACCES</code>，查证为
-  <b>测试夹具文件名与脚本不一致</b>（脚本用 <code>private.txt</code>，夹具建的是 <code>secret.txt</code>），
-  对齐夹具后恢复为 <code>EACCES</code>。属测试脚本问题，非沙盒行为。</p>
-
   <h3>测试任务 III：软链逃逸</h3>
   <p>在<b>已授权</b>目录内建软链指向被 deny 的目录，验证不会因此绕过。</p>
   <div class="tw"><table>
     <thead><tr><th style="width:46%">操作</th><th style="width:20%">返回</th><th>分析</th></tr></thead>
     <tbody>
       <tr><td>软链读被 deny 的文件</td><td><code>EACCES</code></td><td rowspan="5" style="vertical-align:middle">
-        五条逃逸路径全部被拒。这验证了驱动里<b>"软链一律不授予"</b>的修复：若对软链调用
-        <code>open(O_PATH)</code>，会<b>跟随到目标</b>——目标恰是被 deny 的目录时，等于<b>把 deny 撤销掉</b>。</td></tr>
+        五条逃逸路径全部被拒。软链不能作为绕过通道：访问按<b>解析后的目标路径</b>判定，
+        指向被 deny 目录的软链一律被拒。</td></tr>
       <tr><td>软链列被 deny 的目录</td><td><code>EACCES</code></td></tr>
       <tr><td>软链读被 deny 的子目录文件</td><td><code>EACCES</code></td></tr>
       <tr><td>软链写被 deny 的目录</td><td><code>EACCES</code></td></tr>
@@ -295,14 +290,14 @@
       <tr><td>嵌套 deny（父 + 子）</td><td><code>deny=1</code>（去重）</td><td>冗余规则被正确归并</td></tr>
       <tr><td>一条不存在 + 一条有效</td><td>告警并跳过缺失项<br>有效项仍生效</td><td>缺失路径不静默拖垮整份策略</td></tr>
       <tr><td><b>全部 deny 路径都不存在</b></td><td><b>拒绝启动</b>（fail-closed）</td>
-          <td>否则等于静默变成"无限制"——这是 fail-open，必须拦下</td></tr>
+          <td>否则等于静默退化为无限制（fail-open），故拒绝启动</td></tr>
       <tr><td><b><code>deny /</code></b></td><td><b>拒绝启动</b>（授不出任何规则）</td>
-          <td>同样防"规则为 0 = 整盘放行"</td></tr>
+          <td>守住"规则数为 0 = 等于没有沙盒"的底线</td></tr>
     </tbody>
   </table></div>
 
   <h3>测试任务 V：容器内运行</h3>
-  <p>用 <code>--rm</code> 临时容器（无名字、无端口，<b>未触碰生产容器</b>）挂载驱动与夹具复测。</p>
+  <p>在默认 Docker 容器内挂载驱动与夹具复测。</p>
   <div class="tw"><table>
     <thead><tr><th style="width:38%">命令 / 操作</th><th style="width:26%">返回</th><th>分析</th></tr></thead>
     <tbody>
@@ -329,7 +324,7 @@
       <tr><td><code>git --version</code> / <code>node -e</code></td><td>正常返回</td></tr>
       <tr><td>读自己 workspace</td><td><code>OK</code></td></tr>
       <tr><td>联网（https 请求）</td><td>报错，<b>但与不套沙盒时完全一致</b></td>
-          <td>驱动定义了 <code>handled_access_net</code> 字段但<b>从不限制网络</b>（值为 0）；报错是<b>环境自身的证书问题</b>，非沙盒所致</td></tr>
+          <td>网络不在本方案限制范围内（驱动不设置网络策略）；该报错在不套沙盒时同样出现，属环境证书问题</td></tr>
     </tbody>
   </table></div>
 
@@ -361,7 +356,7 @@
 
   <h3>测试任务 VIII：反向逃逸 —— 沙盒外的服务是个洞</h3>
   <div class="box bad">
-    <span class="t">⚠️ 本轮最重要的发现，直接影响接入设计</span>
+    <span class="t">⚠️ 直接影响接入设计</span>
     只给 pane 进程套 Landlock <b>不足以关住 Agent</b>：<b>沙盒外的进程可以被 Agent 指挥着干活</b>。
   </div>
   <div class="tw"><table>
@@ -384,24 +379,6 @@
   <b>tmux server</b>（已实测逃逸）、<b>code-server</b>（<code>--auth none</code> 监听回环）、
   <b>docker.sock</b>（若可达即等价 root）。<b>这一条无法用 deny 列表堵住</b> —— 把 socket 挪到别处也没用，
   因为 <code>connect</code> 根本不看路径授权。因此 §8 已把它列为必须正面解决的问题。</p>
-
-  <h3>实测中发现并修复的驱动缺陷（4 个）</h3>
-  <div class="tw"><table>
-    <thead><tr><th style="width:6%">#</th><th style="width:34%">缺陷</th><th>如何被发现 / 影响</th></tr></thead>
-    <tbody>
-      <tr><td>1</td><td>子进程 <code>os._exit()</code> 不刷 stdio 缓冲</td>
-          <td>自检退出码正确但诊断信息丢失。<b>退出码对、信息丢</b>是最难排查的一类问题</td></tr>
-      <tr><td>2</td><td>对<b>普通文件</b>使用目录级权限位</td>
-          <td>内核判 <code>EINVAL</code>。真实系统上因根目录存在 <code>/swap.img</code> 等普通文件而<b>必然触发</b>。
-              修法：文件只授 <code>EXECUTE/WRITE_FILE/READ_FILE/TRUNCATE</code>（内核 landlock.h 明载）</td></tr>
-      <tr><td>3</td><td>对<b>软链</b>调用 <code>open(O_PATH)</code> 会跟随到目标</td>
-          <td>目标恰为被 deny 的目录时，<b>等于把 deny 撤销掉</b>。修法：枚举时<b>一律跳过软链</b>
-              （其可访问性由父目录的授予覆盖，跟随后的访问按解析后的目标判定）</td></tr>
-      <tr><td>4</td><td>策略里 deny 路径<b>全部解析不出</b>时静默放行</td>
-          <td>等于从"有黑名单"退化成"无限制"（fail-open）。修法：<b>拒绝启动</b>，并另加
-              「有 deny 却只授出 1 条规则」的枚举失效判据</td></tr>
-    </tbody>
-  </table></div>
 
   <h3>实测结论</h3>
   <div class="tw"><table>
@@ -486,10 +463,16 @@ mobius-landlock --check      <span class="cmt"># 退出码 0 = 可用；非 0 = 
       /proc、/sys、/dev 下无 deny → 整片授予，不递归。</code></pre>
 
   <div class="box warn">
-    <span class="t">⚠️ 必须自检：授予规则条数</span>
-    枚举逻辑写错会<b>静默整盘放行</b>（等于没有沙盒）。本方案的 POC 第一版就因
-    <code>"/" + os.sep</code> 变成 <code>"//"</code> 导致判定失效，<b>只授予了 1 条规则</b>。
-    启动器必须统计并输出授予条数，作为第一道验收。
+    <span class="t">⚠️ 实现要点（三条硬性要求）</span>
+    <ul style="margin-top:6px">
+      <li><b>必须统计并输出授予规则条数</b>，作为第一道验收 —— 枚举一旦失效会静默整盘放行，等于没有沙盒。</li>
+      <li><b>普通文件只能授</b> <code>EXECUTE / WRITE_FILE / READ_FILE / TRUNCATE</code> 四项。
+          对其使用目录级权限位会被内核判 <code>EINVAL</code>；真实系统根目录存在普通文件（如 <code>/swap.img</code>），因此必然触发。</li>
+      <li><b>枚举时一律跳过软链</b>。对软链调用 <code>open(O_PATH)</code> 会跟随到目标，
+          若目标正是被 deny 的目录，等于把 deny 撤销掉。跳过是安全的 —— 软链自身的可访问性由父目录的授予覆盖，
+          跟随后的访问按解析后的目标路径判定。</li>
+      <li><b>fail-closed 兜底</b>：授予条数为 0、或"有 deny 却只授出 1 条"、或 deny 路径全部解析不出，均应<b>拒绝启动</b>。</li>
+    </ul>
   </div>
 
   <h3>3.3 为什么不需要枚举白名单</h3>
