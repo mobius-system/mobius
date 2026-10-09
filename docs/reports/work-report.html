@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>工作汇报 | 2026 年 10 月第 2 周</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --paper: #f6f8fb;
+      --line: #e5e9f0;
+      --navy: #1f3a5f;
+      --teal: #137c8b;
+      --green: #218653;
+      --amber: #b26b00;
+      --red: #c74b4b;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { max-width: 1180px; margin: 0 auto; padding: 34px 34px 48px; }
+    .masthead { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 28px; }
+    .eyebrow { color: var(--teal); font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+    h1 { font-size: clamp(30px, 4vw, 46px); letter-spacing: -.03em; line-height: 1.1; margin: 9px 0 11px; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 15px; }
+    .date { color: var(--muted); font-size: 13px; text-align: right; padding-top: 4px; white-space: nowrap; }
+    .hero { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; margin-bottom: 18px; }
+    .panel { background: var(--white); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 25px rgba(23, 32, 51, .05); }
+    .overview { padding: 25px 27px; background: var(--navy); color: var(--white); border: 0; }
+    .overview h2 { font-size: 15px; margin: 0 0 13px; font-weight: 600; color: #cfe2f6; }
+    .overview p { font-size: 21px; line-height: 1.5; margin: 0; max-width: 620px; }
+    .overview strong { color: #8fe4d9; }
+    .score { padding: 23px 24px; display: flex; flex-direction: column; justify-content: space-between; }
+    .score-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 13px; }
+    .score-num { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 4px; }
+    .score-num b { font-size: 48px; letter-spacing: -.05em; color: var(--green); }
+    .score-num span { color: var(--muted); font-size: 14px; }
+    .meter { height: 9px; border-radius: 10px; background: #edf1f5; overflow: hidden; }
+    .meter i { display: block; height: 100%; width: 82%; border-radius: inherit; background: var(--green); }
+    .score small { color: var(--muted); margin-top: 10px; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; margin: 28px 0 12px; }
+    .section-title h2 { margin: 0; font-size: 18px; }
+    .section-title span { color: var(--muted); font-size: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .metric { padding: 18px 19px; }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 10px 0 4px; }
+    .metric .delta { font-size: 12px; color: var(--green); }
+    .metric:nth-child(2) .delta { color: var(--teal); }
+    .metric:nth-child(4) .delta { color: var(--amber); }
+    .content-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 18px; }
+    .panel-body { padding: 21px 23px; }
+    .work-item { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: start; padding: 15px 0; border-bottom: 1px solid var(--line); }
+    .work-item:last-child { border-bottom: 0; padding-bottom: 2px; }
+    .check { width: 22px; height: 22px; border-radius: 50%; color: var(--white); background: var(--green); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+    .work-item h3 { font-size: 14px; margin: 0 0 5px; }
+    .work-item p { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0; }
+    .tag { padding: 5px 8px; border-radius: 4px; background: #edf8f2; color: var(--green); font-size: 11px; white-space: nowrap; }
+    .tag.progress { color: var(--teal); background: #eaf8fa; }
+    .tag.risk { color: var(--amber); background: #fff5e5; }
+    .bar-row { display: grid; grid-template-columns: 74px 1fr 38px; align-items: center; gap: 9px; margin: 16px 0; font-size: 12px; }
+    .bar-row label { color: var(--muted); }
+    .bar { height: 8px; background: #edf1f5; border-radius: 9px; overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
+    .bar-row b { text-align: right; font-size: 12px; }
+    .callout { padding: 14px 15px; border-left: 3px solid var(--amber); background: #fffaf1; color: #79500c; font-size: 12px; line-height: 1.6; margin-top: 21px; }
+    .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .road { padding: 15px; background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; }
+    .road b { display: block; font-size: 12px; color: var(--teal); margin-bottom: 7px; }
+    .road p { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0; }
+    footer { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 31px; }
+    @media (max-width: 800px) { .page { padding: 24px 18px 36px; } .masthead, .hero, .content-grid { grid-template-columns: 1fr; display: grid; } .date { text-align: left; } .metrics { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .metrics, .roadmap { grid-template-columns: 1fr; } .overview p { font-size: 18px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div><div class="eyebrow">WEEKLY WORK REPORT</div><h1>工作汇报</h1><p class="subtitle">聚焦交付 · 数据驱动 · 持续改进</p></div>
+      <div class="date">2026 年 10 月第 2 周<br />汇报人：产品与研发团队</div>
+    </header>
+
+    <section class="hero">
+      <div class="panel overview"><h2>本周一句话总结</h2><p>围绕核心体验完成一轮迭代，关键路径可用性提升至 <strong>82%</strong>，并为下一阶段发布清理了主要风险。</p></div>
+      <div class="panel score"><div class="score-top"><span>整体完成度</span><span>目标 85%</span></div><div class="score-num"><b>82%</b><span>较上周 +9%</span></div><div class="meter"><i></i></div><small>按计划推进，距离阶段目标还差 3 个百分点</small></div>
+    </section>
+
+    <div class="section-title"><h2>关键指标</h2><span>截至 10 月 9 日 18:00</span></div>
+    <section class="metrics">
+      <div class="panel metric"><div class="label">已完成事项</div><div class="value">18</div><div class="delta">↑ 6 项 · 超出计划</div></div>
+      <div class="panel metric"><div class="label">核心流程成功率</div><div class="value">96.4%</div><div class="delta">↑ 2.1% · 稳定提升</div></div>
+      <div class="panel metric"><div class="label">响应时延 P95</div><div class="value">420ms</div><div class="delta">↓ 80ms · 性能改善</div></div>
+      <div class="panel metric"><div class="label">待解决风险</div><div class="value">3</div><div class="delta">2 个本周已关闭</div></div>
+    </section>
+
+    <div class="section-title"><h2>进展与重点</h2><span>完成项 / 进行中 / 需关注</span></div>
+    <section class="content-grid">
+      <div class="panel panel-body">
+        <div class="work-item"><div class="check">✓</div><div><h3>核心流程体验优化</h3><p>完成入口收敛、异常提示统一与移动端适配，回归测试 42 条全部通过。</p></div><span class="tag">已完成</span></div>
+        <div class="work-item"><div class="check">✓</div><div><h3>数据看板一期</h3><p>上线 6 个关键指标，补齐日报导出能力，业务反馈收集完成。</p></div><span class="tag">已完成</span></div>
+        <div class="work-item"><div class="check" style="background:var(--teal)">→</div><div><h3>发布流程自动化</h3><p>已完成灰度脚本与回滚校验，正在接入审批节点和通知机制。</p></div><span class="tag progress">进行中</span></div>
+        <div class="work-item"><div class="check" style="background:var(--amber)">!</div><div><h3>第三方服务切换</h3><p>供应商 SLA 确认尚未完成，可能影响下周压测窗口。</p></div><span class="tag risk">需关注</span></div>
+      </div>
+      <div class="panel panel-body">
+        <h3 style="font-size:15px;margin:0 0 18px">目标完成度</h3>
+        <div class="bar-row"><label>产品交付</label><div class="bar"><i style="width:92%;background:var(--green)"></i></div><b>92%</b></div>
+        <div class="bar-row"><label>研发质量</label><div class="bar"><i style="width:86%;background:var(--teal)"></i></div><b>86%</b></div>
+        <div class="bar-row"><label>效率提升</label><div class="bar"><i style="width:75%;background:var(--navy)"></i></div><b>75%</b></div>
+        <div class="bar-row"><label>协作反馈</label><div class="bar"><i style="width:81%;background:#8b63a6"></i></div><b>81%</b></div>
+        <div class="callout"><b>风险提示：</b>第三方服务切换仍依赖外部确认。已准备兼容方案，若周一 12:00 前未完成，可按备用路径推进。</div>
+      </div>
+    </section>
+
+    <div class="section-title"><h2>下周计划</h2><span>10 月 12 日 - 10 月 16 日</span></div>
+    <section class="panel panel-body roadmap">
+      <div class="road"><b>01 · 交付</b><p>完成发布流程自动化接入，组织一次全链路演练。</p></div>
+      <div class="road"><b>02 · 质量</b><p>补齐异常场景监控，推进性能回归与容量评估。</p></div>
+      <div class="road"><b>03 · 协作</b><p>输出使用手册和复盘记录，收敛下一阶段需求池。</p></div>
+    </section>
+    <footer><span>内部工作汇报 · 版本 1.0</span><span>数据来源：项目周报与监控面板</span></footer>
+  </main>
+</body>
+</html>
