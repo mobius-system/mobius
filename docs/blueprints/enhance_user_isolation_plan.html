@@ -132,6 +132,13 @@
     .cmt{color:#7a849b}
     section{page-break-inside:avoid}
   }
+
+  /* ---------- screenshot ---------- */
+  figure.shot{margin:0 0 20px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+  figure.shot img{display:block;width:100%;height:auto;border-bottom:1px solid var(--line-2)}
+  figure.shot figcaption{padding:11px 15px;font-size:13px;line-height:1.75;color:var(--ink-3);background:#fafbfd}
+  figure.shot figcaption b{color:var(--ink-2)}
+  @media print{figure.shot{page-break-inside:avoid}}
 </style>
 </head>
 <body>
@@ -501,6 +508,11 @@
   <p><b>改动规模</b>：约 <b>6 个文件</b>，集中在下面 A / B / C 三组；D 组基本不用改。</p>
 
   <h3>4.1 用户创建与管理（系统角色：去 <code>developer</code>）</h3>
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-user-admin.png" alt="管理中心 · 用户管理" loading="lazy">
+  <figcaption><b>现状 · 管理中心 → 用户管理。</b>用户列表按角色标注（管理员 / 开发者 / 成员）；新建与编辑用户时的角色下拉当前为「<b>成员 / 开发者 / 管理员</b>」三档 —— 本次要去掉「开发者」。</figcaption>
+</figure>
+
   <div class="tw"><table>
     <thead><tr><th style="width:24%">界面</th><th style="width:26%">文件 : 行</th><th style="width:24%">现状</th><th>要改成</th></tr></thead>
     <tbody>
@@ -515,6 +527,21 @@
   </table></div>
 
   <h3>4.2 项目权限配置（项目角色：四档 → 三档）</h3>
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-project-settings.png" alt="项目设置弹层" loading="lazy">
+  <figcaption><b>现状 · 项目设置弹层。</b>含 <b>绑定路径</b>（对应 §3.1 的整改 A / M）与折叠的「项目成员」入口。</figcaption>
+</figure>
+
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-project-members.png" alt="项目成员管理" loading="lazy">
+  <figcaption><b>现状 · 项目成员。</b>四个角色 Tab（全部 / 负责人 / 管理员 / 成员 / 访客），每行一个角色下拉（项目成员 / 项目管理员 / 项目访客 / 项目负责人）。<br>本次改为 <b>负责人 / 开发者 / 访客</b> 三档。</figcaption>
+</figure>
+
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-invite-member.png" alt="添加成员" loading="lazy">
+  <figcaption><b>现状 · 添加成员。</b>角色下拉默认「项目成员」；另有「按群组加入」。角色选项需同步为两档。</figcaption>
+</figure>
+
   <div class="tw"><table>
     <thead><tr><th style="width:24%">界面</th><th style="width:26%">文件 : 行</th><th style="width:24%">现状</th><th>要改成</th></tr></thead>
     <tbody>
@@ -538,6 +565,11 @@
   </table></div>
 
   <h3>4.3 扩展项目（新增：普通用户锁死只读）</h3>
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-new-project.png" alt="新建项目 · 类型选择" loading="lazy">
+  <figcaption><b>现状 · 新建项目第一步。</b>三选一：经典项目 / 研究项目 / <b>莫比乌斯拓展项目</b>。<br>本次改为：<b>「莫比乌斯拓展项目」入口仅 <code>admin</code> 可见</b>。</figcaption>
+</figure>
+
   <div class="tw"><table>
     <thead><tr><th style="width:28%">界面</th><th style="width:24%">文件 : 行</th><th style="width:22%">现状</th><th>要改成</th></tr></thead>
     <tbody>
@@ -547,6 +579,11 @@
   </table></div>
 
   <h3>4.4 Skill / Memory 配置（基本不受影响）</h3>
+<figure class="shot">
+  <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-skill-memory.png" alt="管理中心 · Skill与Memory管理" loading="lazy">
+  <figcaption><b>现状 · 管理中心 → Skill与Memory管理。</b>分组为「我的用户级 / 项目级」，条目显示可见性（如「仅自己」），支持「修改权限」。<br>与项目角色模型<b>正交</b>，本次基本不动。</figcaption>
+</figure>
+
   <div class="tw"><table>
     <thead><tr><th style="width:28%">界面</th><th style="width:24%">文件</th><th style="width:24%">现状</th><th>判断</th></tr></thead>
     <tbody>
