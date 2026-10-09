@@ -232,6 +232,18 @@
   <p><b>「显式排除」的用途</b>：覆盖默认。例如在扩展项目里（默认 viewer），
   要把某人设为不可见，就得显式写一条「排除」记录。</p>
 
+  <div class="box note">
+    <span class="t">只记结果，不记过程</span>
+    记录表里存的<b>只有「最终权限状态」</b>，<b>不记录</b>「谁在何时授权的」。<br>
+    因此 <code>admin</code> 给自己加权限，与业务上添加一个成员，<b>在数据上完全等价</b> ——
+    不设独立的审计通道、不加「由管理员授予」之类的标记。<br>
+    整个模型只有两样东西：<b>显式记录</b> + <b>默认规则</b>，没有第三样。
+  </div>
+
+  <p style="font-size:13.5px;color:var(--ink-3)">注：现有 <code>project_memberships</code> 表里已有一个
+  <code>created_by</code> 列（记录"谁把此人加进来的"）。按"只记结果"它<b>不再有新含义</b>；
+  建议<b>保留不管</b>（无代码依赖它做判断），少动一处即少一处风险。</p>
+
   <h3>2.4 目标状态矩阵</h3>
   <div class="tw"><table>
     <thead><tr><th>能力</th><th>admin<br><span style="font-weight:400;color:var(--ink-3)">（默认）</span></th><th>owner</th><th>developer</th><th>viewer</th><th>非成员</th></tr></thead>
