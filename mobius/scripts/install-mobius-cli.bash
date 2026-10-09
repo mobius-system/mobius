@@ -21,13 +21,14 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   exit 1
 fi
 
-for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files; do
+for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
   echo "installed: $PREFIX/$cmd"
 done
 install -m 755 -- "$SRC_DIR/research_blackboard_cli.js" "$PREFIX/.research_blackboard_cli"
+install -m 755 -- "$SRC_DIR/mobius_schedule_cli.js" "$PREFIX/.mobius_schedule_cli"
 printf '%s\n' "$APP_DIR" > "$PREFIX/.mobius-cli-app-dir"
 chmod 644 "$PREFIX/.mobius-cli-app-dir"
 
@@ -39,6 +40,9 @@ echo "  declare_job_done --help"
 echo "  declare_job_failed --help"
 echo "  research_blackboard_read --help"
 echo "  research_blackboard_write --help"
+echo "  mobius_schedule_wake_me_up --help"
+echo "  mobius_schedule_list --help"
+echo "  mobius_schedule_cancel_all --help"
 case ":$PATH:" in
   *":$PREFIX:"*) ;;
   *) echo; echo "Note: PATH does not contain $PREFIX; add: export PATH=\"$PREFIX:\$PATH\"" ;;

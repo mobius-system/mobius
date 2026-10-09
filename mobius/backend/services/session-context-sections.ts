@@ -478,6 +478,39 @@ export const CompletionFlagSection = defineSection({
   },
 });
 
+export const ScheduledWakeupSection = defineSection({
+  key: 'scheduledWakeup',
+  title: { zh: '## Mobius 定时唤醒', en: '## Mobius scheduled wake-ups' },
+  build: {
+    zh: (c, t) => {
+      const sessionId = c.session?.session_id;
+      if (!sessionId || sessionId === '(待创建)') return null;
+      return md`
+        ${t.zh}
+        当用户要求稍后或周期性继续工作时，使用后台定时唤醒，不要自己 sleep 或轮询等待：
+        - 单次：\`mobius_schedule_wake_me_up ${sessionId} --once --after-time 30m --reminder "检查构建结果"\`
+        - 周期：\`mobius_schedule_wake_me_up ${sessionId} --interval --interval-time 1h --reminder "检查服务状态"\`
+        - 查看：\`mobius_schedule_list\`
+        - 取消本 Session 全部定时唤醒：\`mobius_schedule_cancel_all --session-id ${sessionId}\`
+        时长支持 30s、10m、2h、1d 格式；\`--once\` 与 \`--interval\` 必须二选一，interval 最短 10m。\`--reminder\` 要写唤醒后应执行的具体工作。
+      `;
+    },
+    en: (c, t) => {
+      const sessionId = c.session?.session_id;
+      if (!sessionId || sessionId === '(pending)' || sessionId === '(待创建)') return null;
+      return md`
+        ${t.en}
+        When the user asks to continue work later or periodically, use the backend scheduler instead of sleeping or polling:
+        - Once: \`mobius_schedule_wake_me_up ${sessionId} --once --after-time 30m --reminder "check the build result"\`
+        - Interval: \`mobius_schedule_wake_me_up ${sessionId} --interval --interval-time 1h --reminder "check service health"\`
+        - List: \`mobius_schedule_list\`
+        - Cancel every wake-up for this Session: \`mobius_schedule_cancel_all --session-id ${sessionId}\`
+        Durations use forms such as 30s, 10m, 2h, and 1d. Exactly one of \`--once\` or \`--interval\` is required; intervals are at least 10m. The \`--reminder\` is the concrete work to perform after wake-up.
+      `;
+    },
+  },
+});
+
 export const IssueSection = defineSection({
   key: 'issue',
   title: { zh: '## Issue', en: '## Issue' },
@@ -555,6 +588,7 @@ export const SESSION_SECTIONS: SectionDef[] = [
   MemorySection,
   SkillsSection,
   WorktreeSection,
+  ScheduledWakeupSection,
   CompletionFlagSection,
   IssueSection,
   SessionSection,

@@ -167,6 +167,7 @@ function zh_add_memory_info(lines: string[], memories: any[], project: any, issu
       lines.push(`此外，如果需要记住一些信息供未来使用，请写入对应的知识文件（不要写入 ~/.codex 或 ~/.claude）：`);
       lines.push(`- 如果是项目通用知识（整体事实、通用做法、跨任务可复用的经验，写入 project_knowledge 的内容务必非常非常精简、克制）→ \`${pkPath}\`；`);
       lines.push(`- 如果是仅与当前任务相关、通用性有限的知识，写入 issue_knowledge（简洁、不要废话） → \`${ikPath}\`；`);
+      lines.push('无论记录在哪里，都要记住：必须按照功能模块作为索引，分门别类写入。绝不允许记流水账。发现过时的、矛盾的知识，直接清除！');
     } else {
       lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
     }
@@ -242,6 +243,19 @@ function zh_add_completion_flag_info(lines: string[], session: any, project: any
   if (isAssistantSession(session)) return;
   lines.push('## 当任务完成时的最后一步');
   lines.push(`当任务最终成功时，运行 \`declare_job_done ${session.session_id}\` 删除 running.flag 文件；当任务最终失败时，运行 \`declare_job_failed ${session.session_id} "失败原因"\` 写入 failed.flag 并删除 running.flag。不要轻易放弃，尝试一切可能解决问题的方法，直到你确信无法继续为止。每当用户提出新问题或新指令时，都会创建新的 flag 文件。`);
+}
+
+function zh_add_scheduled_wakeup_info(lines: string[], session: any): void {
+  if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
+  const sessionId = session.session_id;
+  lines.push('## Mobius 定时唤醒');
+  lines.push('当用户要求稍后或周期性继续工作时，使用后台定时唤醒，不要自己 sleep 或轮询等待：');
+  lines.push(`- 单次：\`mobius_schedule_wake_me_up ${sessionId} --once --after-time 30m --reminder "检查构建结果"\``);
+  lines.push(`- 周期：\`mobius_schedule_wake_me_up ${sessionId} --interval --interval-time 1h --reminder "检查服务状态"\``);
+  lines.push('- 查看：`mobius_schedule_list`');
+  lines.push(`- 取消本 Session 全部定时唤醒：\`mobius_schedule_cancel_all --session-id ${sessionId}\``);
+  lines.push('时长支持 30s、10m、2h、1d 格式；`--once` 与 `--interval` 必须二选一，interval 最短 10m。`--reminder` 要写唤醒后应执行的具体工作。');
+  lines.push('');
 }
 
 function zh_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -366,6 +380,7 @@ function en_add_memory_info(lines: string[], memories: any[], project: any, issu
       lines.push(`Additionally, if you need to remember information for future sessions, write it to the appropriate knowledge file (do not write to ~/.codex or ~/.claude):`);
       lines.push(`- For project-wide general knowledge (overall facts, common practices, cross-task reusable experience; keep what you write into project_knowledge concise and restrained) → \`${pkPath}\`;`);
       lines.push(`- For knowledge relevant only to the current task with limited generality, write to issue_knowledge → \`${ikPath}\`;`);
+      lines.push('No matter where the knowledge are kept, remember: they must be indexed by functional module and written in categories. Never allow diary-like knowledge record. If outdated or contradictory knowledge is found, remove it immediately!');
     } else {
       lines.push(`Additionally, if you need to remember information for future sessions, please write to ${project.bind_path}/${HIDDEN_FOLDER_NAME}/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
     }
@@ -443,6 +458,19 @@ function en_add_completion_flag_info(lines: string[], session: any, project: any
   lines.push(`When the task ultimately succeeds, run \`declare_job_done ${session.session_id}\` to remove running.flag; when it ultimately fails, run \`declare_job_failed ${session.session_id} "failure reason"\` to write failed.flag and remove running.flag. Do not give up easily — try every possible way to solve the problem until you are convinced you cannot continue. Whenever the user provides a new question or instruction, a new flag file will be created.`);
 }
 
+function en_add_scheduled_wakeup_info(lines: string[], session: any): void {
+  if (!(session && session.session_id && session.session_id !== '(待创建)')) return;
+  const sessionId = session.session_id;
+  lines.push('## Mobius scheduled wake-ups');
+  lines.push('When the user asks to continue work later or periodically, use the backend scheduler instead of sleeping or polling:');
+  lines.push(`- Once: \`mobius_schedule_wake_me_up ${sessionId} --once --after-time 30m --reminder "check the build result"\``);
+  lines.push(`- Interval: \`mobius_schedule_wake_me_up ${sessionId} --interval --interval-time 1h --reminder "check service health"\``);
+  lines.push('- List: `mobius_schedule_list`');
+  lines.push(`- Cancel every wake-up for this Session: \`mobius_schedule_cancel_all --session-id ${sessionId}\``);
+  lines.push('Durations use forms such as 30s, 10m, 2h, and 1d. Exactly one of `--once` or `--interval` is required; intervals are at least 10m. The `--reminder` is the concrete work to perform after wake-up.');
+  lines.push('');
+}
+
 // PC task mode prompt injection (Electron/TUI sessions only, when
 // session.pc_client_metadata is non-null; web sessions return early).
 function en_add_pc_task_mode_info(lines: string[], session: any): void {
@@ -464,6 +492,7 @@ const ADD_FNS: Record<string, any> = {
     memory: zh_add_memory_info,
     skill: zh_add_skill_info,
     worktree: zh_add_worktree_info,
+    scheduledWakeup: zh_add_scheduled_wakeup_info,
     completionFlag: zh_add_completion_flag_info,
     issue: zh_add_issue_level_info,
     session: zh_add_session_level_info,
@@ -479,6 +508,7 @@ const ADD_FNS: Record<string, any> = {
     memory: en_add_memory_info,
     skill: en_add_skill_info,
     worktree: en_add_worktree_info,
+    scheduledWakeup: en_add_scheduled_wakeup_info,
     completionFlag: en_add_completion_flag_info,
     issue: en_add_issue_level_info,
     session: en_add_session_level_info,
@@ -498,6 +528,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.memory(lines, memories, project, issue);
   fns.skill(lines, skills);
   fns.worktree(lines, issue, project, session);
+  fns.scheduledWakeup(lines, session);
   fns.completionFlag(lines, session, project);
   fns.issue(lines, issue);
   fns.session(lines, session);

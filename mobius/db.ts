@@ -1339,4 +1339,54 @@ function fixDirectConversationType() {
 }
 fixDirectConversationType();
 
+/*
+ * Create the durable Mobius scheduled wake-up store for both new and existing databases.
+ */
+function migrateScheduledWakeups() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS scheduled_wakeups (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('once','interval')),
+        schedule_seconds INTEGER NOT NULL CHECK(schedule_seconds > 0),
+        reminder TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','cancelled')),
+        next_run_at TEXT,
+        last_run_at TEXT,
+        last_status TEXT CHECK(last_status IS NULL OR last_status IN ('ok','error')),
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES sessions_v2(session_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduled_wakeups_due
+        ON scheduled_wakeups(status, next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_wakeups_user
+        ON scheduled_wakeups(user_id, status, next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_wakeups_session
+        ON scheduled_wakeups(user_id, session_id, status);
+      CREATE TABLE IF NOT EXISTS scheduled_wakeup_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wakeup_id TEXT NOT NULL,
+        scheduled_for TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('dispatching','ok','error')),
+        turn_number INTEGER,
+        error TEXT,
+        started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        finished_at TEXT,
+        UNIQUE(wakeup_id, scheduled_for),
+        FOREIGN KEY (wakeup_id) REFERENCES scheduled_wakeups(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduled_wakeup_runs_job
+        ON scheduled_wakeup_runs(wakeup_id, id DESC);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  scheduled wake-ups 迁移失败:', (e as Error).message);
+  }
+}
+migrateScheduledWakeups();
+
 export { db, DB_PATH };

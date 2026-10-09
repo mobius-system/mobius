@@ -436,7 +436,7 @@
       </tr>
       <tr>
         <td><span class="pill p-mute">🟡</span></td>
-        <td><b>下载接口放行面过宽</b>：放行<b>任意 <code>/tmp</code></b> 与<b>共享 upload 目录</b>；
+        <td><b>下载接口放行面过宽</b>（<b>本轮决定不收窄</b>，见 §4.2）：放行<b>任意 <code>/tmp</code></b> 与<b>共享 upload 目录</b>；
         项目前缀为<b>纯词法</b>、无 realpath。</td>
         <td><code>routes/files.ts:60-64</code>、<code>:80-89</code></td>
       </tr>
@@ -446,7 +446,7 @@
     <span class="t">整改</span>
     <b>D</b>　文件写端点改用<b>写权限 gate</b>（37 处 → 写权限版本）
     <b>F</b>　读路径补 <code>assertNoSymlink</code>
-    <b>H</b>　收窄 download 放行面
+    <span style="font-size:13.5px;color:var(--ink-3)">（下载接口放行面<b>本轮不收窄</b>，见 §4.2）</span>
   </div>
   <div class="box ok">
     <span class="t">已守住的对照（改的时候别改坏）</span>
@@ -488,7 +488,10 @@
     <b>G-1</b>　给 <code>graphRouter.get('/:researchId')</code> 加 <code>downloadAuth</code> + <code>canReadResearch</code>
     <b>L</b>　黑板 <code>author</code>/<code>session_id</code> 改由<b>服务端注入</b>
     <b>E</b>　<code>created_by</code> 短路追加「<b>仍是项目成员</b>」条件 ——
-    <b>包括用户自己创建的会话也一并断绝</b>（已定：彻底断）
+    <b>包括用户自己创建的会话也一并断绝</b>（已定：彻底断）<br>
+    <b>会话不会变成孤岛</b>：被踢者的旧会话<b>对项目内成员仍然可见</b>
+    （<code>developer</code> 及以上可修改，<code>viewer</code> 只读）。<br>
+    <b>被踢时正在运行的会话 → 立即停止。</b>
   </div>
 
   <!-- 3.5 -->
@@ -563,9 +566,128 @@
   </div>
 </section>
 
+<!-- ============ FSPATH ============ -->
+<section>
+  <h2><span class="n">4</span>文件系统路径权限盘点</h2>
+  <p><b>所有涉及"按路径判权限"的入口，逐个列出判定依据、放行面与风险。</b>
+  本轮对下载接口<b>决定不收窄</b>（见 §4.3），其余按 §3 的整改执行。</p>
+
+  <h3>4.1 入口总览</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">入口</th><th style="width:26%">判定依据</th><th style="width:30%">放行面</th><th style="width:12%">风险</th><th>本轮</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>项目文件 API —— 读</td>
+        <td><code>resolveProjectPath(bind_path, path)</code><br><span style="font-size:12px">词法围栏 + <code>..</code> 剥离</span></td>
+        <td>项目 <code>bind_path</code> 子树</td>
+        <td><span class="pill p-warn">软链逃逸</span></td>
+        <td><b>F</b></td>
+      </tr>
+      <tr>
+        <td>项目文件 API —— <b>写</b></td>
+        <td>同上 + <code>assertNoSymlink</code></td>
+        <td>同上</td>
+        <td><span class="pill p-mute">已守住</span></td>
+        <td><b>D</b>（改权限 gate）</td>
+      </tr>
+      <tr>
+        <td><code>/api/download</code><br><code>/api/files/download</code></td>
+        <td><code>canDownloadPath()</code><br><span style="font-size:12px">见 §4.2</span></td>
+        <td><b>六个</b>放行面</td>
+        <td><span class="pill p-warn">面很宽</span></td>
+        <td><b>决定不收窄</b></td>
+      </tr>
+      <tr>
+        <td>code-server 工作区</td>
+        <td><code>isAllowedWorkspacePath()</code></td>
+        <td><b>任意 <code>/tmp</code></b> ∪ <code>bind_path</code> 子树 ∪ <b><code>bind_path</code> 的父目录</b><br><span style="font-size:12px">无 realpath</span></td>
+        <td><span class="pill p-bad">父目录＝全站</span></td>
+        <td><b>改</b>（§3.3）</td>
+      </tr>
+      <tr>
+        <td>Web 终端 cwd</td>
+        <td><code>Sessions.findByIdForUser</code></td>
+        <td>会话 cwd（来自 <code>bind_path</code>）</td>
+        <td><span class="pill p-mute">已守住</span></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>上下文 <code>import-local</code></td>
+        <td><b>无任何约束</b></td>
+        <td><b>任意服务器绝对路径</b></td>
+        <td><span class="pill p-warn">任意读</span></td>
+        <td><b>I</b></td>
+      </tr>
+      <tr>
+        <td>Agent 的 cwd</td>
+        <td><code>resolveSessionWorkspace</code></td>
+        <td>会话所属项目的 <code>bind_path</code></td>
+        <td><span class="pill p-bad">受 <code>bindPathManual</code> 影响</span></td>
+        <td><b>A / M</b></td>
+      </tr>
+      <tr>
+        <td>用户工作区</td>
+        <td><code>users.work_dir</code>（约定式）</td>
+        <td>仅应用层约束</td>
+        <td><span class="pill p-warn">无 OS 级兜底</span></td>
+        <td><b>N</b>（沙盒兜底）</td>
+      </tr>
+      <tr>
+        <td>Skill / Memory 存储</td>
+        <td>scope 决定：<code>user:&lt;uid&gt;</code> / <code>project:&lt;uid&gt;:&lt;pid&gt;</code></td>
+        <td>按 scope + <code>canReadContextItem</code></td>
+        <td><span class="pill p-mute">已守住</span></td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.2 下载接口的六个放行面（本轮决定：不收窄）</h3>
+  <p><code>routes/files.ts:80-89</code> 的实现 —— <b>任一条件满足即放行</b>：</p>
+  <pre><code>function canDownloadPath(req, absPath) {
+  const userRoot = path.resolve(user.work_dir);
+  return absPath === userRoot
+    || absPath.startsWith(userRoot + path.sep)      <span class="cmt">// ① 自己的 work_dir</span>
+    || isExtensionUserDataPath(absPath, user.id)    <span class="cmt">// ② 自己的扩展数据目录</span>
+    || isMobiusUploadPath(absPath)                  <span class="cmt">// ③ APP_DIR/.mobius/upload —— 全站共享</span>
+    || isSystemTempPath(absPath)                    <span class="cmt">// ④ os.tmpdir() —— 全站共享</span>
+    || isReadableProjectPath(req, absPath);         <span class="cmt">// ⑤ 可读项目的 bind_path 子树</span>
+}</code></pre>
+  <div class="tw"><table>
+    <thead><tr><th style="width:6%">#</th><th style="width:28%">放行面</th><th>说明 / 风险</th></tr></thead>
+    <tbody>
+      <tr><td>①</td><td>自己的 <code>work_dir</code></td><td>合理，符合"用户自己的地盘"</td></tr>
+      <tr><td>②</td><td>自己的扩展数据目录<br><code>EXTENSION_DATA_ROOT/&lt;ext&gt;/users/&lt;uid&gt;/…</code></td><td>合理；<code>parts[1]==='users' &amp;&amp; parts[2]===userId</code> 做了归属校验</td></tr>
+      <tr><td>③</td><td><b><code>APP_DIR/.mobius/upload</code></b></td><td><span class="pill p-warn">全站共享</span> 任何登录用户可下载该目录下任意文件（需知道文件名）。<b>本轮保留</b></td></tr>
+      <tr><td>④</td><td><b><code>os.tmpdir()</code>（<code>/tmp</code>）</b></td><td><span class="pill p-warn">全站共享</span> 同上。<b>本轮保留</b> —— 会话产出的临时文件、ZIP 导入中间产物都落这儿</td></tr>
+      <tr><td>⑤</td><td>可读项目的 <code>bind_path</code> 子树</td><td>合理，但<b>纯词法</b>前缀比较、<b>无 realpath</b>；且每次请求<b>遍历全部项目</b>（312 个）→ 性能隐患</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box note">
+    <span class="t">为什么本轮不收紧 ③④</span>
+    它们放开是有实际依赖的 —— 实测 <code>jsonl-vscode-link.tsx:148</code> 就是拼
+    <code>/api/download?path=&lt;服务器绝对路径&gt;</code> 来打开会话 JSONL；
+    扩展上传（multer 落在系统临时目录）、ZIP 导入等也依赖这些位置。
+    <b>收紧会直接造成功能回归</b>，因此本轮保留；风险登记在 §7（已知缺口）。
+  </div>
+
+  <h3>4.3 本轮处置汇总</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">路径问题</th><th style="width:18%">处置</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>读路径不查软链（项目文件 / 下载）</td><td><b>改</b></td><td>整改 <b>F</b>：读路径补 <code>assertNoSymlink</code></td></tr>
+      <tr><td>code-server 放行 <code>bind_path</code> 父目录</td><td><b>改</b></td><td>去掉父目录放行；补 realpath</td></tr>
+      <tr><td><code>import-local</code> 任意绝对路径</td><td><b>改</b></td><td>整改 <b>I</b>：加根约束</td></tr>
+      <tr><td>Agent 的 cwd 由 <code>bind_path</code> 决定</td><td><b>改</b></td><td>整改 <b>A / M</b>：<code>bindPathManual</code> 仅 admin；存量扫描</td></tr>
+      <tr><td><b>下载接口的 <code>/tmp</code> 与共享 upload</b></td><td><b>保留</b></td><td><b>本轮决定不收窄</b>（见 §4.2）；风险入 §7</td></tr>
+      <tr><td>用户工作区无 OS 级兜底</td><td><b>兜住</b></td><td>整改 <b>N</b>：沙盒 deny 其他用户的 <code>work_dir</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
 <!-- ============ FRONTEND ============ -->
 <section>
-  <h2><span class="n">4</span>前端适配</h2>
+  <h2><span class="n">5</span>前端适配</h2>
 
   <div class="box bad">
     <span class="t">先明确性质</span>
@@ -579,7 +701,7 @@
     本次<b>沿用并强化</b>这个模式，不另造一套规则（两套规则必然随时间跑偏）。
   </div>
 
-  <h3>4.1 菜单总览与更改计划</h3>
+  <h3>5.1 菜单总览与更改计划</h3>
   <p><b>全部配置 / 权限相关菜单的逐项清单。</b>改动集中在 <b>管理中心 · 用户管理</b>、
   <b>项目成员</b>、<b>新建项目</b> 三处；其余标注「不改」，列出以免误改。</p>
 
@@ -638,7 +760,7 @@
   <span class="pill p-ok">新增</span> 新建菜单 ·
   <span class="pill p-mute">不改</span> 明确不动（列出以免误改）</p>
 
-  <h3>4.2 用户创建与管理（系统角色：去 <code>developer</code>）</h3>
+  <h3>5.2 用户创建与管理（系统角色：去 <code>developer</code>）</h3>
 
 <figure class="shot">
   <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-user-admin.png" alt="管理中心 · 用户管理" loading="lazy">
@@ -657,7 +779,7 @@
     </tbody>
   </table></div>
 
-  <h3>4.3 项目权限配置（项目角色：四档 → 三档）</h3>
+  <h3>5.3 项目权限配置（项目角色：四档 → 三档）</h3>
 
 <figure class="shot">
   <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-project-settings.png" alt="项目设置弹层" loading="lazy">
@@ -694,7 +816,7 @@
     </tbody>
   </table></div>
 
-  <h3>4.4 扩展项目（普通用户锁死只读）</h3>
+  <h3>5.4 扩展项目（普通用户锁死只读）</h3>
 
 <figure class="shot">
   <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-new-project.png" alt="新建项目 · 类型选择" loading="lazy">
@@ -708,7 +830,7 @@
     </tbody>
   </table></div>
 
-  <h3>4.5 Skill / Memory 配置（基本不受影响）</h3>
+  <h3>5.5 Skill / Memory 配置（基本不受影响）</h3>
 
 <figure class="shot">
   <img src="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/iso-skill-memory.png" alt="管理中心 · Skill与Memory管理" loading="lazy">
@@ -724,7 +846,7 @@
     </tbody>
   </table></div>
 
-  <h3>4.6 新增：管理中心「用户与权限」Tab</h3>
+  <h3>5.6 新增：管理中心「用户与权限」Tab</h3>
   <p>本次唯一的<b>新增菜单</b>，给 <code>admin</code> 用。位置为管理中心第 9 个 Tab（现有 8 个见 §4.1）。</p>
   <div class="tw"><table>
     <thead><tr><th style="width:26%">功能区</th><th>内容</th></tr></thead>
@@ -736,7 +858,7 @@
     </tbody>
   </table></div>
 
-  <h3>4.7 配套后端改动：R　下发统一「权限块」</h3>
+  <h3>5.7 配套后端改动：R　下发统一「权限块」</h3>
   <div class="box note">
     后端在各返回体（项目 / 会话 / 问题 / 研究）附带由 <code>access-control.ts</code> <b>同一批函数</b>算出的结果：
     <pre><code>"permissions": {
@@ -748,11 +870,11 @@
     <b>关键</b>：所有钳制（默认规则、扩展项目、调整矩阵）<b>只在这一处实现</b>，前端各处判断自然跟着对。
   </div>
 
-  <h3>4.8 建议：角色枚举收口</h3>
+  <h3>5.8 建议：角色枚举收口</h3>
   <p>项目角色现在在 <b>3 个文件各写一份</b>（TeamPanel / member-invite / SettingsPanel 文案），系统角色在 2 处。
   建议新增 <code>frontend/src/constants/roles.ts</code>：角色集合、标签、配色、选项<b>只在这里定义</b>，其余引用。</p>
 
-  <h3>4.9 验证</h3>
+  <h3>5.9 验证</h3>
   <p>按简易模式 SOP：改码 → playwright 截图（<code>127.0.0.1:45618</code>，<code>fuqingxu/fuqingxu</code>）→
   <code>display_images</code> 展示 → 不满足则重来 → 通过后 <code>python3 start.py</code> 部署。</p>
   <p>重点验证：① 项目成员角色只剩 负责人 / 开发者 / 访客；② 用户管理角色只剩 普通用户 / 管理员；
@@ -761,7 +883,7 @@
 
 <!-- ============ 4 ============ -->
 <section>
-  <h2><span class="n">5</span>整改清单（汇总）</h2>
+  <h2><span class="n">6</span>整改清单（汇总）</h2>
   <div class="tw"><table>
     <thead><tr><th style="width:8%">编号</th><th style="width:16%">功能区</th><th>内容</th><th style="width:14%">类型</th></tr></thead>
     <tbody>
@@ -773,7 +895,6 @@
       <tr><td><b>F</b></td><td>文件</td><td>读路径补软链检查</td><td><span class="pill p-warn">安全</span></td></tr>
       <tr><td><b>G-1</b></td><td>研究</td><td><code>research-graph</code> 端点补鉴权</td><td><span class="pill p-warn">安全</span></td></tr>
       <tr><td><b>G-2</b></td><td>任务</td><td><code>tasks/:id/risk</code> 是否补 token —— <b>待定</b></td><td><span class="pill p-mute">待定</span></td></tr>
-      <tr><td><b>H</b></td><td>文件</td><td>收窄 download 放行面</td><td><span class="pill p-mute">加固</span></td></tr>
       <tr><td><b>I</b></td><td>上下文</td><td><code>import-local</code> 加根约束</td><td><span class="pill p-mute">加固</span></td></tr>
       <tr><td><b>J</b></td><td>会话 / 上下文</td><td><code>/emphasize</code> 的 item 加归属校验</td><td><span class="pill p-mute">加固</span></td></tr>
       <tr><td><b>K</b></td><td>群聊</td><td>加「邀请者须拥有该 agent」校验</td><td><span class="pill p-mute">加固</span></td></tr>
@@ -791,7 +912,7 @@
 
 <!-- ============ 5 ============ -->
 <section>
-  <h2><span class="n">6</span>已拍板的策略边界</h2>
+  <h2><span class="n">7</span>已拍板的策略边界</h2>
   <div class="tw"><table>
     <thead><tr><th style="width:5%">#</th><th style="width:46%">决策</th><th>落地</th></tr></thead>
     <tbody>
@@ -809,7 +930,7 @@
       <tr><td>3</td><td>只读成员：<b>不能对话、不能改删文件</b></td><td>见 <b>C</b>、<b>D</b></td></tr>
       <tr><td>4</td><td><code>bindPathManual</code> 普通用户堵掉、仅管理员保留</td><td>见 <b>A</b></td></tr>
       <tr><td>5</td><td>公用 <code>/tmp</code>、<code>~/.claude</code> 隔离<b>延后</b></td><td>见 §6</td></tr>
-      <tr><td>6</td><td>被移出项目者：彻底断权（<b>含自己创建的会话</b>）</td><td>见 <b>E</b></td></tr>
+      <tr><td>6</td><td>被移出项目者：彻底断权（<b>含自己创建的会话</b>）；其旧会话<b>对项目内成员仍可见</b>；<b>被踢时正在跑的会话立即停止</b></td><td>见 <b>E</b></td></tr>
       <tr><td>7</td><td>沙盒按「<b>会话归谁</b>」判定</td><td>见 <b>N</b></td></tr>
       <tr><td>8</td><td>管理员不套沙盒；普通用户强制套</td><td>见 <b>P</b></td></tr>
       <tr><td>9</td><td>沙盒不可用 → 回退「不允许创建普通用户」</td><td>见 <b>Q</b></td></tr>
@@ -819,7 +940,7 @@
 
 <!-- ============ 6 ============ -->
 <section>
-  <h2><span class="n">7</span>已知并接受的缺口</h2>
+  <h2><span class="n">8</span>已知并接受的缺口</h2>
   <p>以下<b>延后，不阻塞本轮</b>：</p>
   <div class="tw"><table>
     <thead><tr><th style="width:26%">缺口</th><th>后果</th></tr></thead>
@@ -835,7 +956,7 @@
 
 <!-- ============ 7 ============ -->
 <section>
-  <h2><span class="n">8</span>分阶段与验收</h2>
+  <h2><span class="n">9</span>分阶段与验收</h2>
 
   <h3>7.1 阶段</h3>
   <div class="tw"><table>

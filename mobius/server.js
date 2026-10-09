@@ -98,6 +98,7 @@ const adminRoutes = require('./backend/routes/admin');
 const designerEyeRoutes = require('./backend/routes/designer-eye/router');
 const extRoutes = require('./backend/routes/ext');
 const aimuxRoutes = require('./backend/routes/aimux');
+const { router: scheduledWakeupsRoutes } = require('./backend/routes/scheduled-wakeups');
 const aimuxBridgeProxy = require('./backend/routes/aimux-bridge-proxy');
 // 黑客帝国数字雨: /api/token_stream 反代到本机 token-proxy (server.ts).
 const { router: tokenStreamProxyRouter } = require('./backend/routes/token-stream-proxy');
@@ -132,6 +133,7 @@ app.use('/api/memories', memoryJsonParser, memoriesRoutes);
 app.use('/api/admin/designer-eye', designerEyeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/aimux', aimuxRoutes);
+app.use('/api/scheduled-wake-ups', scheduledWakeupsRoutes);
 // /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
 app.use('/api/token_stream', tokenStreamProxyRouter);
 // /aimux_bridge/* → 内置 aimux bridge broker (127.0.0.1:AIMUX_BRIDGE_PORT).
@@ -294,6 +296,7 @@ const { startForgottenFlagScanner } = require('./backend/services/forgotten-flag
 const { startInactiveTmuxCleaner } = require('./backend/services/inactive-tmux-cleaner');
 const { startResearchBlackboardDeliveryScanner } = require('./backend/services/research-blackboard');
 const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
+const { startScheduledWakeupScheduler } = require('./backend/services/scheduled-wakeup-scheduler');
 const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
 const { startSessionTitleSyncer } = require('./backend/services/session-title-syncer');
 const { startSessionTitleGenerator } = require('./backend/services/session-title-generator');
@@ -414,6 +417,9 @@ server.listen(PORT, () => {
   // 拓展通用定时器: 扫描 protected_data/extension/<name>/schedules/*.json,
   // 到点后以对应用户身份触发该拓展 handler.
   startExtensionScheduler();
+  // Mobius 定时唤醒: 扫描 SQLite 中到期任务，通过标准 Session 消息链路投递提醒
+  // Mobius scheduled wake-ups scan durable SQLite tasks and deliver through the normal Session message path
+  startScheduledWakeupScheduler();
   // agent_status 单一真相源: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
   // 活跃态 session 的 agent_status 并写回; 终态(failed/stale)每小时扫一次.
   startAgentStatusSyncer();

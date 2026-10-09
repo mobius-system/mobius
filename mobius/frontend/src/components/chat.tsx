@@ -1432,8 +1432,19 @@ function SessionBashCommandsModal({ sessionId, onClose }: {
   )
 }
 
-// 读取并展示当前 Claude Code 会话所属项目目录下的活跃定时任务 (durable scheduled tasks).
-// 数据来自后端 /api/sessions/:id/features/scheduled-tasks (读 <bind_path>/.claude/scheduled_tasks.json + .lock).
+/*
+ * Parse the compact s/m/h/d duration accepted by both the wake-up CLI and this modal.
+ */
+function parseScheduledWakeupDuration(value: string): number | null {
+  const match = value.trim().match(/^([1-9][0-9]*)([smhd])$/)
+  if (!match) return null
+  const scale: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 }
+  const seconds = Number(match[1]) * scale[match[2]]
+  return Number.isSafeInteger(seconds) && seconds <= 365 * 24 * 60 * 60 ? seconds : null
+}
+
+// 同一弹窗分区展示 Mobius 后台唤醒与 Claude Code 原生定时任务
+// One modal separates Mobius backend wake-ups from Claude Code native scheduled tasks
 function SessionScheduledTasksModal({ sessionId, onClose }: {
   sessionId: string
   onClose: () => void
@@ -1441,16 +1452,27 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [mobiusWakeups, setMobiusWakeups] = useState<any[]>([])
+  const [wakeupMode, setWakeupMode] = useState<'once' | 'interval'>('once')
+  const [wakeupDuration, setWakeupDuration] = useState('30m')
+  const [wakeupReminder, setWakeupReminder] = useState('')
+  const [wakeupSaving, setWakeupSaving] = useState(false)
+  const [wakeupError, setWakeupError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const d = await api(`/api/sessions/${sessionId}/features/scheduled-tasks`)
+      const [d, wakeupData] = await Promise.all([
+        api(`/api/sessions/${sessionId}/features/scheduled-tasks`),
+        api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`),
+      ])
       setData(d)
+      setMobiusWakeups(Array.isArray(wakeupData?.wakeups) ? wakeupData.wakeups : [])
     } catch (e: any) {
       setError(e?.message || '读取定时任务失败')
       setData(null)
+      setMobiusWakeups([])
     } finally {
       setLoading(false)
     }
@@ -1464,6 +1486,56 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
   const schedulerAlive = !!data?.scheduler_alive
   const available = data?.available !== false
 
+  const createWakeup = useCallback(async () => {
+    const seconds = parseScheduledWakeupDuration(wakeupDuration)
+    if (seconds == null) {
+      setWakeupError('时长格式必须为正整数 + s/m/h/d，且不超过 365d')
+      return
+    }
+    if (wakeupMode === 'interval' && seconds < 600) {
+      setWakeupError('周期唤醒最短间隔为 10m')
+      return
+    }
+    const reminder = wakeupReminder.trim()
+    if (!reminder) {
+      setWakeupError('请填写唤醒后要执行的提醒内容')
+      return
+    }
+    setWakeupSaving(true)
+    setWakeupError('')
+    try {
+      await api('/api/scheduled-wake-ups', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: sessionId,
+          mode: wakeupMode,
+          ...(wakeupMode === 'once' ? { after_seconds: seconds } : { interval_seconds: seconds }),
+          reminder,
+        }),
+      })
+      setWakeupReminder('')
+      await load()
+    } catch (e: any) {
+      setWakeupError(e?.message || '创建定时唤醒失败')
+    } finally {
+      setWakeupSaving(false)
+    }
+  }, [load, sessionId, wakeupDuration, wakeupMode, wakeupReminder])
+
+  const cancelAllWakeups = useCallback(async () => {
+    if (!window.confirm(`确定取消本 Session 的 ${mobiusWakeups.length} 个 Mobius 定时唤醒吗？`)) return
+    setWakeupSaving(true)
+    setWakeupError('')
+    try {
+      await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+      await load()
+    } catch (e: any) {
+      setWakeupError(e?.message || '取消定时唤醒失败')
+    } finally {
+      setWakeupSaving(false)
+    }
+  }, [load, mobiusWakeups.length, sessionId])
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -1474,7 +1546,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
             <span className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
-            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {tasks.length + sessionTasks.length} 个</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {mobiusWakeups.length + tasks.length + sessionTasks.length} 个</span>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading}
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
@@ -1496,8 +1568,78 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
           {!loading && error && (
             <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-[length:var(--fs-md)] text-red-300">{error}</pre>
           )}
+          {!loading && !error && (
+            <section data-testid="mobius-scheduled-wakeups-section" className="mb-5 rounded-xl border p-4" style={{ borderColor: 'rgba(96,165,250,0.3)', background: 'rgba(59,130,246,0.05)' }}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>Mobius 后台定时唤醒</div>
+                  <div className="mt-0.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>由 Mobius 守护进程触发，不依赖 Agent 持续运行</div>
+                </div>
+                {mobiusWakeups.length > 0 && (
+                  <button type="button" onClick={() => void cancelAllWakeups()} disabled={wakeupSaving}
+                    className="rounded-md border border-red-500/30 px-2.5 py-1.5 text-[length:var(--fs-sm)] text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-40">
+                    取消本 Session 全部 ({mobiusWakeups.length})
+                  </button>
+                )}
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-[116px_110px_minmax(0,1fr)_auto]">
+                <select value={wakeupMode} onChange={e => {
+                  const next = e.target.value === 'interval' ? 'interval' : 'once'
+                  setWakeupMode(next)
+                  setWakeupDuration(next === 'interval' ? '1h' : '30m')
+                  setWakeupError('')
+                }} aria-label="唤醒模式"
+                  className="h-9 rounded-lg border px-2.5 text-[length:var(--fs-md)] outline-none"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color-strong)', color: 'var(--text-primary)' }}>
+                  <option value="once">单次</option>
+                  <option value="interval">周期</option>
+                </select>
+                <input value={wakeupDuration} onChange={e => { setWakeupDuration(e.target.value); setWakeupError('') }}
+                  aria-label={wakeupMode === 'once' ? '多久后唤醒' : '唤醒间隔'} placeholder={wakeupMode === 'once' ? '30m' : '1h'}
+                  className="h-9 rounded-lg border px-2.5 font-mono text-[length:var(--fs-md)] outline-none"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color-strong)', color: 'var(--text-primary)' }} />
+                <input value={wakeupReminder} onChange={e => { setWakeupReminder(e.target.value); setWakeupError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void createWakeup() }}
+                  aria-label="唤醒提醒" placeholder="唤醒后要执行的工作"
+                  className="h-9 min-w-0 rounded-lg border px-2.5 text-[length:var(--fs-md)] outline-none"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color-strong)', color: 'var(--text-primary)' }} />
+                <button type="button" data-testid="create-mobius-wakeup" onClick={() => void createWakeup()} disabled={wakeupSaving}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-blue-400/30 bg-blue-500/10 px-3 text-[length:var(--fs-md)] text-blue-300 transition-colors hover:bg-blue-500/20 disabled:opacity-40">
+                  {wakeupSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  创建
+                </button>
+              </div>
+              <div className="mt-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>时长格式：30s、10m、2h、1d；周期唤醒最短 10m</div>
+              {wakeupError && <div className="mt-2 text-[length:var(--fs-sm)] text-red-300">{wakeupError}</div>}
+
+              {mobiusWakeups.length === 0 ? (
+                <div className="mt-4 rounded-lg border border-dashed py-5 text-center text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>暂无 Mobius 后台定时唤醒</div>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {mobiusWakeups.map((item: any) => (
+                    <div key={item.id} data-testid="mobius-wakeup-card" className="rounded-lg border px-3 py-2.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                      <div className="flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]">
+                        <span className="rounded px-1.5 py-0.5" style={{ background: item.mode === 'interval' ? 'rgba(139,92,246,0.14)' : 'rgba(34,197,94,0.12)', color: item.mode === 'interval' ? '#c4b5fd' : '#86efac' }}>
+                          {item.mode === 'interval' ? '周期' : '单次'}
+                        </span>
+                        <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{item.schedule_seconds % 86400 === 0 ? `${item.schedule_seconds / 86400}d` : item.schedule_seconds % 3600 === 0 ? `${item.schedule_seconds / 3600}h` : item.schedule_seconds % 60 === 0 ? `${item.schedule_seconds / 60}m` : `${item.schedule_seconds}s`}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>下次 {item.next_run_at ? formatFeatureTime(item.next_run_at) : '-'}</span>
+                        <span className="ml-auto truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }} title={item.id}>{String(item.id).slice(0, 8)}</span>
+                      </div>
+                      <div className="mt-2 whitespace-pre-wrap break-words text-[length:var(--fs-md)] leading-relaxed" style={{ color: 'var(--text-primary)' }}>{item.reminder}</div>
+                      {item.last_status === 'error' && item.last_error && <div className="mt-1.5 text-[length:var(--fs-xs)] text-red-300">上次触发失败：{item.last_error}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+          {!loading && !error && (
+            <div className="mb-2 text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>Claude Code 原生定时任务</div>
+          )}
           {!loading && !error && !available && (
-            <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取定时任务</div>
+            <div className="py-8 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取 Claude 原生定时任务</div>
           )}
           {!loading && !error && available && (
             <>
@@ -1526,7 +1668,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
               </div>
 
               {tasks.length === 0 && sessionTasks.length === 0 ? (
-                <div className="py-10 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无活跃定时任务</div>
+                <div className="py-8 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无 Claude 原生定时任务</div>
               ) : (
                 <div className="space-y-3">
                   {[...tasks.map((t: any) => ({ t, sessionOnly: false })), ...sessionTasks.map((t: any) => ({ t, sessionOnly: true }))].map(({ t, sessionOnly }, i: number) => {

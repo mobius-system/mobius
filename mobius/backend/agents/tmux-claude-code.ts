@@ -875,6 +875,7 @@ interface ClaudeRuntimeEntry {
 // modelLaunchOptions plus the legacy flat fields).
 interface ClaudeDispatchOpts {
   sessionId: string
+  userId?: string
   prompt?: string
   initialPrompt?: string
   cwd?: string
@@ -1451,7 +1452,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * the else-branch below can do nothing.
    */
   async _createImpl(opts: ClaudeDispatchOpts) {
-    const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
+    const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
     const { model, useProxy, proxyMode, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
@@ -1460,7 +1461,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 窗口还活着就复用，重启后不重复拉起
     // A live window is reused, so a restart never spawns a duplicate
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp })
+      await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp })
     } else {
       // 重启后窗口还在但runtime可能为空，补建一条
       // The window is live but may have no runtime row; rebuild one
@@ -1508,7 +1509,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * path to touch it.
    */
   async _queueImpl(opts: ClaudeDispatchOpts) {
-    const { sessionId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
+    const { sessionId, userId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
     let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
@@ -1529,6 +1530,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       if (!finalCwd) throw new Error(`session ${sessionId} 没活 window 且无 cwd, 无法 spawn`)
       await this._spawnWindow({
         sessionId,
+        userId,
         cwd: finalCwd,
         flagRoot: flagRoot || persisted?.flagRoot || finalCwd,
         model: model || persisted?.model,
@@ -1694,7 +1696,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * need a second press. A TUI that never becomes ready has its window killed rather than left
    * behind, and the timeout is thrown with the cwd.
    */
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false }: ClaudeDispatchOpts) {
+  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false }: ClaudeDispatchOpts) {
     // 入参可为null，此处归一为非空，兜底在调用方
     // Nullable args become non-null here; the persisted fallback is the caller's
     if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
@@ -1842,6 +1844,9 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 标记进程跑在受控沙箱里
       // Mark the process as running in a controlled sandbox
       `export IS_SANDBOX=1`,
+      // 向会话内 CLI 暴露最小身份上下文，用于本机 API 签发用户 JWT
+      // Expose minimal Session identity so in-agent CLIs can obtain a user-scoped localhost JWT
+      `export MOBIUS_SESSION_ID=${shellQuote(sessionId)} MOBIUS_USER_ID=${shellQuote(userId || '')}`,
       // 每轮检查点就刷转录，原来是异步攒批约100ms
       // Flush the transcript at turn checkpoints instead of async batching
       `export CLAUDE_CODE_EAGER_FLUSH=1`,

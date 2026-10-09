@@ -120,6 +120,7 @@ interface HarnessSessionEntry {
 // Dispatch contract fields, passed down by session-message-runner: the whole
 // modelLaunchOptions plus the old flat fallbacks.
 interface HarnessStartOpts {
+  userId?: string
   cwd?: string
   flagRoot?: string
   agentSessionId?: string | null
@@ -133,6 +134,7 @@ interface HarnessStartOpts {
   harnessRequestTimeoutMs?: number | string
   useProxy?: boolean
   systemPrompt?: string
+  runtimeEnv?: Record<string, string>
   mobiusPromptRecord?: MobiusPromptRecord | null
   suppressRunningFlag?: boolean
   spawn?: unknown
@@ -247,12 +249,15 @@ class DeepSeekHarnessBackend extends AgentBackend {
     const command = resolveRuntimeCommand({ ...this.runtimeOptions, ...opts, useProxy: !!opts.useProxy })
     const env = {
       ...process.env,
+      ...(opts.runtimeEnv || {}),
       DEEPSEEK_API_KEY: String(opts.harnessSecretValue || ''),
       DEEPSEEK_BASE_URL: String(opts.harnessBaseUrl || 'https://api.deepseek.com'),
       DSH_CWD: cwd,
       DSH_SESSION_ROOT: nativeRoot,
       DSH_MAX_TOKENS_AS_SUCCESS: 'false',
       DSH_SYSTEM_PROMPT: String(opts.systemPrompt || 'You are a coding agent operating inside Mobius.'),
+      MOBIUS_SESSION_ID: sessionId,
+      MOBIUS_USER_ID: String(opts.userId || ''),
     }
     const child = this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
     const entry = {

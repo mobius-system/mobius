@@ -703,6 +703,7 @@ interface CodexRuntimeEntry {
 // bundle plus the flat legacy fields.
 interface CodexDispatchOpts {
   sessionId: string
+  userId?: string
   prompt?: string
   initialPrompt?: string
   cwd?: string
@@ -1182,7 +1183,7 @@ class TmuxCodexBackend extends AgentBackend {
   // Create path: reuse a live window (binding its existing thread) or spawn one, send the initial
   // prompt, then bind the codex thread that the new rollout created.
   async _createImpl(opts: CodexDispatchOpts) {
-    const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized } = opts
+    const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized } = opts
     const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
@@ -1191,7 +1192,7 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized })
+      spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized })
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -1232,7 +1233,7 @@ class TmuxCodexBackend extends AgentBackend {
   // Queue path: respawn the window when it is gone (falling back to the last persisted cwd/model/
   // proxy/thread), otherwise reuse it; then send the prompt and bind if still unbound.
   async _queueImpl(opts: CodexDispatchOpts) {
-    const { sessionId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
+    const { sessionId, userId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
     let { cwd, flagRoot, displayName } = opts
     let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
     let codexConfigPath = codexConfigPath0
@@ -1253,6 +1254,7 @@ class TmuxCodexBackend extends AgentBackend {
       if (!finalCwd) throw new Error(`session ${sessionId} has no live window and no cwd`)
       spawnInfo = await this._spawnWindow({
         sessionId,
+        userId,
         cwd: finalCwd,
         flagRoot: flagRoot || persisted?.flagRoot || finalCwd,
         model: model || persisted?.model || DEFAULT_MODEL,
@@ -1524,7 +1526,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // Start a new Codex tmux window and return the launch info used to bind its rollout later.
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName, aimuxGuiAuthorized }: CodexDispatchOpts) {
+  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName, aimuxGuiAuthorized }: CodexDispatchOpts) {
     if (!sessionId || !cwd) throw new Error('_spawnWindow requires sessionId + cwd')
     // Make sure the tmux hub session that hosts agent windows exists.
     ensureHub()
@@ -1671,12 +1673,16 @@ class TmuxCodexBackend extends AgentBackend {
 
     // The channel secret rides only on this window's environment: never embedded in the shell
     // command, never written to the backend runtime file.
-    const windowEnvEntries = secretEnvKey ? [[secretEnvKey, secretValue]] : []
+    const windowEnvEntries = [
+      ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
+      ['MOBIUS_SESSION_ID', sessionId],
+      ['MOBIUS_USER_ID', userId || ''],
+    ]
     const runtimeArgs = windowEnvEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // Create the background tmux window under the hub session and run bash -lc cmd in cwd.
     const r = tmux(
       ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
-      { redactEnvironmentKeys: windowEnvEntries.map(([key]) => key) },
+      { redactEnvironmentKeys: secretEnvKey ? [secretEnvKey] : [] },
     )
     // Surface stderr on failure so command-level problems are diagnosable.
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)

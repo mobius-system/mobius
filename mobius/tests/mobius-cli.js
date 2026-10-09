@@ -49,7 +49,11 @@ async function main() {
   assert.strictEqual(install.status, 0, install.stderr);
   assert.strictEqual(fs.readFileSync(path.join(binDir, '.mobius-cli-app-dir'), 'utf8').trim(), path.resolve(mobiusRoot, '..'));
   fs.writeFileSync(path.join(binDir, '.mobius-cli-app-dir'), `${appDir}\n`);
-  for (const name of ['generate_localhost_jwt', 'multiagent_send', 'declare_job_done', 'declare_job_failed', 'research_blackboard_read', 'research_blackboard_write', 'display-files', '.research_blackboard_cli']) {
+  for (const name of [
+    'generate_localhost_jwt', 'multiagent_send', 'declare_job_done', 'declare_job_failed',
+    'research_blackboard_read', 'research_blackboard_write', 'display-files', '.research_blackboard_cli',
+    'mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all', '.mobius_schedule_cli',
+  ]) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755);
   }
   assert.strictEqual(run(path.join(binDir, 'display-files'), ['--remote', 'remote', '/tmp/a.py']).status, 0);
@@ -59,6 +63,12 @@ async function main() {
     assert.strictEqual(helpResult.status, 0, helpResult.stderr);
     assert.match(helpResult.stdout, /--from=<self_id>/);
     assert.match(helpResult.stdout, /--research=<research_id>/);
+  }
+
+  for (const name of ['mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all']) {
+    const helpResult = run(path.join(binDir, name), ['--help']);
+    assert.strictEqual(helpResult.status, 0, helpResult.stderr);
+    assert.match(helpResult.stdout, /Usage:/);
   }
 
   const doneHelp = run(path.join(binDir, 'declare_job_done'), ['--help']);
@@ -312,6 +322,104 @@ async function main() {
   await new Promise((resolve) => overrideServer.close(resolve));
   assert.strictEqual(overrideStatus, 0, overrideError);
   assert.strictEqual(overrideCaptured, true);
+
+  const scheduleRequests = [];
+  const scheduleServer = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      const body = text ? JSON.parse(text) : null;
+      scheduleRequests.push({ method: req.method, url: req.url, authorization: req.headers.authorization, body });
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'POST') {
+        res.statusCode = 201;
+        res.end(JSON.stringify({
+          ok: true,
+          wakeup: { id: 'wake-1', next_run_at: '2026-10-09T12:30:00.000Z', ...body },
+        }));
+      } else if (req.method === 'DELETE') {
+        res.end(JSON.stringify({ ok: true, session_id: 'session-123', cancelled: 2 }));
+      } else {
+        res.end(JSON.stringify({
+          wakeups: [{
+            id: 'wake-1', session_id: 'session-123', mode: 'once', schedule_seconds: 30,
+            next_run_at: '2026-10-09T12:30:00.000Z', reminder: 'check build', status: 'active',
+          }],
+        }));
+      }
+    });
+  });
+  await new Promise((resolve) => scheduleServer.listen(0, '127.0.0.1', resolve));
+  const schedulePort = scheduleServer.address().port;
+  writeEnv(`JWT_SECRET=mock-secret\nVITE_PORT=${schedulePort}\nDB_PATH=${cliDbPath}\n`);
+  const scheduleEnv = {
+    ...process.env,
+    APP_DIR: appDir, MOBIUS_APP_DIR: '', MOBIUS_ROOT: '', MOBIUS_USER_ID: 'user',
+    VITE_PORT: '', MOBIUS_PORT: '', DB_PATH: '',
+  };
+
+  async function runSchedule(name, args) {
+    const child = spawn(path.join(binDir, name), args, {
+      cwd: nested,
+      env: scheduleEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    const childStatus = await new Promise((resolve) => child.on('close', resolve));
+    return { status: childStatus, stdout: out, stderr: err };
+  }
+
+  const onceWake = await runSchedule('mobius_schedule_wake_me_up', [
+    'session-123', '--once', '--after-time', '30s', '--reminder', 'check build',
+  ]);
+  assert.strictEqual(onceWake.status, 0, onceWake.stderr);
+  assert.match(onceWake.stdout, /Scheduled once wake-up wake-1/);
+  assert.deepStrictEqual(scheduleRequests.at(-1).body, {
+    session_id: 'session-123', mode: 'once', after_seconds: 30, reminder: 'check build',
+  });
+  assert.strictEqual(jwt.verify(scheduleRequests.at(-1).authorization.replace(/^Bearer /, ''), 'mock-secret').id, 'user');
+
+  const intervalWake = await runSchedule('mobius_schedule_wake_me_up', [
+    'session-123', '--interval', '--interval-time=1h', '--reminder=check service',
+  ]);
+  assert.strictEqual(intervalWake.status, 0, intervalWake.stderr);
+  assert.deepStrictEqual(scheduleRequests.at(-1).body, {
+    session_id: 'session-123', mode: 'interval', interval_seconds: 3600, reminder: 'check service',
+  });
+
+  const scheduleList = await runSchedule('mobius_schedule_list', []);
+  assert.strictEqual(scheduleList.status, 0, scheduleList.stderr);
+  assert.match(scheduleList.stdout, /JOB_ID\s+SESSION_ID/);
+  assert.match(scheduleList.stdout, /wake-1/);
+  assert.strictEqual(scheduleRequests.at(-1).method, 'GET');
+
+  const scheduleListJson = await runSchedule('mobius_schedule_list', ['--json']);
+  assert.strictEqual(scheduleListJson.status, 0, scheduleListJson.stderr);
+  assert.strictEqual(JSON.parse(scheduleListJson.stdout)[0].id, 'wake-1');
+
+  const cancelWakeups = await runSchedule('mobius_schedule_cancel_all', [
+    '--session-id', 'session-123',
+  ]);
+  assert.strictEqual(cancelWakeups.status, 0, cancelWakeups.stderr);
+  assert.match(cancelWakeups.stdout, /Cancelled 2 scheduled wake-up tasks/);
+  assert.strictEqual(scheduleRequests.at(-1).url, '/api/scheduled-wake-ups?session_id=session-123');
+
+  const tooFast = run(path.join(binDir, 'mobius_schedule_wake_me_up'), [
+    'session-123', '--interval', '--interval-time', '9m', '--reminder', 'too fast',
+  ], { env: scheduleEnv });
+  assert.strictEqual(tooFast.status, 2);
+  assert.match(tooFast.stderr, /at least 10m/);
+
+  const conflictingModes = run(path.join(binDir, 'mobius_schedule_wake_me_up'), [
+    'session-123', '--once', '--interval', '--after-time', '30m', '--reminder', 'invalid',
+  ], { env: scheduleEnv });
+  assert.strictEqual(conflictingModes.status, 2);
+  assert.match(conflictingModes.stderr, /exactly one of --once or --interval/);
+  await new Promise((resolve) => scheduleServer.close(resolve));
 
   writeEnv('JWT_SECRET=mock-secret\nVITE_PORT=invalid\nMOBIUS_PORT=32100\n');
   const invalidPort = run(path.join(binDir, 'multiagent_send'), ['self', 'target', 'message'], {

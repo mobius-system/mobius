@@ -183,7 +183,7 @@
 | 🟠 | **文件写端点用读权限把关**：`/:id/file`、`/files/{create,mkdir,move,copy,rename}`、`/import-zip` 统一调 `loadReadableProject`（**37 处**），管理类只有 7 处 → **viewer 可改/删/搬文件** | `routes/projects.ts` 各文件端点 |
 | 🟠 | **读路径不查软链**（写路径查）：读用 `statSync`（跟随）+ `readFileSync`；下载**只 lstat 最后一段** → 在自己项目建软链指向他人目录即可跨用户读 | `routes/projects.ts:3442-3446`、`:3605-3617` |
 | 🟠 | **code-server 工作区放行过宽**：放行**任意 `/tmp`**、放行 **`bind_path` 的父目录**（项目若绑在 `work_dir` 本身，父目录＝全站公共父目录）；无 realpath | `services/code-server-workspace.ts:27`、`:31`、`:99` |
-| 🟡 | **下载接口放行面过宽**：放行**任意 `/tmp`** 与**共享 upload 目录**；项目前缀为**纯词法**、无 realpath | `routes/files.ts:60-64`、`:80-89` |
+| 🟡 | **下载接口放行面过宽**：放行**任意 `/tmp`** 与**共享 upload 目录**；项目前缀为**纯词法**、无 realpath。<b>本轮决定不收窄</b>（见 §4.2） | `routes/files.ts:60-64`、`:80-89` |
 
 **整改**
 
@@ -191,7 +191,7 @@
 |---|---|
 | **D** | 文件写端点改用**写权限 gate**（37 处 `loadReadableProject` → 写权限版本） |
 | **F** | 读路径补 `assertNoSymlink`（`:3442-3446`、`:3605-3617`） |
-| **H** | 收窄 download 放行面：去掉 `/tmp` 与共享 upload 全放行；项目前缀补 realpath |
+（下载接口的放行面**本轮决定不收窄**，理由与逐条分析见 §4.2 —— 原「收窄」项已撤销）
 
 > 已守住的对照：`project-path.ts` 词法围栏 + `..` 剥离、`project-file-ops.ts` 的
 > `assertNoSymlink`/`validateNewName`、`code-server-proxy.ts` 的 `<userId>__<projectId>` 键校验 +
@@ -216,7 +216,7 @@
 |---|---|
 | **G-1** | 给 `graphRouter.get('/:researchId')` 加 `downloadAuth` + `canReadResearch` |
 | **L** | 黑板 POST 的 `author` / `session_id` 改由**服务端注入**（不信任客户端） |
-| **E** | `created_by` 短路追加「**仍是项目成员**」条件 —— **包括用户自己创建的会话也一并断绝**（已定：彻底断） |
+| **E** | `created_by` 短路追加「**仍是项目成员**」条件 —— **包括用户自己创建的会话也一并断绝**（已定：彻底断）<br>**会话不会变成孤岛**：被踢者的旧会话**对项目内成员仍然可见**（`developer` 及以上可修改，`viewer` 只读）。<br>**被踢时正在运行的会话 → 立即停止。** |
 
 ### 3.5 上下文项（skill / memory）
 
@@ -285,7 +285,65 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 4. 前端适配
+## 4. 文件系统路径权限盘点
+
+> 所有涉及「按路径判权限」的入口，逐个列出判定依据、放行面与风险。
+> 本轮对下载接口**决定不收窄**（见 §4.3）。
+
+### 4.1 入口总览
+
+| 入口 | 判定依据 | 放行面 | 风险 | 本轮 |
+|---|---|---|---|---|
+| 项目文件 API —— 读 | `resolveProjectPath(bind_path, path)`（词法围栏 + `..` 剥离） | 项目 `bind_path` 子树 | 🟠 软链逃逸 | **F** |
+| 项目文件 API —— **写** | 同上 + `assertNoSymlink` | 同上 | 已守住 | **D**（改权限 gate） |
+| `/api/download`、`/api/files/download` | `canDownloadPath()`（见 §4.2） | **六个**放行面 | 🟠 面很宽 | **决定不收窄** |
+| code-server 工作区 | `isAllowedWorkspacePath()` | **任意 `/tmp`** ∪ `bind_path` 子树 ∪ **`bind_path` 的父目录**（无 realpath） | 🔴 父目录＝全站 | **改** |
+| Web 终端 cwd | `Sessions.findByIdForUser` | 会话 cwd（来自 `bind_path`） | 已守住 | — |
+| 上下文 `import-local` | **无任何约束** | **任意服务器绝对路径** | 🟠 任意读 | **I** |
+| Agent 的 cwd | `resolveSessionWorkspace` | 会话所属项目的 `bind_path` | 🔴 受 `bindPathManual` 影响 | **A / M** |
+| 用户工作区 | `users.work_dir`（约定式） | 仅应用层约束 | 🟠 无 OS 级兜底 | **N**（沙盒兜底） |
+| Skill / Memory 存储 | scope 决定 `user:<uid>` / `project:<uid>:<pid>` | 按 scope + `canReadContextItem` | 已守住 | — |
+
+### 4.2 下载接口的六个放行面（本轮决定：不收窄）
+
+`routes/files.ts:80-89` —— **任一条件满足即放行**：
+
+```ts
+function canDownloadPath(req, absPath) {
+  const userRoot = path.resolve(user.work_dir);
+  return absPath === userRoot
+    || absPath.startsWith(userRoot + path.sep)      // ① 自己的 work_dir
+    || isExtensionUserDataPath(absPath, user.id)    // ② 自己的扩展数据目录
+    || isMobiusUploadPath(absPath)                  // ③ APP_DIR/.mobius/upload —— 全站共享
+    || isSystemTempPath(absPath)                    // ④ os.tmpdir() —— 全站共享
+    || isReadableProjectPath(req, absPath);         // ⑤ 可读项目的 bind_path 子树
+}
+```
+
+| # | 放行面 | 说明 / 风险 |
+|---|---|---|
+| ① | 自己的 `work_dir` | 合理 |
+| ② | 自己的扩展数据目录 | 合理；做了归属校验（`parts[1]==='users' && parts[2]===userId`） |
+| ③ | **`APP_DIR/.mobius/upload`** | 🟠 **全站共享**：任何登录用户可下载其中任意文件（需知道文件名）。**本轮保留** |
+| ④ | **`os.tmpdir()`（`/tmp`）** | 🟠 **全站共享**：同上。**本轮保留** |
+| ⑤ | 可读项目的 `bind_path` 子树 | 合理，但**纯词法**、无 realpath；且每次请求**遍历全部项目**（312 个）→ 性能隐患 |
+
+**为什么本轮不收紧 ③④**：有实际依赖 —— 实测 `jsonl-vscode-link.tsx:148` 就拼
+`/api/download?path=<服务器绝对路径>` 打开会话 JSONL；扩展上传（multer 落系统临时目录）、ZIP 导入等也依赖。
+**收紧会直接造成功能回归**，故保留；风险登记在 §8。
+
+### 4.3 本轮处置汇总
+
+| 路径问题 | 处置 | 说明 |
+|---|---|---|
+| 读路径不查软链 | **改** | 整改 **F** |
+| code-server 放行 `bind_path` 父目录 | **改** | 去掉父目录放行；补 realpath |
+| `import-local` 任意绝对路径 | **改** | 整改 **I** |
+| Agent cwd 由 `bind_path` 决定 | **改** | 整改 **A / M** |
+| **下载接口的 `/tmp` 与共享 upload** | **保留** | **本轮决定不收窄**（§4.2） |
+| 用户工作区无 OS 级兜底 | **兜住** | 整改 **N** |
+
+## 5. 前端适配
 
 > **性质**：前端改动只解决**用户体验**（不让用户点了才报错）。**真正的门禁是后端 A ~ Q** ——
 > 前端一处不改也不影响安全；反过来，**只改前端等于没改**。
@@ -297,7 +355,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 > **完整菜单清单（逐项标注更改计划）见 HTML 版 §4.1**。以下为需要改动的细则。
 
-### 4.2 用户创建与管理（系统角色：去 `developer`）
+### 5.2 用户创建与管理（系统角色：去 `developer`）
 
 | 界面 | 文件 : 行 | 现状 | 要改成 |
 |---|---|---|---|
@@ -309,7 +367,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | ⚠️ **命令文本解析（协议串）** | `panels.tsx:358-360` | 从命令里解析角色 token（含 developer） | **不擅自改** —— 需先确认外部调用方 |
 | 用户组 | `panels.tsx:296-298`、`330`、`363-376` | group_id / group_name | **不受影响**（保留） |
 
-### 4.2 项目权限配置（项目角色：四档 → 三档）
+### 5.2 项目权限配置（项目角色：四档 → 三档）
 
 | 界面 | 文件 : 行 | 现状 | 要改成 |
 |---|---|---|---|
@@ -326,14 +384,14 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | 项目设置 · 权限设置文案 | `ProjectSettingsPanel.tsx:846-847`、`898` | 写死 owner/manager/member/viewer | 改为 owner/developer/viewer |
 | 项目可见性 | `ProjectSettingsPanel.tsx:91-92` | private / public（**已退役**） | 建议顺手清理 |
 
-### 4.3 扩展项目（新增：普通用户锁死只读）
+### 5.3 扩展项目（新增：普通用户锁死只读）
 
 | 界面 | 文件 : 行 | 现状 | 要改成 |
 |---|---|---|---|
 | **新建项目 · 扩展项目入口** | `new-project-modal.tsx:98` | `role === 'admin' \|\| 'developer'` | **仅 `admin`** |
 | **扩展项目内的运行入口** | `ProjectItemsPanel.tsx:89` | 只看 `kind === 'extension'` | 叠加**权限钳制**：普通用户隐藏写 / 跑入口 |
 
-### 4.4 Skill / Memory 配置（基本不受影响）
+### 5.4 Skill / Memory 配置（基本不受影响）
 
 | 界面 | 文件 | 现状 | 判断 |
 |---|---|---|---|
@@ -342,11 +400,11 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | 上下文项访问配置弹窗 | `components/context-access.tsx:15,55,81-82` | 只有创建者（全权）+ 访客（可读可用不可改）；访客即 `allow_user_ids` | **与项目角色正交**，是否调整**待定** |
 | ContextPanel 角色文案 | `pages/ContextPanel.tsx:130` | `role==='admin' ? '管理员' : '成员'` | 文案"成员"→"普通用户" |
 
-### 4.5 其它（不受影响）
+### 5.5 其它（不受影响）
 
 管理中心入口 `shell.tsx:1510`、管理员按钮 `ProjectSettingsPanel.tsx:880` —— 均为 `role === 'admin'`，不受影响。
 
-### 4.6 配套后端改动：R　下发统一「权限块」
+### 5.6 配套后端改动：R　下发统一「权限块」
 
 后端在各返回体（项目 / 会话 / 问题 / 研究）附带由 `access-control.ts` **同一批函数**算出的结果：
 
@@ -361,13 +419,13 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 外加全局的 `me.permissions.can_create_extension_project`。
 **关键**：扩展项目「`user` 锁死 viewer」的钳制**只在这一处实现**，前端各处判断自然跟着对。
 
-### 4.7 建议：角色枚举收口
+### 5.7 建议：角色枚举收口
 
 当前项目角色在 **3 个文件各写一份**（TeamPanel / member-invite / SettingsPanel 文案），系统角色在 2 处。
 建议新增 `frontend/src/constants/roles.ts`：角色集合、标签、配色、选项**只在这里定义**，三处引用。
 本次改动量再降一半，以后也不会漏。
 
-### 4.8 验证
+### 5.8 验证
 
 按简易模式 SOP：改码 → playwright 截图（`127.0.0.1:45618`，`fuqingxu/fuqingxu`）→ `display_images` 展示 →
 不满足则重来 → 通过后 `python3 start.py` 部署。
@@ -377,7 +435,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 5. 整改清单（汇总）
+## 6. 整改清单（汇总）
 
 | 编号 | 功能区 | 内容 | 类型 |
 |---|---|---|---|
@@ -389,7 +447,6 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | **F** | 文件 | 读路径补软链检查 | 🟠 安全 |
 | **G-1** | 研究 | `research-graph` 端点补鉴权 | 🟠 安全 |
 | **G-2** | 任务 | `tasks/:id/risk` 是否补 token —— **待定**（见 §7.2） | 🟡 待定 |
-| **H** | 文件 | 收窄 download 放行面 | 🟡 加固 |
 | **I** | 上下文 | `import-local` 加根约束 | 🟡 加固 |
 | **J** | 会话/上下文 | `/emphasize` 的 item 加归属校验 | 🟡 加固 |
 | **K** | 群聊 | 加「邀请者须拥有该 agent」校验 | 🟡 加固 |
@@ -404,7 +461,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 6. 已拍板的策略边界
+## 7. 已拍板的策略边界
 
 | # | 决策 | 影响 |
 |---|---|---|
@@ -429,7 +486,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 7. 已知并接受的缺口（延后，不阻塞本轮）
+## 8. 已知并接受的缺口（延后，不阻塞本轮）
 
 | 缺口 | 后果 |
 |---|---|
@@ -441,7 +498,7 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 
 ---
 
-## 8. 分阶段与验收
+## 9. 分阶段与验收
 
 ### 7.1 阶段
 

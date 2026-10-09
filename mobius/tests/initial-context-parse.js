@@ -76,8 +76,8 @@ const enEntry = { type: 'response_item', payload: { type: 'message', role: 'user
 const enMatch = extractInitialContext(enEntry)
 check('英文: 辨识 (en)', !!enMatch && enMatch.language === 'en')
 check('英文: 问题完整切出', enMatch ? enMatch.question === enQuestion : false, JSON.stringify(enMatch && enMatch.question))
-check('英文: 块序列含 user/project/memory/skills/completionFlag/issue/session',
-  enMatch && ['user', 'project', 'memory', 'skills', 'completionFlag', 'issue', 'session']
+check('英文: 块序列含 user/project/memory/skills/scheduledWakeup/completionFlag/issue/session',
+  enMatch && ['user', 'project', 'memory', 'skills', 'scheduledWakeup', 'completionFlag', 'issue', 'session']
     .every((k) => enMatch.blocks.some((b) => b.key === k)))
 
 // ── ③ 防误切: memory 正文里的 `## 标题` ────────────────────────────────────
@@ -91,7 +91,7 @@ const trickyWrapped = `${trickyBody}\n\n---\n\n## User's Question\nq`
 const trickyMatch = extractInitialContext({ type: 'user', message: { content: trickyWrapped } })
 const trickyMem = trickyMatch ? trickyMatch.blocks.find((b) => b.key === 'memory') : null
 check('防误切: memory 正文中的后向/未知 ## 标题不产生新块',
-  trickyMatch && trickyMatch.blocks.map((b) => b.key).join(',') === 'user,project,memory,skills,completionFlag,issue,session',
+  trickyMatch && trickyMatch.blocks.map((b) => b.key).join(',') === 'user,project,memory,skills,scheduledWakeup,completionFlag,issue,session',
   trickyMatch && trickyMatch.blocks.map((b) => b.key).join(','))
 check('防误切: memory 正文原样保留在 memory 块内',
   !!trickyMem && trickyMem.body.includes('## 用户') && trickyMem.body.includes('## Not In Catalog'))

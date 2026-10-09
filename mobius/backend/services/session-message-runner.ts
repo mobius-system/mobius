@@ -258,6 +258,7 @@ async function runSessionMessage({
 
     const dispatchOpts = {
       sessionId: normalizedSessionId,
+      userId: user.id,
       prompt: finalContent,
       cwd: workDir,
       flagRoot,

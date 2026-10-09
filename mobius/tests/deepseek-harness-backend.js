@@ -100,14 +100,17 @@ async function main() {
       },
     })
     await waitFor(() => !backend.isWorking(sessionId))
-    const receivedFollowUp = (entries) => (
-      entries.some((entry) => entry.type === 'user' && entry.message?.content === 'follow up')
-      && entries.some((entry) => entry.type === 'assistant' && entry.message?.content?.[0]?.text === 'fake answer')
-    )
-    await waitFor(() => receivedFollowUp(sharedEntries))
-    await waitFor(() => receivedFollowUp(streamedEntries))
-    assert.equal(backend.getHistory(sessionId).entries.filter((entry) => entry.type === 'assistant').length, 2)
-    assert.equal(backend.getHistory(sessionId).entries.filter((entry) => entry.type === 'user').length, 2)
+    const receivedAssistant = (entries) => entries.some((entry) => (
+      entry.type === 'assistant' && entry.message?.content?.[0]?.text === 'fake answer'
+    ))
+    // User openers are persisted in the shared history store, not emitted as agent raw JSONL.
+    // The live raw stream only carries runtime output, so verify its assistant increment here.
+    await waitFor(() => receivedAssistant(sharedEntries))
+    await waitFor(() => receivedAssistant(streamedEntries))
+    const followUpHistory = backend.getHistory(sessionId).entries
+    assert.equal(followUpHistory.some((entry) => entry.type === 'user' && entry.message?.content === 'follow up'), true)
+    assert.equal(followUpHistory.filter((entry) => entry.type === 'assistant').length, 2)
+    assert.equal(followUpHistory.filter((entry) => entry.type === 'user').length, 2)
 
     await backend.pauseCurrentAndResumeFromSession({ sessionId, cwd, flagRoot, prompt: 'urgent', model: 'deepseek-test' })
     await waitFor(() => !backend.isWorking(sessionId))
