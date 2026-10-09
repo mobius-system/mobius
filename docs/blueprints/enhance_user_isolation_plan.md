@@ -26,12 +26,18 @@
 
 ## 2. 权限模型
 
-### 2.1 两类角色
+### 2.1 角色（本次**简化**）
 
 | 维度 | 取值 | 说明 |
 |---|---|---|
-| 系统角色 | `admin` / `developer` / `user` | `admin` 全局可见可管；`developer` 可建扩展项目 |
-| 项目内角色 | `owner` / `manager` / `member` / `viewer` | `viewer` = 只读成员 |
+| 系统角色 | **`admin` / `user`** | `admin` 全局；`user` 普通用户。**取消 `developer`** |
+| 项目内角色 | **`owner` / `developer` / `viewer`** | `developer` = 可读写可跑会话；`viewer` = 只读。**取消 `manager` / `member`** |
+
+**三条新规**：
+
+1. **`admin` 对所有项目拥有 `owner` 同等权限**（不区分是否项目成员）
+2. **只有 `admin` 能创建扩展项目**（`kind='extension'`），`user` 不能
+3. **`user` 在所有扩展项目中**锁死 `viewer`** 权限** —— 不可被提升为 `owner` / `developer`
 
 ### 2.2 三条归属关系
 
@@ -41,20 +47,53 @@
 
 ### 2.3 目标状态：谁能对什么做什么
 
-| 对象 | admin | 项目创建者 | owner/manager | member | viewer | 非成员 |
-|---|---|---|---|---|---|---|
-| 项目本身 | 全权 | 全权 | 管理 | 读 | 读 | 不可见 |
-| 项目内**他人**会话 | 全权 | **全权**（含下发指令） | 读 | 读 | 读 | 不可见 |
-| 项目文件 —— 读 | ✔ | ✔ | ✔ | ✔ | ✔ | ✖ |
-| 项目文件 —— **写** | ✔ | ✔ | ✔ | ✔ | **✖** | ✖ |
-| 建任务单 / 跑会话 | ✔ | ✔ | ✔ | ✔ | **✖** | ✖ |
-| 插件项目（`kind='extension'`） | 读写 | — | — | **只读** | **只读** | **只读** |
+| 能力 | admin | owner | developer | viewer | 非成员 |
+|---|---|---|---|---|---|
+| 读项目 | ✔ | ✔ | ✔ | ✔ | ✖ |
+| 项目文件 —— 写 | ✔ | ✔ | ✔ | **✖** | ✖ |
+| 建任务单 / 跑会话 | ✔ | ✔ | ✔ | **✖** | ✖ |
+| 管成员 / 项目设置 | ✔ | ✔ | **✖** | ✖ | ✖ |
+| 删除项目 | ✔ | ✔ | **✖** | ✖ | ✖ |
+| 项目内**他人**会话 | 全权 | **全权**（含下发指令） | 读 | 读 | ✖ |
+| **创建扩展项目** | ✔ | **✖** | ✖ | ✖ | ✖ |
+| **扩展项目内的权限** | **≡ owner** | — | — | — | — |
+
+> **扩展项目例外（硬规则）**：非 `admin` 者一律按 `viewer` 对待 ——
+> 无论其在成员表里是什么、也无论是否被添加为成员。
+> 因此**全部 64 个扩展项目对每个 `user` 都是只读可见**，且不可能被提升。
 
 ### 2.4 三条原则
 
 1. **无 default-allow**：鉴权失败即拒绝，不设"兜底放行"。
 2. **先鉴权、后业务**：每个入口先定"调用者是谁、能碰什么"，再进业务逻辑。
 3. **归属即边界**：资源归属者与项目成员身份共同决定可见性；**脱离项目即失效**（§3.4）。
+
+### 2.5 角色迁移（存量数据）
+
+已查生产库，存量极小且**无损失**：
+
+| 旧值 | 新值 | 数量 | 说明 |
+|---|---|---|---|
+| 系统 `developer` | → `user` | **6 人** | 已核实：**这 6 人一个扩展项目都没建过**（64 个全部由 `system` 创建）→ 迁移零损失 |
+| 项目 `manager` | → `owner` | 1 条 | 保留其"管成员"能力 |
+| 项目 `member` | → `developer` | 3 条 | 能力不变（读写 + 跑会话） |
+| 项目 `owner` / `viewer` | 不变 | 312 / 11 | — |
+
+### 2.6 代码改动点
+
+| 位置 | 改动 |
+|---|---|
+| `schema.sql:33` | 系统角色 CHECK → `('admin','user')` |
+| `schema.sql:122` | 项目角色 CHECK → `('owner','developer','viewer')` |
+| `backend/repositories/users.ts:26` | 迁移重建表的 CHECK 同步 |
+| `backend/repositories/users.ts:317`、`backend/types/rows.ts:48` | TS 类型 `'admin' \| 'developer' \| 'user'` → `'admin' \| 'user'` |
+| `backend/routes/admin.ts:106-107` | `normalizeEmployeeRole` 只接受 `admin` / `user` |
+| `backend/routes/projects.ts:2173` | 建扩展项目 → **仅 `admin`** |
+| `backend/services/session-context-sections.ts:155,161` | 角色渲染去掉"开发者"分支（管理员 / 普通用户） |
+| `backend/repositories/project-memberships.ts:8,15,22,39` | `PROJECT_ROLE_RANK` / `LABELS` / `ROLE_SET` / `normalizeRole` 默认值 |
+| `backend/services/access-control.ts:281,295` | `canManageProject` → **仅 `owner`**；`projectAllowsReaderWrite` → `owner \| developer` |
+| `backend/repositories/project-memberships.ts:251` | `canManage` → **仅 `owner`** |
+| `access-control.ts` 全项目读取路径 | 新增**扩展项目例外**：非 admin 恒 viewer |
 
 ---
 
@@ -193,13 +232,14 @@
 per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编译仅管理员、
 项目创建仅 admin/developer。**本模块无待修项。**
 
-**新增需求**：插件项目（`kind='extension'`）的**读权限**要放开给普通用户（只读），当前完全没有这条规则。
+**新增需求**：扩展项目（`kind='extension'`）的**读权限**要放开给普通用户，且**锁死只读** ——
+当前完全没有这条规则（access-control 对 extension 零特殊处理）。
 
 **整改**
 
 | 编号 | 内容 |
 |---|---|
-| **B** | 新增规则：插件项目 管理员读写 / **普通用户只读**。覆盖 `canReadProject` / `canManageProject` / `projectAllowsReaderWrite` 及文件端点 |
+| **B** | 新增**扩展项目例外**：非 `admin` 者恒按 `viewer` 对待 —— `canReadProject` 恒真、`canManageProject` 恒假、写操作恒假；**且禁止把 `user` 设为扩展项目的 `owner`/`developer`**（成员管理入口同步收口）。管理员在扩展项目中 ≡ `owner` |
 
 ### 3.8 Agent 执行与沙盒
 
@@ -244,7 +284,11 @@ per-user 扩展数据目录（`users/<safeUserSegment(userId)>`）、注册/编�
 | # | 决策 | 影响 |
 |---|---|---|
 | 1 | 项目创建者对项目内**所有**会话有全部权限 | **保持现状**，不改 `canOperateSession` |
-| 2 | 插件项目：管理员读写、普通用户只读 | 见 B |
+| 2 | 扩展项目：管理员 ≡ owner；**`user` 锁死 viewer**（不可提升） | 见 **B** |
+| 10 | 系统角色简化为 `admin` / `user`（取消 `developer`） | 见 §2.6；迁移见 §2.5 |
+| 11 | 项目内角色简化为 `owner` / `developer` / `viewer`（取消 `manager` / `member`） | 见 §2.6 |
+| 12 | `admin` 对所有项目拥有 `owner` 同等权限 | 见 §2.3 |
+| 13 | 仅 `admin` 可创建扩展项目 | 见 §2.6 |
 | 3 | 只读成员：**不能对话、不能改删文件** | 见 C、D |
 | 4 | `bindPathManual` 普通用户堵掉、仅管理员保留 | 见 A |
 | 5 | 公用 `/tmp`、`~/.claude` 隔离**延后** | 见 §6 |

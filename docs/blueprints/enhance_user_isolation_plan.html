@@ -177,14 +177,21 @@
 <section>
   <h2><span class="n">2</span>权限模型</h2>
 
-  <h3>2.1 两类角色</h3>
+  <h3>2.1 角色（本次简化）</h3>
   <div class="tw"><table>
-    <thead><tr><th style="width:22%">维度</th><th style="width:38%">取值</th><th>说明</th></tr></thead>
+    <thead><tr><th style="width:20%">维度</th><th style="width:40%">取值</th><th>说明</th></tr></thead>
     <tbody>
-      <tr><td>系统角色</td><td><code>admin</code> / <code>developer</code> / <code>user</code></td><td><code>admin</code> 全局可见可管；<code>developer</code> 可建扩展项目</td></tr>
-      <tr><td>项目内角色</td><td><code>owner</code> / <code>manager</code> / <code>member</code> / <code>viewer</code></td><td><code>viewer</code> = 只读成员</td></tr>
+      <tr><td>系统角色</td><td><b><code>admin</code> / <code>user</code></b></td><td><code>admin</code> 全局；<code>user</code> 普通用户。<b>取消 <code>developer</code></b></td></tr>
+      <tr><td>项目内角色</td><td><b><code>owner</code> / <code>developer</code> / <code>viewer</code></b></td><td><code>developer</code> = 可读写可跑会话；<code>viewer</code> = 只读。<b>取消 <code>manager</code> / <code>member</code></b></td></tr>
     </tbody>
   </table></div>
+
+  <div class="box bad">
+    <span class="t">三条新规</span>
+    <b>1.</b> <code>admin</code> 对所有项目拥有 <code>owner</code> 同等权限（不区分是否项目成员）<br>
+    <b>2.</b> <b>只有 <code>admin</code> 能创建扩展项目</b>（<code>kind='extension'</code>），<code>user</code> 不能<br>
+    <b>3.</b> <b><code>user</code> 在所有扩展项目中锁死 <code>viewer</code> 权限</b> —— 不可被提升为 <code>owner</code> / <code>developer</code>
+  </div>
 
   <h3>2.2 三条归属关系</h3>
   <ul>
@@ -195,16 +202,24 @@
 
   <h3>2.3 目标状态：谁能对什么做什么</h3>
   <div class="tw"><table>
-    <thead><tr><th>对象</th><th>admin</th><th>项目创建者</th><th>owner/manager</th><th>member</th><th>viewer</th><th>非成员</th></tr></thead>
+    <thead><tr><th>能力</th><th>admin</th><th>owner</th><th>developer</th><th>viewer</th><th>非成员</th></tr></thead>
     <tbody>
-      <tr><td>项目本身</td><td>全权</td><td>全权</td><td>管理</td><td>读</td><td>读</td><td><span class="p-bad">不可见</span></td></tr>
-      <tr><td>项目内<b>他人</b>会话</td><td>全权</td><td><b>全权</b>（含下发指令）</td><td>读</td><td>读</td><td>读</td><td><span class="p-bad">不可见</span></td></tr>
-      <tr><td>项目文件 —— 读</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td></tr>
-      <tr><td>项目文件 —— <b>写</b></td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
-      <tr><td>建任务单 / 跑会话</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
-      <tr><td>插件项目（<code>kind='extension'</code>）</td><td>读写</td><td>—</td><td>—</td><td><b>只读</b></td><td><b>只读</b></td><td><b>只读</b></td></tr>
+      <tr><td>读项目</td><td>✔</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td>项目文件 —— 写</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td>建任务单 / 跑会话</td><td>✔</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td>管成员 / 项目设置</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td>删除项目</td><td>✔</td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td>项目内<b>他人</b>会话</td><td>全权</td><td><b>全权</b>（含下发指令）</td><td>读</td><td>读</td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td><b>创建扩展项目</b></td><td>✔</td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td><td><span class="p-bad">✖</span></td></tr>
+      <tr><td><b>扩展项目内的权限</b></td><td><b>≡ owner</b></td><td colspan="4" style="text-align:center;color:var(--ink-3)">非 admin 一律 ≡ viewer</td></tr>
     </tbody>
   </table></div>
+
+  <div class="box warn">
+    <span class="t">扩展项目例外（硬规则）</span>
+    非 <code>admin</code> 者一律按 <code>viewer</code> 对待 —— 无论其在成员表里是什么、也无论是否被添加为成员。<br>
+    因此<b>全部 64 个扩展项目对每个 <code>user</code> 都是只读可见</b>，且<b>不可能被提升</b>。
+  </div>
 
   <h3>2.4 三条原则</h3>
   <div class="flow">
@@ -212,6 +227,36 @@
     <div class="step"><b>原则 2</b>先鉴权、后业务：每个入口先定"调用者是谁、能碰什么"</div>
     <div class="step"><b>原则 3</b>归属即边界：<b>脱离项目即失效</b>（§3.4）</div>
   </div>
+
+  <h3>2.5 角色迁移（存量数据）</h3>
+  <p>已查生产库，存量极小且<b>无损失</b>：</p>
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">旧值</th><th style="width:18%">新值</th><th style="width:12%">数量</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>系统 <code>developer</code></td><td>→ <code>user</code></td><td><b>6 人</b></td><td>已核实：<b>这 6 人一个扩展项目都没建过</b>（64 个全部由 <code>system</code> 创建）→ 迁移零损失</td></tr>
+      <tr><td>项目 <code>manager</code></td><td>→ <code>owner</code></td><td>1 条</td><td>保留其"管成员"能力</td></tr>
+      <tr><td>项目 <code>member</code></td><td>→ <code>developer</code></td><td>3 条</td><td>能力不变（读写 + 跑会话）</td></tr>
+      <tr><td>项目 <code>owner</code> / <code>viewer</code></td><td>不变</td><td>312 / 11</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>2.6 代码改动点</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:44%">位置</th><th>改动</th></tr></thead>
+    <tbody>
+      <tr><td><code>schema.sql:33</code></td><td>系统角色 CHECK → <code>('admin','user')</code></td></tr>
+      <tr><td><code>schema.sql:122</code></td><td>项目角色 CHECK → <code>('owner','developer','viewer')</code></td></tr>
+      <tr><td><code>backend/repositories/users.ts:26</code></td><td>迁移重建表的 CHECK 同步</td></tr>
+      <tr><td><code>backend/repositories/users.ts:317</code><br><code>backend/types/rows.ts:48</code></td><td>TS 类型 <code>'admin' | 'developer' | 'user'</code> → <code>'admin' | 'user'</code></td></tr>
+      <tr><td><code>backend/routes/admin.ts:106-107</code></td><td><code>normalizeEmployeeRole</code> 只接受 <code>admin</code> / <code>user</code></td></tr>
+      <tr><td><code>backend/routes/projects.ts:2173</code></td><td>建扩展项目 → <b>仅 <code>admin</code></b></td></tr>
+      <tr><td><code>backend/services/session-context-sections.ts:155,161</code></td><td>角色渲染去掉"开发者"分支（管理员 / 普通用户）</td></tr>
+      <tr><td><code>backend/repositories/project-memberships.ts:8,15,22,39</code></td><td><code>PROJECT_ROLE_RANK</code> / <code>LABELS</code> / <code>ROLE_SET</code> / <code>normalizeRole</code> 默认值</td></tr>
+      <tr><td><code>backend/services/access-control.ts:281,295</code></td><td><code>canManageProject</code> → <b>仅 <code>owner</code></b>；<code>projectAllowsReaderWrite</code> → <code>owner | developer</code></td></tr>
+      <tr><td><code>backend/repositories/project-memberships.ts:251</code></td><td><code>canManage</code> → <b>仅 <code>owner</code></b></td></tr>
+      <tr><td><code>access-control.ts</code> 全项目读取路径</td><td>新增<b>扩展项目例外</b>：非 admin 恒 viewer</td></tr>
+    </tbody>
+  </table></div>
 </section>
 
 <!-- ============ 3 ============ -->
@@ -408,12 +453,14 @@
     per-user 扩展数据目录（<code>users/&lt;safeUserSegment(userId)&gt;</code>）· 注册 / 编译仅管理员 ·
     项目创建仅 admin / developer
   </div>
-  <p><b>但有新增需求</b>：插件项目（<code>kind='extension'</code>）的<b>读权限</b>要放开给普通用户（只读）——
-  当前完全没有这条规则（access-control 对 extension 零特殊处理）。</p>
+  <p><b>但有新增需求</b>：扩展项目（<code>kind='extension'</code>）的<b>读权限</b>要放开给普通用户，
+  且<b>锁死只读</b> —— 当前完全没有这条规则（access-control 对 extension 零特殊处理）。</p>
   <div class="box note">
     <span class="t">整改</span>
-    <b>B</b>　新增规则：插件项目 <b>管理员读写 / 普通用户只读</b>。
-    覆盖 <code>canReadProject</code> / <code>canManageProject</code> / <code>projectAllowsReaderWrite</code> 及文件端点
+    <b>B</b>　新增<b>扩展项目例外</b>：非 <code>admin</code> 者恒按 <code>viewer</code> 对待 ——
+    <code>canReadProject</code> 恒真、<code>canManageProject</code> 恒假、写操作恒假；
+    <b>且禁止把 <code>user</code> 设为扩展项目的 <code>owner</code>/<code>developer</code></b>（成员管理入口同步收口）。
+    管理员在扩展项目中 ≡ <code>owner</code>。
   </div>
 
   <!-- 3.8 -->
@@ -467,7 +514,11 @@
     <thead><tr><th style="width:5%">#</th><th style="width:46%">决策</th><th>落地</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>项目创建者对项目内<b>所有</b>会话有全部权限</td><td><b>保持现状</b>，不改 <code>canOperateSession</code></td></tr>
-      <tr><td>2</td><td>插件项目：管理员读写、普通用户只读</td><td>见 <b>B</b></td></tr>
+      <tr><td>2</td><td>扩展项目：管理员 ≡ owner；<b><code>user</code> 锁死 viewer</b>（不可提升）</td><td>见 <b>B</b></td></tr>
+      <tr><td>10</td><td>系统角色简化为 <code>admin</code> / <code>user</code>（取消 <code>developer</code>）</td><td>见 §2.6；迁移见 §2.5</td></tr>
+      <tr><td>11</td><td>项目内角色简化为 <code>owner</code> / <code>developer</code> / <code>viewer</code>（取消 <code>manager</code> / <code>member</code>）</td><td>见 §2.6</td></tr>
+      <tr><td>12</td><td><code>admin</code> 对所有项目拥有 <code>owner</code> 同等权限</td><td>见 §2.3</td></tr>
+      <tr><td>13</td><td>仅 <code>admin</code> 可创建扩展项目</td><td>见 §2.6</td></tr>
       <tr><td>3</td><td>只读成员：<b>不能对话、不能改删文件</b></td><td>见 <b>C</b>、<b>D</b></td></tr>
       <tr><td>4</td><td><code>bindPathManual</code> 普通用户堵掉、仅管理员保留</td><td>见 <b>A</b></td></tr>
       <tr><td>5</td><td>公用 <code>/tmp</code>、<code>~/.claude</code> 隔离<b>延后</b></td><td>见 §6</td></tr>
