@@ -188,7 +188,7 @@ issue 侧已有 v3 gate（`:362-368` 走 `projectAllowsReaderWrite`，已排除 
 
 | 缺口 | 后果 | 状态 |
 |---|---|---|
-| 公用 `/tmp` | Agent 可读 `/tmp/tmux-<uid>/` 插座；**且该插座还是"指挥沙盒外进程"的通道**（已实测逃逸） | **已升级为必须解决**，见 §8 |
+| 公用 `/tmp` | Agent 可读 `/tmp/tmux-<uid>/` 插座（跨用户偷看 AI 面板）；该插座同时是"指挥沙盒外进程"的通道 | 延后（见 §8.1） |
 | 公用 `~/.claude` | 任一 Agent 可读**全体用户的提问历史、会话转录、凭据** | 延后 |
 | Agent 与后端同 uid | 应用层是唯一防线；无 OS 级兜底 | 延后 |
 | Landlock 不可限制面 | `chmod` / `stat` / `chdir` 等（内核 man page CAVEATS 明载） | 已认可 |
@@ -217,22 +217,19 @@ issue 侧已有 v3 gate（`:362-368` 走 `projectAllowsReaderWrite`，已排除 
 
 ---
 
-## 8. 待决问题（阻塞项）
+## 8. 待决问题
 
-**Unix socket 连接不受 Landlock 管辖**（sandbox-plan.html §2 测试任务 VIII 已实测）：
-socket 在被 deny 的目录内时 `open` 被拒、但 `connect` **成功**。
+### 8.1 已决定延后（不阻塞本轮）
 
-因此 **只给 pane 进程套 Landlock 关不住 Agent** —— 沙盒外的进程可被指挥着干活（tmux `run-shell`
-已实测逃逸成功）。mobius 环境下至少三个通道：**tmux server**（正是 Agent 宿主）、
-**code-server**（回环 + `--auth none`）、**docker.sock**（可达即等价 root）。
-**把 socket 挪位置无效**，deny 列表也拦不住。
+**Unix socket 通道** —— 已实测：socket 在被 deny 的目录内时 `open` 被拒、但 `connect` **成功**
+（sandbox-plan.html §2 测试任务 VIII）。因此沙盒外的进程可被指挥着干活，mobius 下至少三个通道：
+**tmux server**（正是 Agent 宿主）、**code-server**（回环 + `--auth none`）、**docker.sock**（可达即等价 root）。
 
-| 方向 | 说明 | 代价 |
-|---|---|---|
-| **不用 tmux 承载 Agent** | 去掉"沙盒外的代理进程"；`deepseek-harness` 已是直接 spawn 的先例 | 要动 Agent 管理架构 |
-| **独立 OS 用户** | Agent 换 uid → socket（`srw-rw----` 属主为后端 uid）被普通 DAC 拦住；**也是唯一能顺带干掉 docker.sock 的途径** | 需要一次提权 |
-| seccomp 拦 connect | 静态 BPF 只能整体禁（断网）；按 family 过滤需 unotify 监督进程，而它在容器内被 Docker 默认策略拦死 | ❌ 不可行 |
+**已决定：本轮不处理，后续再完善。** Landlock 层面无法拦截（`connect` 不经文件系统权限判定），
+真正可行的方向是"去掉沙盒外的代理进程"或"Agent 换独立 OS 用户"，两者都属架构变更，
+留待后续迭代。**本轮沙盒按已定方案实施，此项不在验收范围内。**
 
-**此外待确认**：
+### 8.2 仍需确认
+
 - 修复 E 的边界：用户**自己创建的会话**是否也断？倾向**保留**（那是他自己的对话记录），只断项目内 issue/research。
 - 修复 G 中 `GET /api/tasks/:id/risk` 是保持"有意无鉴权"还是补 token。

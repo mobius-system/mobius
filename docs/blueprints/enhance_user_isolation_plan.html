@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户隔离增强方案 —— mobius 后端视角</title>
+<style>
+  :root{
+    --ink:#151b26; --ink-2:#3d4757; --ink-3:#6b7688;
+    --bg:#f7f8fa; --card:#ffffff; --line:#e3e7ee; --line-2:#eef1f6;
+    --accent:#3355cc; --accent-bg:#eef2ff;
+    --ok:#1a7f52; --ok-bg:#e9f7f0;
+    --warn:#9a6200; --warn-bg:#fff7e6;
+    --bad:#b3261e; --bad-bg:#fdecea;
+    --mono:"SFMono-Regular",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",
+           "Microsoft YaHei","Noto Sans SC","Source Han Sans SC",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.85;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:56px 28px 96px}
+
+  /* ---------- hero ---------- */
+  .hero{margin-bottom:44px}
+  .eyebrow{
+    display:inline-block;font-size:12px;letter-spacing:.14em;font-weight:600;
+    color:var(--accent);background:var(--accent-bg);
+    padding:5px 12px;border-radius:999px;margin-bottom:18px;
+  }
+  h1{font-size:34px;line-height:1.3;margin:0 0 14px;letter-spacing:-.01em;font-weight:700}
+  .lede{font-size:17px;color:var(--ink-2);margin:0 0 26px;max-width:60ch}
+  .hero-oneline{
+    border-left:3px solid var(--accent); background:var(--card);
+    border-radius:0 10px 10px 0; padding:18px 22px;
+    font-size:16px; color:var(--ink); box-shadow:0 1px 2px rgba(21,27,38,.05);
+  }
+  .meta{
+    margin-top:22px;font-size:13px;color:var(--ink-3);
+    display:flex;flex-wrap:wrap;gap:8px 20px;
+  }
+
+  /* ---------- sections ---------- */
+  section{margin:0 0 46px}
+  h2{
+    font-size:22px;margin:0 0 18px;padding-bottom:11px;font-weight:650;
+    border-bottom:1px solid var(--line);letter-spacing:-.005em;
+  }
+  h2 .n{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:27px;height:27px;margin-right:11px;vertical-align:2px;
+    background:var(--ink);color:#fff;border-radius:7px;
+    font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;
+  }
+  h3{font-size:17px;margin:30px 0 12px;font-weight:650;color:var(--ink)}
+  h3:first-child{margin-top:0}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 16px;padding-left:24px}
+  li{margin-bottom:7px}
+  li>ul,li>ol{margin-top:7px;margin-bottom:4px}
+  strong{font-weight:650}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(51,85,204,.3)}
+  a:hover{border-bottom-color:var(--accent)}
+
+  /* ---------- code ---------- */
+  code{
+    font-family:var(--mono);font-size:.875em;background:#f0f2f6;
+    padding:2px 6px;border-radius:5px;color:#28324a;word-break:break-word;
+  }
+  pre{
+    background:#1c2230;color:#e6eaf2;padding:18px 20px;border-radius:10px;
+    overflow-x:auto;margin:0 0 18px;font-size:13.5px;line-height:1.7;
+    font-family:var(--mono);box-shadow:0 1px 3px rgba(21,27,38,.12);
+  }
+  pre code{background:none;padding:0;color:inherit;font-size:1em}
+  .cmt{color:#8d9ab3}
+
+  /* ---------- tables ---------- */
+  .tw{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:520px}
+  th,td{padding:11px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-2)}
+  th{background:#f4f6fa;font-weight:650;font-size:13.5px;color:var(--ink-2);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td code{font-size:12.8px}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* ---------- callouts ---------- */
+  .box{border-radius:10px;padding:16px 20px;margin:0 0 18px;font-size:15px;border:1px solid}
+  .box p:last-child,.box ul:last-child,.box ol:last-child{margin-bottom:0}
+  .box .t{font-weight:650;display:block;margin-bottom:6px;font-size:14px;letter-spacing:.01em}
+  .warn{background:var(--warn-bg);border-color:#f0dcb0;color:#5c3d00}
+  .warn .t{color:var(--warn)}
+  .bad{background:var(--bad-bg);border-color:#f3c9c4;color:#7a1a15}
+  .bad .t{color:var(--bad)}
+  .ok{background:var(--ok-bg);border-color:#bfe5d3;color:#0f5136}
+  .ok .t{color:var(--ok)}
+  .note{background:var(--accent-bg);border-color:#ccd8fb;color:#233a80}
+  .note .t{color:var(--accent)}
+
+  /* ---------- pills ---------- */
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap;line-height:1.7}
+  .p-ok{background:var(--ok-bg);color:var(--ok)}
+  .p-bad{background:var(--bad-bg);color:var(--bad)}
+  .p-warn{background:var(--warn-bg);color:var(--warn)}
+  .p-mute{background:#eef1f6;color:var(--ink-3)}
+
+  /* ---------- flow ---------- */
+  .flow{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}
+  .step{
+    flex:1 1 150px;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:13px 15px;font-size:13.5px;line-height:1.6;
+  }
+  .step b{display:block;font-size:12px;color:var(--accent);letter-spacing:.08em;margin-bottom:4px}
+
+  hr{border:none;border-top:1px solid var(--line);margin:46px 0}
+  footer{font-size:13px;color:var(--ink-3);text-align:center;padding-top:8px}
+
+  @media (max-width:640px){
+    .wrap{padding:34px 18px 64px}
+    h1{font-size:26px}
+    h2{font-size:19px}
+    body{font-size:15px}
+  }
+  @media print{
+    body{background:#fff}
+    .wrap{max-width:none;padding:0}
+    pre{background:#f4f6fa;color:#1c2230;border:1px solid var(--line);box-shadow:none}
+    .cmt{color:#7a849b}
+    section{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <span class="eyebrow">用户隔离重构 · 后端方案</span>
+  <h1>用户隔离增强方案<br><span style="font-size:22px;font-weight:600;color:var(--ink-2)">mobius 后端视角</span></h1>
+  <p class="lede">从 mobius 后端与全部 HTTP endpoint 出发，收口跨用户访问。
+  沙盒机制、驱动实现与逐项实测<strong>不在本文展开</strong>。</p>
+  <div class="hero-oneline">
+    <strong>配套文档：</strong>
+    <a href="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/sandbox-plan-v6.html">Agent 文件系统沙盒 —— 详细实施方案</a>
+    （机制选型 · 驱动源码 · 完整实测记录）。本文只写后端侧要做什么。
+  </div>
+  <div class="meta">
+    <span>日期：2026-10-09</span>
+    <span>范围：mobius 后端 + 全部 HTTP endpoint</span>
+    <span>关联 Issue：用户隔离重构</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section>
+  <h2><span class="n">1</span>威胁模型与现状</h2>
+
+  <div class="box bad">
+    <span class="t">根本前提</span>
+    <b>mobius 后端、它 spawn 的所有 Agent、以及 code-server，全部运行在同一个 Linux 账号下。</b>
+    没有 uid 隔离、没有 namespace、没有容器内二次隔离。
+  </div>
+
+  <p>推论：<b>应用层（HTTP 路由 + access-control）是租户之间唯一的防线。</b>
+  应用层被绕过的缺口，等于直接拿到该 OS 账号能碰的一切 —— 包括其他用户的工作区、SSH 私钥、以及整机。</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:16%">层</th><th>现状</th></tr></thead>
+    <tbody>
+      <tr><td>用户目录</td><td>约定式：<code>users.work_dir</code>（默认 <code>&lt;WORKSPACE_ROOT&gt;/&lt;userId&gt;</code>）。<b>仅应用层约束</b></td></tr>
+      <tr><td>项目根</td><td><code>projects.bind_path</code>；<code>resolveProjectPath</code> 做词法围栏</td></tr>
+      <tr><td>强制点</td><td><b>分散</b>：<code>project-path.ts</code>（穿越）、<code>project-file-ops.ts</code>（软链/文件名）、<code>workspace.ts</code>（会话 cwd）、<code>code-server-workspace.ts</code>（编辑器根）、<code>access-control.ts</code>（归属），外加各路由自行判断</td></tr>
+      <tr><td>Agent 执行</td><td>tmux 窗口内 <code>bash -lc</code>，与后端同 uid，<code>--dangerously-skip-permissions</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+  <h2><span class="n">2</span>已确认的后端缺陷</h2>
+  <p>全部经逐条读码核实，行号为改前状态。</p>
+
+  <h3>P0-1　<code>bindPathManual</code> 无门禁 —— 单点废掉整套路径围栏</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:18%">项</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td>位置</td><td>创建 <code>routes/projects.ts:2127</code>（<b>仅 <code>auth</code></b>）、<code>:2133</code> 从 body 直读、<code>:2216-2218</code> 生效；改绑 <code>:2723-2726</code></td></tr>
+      <tr><td>旁路函数</td><td><code>routes/projects.ts:418-432</code> <code>resolveBindPathManual()</code>，注释自认"<b>不检查是否落在 work_dir 内</b>"</td></tr>
+      <tr><td>对照</td><td>安全的兄弟函数 <code>resolveBindPath</code>（<code>:387-411</code>）有 <code>abs.startsWith(userRoot + path.sep)</code> 校验</td></tr>
+      <tr><td>攻击</td><td>任意登录用户 <code>POST /api/projects {"name":"x","bindPath":"/etc","bindPathManual":true}</code></td></tr>
+      <tr><td><b>后果面</b></td><td>不只文件接口 —— <code>session-message-runner</code> 取的 <code>cwd</code> 就来自 <code>bind_path</code>，<b>这条直接决定 Agent 在哪儿跑</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>P1-2　code-server 工作区放行过宽</h3>
+  <p><code>services/code-server-workspace.ts</code></p>
+  <pre><code>:27   if (isWithinTmp(target)) return true;          <span class="cmt">// 任意 /tmp 路径</span>
+:31   return target === path.dirname(bindRoot);      <span class="cmt">// bind_path 的【父目录】</span>
+:99   if (isWithinTmp(target)) return { ok: true };  <span class="cmt">// openFile 载荷也放行 /tmp</span></code></pre>
+  <p>无 realpath。第 31 行是硬伤：项目若绑定在 <code>work_dir</code> 本身（<code>resolveBindPath</code> 允许），
+  父目录即<b>全站工作区公共父目录</b> → <code>?folder=/data/workspace</code> 一览全站。</p>
+
+  <h3>P1-3　只读成员可开研究会话</h3>
+  <p><code>services/access-control.ts:370-372</code> <code>canCreateSessionForResearch</code>
+  <b>仅委托 <code>canReadResearch</code></b>，无写闸。issue 侧已有 v3 gate（<code>:362-368</code> 走
+  <code>projectAllowsReaderWrite</code>，已排除 viewer），<b>research 侧缺失</b>
+  → viewer 能开研究会话让 AI 干活，与"只读"语义矛盾。</p>
+
+  <h3>P2-4　文件写端点用读权限把关</h3>
+  <p><code>routes/projects.ts</code> 的文件写端点（<code>/:id/file</code>、
+  <code>/files/{create,mkdir,move,copy,rename}</code>、<code>/import-zip</code>）统一调
+  <code>loadReadableProject</code>（<b>37 处</b>），而管理类只有 7 处 <code>loadManageableProject</code>
+  → <b>viewer（只读成员）可以改、删、搬文件</b>。</p>
+
+  <h3>P2-5　读路径不查软链，写路径查</h3>
+  <p><code>assertNoSymlink</code> 只在 copy/move/mkdir/create/rename 上调用；
+  读路径 <code>routes/projects.ts:3442-3446</code>（<code>statSync</code> 跟随 + <code>readFileSync</code>）与
+  <code>:3605-3617</code>（<code>/file/download</code> <b>只 lstat 最后一段</b>）都不查
+  → 在自己项目里建软链指向他人目录后可跨用户读。</p>
+
+  <h3>P2-6　被移出项目者仍保有旧 issue / research 的读写</h3>
+  <p><code>services/access-control.ts</code> 的 <code>created_by</code> 短路无视当前成员身份：
+  <code>canReadIssue:317</code>、<code>canManageIssue:334</code>、<code>canReadResearch:342</code>、
+  <code>canManageResearch:359</code>。</p>
+
+  <h3>P2-7　<code>GET /api/research-graph/:researchId</code> 完全无鉴权</h3>
+  <p><code>routes/researches.ts:677</code> 无任何中间件（对照 <code>:658</code> 黑板有
+  <code>researchBlackboardUserAccess</code>、<code>:688</code> 图片有 <code>downloadAuth</code>）；
+  <code>server.js:127</code> 挂载，且 <b>server.js 无全局 auth</b>
+  → 匿名可读任意 research 的图内容与服务器绝对路径。</p>
+
+  <h3>P3　其余确认项</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:6%">#</th><th style="width:30%">位置</th><th>问题</th></tr></thead>
+    <tbody>
+      <tr><td>a</td><td><code>routes/files.ts:60-64, 80-89</code></td><td><code>/api/download</code>、<code>/api/files/download</code> 放行<b>任意 <code>/tmp</code></b> 与<b>共享 upload 目录</b>；项目前缀为<b>纯词法</b>、无 realpath</td></tr>
+      <tr><td>b</td><td><code>routes/skills.ts:309-317</code>（memories 同款）</td><td><code>import-local</code> 接受任意服务器绝对路径 → 读进自己库</td></tr>
+      <tr><td>c</td><td><code>routes/sessions.ts:1860-1900</code></td><td><code>/emphasize</code> 只校验<b>会话</b>归属，<code>Skills.findById(id)</code>(<code>:1888</code>)/<code>Memories.findById(id)</code>(<code>:1896</code>) 的 id 来自 body，<b>无 <code>canReadContextItem</code></b> → 读他人 memory 正文 / 复制他人 skill 目录</td></tr>
+      <tr><td>d</td><td><code>routes/conversations.ts:117-137, 197-247</code></td><td>任意群成员可加任意 agent（不校验邀请者是否拥有）；<code>:231</code> <code>user_id: ownerId</code>、<code>:239</code> 以 owner 身份 <code>runSessionMessage</code> → 可驱动他人 Agent</td></tr>
+      <tr><td>e</td><td><code>routes/researches.ts:664-675</code></td><td>黑板 POST 信任客户端传的 <code>author</code> / <code>metadata.session_id</code> → 可冒名</td></tr>
+      <tr><td>f</td><td><code>routes/tasks.ts:167-172</code></td><td><code>GET /api/tasks/:id/risk</code> 无鉴权（注释自认 wrapper/hooks 用途）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>已正确守住（不需改动，供回归对照）</h3>
+  <div class="box ok">
+    <span class="t">这些地方是对的，改的时候别改坏</span>
+    <code>project-path.ts</code> 词法围栏 + <code>..</code> 剥离 ·
+    <code>project-file-ops.ts</code> 的 <code>assertNoSymlink</code> / <code>validateNewName</code> ·
+    <code>access-control.ts</code> 的 <code>allowedByVisibility</code>（<b>无 default-allow 兜底</b>）·
+    扩展名 <code>EXT_NAME_RE</code> + <code>resolveUnder</code> + per-user ext data ·
+    <code>code-server-proxy.ts</code> 的 <code>&lt;userId&gt;__&lt;projectId&gt;</code> 键校验 + <code>jwt.id</code> 匹配 ·
+    <code>mention-context.ts</code> 门禁 ·
+    <code>research-graph.ts:133-157</code> <code>resolveGraphImage</code>（<b>唯一正确处理 symlink 处</b>）·
+    <code>routes/web-terminal.ts</code> 的 <code>findByIdForUser</code> + adhoc 仅管理员 ·
+    <code>routes/ext.ts</code> 的 <code>safeResolveUnder</code> / <code>safeResolveAsset</code>
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+  <h2><span class="n">3</span>已拍板的策略边界</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:5%">#</th><th style="width:44%">决策</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>项目创建者对项目内<b>所有</b>会话有全部权限（读+操作）</td><td><b>保持现状</b>，不改 <code>canOperateSession</code></td></tr>
+      <tr><td>2</td><td>插件项目（<code>kind='extension'</code>）：管理员读写、普通用户只读</td><td><b>需新加规则</b>（access-control 现对 extension 零特殊处理）</td></tr>
+      <tr><td>3</td><td>只读成员：<b>不能对话、不能改删文件</b></td><td>需修 P1-3、P2-4</td></tr>
+      <tr><td>4</td><td><code>bindPathManual</code> 普通用户<b>堵掉</b>，<b>仅管理员保留</b></td><td>需修 P0-1</td></tr>
+      <tr><td>5</td><td>公用 <code>/tmp</code>、<code>~/.claude</code> 的隔离<b>延后</b></td><td>已知风险，见 §6</td></tr>
+      <tr><td>6</td><td>被移出项目者：<b>断掉</b>其在项目内旧 issue/research 的访问</td><td>需修 P2-6</td></tr>
+      <tr><td>7</td><td>沙盒按「<b>会话归谁</b>」判定，不按「谁在操作」</td><td>后端算 deny 列表时以 session owner 为准</td></tr>
+      <tr><td>8</td><td>管理员不套沙盒；普通用户<b>强制</b>套</td><td>见 §5</td></tr>
+      <tr><td>9</td><td>沙盒不可用 → 回退到「<b>不允许创建普通用户</b>」</td><td>见 §5</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+  <h2><span class="n">4</span>后端修复清单</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:6%">#</th><th style="width:46%">内容</th><th>位置</th></tr></thead>
+    <tbody>
+      <tr><td><b>A</b></td><td><code>bindPathManual</code> 加角色判定（仅 <code>admin</code> 可命中）</td><td><code>routes/projects.ts:2216-2218</code>、<code>:2723-2726</code></td></tr>
+      <tr><td><b>B</b></td><td>插件项目规则：管理员读写 / 普通用户只读</td><td><code>services/access-control.ts</code> 新增（覆盖 <code>canReadProject</code> / <code>canManageProject</code> / <code>projectAllowsReaderWrite</code> 及文件端点）</td></tr>
+      <tr><td><b>C</b></td><td>研究会话加写闸</td><td><code>services/access-control.ts:370-372</code>（照抄 issue 侧 v3 gate）</td></tr>
+      <tr><td><b>D</b></td><td>文件写端点改用写权限 gate</td><td><code>routes/projects.ts</code> 37 处 <code>loadReadableProject</code> → 写权限版本</td></tr>
+      <tr><td><b>E</b></td><td>被踢成员断权</td><td><code>access-control.ts:317 / 334 / 342 / 359</code> 追加「<b>仍是项目成员</b>」条件</td></tr>
+      <tr><td><b>F</b></td><td>读路径补软链检查</td><td><code>routes/projects.ts:3442-3446</code>、<code>:3605-3617</code> 补 <code>assertNoSymlink</code></td></tr>
+      <tr><td><b>G</b></td><td>补鉴权</td><td><code>routes/researches.ts:677</code> 加 <code>downloadAuth</code> + <code>canReadResearch</code>；<code>routes/tasks.ts:167-172</code> 视需要加 token</td></tr>
+      <tr><td><b>H</b></td><td>收窄 download 放行面</td><td><code>routes/files.ts:60-64, 80-89</code>：去掉 <code>/tmp</code> 全放行、去掉共享 upload 全放行；项目前缀补 realpath</td></tr>
+      <tr><td><b>I</b></td><td><code>import-local</code> 加根约束</td><td><code>routes/skills.ts:309-317</code>、<code>routes/memories.ts</code> 同款</td></tr>
+      <tr><td><b>J</b></td><td><code>/emphasize</code> 的 item 加 <code>canReadContextItem</code></td><td><code>routes/sessions.ts:1888, 1896</code></td></tr>
+      <tr><td><b>K</b></td><td>群 <code>@agent</code> 加「邀请者须拥有该 agent」校验</td><td><code>routes/conversations.ts:117-137</code></td></tr>
+      <tr><td><b>L</b></td><td>黑板 POST 的 <code>author</code>/<code>session_id</code> 改由服务端注入</td><td><code>routes/researches.ts:664-675</code></td></tr>
+      <tr><td><b>M</b></td><td>存量扫描：列出 <code>bind_path</code> 不在其 owner <code>work_dir</code> 内的项目</td><td>一次性脚本</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box note">
+    <span class="t">A 的兼容性</span>
+    后端内部自建的项目（assistant 项目、自迭代项目）走<b>内部构造</b>
+    （<code>routes/assistant.ts</code>、<code>services/extension-agent-bridge.ts</code>），
+    不经过 <code>bindPathManual</code> 分支，因此<b>不受影响</b>。
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+  <h2><span class="n">5</span>沙盒在后端侧的接入</h2>
+  <p>沙盒机制、驱动实现与实测记录见
+  <a href="https://serve.nutshellai.cn/publish/auto/mobius-sandbox/sandbox-plan-v6.html">sandbox-plan.html</a>。
+  后端只需做四件事：</p>
+
+  <h3>5.1 算 deny 列表（每次 spawn 现算）</h3>
+  <pre><code>deny(U) = { 每个 V≠U 的 users.work_dir }
+        ∪ { 每个 U 无写权限的 projects.bind_path }</code></pre>
+  <p><code>U</code> = <b>会话归属者</b>（决策 7）。写成策略文件传给驱动（不走 argv，避免暴露在 <code>ps</code>）。</p>
+
+  <h3>5.2 三处注入点包一层启动器</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:36%">文件</th><th style="width:10%">行</th><th>改法</th></tr></thead>
+    <tbody>
+      <tr><td><code>agents/tmux-claude-code.ts</code></td><td class="num">~1867</td><td><code>bash -lc cmd</code> → <code>mobius-landlock --policy F -- bash -lc cmd</code></td></tr>
+      <tr><td><code>agents/tmux-codex.ts</code></td><td class="num">~1678</td><td>同上</td></tr>
+      <tr><td><code>agents/deepseek-harness.ts</code></td><td class="num">~257</td><td><code>spawn(cmd,…)</code> → <code>spawn(launcher,…)</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>5.3 两个开关</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:36%">配置</th><th style="width:12%">默认</th><th>语义</th></tr></thead>
+    <tbody>
+      <tr><td><code>AGENT_SANDBOX_ENFORCE_USERS</code></td><td><code>true</code></td><td>普通用户 Agent <b>强制</b>套沙盒，无用户级关闭途径</td></tr>
+      <tr><td><code>AGENT_SANDBOX_ADMIN</code></td><td><code>false</code></td><td>管理员 Agent 是否套沙盒</td></tr>
+    </tbody>
+  </table></div>
+  <div class="box warn">
+    <span class="t">⚠️ 本项目 env 的三道闸</span>
+    新增环境变量必须<b>同时</b>修改三处，漏一道会静默回落默认值：<br>
+    <code>boot_utils.py</code> 的 <code>RUNTIME_SETTINGS</code> ·
+    <code>ecosystem.config.js</code> 的 <code>envKeys</code> ·
+    <code>backend/config.js</code>
+  </div>
+
+  <h3>5.4 启动自检 + fail-closed</h3>
+  <p>启动时跑 <code>mobius-landlock --check</code>。任一项失败即进入
+  「<b>不允许创建普通用户</b>」状态：注册/开通普通用户的入口一律拒绝，日志写明原因。</p>
+  <div class="box bad">
+    <span class="t">⚠️ 自检必须在子进程里执行</span>
+    <code>landlock_restrict_self</code> 是<b>永久自缚</b>的。在主进程里调用会把 mobius 后端自己锁死。
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+  <h2><span class="n">6</span>已知并接受的缺口</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">缺口</th><th>后果</th><th style="width:18%">状态</th></tr></thead>
+    <tbody>
+      <tr><td>公用 <code>/tmp</code></td><td>Agent 可读 <code>/tmp/tmux-&lt;uid&gt;/</code> 插座（跨用户偷看 AI 面板）；该插座同时是"指挥沙盒外进程"的通道</td><td><span class="p-warn">延后</span></td></tr>
+      <tr><td>公用 <code>~/.claude</code></td><td>任一 Agent 可读<b>全体用户的提问历史、会话转录、凭据</b></td><td><span class="p-warn">延后</span></td></tr>
+      <tr><td>Agent 与后端同 uid</td><td>应用层是唯一防线；无 OS 级兜底</td><td><span class="p-warn">延后</span></td></tr>
+      <tr><td>Landlock 不可限制面</td><td><code>chmod</code> / <code>stat</code> / <code>chdir</code> 等（内核 man page CAVEATS 明载）</td><td><span class="p-mute">已认可</span></td></tr>
+      <tr><td>无自定义错误话术</td><td>被拦时只有 <code>Permission denied</code>，无法从错误码区分沙盒</td><td><span class="p-mute">本次放弃</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+  <h2><span class="n">7</span>分阶段实施</h2>
+  <div class="tw"><table>
+    <thead><tr><th style="width:10%">阶段</th><th style="width:48%">内容</th><th>产出</th></tr></thead>
+    <tbody>
+      <tr><td><b>P0</b></td><td>驱动入仓 + 启动器落地</td><td>可运行的 <code>mobius-landlock</code></td></tr>
+      <tr><td><b>P1</b></td><td>后端修复 A ~ M</td><td>修复提交 + 存量扫描报告</td></tr>
+      <tr><td><b>P2</b></td><td>接入 3 个注入点 + 两个开关（三道闸）+ 启动自检与回退</td><td>沙盒生效</td></tr>
+      <tr><td><b>P3</b></td><td>打包进容器镜像 + 部署</td><td>上线</td></tr>
+      <tr><td><b>P4</b></td><td>端到端验证</td><td>验证报告</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>验证清单（后端侧）</h3>
+  <ol>
+    <li>普通用户会话：Agent 读不到他人目录；管理员会话不受限</li>
+    <li>Agent 正常完成一次真实任务（编译 / 跑测试 / 联网），不被误伤</li>
+    <li>新会话、续跑、<code>deepseek-harness</code> 三条路径都套上</li>
+    <li><code>--check</code> 可用环境返回 0、不可用环境返回非 0；强制失败 → 普通用户创建入口被拒、管理员不受影响</li>
+    <li>自检后 mobius 主进程仍能正常读写任意路径（<b>未被自缚</b>）</li>
+    <li>A ~ M 每项配一条针对性用例</li>
+  </ol>
+</section>
+
+<!-- ============ 8 ============ -->
+<section>
+  <h2><span class="n">8</span>待决问题</h2>
+
+  <h3>8.1 已决定延后（不阻塞本轮）</h3>
+  <p><b>Unix socket 通道</b> —— 已实测：socket 在被 deny 的目录内时 <code>open</code> 被拒、
+  但 <code>connect</code> <b>成功</b>。因此沙盒外的进程可被指挥着干活，mobius 下至少三个通道：
+  <b>tmux server</b>（正是 Agent 宿主）、<b>code-server</b>（回环 + <code>--auth none</code>）、
+  <b>docker.sock</b>（可达即等价 root）。</p>
+  <div class="box warn">
+    <span class="t">定论</span>
+    <b>本轮不处理，后续再完善。</b> Landlock 层面无法拦截（<code>connect</code> 不经文件系统权限判定）；
+    真正可行的方向是"去掉沙盒外的代理进程"或"Agent 换独立 OS 用户"，两者都属架构变更，留待后续迭代。
+    <b>本轮沙盒按已定方案实施，此项不在验收范围内。</b>
+  </div>
+
+  <h3>8.2 仍需确认</h3>
+  <ul>
+    <li>修复 <b>E</b> 的边界：用户<b>自己创建的会话</b>是否也断？倾向<b>保留</b>（那是他自己的对话记录），只断项目内 issue/research。</li>
+    <li>修复 <b>G</b> 中 <code>GET /api/tasks/:id/risk</code> 是保持"有意无鉴权"还是补 token。</li>
+  </ul>
+</section>
+
+
+<footer>
+  mobius 用户隔离重构 · 后端增强方案 · 2026-10-09 ｜ 沙盒机制见配套文档 sandbox-plan.html
+</footer>
+
+</div>
+</body>
+</html>
