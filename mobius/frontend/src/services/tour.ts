@@ -205,7 +205,7 @@ async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
   addStepIfPresent(steps, '[data-tour="admin-section-users"]', {
     popover: {
       title: '用户管理',
-      description: guideParagraphs('管员工账号、角色(管理员/成员)和权限。'),
+      description: guideParagraphs('管理用户账号、系统角色(管理员/普通用户)和项目权限。'),
       nextBtnText: '下一个模块',
       doneBtnText: '我了解了',
       side: 'top',

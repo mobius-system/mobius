@@ -2349,11 +2349,6 @@ router.get('/:id/member-candidates', auth, (req: express.Request, res: express.R
   const candidates = rows.map((r) => ({
     id: r.id,
     display_name: r.display_name || r.id,
-    groups: Users.listGroupMemberships(r.id).map((g) => ({
-      id: g.group_id,
-      name: g.group_name,
-      is_primary: !!g.is_primary,
-    })),
     already_member: memberIds.has(r.id),
   }));
   // 返回数组: UserPicker 期望 searchPath 返回数组 (非 {candidates} 对象), 否则判定为空.

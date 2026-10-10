@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../store'
 import { UserPicker } from './user-picker'
 
-export type ProjectMemberRole = 'viewer' | 'member' | 'manager'
+export type ProjectMemberRole = 'viewer' | 'developer' | 'none'
 
 export type MemberInput = { user_id: string; role: string }
 
@@ -11,32 +11,31 @@ type ProjectMemberInviteProps = {
   onChange: (next: MemberInput[]) => void
   currentUserId?: string
   disabled?: boolean
+  extensionProject?: boolean
 }
 
 const ROLE_OPTIONS: Array<{ value: ProjectMemberRole; label: string; hint: string }> = [
-  { value: 'member', label: '项目成员', hint: '可读可写' },
-  { value: 'manager', label: '项目管理员', hint: '可管理成员' },
+  { value: 'developer', label: '项目开发者', hint: '可读可写' },
   { value: 'viewer', label: '项目访客', hint: '只读' },
+  { value: 'none', label: '不显示', hint: '保留成员记录但不授予项目访问权限' },
 ]
-const DEFAULT_ROLE: ProjectMemberRole = 'member'
+const DEFAULT_ROLE: ProjectMemberRole = 'developer'
 
-// 角色筛选 Tab (对齐 ProjectTeamPanel; 创建时邀请列表不含 owner, 故无"项目负责人"档).
+// 角色筛选 Tab (创建时邀请列表不含 owner, 故无"项目所有者"档).
 const FILTER_TABS: Array<{ key: 'all' | ProjectMemberRole; label: string }> = [
   { key: 'all', label: '全部' },
-  { key: 'manager', label: '管理员' },
-  { key: 'member', label: '成员' },
+  { key: 'developer', label: '开发者' },
   { key: 'viewer', label: '访客' },
+  { key: 'none', label: '隐藏' },
 ]
 
 // 创建项目时的"成员邀请": 布局与项目成员设置 Tab(ProjectTeamPanel) 一致 ——
 // 顶部角色筛选 Tab + 搜索框 + 折叠添加区 + 待添加表格. 区别: 创建时尚无 projectId,
 // 列表是"待邀请成员"(无加入时间, 无 owner 档), 选人直接并入列表随项目一起创建.
-export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }: ProjectMemberInviteProps) {
+export function ProjectMemberInvite({ value, onChange, currentUserId, disabled, extensionProject }: ProjectMemberInviteProps) {
   const [pickerIds, setPickerIds] = useState<string[]>([])
-  const [batchRole, setBatchRole] = useState<ProjectMemberRole>(DEFAULT_ROLE)
+  const [batchRole, setBatchRole] = useState<ProjectMemberRole>(extensionProject ? 'viewer' : DEFAULT_ROLE)
   const [nameMap, setNameMap] = useState<Record<string, string>>({})
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; active_user_count: number }>>([])
-  const [groupOpen, setGroupOpen] = useState(false)
   const [filterRole, setFilterRole] = useState<'all' | ProjectMemberRole>('all')
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -76,36 +75,16 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
     setPickerIds([])
   }
 
-  const toggleGroups = async () => {
-    if (groups.length) { setGroupOpen((o) => !o); return }
-    try {
-      const list = await api('/api/user-groups')
-      setGroups(Array.isArray(list) ? list : [])
-      setGroupOpen(true)
-    } catch { setGroupOpen((o) => !o) }
-  }
-
-  const addGroup = async (groupId: string) => {
-    setGroupOpen(false)
-    if (!groupId) return
-    try {
-      const data: any = await api(`/api/user-groups/${groupId}/members`)
-      const members: any[] = Array.isArray(data?.members) ? data.members : []
-      setNameMap((prev) => {
-        const next = { ...prev }
-        for (const m of members) if (m?.id) next[m.id] = m.display_name || m.id
-        return next
-      })
-      addIds(members.map((m) => m.id), batchRole)
-    } catch { /* 忽略 */ }
-  }
 
   const setRole = (userId: string, role: string) =>
     onChange(value.map((v) => (v.user_id === userId ? { ...v, role } : v)))
   const remove = (userId: string) => onChange(value.filter((v) => v.user_id !== userId))
 
+  const roleOptions = extensionProject ? ROLE_OPTIONS.filter((r) => r.value !== 'developer') : ROLE_OPTIONS
+  const filterTabs = extensionProject ? FILTER_TABS.filter((tab) => tab.key !== 'developer') : FILTER_TABS
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { manager: 0, member: 0, viewer: 0 }
+    const c: Record<string, number> = { developer: 0, viewer: 0, none: 0 }
     for (const v of value) if (v.role in c) c[v.role] += 1
     return c
   }, [value])
@@ -130,9 +109,9 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
 
   return (
     <div className="space-y-3">
-      {/* 顶部角色筛选 Tab (全部 / 管理员 / 成员 / 访客 · 计数, 可点选筛选) */}
+      {/* 顶部角色筛选 Tab */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {FILTER_TABS.map((tab) => {
+        {filterTabs.map((tab) => {
           const active = filterRole === tab.key
           return (
             <button key={tab.key} type="button" onClick={() => setFilterRole(tab.key)} disabled={disabled}
@@ -183,35 +162,11 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
               className="h-9 px-2 rounded-lg text-[length:var(--fs-md)] border flex-shrink-0"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
             >
-              {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {roleOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <button type="button" onClick={toggleGroups} disabled={disabled}
-                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] border transition-colors"
-                style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)', background: 'var(--modal-bg)' }}>
-                + 按员工群组加入
-              </button>
-              {groupOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setGroupOpen(false)} />
-                  <div className="absolute z-50 mt-1 w-64 max-h-60 overflow-auto rounded-lg border shadow-lg"
-                    style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)' }}>
-                    {groups.length === 0 ? (
-                      <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
-                    ) : groups.map((g) => (
-                      <button key={g.id} type="button" onClick={() => addGroup(g.id)}
-                        className="block w-full text-left px-3 py-2 text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)] transition-colors"
-                        style={{ color: 'var(--text-secondary)' }}>
-                        {g.name} <span style={{ color: 'var(--text-muted)' }}>· {g.active_user_count} 位启用成员</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>选中即加入下方列表</span>
+            <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>选中用户后加入下方列表</span>
           </div>
         </div>
       )}
@@ -219,7 +174,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
       {/* 待添加成员表格: 成员 / 角色 / 操作 */}
       {filtered.length === 0 ? (
         <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
-          {value.length === 0 ? '暂未添加成员（创建者自动成为项目负责人）' : '没有匹配的成员'}
+          {value.length === 0 ? '暂未添加成员（创建者自动成为项目所有者）' : '没有匹配的成员'}
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
@@ -249,7 +204,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
                         className="h-7 px-1.5 rounded-md text-[length:var(--fs-sm)] border"
                         style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}
                       >
-                        {ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        {roleOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                       </select>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
@@ -268,7 +223,7 @@ export function ProjectMemberInvite({ value, onChange, currentUserId, disabled }
       )}
 
       <p className="text-[length:var(--fs-sm)] leading-5" style={{ color: 'var(--text-muted)' }}>
-        创建者自动成为项目负责人。项目成员可读可写、项目管理员可管理成员、项目访客只读；创建后可在项目设置中调整。
+        创建者自动成为项目所有者。开发者可读可写、访客只读；创建后可在项目设置中调整。
       </p>
     </div>
   )

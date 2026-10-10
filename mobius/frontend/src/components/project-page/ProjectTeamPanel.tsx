@@ -2,15 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../store'
 import { UserPicker } from '../user-picker'
 
-type Role = 'owner' | 'manager' | 'member' | 'viewer'
-
-type MemberGroup = { id: string; name: string; is_primary: boolean }
+type Role = 'owner' | 'developer' | 'viewer' | 'none'
 
 type Member = {
   user_id: string
   display_name: string
   role: Role
-  groups: MemberGroup[]
   is_active: boolean
   created_at: string
   updated_at: string
@@ -23,29 +20,29 @@ type ProjectTeamPanelProps = {
 }
 
 const ROLE_LABELS: Record<Role, string> = {
-  owner: '项目负责人',
-  manager: '项目管理员',
-  member: '项目成员',
+  owner: '项目所有者',
+  developer: '项目开发者',
   viewer: '项目访客',
+  none: '不显示',
 }
 
 // 可切换的角色顺序 (owner 放最后, 强调它是最高权).
-const ROLE_OPTIONS: Role[] = ['member', 'manager', 'viewer', 'owner']
+const ROLE_OPTIONS: Role[] = ['developer', 'viewer', 'none']
 
 const ROLE_BADGE_STYLE: Record<Role, React.CSSProperties> = {
   owner: { background: 'rgba(59,130,246,0.16)', color: '#60a5fa', borderColor: 'rgba(59,130,246,0.32)' },
-  manager: { background: 'rgba(16,185,129,0.14)', color: '#34d399', borderColor: 'rgba(16,185,129,0.30)' },
-  member: { background: 'rgba(148,163,184,0.14)', color: 'var(--text-secondary)', borderColor: 'var(--input-border)' },
+  developer: { background: 'rgba(16,185,129,0.14)', color: '#34d399', borderColor: 'rgba(16,185,129,0.30)' },
   viewer: { background: 'rgba(148,163,184,0.10)', color: 'var(--text-muted)', borderColor: 'var(--input-border)' },
+  none: { background: 'rgba(248,113,113,0.10)', color: '#f87171', borderColor: 'rgba(248,113,113,0.24)' },
 }
 
 // 顶部角色筛选 Tab: 全部 + 4 角色 (照 Aone 权限页左侧分类, 因 mobius 此处已是 Tab 内, 降级成顶部一行).
 const FILTER_TABS: Array<{ key: 'all' | Role; label: string }> = [
   { key: 'all', label: '全部' },
-  { key: 'owner', label: '负责人' },
-  { key: 'manager', label: '管理员' },
-  { key: 'member', label: '成员' },
+  { key: 'owner', label: '所有者' },
+  { key: 'developer', label: '开发者' },
   { key: 'viewer', label: '访客' },
+  { key: 'none', label: '隐藏' },
 ]
 
 function formatDate(value?: string): string {
@@ -58,17 +55,15 @@ function formatDate(value?: string): string {
 
 export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTeamPanelProps) {
   const [members, setMembers] = useState<Member[]>([])
-  const [counts, setCounts] = useState<Record<string, number>>({ owner: 0, manager: 0, member: 0, viewer: 0 })
+  const [counts, setCounts] = useState<Record<string, number>>({ owner: 0, developer: 0, viewer: 0, none: 0 })
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [filterRole, setFilterRole] = useState<'all' | Role>('all')
   const [search, setSearch] = useState('')
   const [pendingIds, setPendingIds] = useState<string[]>([])
   const [adding, setAdding] = useState(false)
-  const [addRole, setAddRole] = useState<Role>('member')
+  const [addRole, setAddRole] = useState<Role>('developer')
   const [showAdd, setShowAdd] = useState(false)
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; active_user_count: number }>>([])
-  const [groupOpen, setGroupOpen] = useState(false)
   const [busyId, setBusyId] = useState('')
 
   useEffect(() => {
@@ -78,7 +73,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       .then((data: any) => {
         if (cancelled) return
         setMembers(Array.isArray(data?.members) ? data.members : [])
-        setCounts(data?.counts || { owner: 0, manager: 0, member: 0, viewer: 0 })
+        setCounts(data?.counts || { owner: 0, developer: 0, viewer: 0, none: 0 })
         setErr('')
       })
       .catch((e: any) => { if (!cancelled) setErr(e?.message || '加载成员失败') })
@@ -109,37 +104,6 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
     }
   }
 
-  const toggleGroups = async () => {
-    if (groups.length) { setGroupOpen((o) => !o); return }
-    try {
-      const list = await api('/api/user-groups')
-      setGroups(Array.isArray(list) ? list : [])
-      setGroupOpen(true)
-    } catch (e: any) {
-      setErr(e?.message || '读取群组失败')
-    }
-  }
-
-  const addGroup = async (groupId: string) => {
-    setGroupOpen(false)
-    if (!groupId) return
-    setAdding(true); setErr('')
-    try {
-      const data: any = await api(`/api/user-groups/${groupId}/members`)
-      const ids = (Array.isArray(data?.members) ? data.members : []).map((m: any) => m.id).filter(Boolean)
-      if (!ids.length) { setErr('该群组当前没有启用成员'); return }
-      const res = await api(`/api/projects/${projectId}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ user_ids: ids, role: addRole }),
-      })
-      applyResult(res)
-      setShowAdd(false)
-    } catch (e: any) {
-      setErr(e?.message || '按群组加入失败')
-    } finally {
-      setAdding(false)
-    }
-  }
 
   const changeRole = async (userId: string, role: Role) => {
     setBusyId(userId); setErr('')
@@ -168,7 +132,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
     }
   }
 
-  // 能否操作"负责人"行: 仅当前用户是项目负责人或管理员 (admin 的 actorRole 为 null 但 canManage=true).
+  // 能否操作"所有者"行: 仅当前用户是项目所有者或管理员 (admin 的 actorRole 为 null 但 canManage=true).
   const canTouchOwner = canManage && (actorRole === 'owner' || !actorRole)
 
   const filteredMembers = useMemo(() => {
@@ -193,7 +157,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
 
   return (
     <div className="space-y-3">
-      {/* 顶部角色筛选 Tab (全部 / 负责人 / 管理员 / 成员 / 访客 · 计数, 可点选筛选) */}
+      {/* 顶部角色筛选 Tab (全部 / 所有者 / 开发者 / 访客 / 不显示 · 计数, 可点选筛选) */}
       <div className="flex flex-wrap items-center gap-1.5">
         {FILTER_TABS.map((tab) => {
           const active = filterRole === tab.key
@@ -243,9 +207,9 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
             <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={adding}
               className="h-9 px-2 rounded-lg text-[length:var(--fs-md)] border flex-shrink-0"
               style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
-              <option value="member">项目成员</option>
-              <option value="manager">项目管理员</option>
+              <option value="developer">项目开发者</option>
               <option value="viewer">项目访客</option>
+              <option value="none">不显示</option>
             </select>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -253,30 +217,6 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
               className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] btn-primary transition-colors disabled:opacity-50">
               {adding ? '添加中...' : '加入项目组'}
             </button>
-            <div className="relative">
-              <button type="button" onClick={toggleGroups} disabled={adding}
-                className="h-8 px-3 rounded-lg text-[length:var(--fs-md)] border transition-colors"
-                style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)', background: 'var(--modal-bg)' }}>
-                + 按群组加入
-              </button>
-              {groupOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setGroupOpen(false)} />
-                  <div className="absolute z-50 mt-1 w-64 max-h-60 overflow-auto rounded-lg border shadow-lg"
-                    style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)' }}>
-                    {groups.length === 0 ? (
-                      <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>暂无群组</div>
-                    ) : groups.map((g) => (
-                      <button key={g.id} type="button" onClick={() => addGroup(g.id)}
-                        className="block w-full text-left px-3 py-2 text-[length:var(--fs-md)] hover:bg-[var(--bg-card-hover)] transition-colors"
-                        style={{ color: 'var(--text-secondary)' }}>
-                        {g.name} <span style={{ color: 'var(--text-muted)' }}>· {g.active_user_count} 位启用成员</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
             {pendingIds.length > 0 && (
               <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>已选 {pendingIds.length} 人</span>
             )}
@@ -295,7 +235,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
         <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
       ) : filteredMembers.length === 0 ? (
         <div className="text-[length:var(--fs-md)] py-6 text-center" style={{ color: 'var(--text-muted)' }}>
-          {members.length === 0 ? '暂无项目组成员' : '没有匹配的成员'}
+          {members.length === 0 ? '暂无项目成员' : '没有匹配的成员'}
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--input-border)' }}>
@@ -324,11 +264,6 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
                         </div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[length:var(--fs-sm)] flex-wrap" style={{ color: 'var(--text-muted)' }}>
                           <span className="font-mono">{m.user_id}</span>
-                          {m.groups.length > 0 && m.groups.map((g) => (
-                            <span key={g.id} className="px-1.5 py-0 rounded border" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-                              {g.name}{g.is_primary ? ' · 主' : ''}
-                            </span>
-                          ))}
                         </div>
                       </td>
                       <td style={tdStyle}>
@@ -367,7 +302,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
 
       {!canManage && (
         <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-          仅项目负责人 / 项目管理员可以管理成员与角色。
+          仅项目所有者可以管理成员与角色。
         </div>
       )}
     </div>

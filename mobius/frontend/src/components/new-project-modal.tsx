@@ -21,9 +21,9 @@ import { ToggleSwitch } from './toggle-switch'
 // The path picker loads on demand; a static import would drag the whole modals module along.
 const PathPickerModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.PathPickerModal })))
 
-type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
+type ProjectVisibility = 'private' | 'public'
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: ProjectVisibility; label: string; description: string }> = [
-  { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
+  { value: 'private', label: '私有', description: '只有项目成员（含创建者）能看到本项目。' },
   { value: 'public', label: '公开', description: '所有登录用户都能看到本项目；仅项目成员可写。' },
 ]
 
@@ -79,7 +79,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   const [defaultUseWorktree, setDefaultUseWorktree] = useState(typeof initialDraft?.defaultUseWorktree === 'boolean' ? initialDraft.defaultUseWorktree : false)
   const [researchEnabled, setResearchEnabled] = useState(!!initialDraft?.researchEnabled)
   const [visibility, setVisibility] = useState<ProjectVisibility>(
-    initialDraft?.visibility === 'team' || initialDraft?.visibility === 'public' || initialDraft?.visibility === 'allowlist'
+    initialDraft?.visibility === 'public'
       ? initialDraft.visibility
       : 'private'
   )
@@ -95,7 +95,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
   const [archiveFile, setArchiveFile] = useState<File | null>(null)
   const archiveInputRef = useRef<HTMLInputElement>(null)
   const initialKind = initialDraft?.projectKind === 'research' || initialDraft?.projectKind === 'extension' ? initialDraft.projectKind : 'default'
-  const canCreateExtensionProject = user?.role === 'admin' || user?.role === 'developer'
+  const canCreateExtensionProject = user?.role === 'admin'
   const initialProjectKind: NewProjectKind = canCreateExtensionProject || initialKind !== 'extension' ? initialKind : 'default'
   const initialDraftHasContent = !!(
     initialDraft?.name?.trim()
@@ -163,7 +163,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       : ''
     const finalName = name.trim() || inferredName
     if (projectKind === 'extension') {
-      if (!canCreateExtensionProject) { setErr('只有管理员或开发者可以创建莫比乌斯拓展项目'); return }
+      if (!canCreateExtensionProject) { setErr('只有管理员可以创建莫比乌斯拓展项目'); return }
       if (!extensionName.trim()) { setErr('请输入拓展标识名'); return }
       if (!/^[a-z][a-z0-9-]{0,31}$/.test(extensionName.trim())) { setErr('拓展标识名格式：以小写字母开头，可包含小写字母、数字和连字符，1-32字符'); return }
     } else {
@@ -188,7 +188,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         body.bindPathManual = bindPathManual
         body.defaultUseWorktree = effectiveWt
         body.researchEnabled = projectKind === 'research' ? true : researchEnabled
-        // 首批项目组成员 (带角色; 排除创建者本人, 他自动成为项目负责人).
+        // 首批项目成员 (带角色; 排除创建者本人, 他自动成为项目所有者).
         body.members = inviteMembers.filter(m => m.user_id && m.user_id !== user?.id)
       }
       const p = await api('/api/projects', {
@@ -283,15 +283,14 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
         <h4 className="text-[length:var(--fs-2xl)] font-semibold mb-1" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>修改项目权限</h4>
         <p className="mb-4 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>添加项目成员（谁能看到 / 使用本项目，由成员列表决定）。</p>
-        {projectKind !== 'extension' && (
-          <div className="mt-3">
-            <ProjectMemberInvite
-              value={inviteMembers}
-              onChange={setInviteMembers}
-              currentUserId={user?.id}
-            />
-          </div>
-        )}
+        <div className="mt-3">
+          <ProjectMemberInvite
+            value={inviteMembers}
+            onChange={setInviteMembers}
+            currentUserId={user?.id}
+            extensionProject={projectKind === 'extension'}
+          />
+        </div>
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={() => setPermissionOpen(false)}
             className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors">
@@ -327,7 +326,7 @@ export function NewProjectModal({ onClose, onCreated }: { onClose: () => void; o
       kind: 'extension',
       label: '莫比乌斯拓展项目',
       description: '创建一个有漂亮前端+后端的拓展项目，满足您的任何需求。',
-      note: canCreateExtensionProject ? '能直接在本系统主页打开的特殊拓展项目，内嵌到本系统之中' : '仅管理员或开发者可创建',
+    note: canCreateExtensionProject ? '能直接在本系统主页打开的特殊拓展项目，内嵌到本系统之中' : '仅管理员可创建',
       icon: <Puzzle className="h-5 w-5" strokeWidth={1.8} />,
     },
   ]

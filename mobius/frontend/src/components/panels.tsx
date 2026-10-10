@@ -291,44 +291,18 @@ type AdminUserStats = {
 type AdminUserRow = {
   id: string
   display_name: string
-  role: 'admin' | 'developer' | 'user' | string
+  role: 'admin' | 'user' | string
   work_dir?: string
-  group_id?: string | null
-  group_name?: string | null
-  group_description?: string | null
   created_at?: string
   deleted_at?: string | null
   stats?: AdminUserStats
-}
-
-type AdminUserGroup = {
-  id: string
-  name: string
-  description?: string
-  created_at?: string
-  updated_at?: string
-  active_user_count?: number
-  user_count?: number
-  is_default?: boolean
-  project_visibility_mode?: 'default' | 'restricted'
-  visible_project_ids?: string[]
-}
-
-type VisCandidate = {
-  id: string
-  name: string
-  kind?: string
-  visibility?: string
-  created_by?: string
-  created_by_name?: string
 }
 
 type EmployeeFormState = {
   id: string
   display_name: string
   password: string
-  role: 'user' | 'admin' | 'developer'
-  group_id: string
+  role: 'user' | 'admin'
   work_dir: string
 }
 
@@ -355,24 +329,15 @@ function parseBulkEmployees(text: string) {
         : line.split(/\s+/).map((p) => p.trim())
       const [id = '', password = '', ...rest] = parts
       const tail = rest.filter(Boolean)
-      let role: 'user' | 'admin' | 'developer' = 'user'
-      if (tail[0] === 'admin' || tail[0] === 'user' || tail[0] === 'developer') role = tail.shift() as 'user' | 'admin' | 'developer'
-      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user' || tail[tail.length - 1] === 'developer') role = tail.pop() as 'user' | 'admin' | 'developer'
+      let role: 'user' | 'admin' = 'user'
+      if (tail[0] === 'admin' || tail[0] === 'user') role = tail.shift() as 'user' | 'admin'
+      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user') role = tail.pop() as 'user' | 'admin'
       const workDir = tail.length && tail[tail.length - 1].startsWith('/') ? tail.pop() || '' : ''
-      let groupName = ''
-      const explicitGroupIndex = tail.findIndex((p) => p.startsWith('group=') || p.startsWith('群组='))
-      if (explicitGroupIndex >= 0) {
-        groupName = tail[explicitGroupIndex].slice(tail[explicitGroupIndex].indexOf('=') + 1).trim()
-        tail.splice(explicitGroupIndex, 1)
-      } else if (tail.length >= 2) {
-        groupName = tail.pop() || ''
-      }
       return {
         id,
         password,
         role,
         display_name: tail.join(commaMode ? ',' : ' '),
-        group_name: groupName,
         work_dir: workDir,
       }
     })
@@ -380,42 +345,23 @@ function parseBulkEmployees(text: string) {
 
 function AdminUsersPanel() {
   const [users, setUsers] = useState<AdminUserRow[]>([])
-  const [groups, setGroups] = useState<AdminUserGroup[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [form, setForm] = useState<EmployeeFormState>({ id: '', display_name: '', password: '', role: 'user', group_id: '', work_dir: '' })
+  const [form, setForm] = useState<EmployeeFormState>({ id: '', display_name: '', password: '', role: 'user', work_dir: '' })
   const [bulkText, setBulkText] = useState('')
-  const [newGroupName, setNewGroupName] = useState('')
-  const [groupDrafts, setGroupDrafts] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
-  const [creatingGroup, setCreatingGroup] = useState(false)
-  const [savingGroupId, setSavingGroupId] = useState<string | null>(null)
-  const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null)
-  // 群组「项目可见性」编辑态: 一次只展开一个群组, 展开时按需加载候选项目.
-  const [visOpenId, setVisOpenId] = useState<string | null>(null)
-  const [visLoading, setVisLoading] = useState(false)
-  const [visSavingId, setVisSavingId] = useState<string | null>(null)
-  const [visMode, setVisMode] = useState<'default' | 'restricted'>('default')
-  const [visSelected, setVisSelected] = useState<string[]>([])
-  const [visCandidates, setVisCandidates] = useState<VisCandidate[]>([])
-  const [visQuery, setVisQuery] = useState('')
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingUser, setEditingUser] = useState<AdminUserRow | null>(null)
-  const [editForm, setEditForm] = useState<{ display_name: string; role: 'user' | 'developer' | 'admin'; work_dir: string; password: string }>({ display_name: '', role: 'user', work_dir: '', password: '' })
+  const [editForm, setEditForm] = useState<{ display_name: string; role: 'user' | 'admin'; work_dir: string; password: string }>({ display_name: '', role: 'user', work_dir: '', password: '' })
   const [savingEdit, setSavingEdit] = useState(false)
 
   const refresh = async (quiet = false, signal?: AbortSignal) => {
     if (!quiet) setLoading(true)
     try {
-      const [userData, groupData] = await Promise.all([
-        api('/api/admin/users', { signal }),
-        api('/api/admin/user-groups', { signal }),
-      ])
+      const userData = await api('/api/admin/users', { signal })
       setUsers(Array.isArray(userData) ? userData : [])
-      setGroups(Array.isArray(groupData) ? groupData : [])
       setError('')
     } catch (e: any) {
       if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
@@ -432,20 +378,7 @@ function AdminUsersPanel() {
     return () => stop()
   }, [])
 
-  useEffect(() => {
-    setGroupDrafts((prev) => {
-      const next: Record<string, string> = {}
-      for (const g of groups) next[g.id] = prev[g.id] ?? g.name
-      return next
-    })
-  }, [groups])
-
   const activeUsers = useMemo(() => users.filter((u) => !u.deleted_at), [users])
-  const defaultGroupId = useMemo(() => groups.find((g) => g.is_default)?.id || groups[0]?.id || '', [groups])
-
-  useEffect(() => {
-    if (!form.group_id && defaultGroupId) setForm((f) => ({ ...f, group_id: defaultGroupId }))
-  }, [defaultGroupId, form.group_id])
 
   const chartRows = useMemo(() => activeUsers
     .map((u) => {
@@ -455,7 +388,6 @@ function AdminUsersPanel() {
         id: u.id,
         name: u.display_name || u.id,
         role: u.role,
-        groupName: u.group_name || '默认组',
         sessionCount,
         activeCount: toCount(stats.active_count),
         completedCount: toCount(stats.completed_count),
@@ -481,7 +413,6 @@ function AdminUsersPanel() {
   const hasRows = chartRows.length > 0
   const totalEmployees = activeUsers.length
   const adminCount = activeUsers.filter((u) => u.role === 'admin').length
-  const totalGroups = groups.length
 
   const fieldStyle = {
     background: 'var(--input-bg)',
@@ -489,7 +420,7 @@ function AdminUsersPanel() {
     color: 'var(--text-primary)',
   }
 
-  const resetForm = () => setForm({ id: '', display_name: '', password: '', role: 'user', group_id: defaultGroupId, work_dir: '' })
+  const resetForm = () => setForm({ id: '', display_name: '', password: '', role: 'user', work_dir: '' })
 
   const submitCreate = async () => {
     setError('')
@@ -498,13 +429,12 @@ function AdminUsersPanel() {
     try {
       const data = await api('/api/admin/users', {
         method: 'POST',
-        body: JSON.stringify({ ...form, group_id: form.group_id || defaultGroupId }),
+        body: JSON.stringify(form),
       })
       resetForm()
       await refresh(true)
       const warning = data?.user?.warning ? ` · ${data.user.warning}` : ''
-      const groupLabel = data?.user?.group_name ? ` · ${data.user.group_name}` : ''
-      setNotice(`${data?.user?.status === 'restored' ? '已恢复' : '已添加'}员工 ${data?.user?.id || form.id}${groupLabel}${warning}`)
+      setNotice(`${data?.user?.status === 'restored' ? '已恢复' : '已添加'}员工 ${data?.user?.id || form.id}${warning}`)
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
@@ -542,143 +472,6 @@ function AdminUsersPanel() {
     }
   }
 
-  const createGroup = async () => {
-    const name = newGroupName.trim()
-    if (!name) {
-      setError('请输入群组名称')
-      return
-    }
-    setError('')
-    setNotice('')
-    setCreatingGroup(true)
-    try {
-      const data = await api('/api/admin/user-groups', {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-      })
-      setNewGroupName('')
-      await refresh(true)
-      setNotice(`已新增群组 ${data?.group?.name || name}`)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setCreatingGroup(false)
-    }
-  }
-
-  const saveGroup = async (group: AdminUserGroup) => {
-    const name = (groupDrafts[group.id] || '').trim()
-    if (!name) {
-      setError('群组名称不能为空')
-      return
-    }
-    if (name === group.name) return
-    setError('')
-    setNotice('')
-    setSavingGroupId(group.id)
-    try {
-      const data = await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name }),
-      })
-      setGroupDrafts((prev) => ({ ...prev, [group.id]: data?.group?.name || name }))
-      await refresh(true)
-      setNotice(`已更新群组 ${data?.group?.name || name}`)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setSavingGroupId(null)
-    }
-  }
-
-  const deleteGroup = async (group: AdminUserGroup) => {
-    const activeCount = toCount(group.active_user_count)
-    if (group.is_default || activeCount > 0) return
-    const ok = window.confirm(`删除空群组 ${group.name}？`)
-    if (!ok) return
-    setError('')
-    setNotice('')
-    setDeletingGroupId(group.id)
-    try {
-      await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}`, { method: 'DELETE' })
-      setGroupDrafts((prev) => {
-        const next = { ...prev }
-        delete next[group.id]
-        return next
-      })
-      await refresh(true)
-      setNotice(`已删除群组 ${group.name}`)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setDeletingGroupId(null)
-    }
-  }
-
-  const openGroupVis = async (group: AdminUserGroup) => {
-    if (visOpenId === group.id) { setVisOpenId(null); return }
-    setVisOpenId(group.id)
-    setVisLoading(true)
-    setVisQuery('')
-    setVisMode(group.project_visibility_mode === 'restricted' ? 'restricted' : 'default')
-    setVisSelected(Array.isArray(group.visible_project_ids) ? [...group.visible_project_ids] : [])
-    setVisCandidates([])
-    try {
-      const data = await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}/project-visibility`)
-      setVisMode(data?.mode === 'restricted' ? 'restricted' : 'default')
-      setVisSelected(Array.isArray(data?.visible_project_ids) ? data.visible_project_ids : [])
-      setVisCandidates(Array.isArray(data?.candidates) ? data.candidates : [])
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setVisLoading(false)
-    }
-  }
-
-  const toggleVisProject = (pid: string) => {
-    setVisSelected((prev) => (prev.includes(pid) ? prev.filter((x) => x !== pid) : [...prev, pid]))
-  }
-
-  const saveGroupVis = async (group: AdminUserGroup) => {
-    setError(''); setNotice('')
-    setVisSavingId(group.id)
-    try {
-      await api(`/api/admin/user-groups/${encodeURIComponent(group.id)}/project-visibility`, {
-        method: 'PUT',
-        body: JSON.stringify({ mode: visMode, visible_project_ids: visSelected }),
-      })
-      await refresh(true)
-      setNotice(`已更新「${group.name}」的项目可见性：${visMode === 'restricted' ? '受限' : '标准'}`)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setVisSavingId(null)
-    }
-  }
-
-  const updateEmployeeGroup = async (row: AdminUserRow, groupId: string) => {
-    if (!groupId || groupId === row.group_id) return
-    const nextGroup = groups.find((g) => g.id === groupId)
-    setError('')
-    setNotice('')
-    setUpdatingUserId(row.id)
-    try {
-      await api(`/api/admin/users/${encodeURIComponent(row.id)}/group`, {
-        method: 'PATCH',
-        body: JSON.stringify({ group_id: groupId }),
-      })
-      setUsers((prev) => prev.map((u) => u.id === row.id
-        ? { ...u, group_id: groupId, group_name: nextGroup?.name || u.group_name }
-        : u))
-      await refresh(true)
-      setNotice(`已将 ${row.display_name || row.id} 调整到 ${nextGroup?.name || '新群组'}`)
-    } catch (e: any) {
-      setError(e?.message || String(e))
-    } finally {
-      setUpdatingUserId(null)
-    }
-  }
-
   const deleteEmployee = async (row: AdminUserRow) => {
     const ok = window.confirm(`删除员工账号 ${row.display_name || row.id} (${row.id})？删除后该账号不能登录，历史数据仍保留。`)
     if (!ok) return
@@ -700,7 +493,7 @@ function AdminUsersPanel() {
     setError(''); setNotice('')
     setEditForm({
       display_name: u.display_name || '',
-      role: u.role === 'admin' ? 'admin' : u.role === 'developer' ? 'developer' : 'user',
+      role: u.role === 'admin' ? 'admin' : 'user',
       work_dir: u.work_dir || '',
       password: '',
     })
@@ -742,7 +535,6 @@ function AdminUsersPanel() {
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               <span>员工 {totalEmployees}</span>
               <span>管理员 {adminCount}</span>
-              <span>群组 {totalGroups}</span>
               <span>会话 {totalSessions}</span>
               <span>活跃 {activeSessions}</span>
               <span>平均提示词 {formatPromptLength(averagePromptLength)} 字</span>
@@ -752,7 +544,7 @@ function AdminUsersPanel() {
             type="button"
             onClick={() => refresh()}
             disabled={loading}
-            title="刷新用户和群组"
+            title="刷新用户"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -775,7 +567,6 @@ function AdminUsersPanel() {
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <StatTile icon={<UsersIcon className="h-4 w-4 text-cyan-400" />} label="启用员工" value={totalEmployees} sub={`管理员 ${adminCount}`} />
-          <StatTile icon={<Building2 className="h-4 w-4 text-emerald-400" />} label="群组" value={totalGroups} sub="单群组组织分类" />
           <StatTile icon={<BarChart3 className="h-4 w-4 text-sky-400" />} label="会话" value={totalSessions} sub={`活跃 ${activeSessions}`} />
           <StatTile icon={<FileText className="h-4 w-4 text-amber-400" />} label="平均提示词" value={formatPromptLength(averagePromptLength)} sub="任务单 + 执行会话字数" />
           <StatTile icon={<MessageSquare className="h-4 w-4 text-violet-400" />} label="消息" value={chartRows.reduce((sum, row) => sum + row.totalMessages, 0)} sub="全部员工累计" />
@@ -792,7 +583,7 @@ function AdminUsersPanel() {
                 const width = row.sessionCount > 0
                   ? `${Math.min(100, Math.max(2, (row.sessionCount / maxCount) * 100))}%`
                   : '0%'
-                const accent = row.role === 'admin' ? '#f59e0b' : row.role === 'developer' ? '#a78bfa' : '#38bdf8'
+                const accent = row.role === 'admin' ? '#f59e0b' : '#38bdf8'
                 return (
                   <div key={row.id} className="grid grid-cols-[minmax(150px,220px)_1fr_88px] items-center gap-3">
                     <div className="min-w-0">
@@ -800,7 +591,7 @@ function AdminUsersPanel() {
                         {row.name}
                       </div>
                       <div className="truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                        {row.id} · {row.groupName} · {row.role === 'admin' ? '管理员' : row.role === 'developer' ? '开发者' : '成员'}
+                        {row.id} · {row.role === 'admin' ? '管理员' : '普通用户'}
                       </div>
                     </div>
                     <div
@@ -839,160 +630,6 @@ function AdminUsersPanel() {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="flex items-center gap-1.5 text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>
-              <Building2 className="h-3.5 w-3.5 text-emerald-400" />
-              群组管理
-            </h3>
-            <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-              群组用于员工组织分类；同组项目权限会按这里的归属判断。
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={newGroupName}
-            onChange={(e) => { setNewGroupName(e.target.value); setError(''); setNotice('') }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !creatingGroup) createGroup() }}
-            placeholder="新群组名称"
-            className="h-9 min-w-[220px] rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-            style={fieldStyle}
-          />
-          <button
-            type="button"
-            onClick={createGroup}
-            disabled={creatingGroup}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[length:var(--fs-md)] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
-          >
-            {creatingGroup ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            新增群组
-          </button>
-        </div>
-
-        <div className="mt-3 grid gap-2 lg:grid-cols-2">
-          {groups.map((g) => {
-            const activeCount = toCount(g.active_user_count)
-            const saving = savingGroupId === g.id
-            const deleting = deletingGroupId === g.id
-            const draft = groupDrafts[g.id] ?? g.name
-            const changed = draft.trim() !== g.name
-            return (
-              <div key={g.id} className="rounded-lg border px-3 py-2" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)' }}>
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={draft}
-                        onChange={(e) => { setGroupDrafts((prev) => ({ ...prev, [g.id]: e.target.value })); setError(''); setNotice('') }}
-                        className="h-8 min-w-0 flex-1 rounded-md border px-2 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                        style={fieldStyle}
-                      />
-                      {g.is_default && (
-                        <span className="flex-shrink-0 rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[length:var(--fs-xs)] text-cyan-400">默认</span>
-                      )}
-                      {!g.is_default && (
-                        <span className={`flex-shrink-0 rounded-md border px-2 py-0.5 text-[length:var(--fs-xs)] ${g.project_visibility_mode === 'restricted' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-[var(--border-color)] text-[var(--text-muted)]'}`}>
-                          {g.project_visibility_mode === 'restricted' ? '项目受限' : '项目标准'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                      启用员工 {activeCount} · 全部记录 {toCount(g.user_count)}
-                    </div>
-                  </div>
-                  {!g.is_default && (
-                    <button
-                      type="button"
-                      onClick={() => openGroupVis(g)}
-                      title="项目可见性"
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)] ${visOpenId === g.id ? 'border-amber-500/40 text-amber-400' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
-                    >
-                      <Shield className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => saveGroup(g)}
-                    disabled={saving || !changed}
-                    title="保存群组名称"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
-                  >
-                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteGroup(g)}
-                    disabled={deleting || !!g.is_default || activeCount > 0}
-                    title={g.is_default ? '默认组不能删除' : activeCount > 0 ? '只能删除空群组' : '删除空群组'}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-500/20 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-35"
-                  >
-                    {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-                {!g.is_default && visOpenId === g.id && (
-                  <div className="mt-2 rounded-md border p-2.5" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                    {visLoading ? (
-                      <div className="flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载中…
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-secondary)' }}>项目可见性</span>
-                          <div className="inline-flex overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color)' }}>
-                            <button type="button" onClick={() => setVisMode('default')}
-                              className={`h-7 px-2.5 text-[length:var(--fs-sm)] ${visMode === 'default' ? 'bg-blue-500/15 text-blue-400' : 'text-[var(--text-muted)]'}`}>标准</button>
-                            <button type="button" onClick={() => setVisMode('restricted')}
-                              className={`h-7 px-2.5 text-[length:var(--fs-sm)] ${visMode === 'restricted' ? 'bg-amber-500/15 text-amber-400' : 'text-[var(--text-muted)]'}`}>受限</button>
-                          </div>
-                          <span className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                            {visMode === 'restricted' ? '仅可见：自己创建的 + 自己被加入成员的 + 下方指定项目' : '可见全部公开项目 + 自己的项目'}
-                          </span>
-                          <button type="button" onClick={() => saveGroupVis(g)} disabled={visSavingId === g.id}
-                            className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-blue-500 px-2.5 text-[length:var(--fs-sm)] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50">
-                            {visSavingId === g.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} 保存
-                          </button>
-                        </div>
-                        {visMode === 'restricted' && (
-                          <div className="mt-2">
-                            <input value={visQuery} onChange={(e) => setVisQuery(e.target.value)} placeholder="搜索要开放给本组的项目…"
-                              className="h-7 w-full rounded-md border px-2 text-[length:var(--fs-sm)] outline-none focus:border-blue-500/50" style={fieldStyle} />
-                            <div className="mt-1.5 max-h-44 overflow-auto rounded-md border" style={{ borderColor: 'var(--border-color)' }}>
-                              {visCandidates
-                                .filter((c) => !visQuery.trim() || String(c.name || '').toLowerCase().includes(visQuery.toLowerCase()))
-                                .map((c) => {
-                                  const checked = visSelected.includes(c.id)
-                                  return (
-                                    <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b px-2.5 py-1.5 last:border-b-0 hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)' }}>
-                                      <input type="checkbox" checked={checked} onChange={() => toggleVisProject(c.id)} className="h-3.5 w-3.5" />
-                                      <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-primary)' }}>{c.name || c.id}</span>
-                                      {c.kind === 'extension' && <span className="flex-shrink-0 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>拓展</span>}
-                                      {c.created_by_name && <span className="flex-shrink-0 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>{c.created_by_name}</span>}
-                                    </label>
-                                  )
-                                })}
-                              {visCandidates.filter((c) => !visQuery.trim() || String(c.name || '').toLowerCase().includes(visQuery.toLowerCase())).length === 0 && (
-                                <div className="px-2.5 py-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>没有匹配的项目</div>
-                              )}
-                            </div>
-                            {visSelected.length > 0 && (
-                              <div className="mt-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>已选 {visSelected.length} 个项目对「{g.name}」可见</div>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
       </section>
 
       <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
@@ -1038,22 +675,13 @@ function AdminUsersPanel() {
                 value={form.role}
                 onChange={(e) => {
                   const v = e.target.value
-                  setForm((f) => ({ ...f, role: v === 'admin' || v === 'developer' ? v : 'user' }))
+                  setForm((f) => ({ ...f, role: v === 'admin' ? 'admin' : 'user' }))
                 }}
                 className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
                 style={fieldStyle}
               >
-                <option value="user">成员</option>
-                <option value="developer">开发者</option>
+                <option value="user">普通用户</option>
                 <option value="admin">管理员</option>
-              </select>
-              <select
-                value={form.group_id || defaultGroupId}
-                onChange={(e) => setForm((f) => ({ ...f, group_id: e.target.value }))}
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              >
-                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
               <input
                 value={form.work_dir}
@@ -1078,13 +706,13 @@ function AdminUsersPanel() {
             <textarea
               value={bulkText}
               onChange={(e) => { setBulkText(e.target.value); setError(''); setNotice('') }}
-              placeholder={'每行一个员工: ID,密码,角色,显示名称,群组,工作目录\nzhangsan,pass123,user,张三,研发组\nlisi,pass123,user,李四,运营组,/home/lisi/cc-workspace'}
+              placeholder={'每行一个员工: ID,密码,角色,显示名称,工作目录\nzhangsan,pass123,user,张三,/home/zhangsan/cc-workspace'}
               className="min-h-28 w-full resize-y rounded-md border px-3 py-2 font-mono text-[length:var(--fs-md)] leading-relaxed outline-none focus:border-blue-500/50"
               style={fieldStyle}
             />
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                支持逗号或空白分隔；群组不存在时会自动创建。
+                支持逗号或空白分隔；角色仅支持 admin 或 user。
               </span>
               <button
                 type="button"
@@ -1104,7 +732,6 @@ function AdminUsersPanel() {
             <thead style={{ color: 'var(--text-muted)' }}>
               <tr>
                 <th className="px-2 py-1 font-medium">员工</th>
-                <th className="px-2 py-1 font-medium">群组</th>
                 <th className="px-2 py-1 font-medium">角色</th>
                 <th className="px-2 py-1 font-medium">会话</th>
                 <th className="px-2 py-1 font-medium">平均提示词</th>
@@ -1117,7 +744,6 @@ function AdminUsersPanel() {
               {activeUsers.map((u) => {
                 const stats = u.stats || {}
                 const deleting = deletingId === u.id
-                const updatingGroup = updatingUserId === u.id
                 return (
                   <tr key={u.id} className="rounded-md" style={{ background: 'var(--input-bg)' }}>
                     <td className="max-w-[180px] rounded-l-md px-2 py-2">
@@ -1125,22 +751,8 @@ function AdminUsersPanel() {
                       <div className="truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{u.id}</div>
                     </td>
                     <td className="px-2 py-2">
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={u.group_id || defaultGroupId}
-                          disabled={updatingGroup}
-                          onChange={(e) => updateEmployeeGroup(u, e.target.value)}
-                          className="h-8 min-w-[120px] rounded-md border px-2 text-[length:var(--fs-sm)] outline-none focus:border-blue-500/50 disabled:opacity-60"
-                          style={fieldStyle}
-                        >
-                          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                        </select>
-                        {updatingGroup && <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--text-muted)' }} />}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[length:var(--fs-sm)] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : u.role === 'developer' ? 'border-violet-500/25 bg-violet-500/10 text-violet-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
-                        {u.role === 'admin' ? '管理员' : u.role === 'developer' ? '开发者' : '成员'}
+                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[length:var(--fs-sm)] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
+                        {u.role === 'admin' ? '管理员' : '普通用户'}
                       </span>
                     </td>
                     <td className="px-2 py-2 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
@@ -1197,9 +809,8 @@ function AdminUsersPanel() {
               </div>
               <div>
                 <label className="mb-1 block text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>角色</label>
-                <select value={editForm.role} onChange={(e) => { const v = e.target.value; setEditForm((f) => ({ ...f, role: v === 'admin' || v === 'developer' ? v : 'user' })) }} className="h-9 w-full rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50" style={fieldStyle}>
-                  <option value="user">成员</option>
-                  <option value="developer">开发者</option>
+                <select value={editForm.role} onChange={(e) => { const v = e.target.value; setEditForm((f) => ({ ...f, role: v === 'admin' ? 'admin' : 'user' })) }} className="h-9 w-full rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50" style={fieldStyle}>
+                  <option value="user">普通用户</option>
                   <option value="admin">管理员</option>
                 </select>
               </div>
@@ -6694,15 +6305,11 @@ function MigrationItemAccessModal({
     ? [
         { value: 'inherit', label: '继承项目', description: '跟随所属项目的可见性。' },
         { value: 'private', label: '仅自己', description: '只有创建者和管理员可见。' },
-        { value: 'team', label: '同组', description: '同一群组用户可见。' },
         { value: 'public', label: '公开', description: '所有登录用户可见。' },
-        { value: 'allowlist', label: '指定用户', description: '只有创建者、管理员和允许名单中的用户可见。' },
       ]
     : [
         { value: 'private', label: '仅自己', description: '只有创建者和管理员可见。' },
-        { value: 'team', label: '同组', description: '同一群组用户可见。' },
         { value: 'public', label: '公开', description: '所有登录用户可见。' },
-        { value: 'allowlist', label: '指定用户', description: '只有创建者、管理员和允许名单中的用户可见。' },
       ]
 
   const handleSave = async () => {
@@ -6808,9 +6415,7 @@ function MigrationBatchAccessModal({
   const [visibility, setVisibility] = useState<string>('private')
   const options = [
     { value: 'private', label: '仅自己', description: '只有创建者和管理员可见' },
-    { value: 'team', label: '同组', description: '同一群组用户可见' },
     { value: 'public', label: '公开', description: '所有登录用户可见' },
-    { value: 'allowlist', label: '指定用户', description: '只允许指定用户列表可见' },
   ]
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -8320,10 +7925,166 @@ function AdminTextRedactionPanel() {
   )
 }
 
-export type AdminPanelTab = 'users' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
+type AdminPermissionProject = {
+  id: string
+  name: string
+  kind?: string
+  bind_path?: string | null
+  created_by?: string
+  created_by_name?: string
+}
+
+type AdminPermissionMember = {
+  user_id: string
+  display_name: string
+  role: 'owner' | 'developer' | 'viewer' | 'none' | string
+  is_active?: boolean
+}
+
+function AdminProjectPermissionsPanel() {
+  const [projects, setProjects] = useState<AdminPermissionProject[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [members, setMembers] = useState<AdminPermissionMember[]>([])
+  const [candidates, setCandidates] = useState<Array<{ id: string; display_name: string; already_member?: boolean }>>([])
+  const [candidateId, setCandidateId] = useState('')
+  const [role, setRole] = useState<'developer' | 'viewer' | 'none'>('viewer')
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const selectedProject = projects.find((p) => p.id === selectedId) || null
+  const visibleProjects = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return projects
+    return projects.filter((p) => `${p.name || ''} ${p.id} ${p.created_by || ''}`.toLowerCase().includes(q))
+  }, [projects, query])
+
+  const loadProjects = async () => {
+    setLoading(true)
+    try {
+      const data = await api('/api/projects?all=true')
+      const list = Array.isArray(data) ? data : (data?.projects || [])
+      setProjects(list)
+      if (!selectedId && list[0]?.id) setSelectedId(list[0].id)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || '加载项目失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadMembers = async (projectId: string) => {
+    if (!projectId) { setMembers([]); return }
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(projectId)}/members`)
+      setMembers(Array.isArray(data?.members) ? data.members : [])
+      setError('')
+    } catch (e: any) {
+      setMembers([])
+      setError(e?.message || '加载项目成员失败')
+    }
+  }
+
+  useEffect(() => { void loadProjects() }, [])
+  useEffect(() => { void loadMembers(selectedId); setCandidates([]); setCandidateId('') }, [selectedId])
+
+  const findCandidates = async () => {
+    if (!selectedId) return
+    try {
+      const data = await api(`/api/projects/${encodeURIComponent(selectedId)}/member-candidates?q=${encodeURIComponent(candidateId)}`)
+      setCandidates(Array.isArray(data) ? data : [])
+    } catch (e: any) {
+      setError(e?.message || '加载候选用户失败')
+    }
+  }
+
+  const addMember = async () => {
+    if (!selectedId || !candidateId) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api(`/api/projects/${encodeURIComponent(selectedId)}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ user_ids: [candidateId], role }),
+      })
+      await loadMembers(selectedId)
+      setNotice('已添加项目成员')
+      setCandidateId('')
+      setCandidates([])
+    } catch (e: any) {
+      setError(e?.message || '添加项目成员失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const updateRole = async (userId: string, nextRole: string) => {
+    if (!selectedId || !nextRole) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      await api(`/api/projects/${encodeURIComponent(selectedId)}/members/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: nextRole }),
+      })
+      await loadMembers(selectedId)
+      setNotice('项目权限已更新')
+    } catch (e: any) {
+      setError(e?.message || '更新项目权限失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(260px,360px)_1fr]">
+      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>项目权限</h3>
+            <p className="mt-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>管理员可在这里管理任意项目的成员角色。</p>
+          </div>
+          <button type="button" onClick={() => void loadProjects()} disabled={loading} title="刷新项目" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></button>
+        </div>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索项目名称或 ID" className="mb-3 h-8 w-full rounded-md border px-2.5 text-[length:var(--fs-md)]" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }} />
+        <div className="max-h-[540px] overflow-y-auto space-y-1">
+          {visibleProjects.map((project) => (
+            <button key={project.id} type="button" onClick={() => setSelectedId(project.id)} className="w-full rounded-md border px-3 py-2 text-left transition-colors" style={{ borderColor: selectedId === project.id ? 'rgba(96,165,250,0.55)' : 'transparent', background: selectedId === project.id ? 'rgba(59,130,246,0.12)' : 'transparent' }}>
+              <div className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{project.name || project.id}</div>
+              <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{project.kind || 'default'} · {project.created_by_name || project.created_by || '未知创建者'}</div>
+            </button>
+          ))}
+          {!visibleProjects.length && <div className="py-6 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>暂无可管理项目</div>}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+        {selectedProject ? (
+          <>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0"><h3 className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{selectedProject.name || selectedProject.id}</h3><div className="mt-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{selectedProject.bind_path || '未绑定路径'} · 创建者 {selectedProject.created_by_name || selectedProject.created_by || '未知'}</div></div>
+            </div>
+            {(error || notice) && <div className={`mb-3 rounded-md border px-3 py-2 text-[length:var(--fs-sm)] ${error ? 'border-red-500/25 bg-red-500/10 text-red-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{error || notice}</div>}
+            <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+              <label className="min-w-[220px] flex-1 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>添加用户<input value={candidateId} onChange={(e) => setCandidateId(e.target.value)} onBlur={() => void findCandidates()} placeholder="输入用户 ID 或姓名" className="mt-1 h-8 w-full rounded-md border px-2 text-[length:var(--fs-md)]" style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }} /></label>
+              <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} className="h-8 rounded-md border px-2 text-[length:var(--fs-sm)]" style={{ background: 'var(--modal-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}><option value="viewer">项目访客</option><option value="developer">项目开发者</option><option value="none">不显示</option></select>
+              <button type="button" onClick={() => void addMember()} disabled={busy || !candidateId} className="h-8 rounded-md px-3 text-[length:var(--fs-sm)] btn-primary disabled:opacity-50">添加成员</button>
+            </div>
+            {candidates.length > 0 && <div className="mb-3 flex flex-wrap gap-1.5">{candidates.filter((c) => !c.already_member).slice(0, 8).map((c) => <button key={c.id} type="button" onClick={() => setCandidateId(c.id)} className="rounded border px-2 py-1 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>{c.display_name} ({c.id})</button>)}</div>}
+            <div className="overflow-x-auto rounded-md border" style={{ borderColor: 'var(--input-border)' }}><table className="w-full border-collapse text-left text-[length:var(--fs-sm)]"><thead><tr style={{ background: 'var(--input-bg)' }}><th className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>成员</th><th className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>角色</th></tr></thead><tbody>{members.map((member) => <tr key={member.user_id} className="border-t" style={{ borderColor: 'var(--input-border)' }}><td className="px-3 py-2"><div style={{ color: 'var(--text-primary)' }}>{member.display_name || member.user_id}</div><div className="font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{member.user_id}</div></td><td className="px-3 py-2">{member.role === 'owner' ? <span style={{ color: '#60a5fa' }}>项目所有者</span> : <select value={member.role} disabled={busy} onChange={(e) => void updateRole(member.user_id, e.target.value)} className="h-7 rounded border px-1.5" style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}><option value="developer">项目开发者</option><option value="viewer">项目访客</option><option value="none">不显示</option></select>}</td></tr>)}</tbody></table>{!members.length && <div className="py-6 text-center" style={{ color: 'var(--text-muted)' }}>暂无项目成员</div>}</div>
+          </>
+        ) : <div className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>请先选择项目</div>}
+      </section>
+    </div>
+  )
+}
+
+export type AdminPanelTab = 'users' | 'project-permissions' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
 
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
+  { key: 'project-permissions', label: '项目权限', icon: <Shield className="h-3.5 w-3.5" /> },
   { key: 'runtime', label: '运行监控', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
   { key: 'settings', label: '系统设置', icon: <Settings className="h-3.5 w-3.5" /> },
   { key: 'models', label: '模型接入', icon: <Terminal className="h-3.5 w-3.5" /> },
@@ -8468,6 +8229,8 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
           </div>
 
           {activeTab === 'users' && <AdminUsersPanel />}
+
+          {activeTab === 'project-permissions' && <AdminProjectPermissionsPanel />}
 
           {activeTab === 'others' && (
             <div className="flex flex-col gap-3">

@@ -88,7 +88,7 @@ type ProjectSettingsPanelProps = {
 export type SettingsPane = 'settings' | 'context' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
-  { value: 'private', label: '私有', description: '只有项目成员（含创建者与项目管理员）能看到本项目。' },
+  { value: 'private', label: '私有', description: '只有项目成员（含创建者）能看到本项目。' },
   { value: 'public', label: '公开', description: '所有登录用户都能看到本项目；仅项目成员可写。' },
 ]
 
@@ -843,9 +843,8 @@ export function ProjectSettingsPanel({
           </div>
         ) : activePane === 'members' ? (
           <div className="w-full min-w-0 p-3 space-y-4">
-            <SettingsCard title="权限设置" hint="管理项目成员及角色（owner/manager/member/viewer），决定谁能查看或修改本项目。">
-              {/* 项目可见性(私有/公开)与两个读者开关已退役 —— 改纯成员制:
-                  非成员不可见, 项目成员按角色(owner/manager/member/viewer)分权. */}
+            <SettingsCard title="项目权限" hint="管理项目成员及角色（所有者/开发者/访客/不显示），决定谁能访问本项目。">
+              {/* 项目权限由成员角色决定，隐藏列表只影响展示偏好，不参与权限判断。 */}
               {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
                   与主页「编辑项目」弹窗 modals.tsx 共用同一个 ProjectTeamPanel. */}
               <div className="mt-4">

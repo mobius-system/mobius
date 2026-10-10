@@ -6,6 +6,11 @@ import { Users } from '../repositories/users';
 // 只暴露群组身份 + 启用成员数, 不含密码/工作目录/偏好等敏感字段.
 const router = express.Router();
 
+// 群组不再参与权限模型；保留路由文件仅用于给旧客户端明确的下线响应。
+router.use((_req: express.Request, res: express.Response) => {
+  res.status(410).json({ error: '群组权限模型已移除' });
+});
+
 router.get('/', auth, (_req: express.Request, res: express.Response) => {
   try {
     const groups = Users.listGroups().map((g: any) => ({

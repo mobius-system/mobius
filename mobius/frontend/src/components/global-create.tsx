@@ -49,16 +49,14 @@ import { NewProjectModal } from './new-project-modal'
 export type CreateKind = 'project' | 'issue' | 'session' | 'research'
 
 
-type Visibility = 'private' | 'team' | 'public' | 'allowlist'
+type Visibility = 'private' | 'public'
 
 // Issue 可见性: inherit 跟随项目, 其余档位不能比父项目更宽 (反向放大禁止)
 type IssueVisibility = 'inherit' | Visibility
 const ISSUE_VISIBILITY_OPTIONS: { value: IssueVisibility; label: string; desc: string }[] = [
   { value: 'inherit', label: '继承项目', desc: '跟随所属项目的可见性' },
   { value: 'private', label: '仅自己', desc: '仅创建者与项目 owner / 管理员可见' },
-  { value: 'team', label: '同组', desc: '同一群组用户可见（前提是能看到项目）' },
-  { value: 'public', label: '项目可见者', desc: '所有能看到项目的登录用户都可见' },
-  { value: 'allowlist', label: '指定用户', desc: '仅允许名单中的用户可见' },
+  { value: 'public', label: '项目成员', desc: '按项目成员角色判断访问权限' },
 ]
 
 type SessionLanguage = 'zh' | 'en'
@@ -775,16 +773,11 @@ export function CreateIssueForm({ onClose, onDone, defaultProjectId }: { onClose
 
   const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [], { scope: PROJECTS_SCOPE, userId: user?.id })
   const selectedProject = projects.list.find((p: any) => p.id === projectId) || (storeProjects || []).find((p: any) => p.id === projectId)
-  const parentVisibility: Visibility =
-    selectedProject?.visibility === 'team' || selectedProject?.visibility === 'public' || selectedProject?.visibility === 'allowlist'
-      ? selectedProject.visibility
-      : 'private'
+  const parentVisibility: Visibility = selectedProject?.visibility === 'public' ? 'public' : 'private'
   // 反向放大: 仅当父项目允许时才显示对应档位
   const allowedVisibilities: IssueVisibility[] = ['inherit']
   if (parentVisibility === 'private') allowedVisibilities.push('private')
-  if (parentVisibility === 'team') allowedVisibilities.push('private', 'team')
-  if (parentVisibility === 'public') allowedVisibilities.push('private', 'team', 'public')
-  if (parentVisibility === 'allowlist') allowedVisibilities.push('private', 'allowlist')
+  if (parentVisibility === 'public') allowedVisibilities.push('private', 'public')
 
   // 切换项目时: 重置 visibility 到 inherit (新项目可能档位不同), 重置 worktree 默认值跟随项目
   useEffect(() => {

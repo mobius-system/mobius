@@ -41,6 +41,11 @@ import { landlockAvailable } from '../services/agent-sandbox';
 
 const router = express.Router();
 
+// 新权限模型不再提供群组管理入口。数据库中的历史群组数据暂不删除，避免存量迁移破坏。
+router.use('/user-groups', adminAuth, (_req: express.Request, res: express.Response) => {
+  res.status(410).json({ error: '群组权限模型已移除' });
+});
+
 const BACKENDS = [
   { key: 'codex', backendName: 'tmux-codex', label: 'Codex' },
   { key: 'claude_code', backendName: 'tmux-claude-code', label: 'Claude Code' },
@@ -613,7 +618,10 @@ router.get('/users', adminAuth, (req: express.Request, res: express.Response) =>
     prompt_length_avg: 0,
     last_active: null,
   };
-  res.json(users.map(u => ({ ...u, stats: taskMap[u.id] || emptyStats })));
+  res.json(users.map((u: any) => {
+    const { group_id: _groupId, group_name: _groupName, group_description: _groupDescription, ...publicUser } = u;
+    return { ...publicUser, stats: taskMap[u.id] || emptyStats };
+  }));
 });
 
 router.post('/users', adminAuth, (req: express.Request, res: express.Response) => {

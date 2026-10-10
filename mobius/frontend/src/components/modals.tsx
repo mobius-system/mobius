@@ -48,14 +48,12 @@ import {
   type SessionMentionSelection,
 } from './session-mention-picker'
 
-type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
+type ProjectVisibility = 'private' | 'public'
 type IssueVisibility = 'inherit' | ProjectVisibility
 const ISSUE_VISIBILITY_OPTIONS: Array<{ value: IssueVisibility; label: string; description: string }> = [
   { value: 'inherit', label: '继承项目', description: '跟随所属项目的可见性。' },
   { value: 'private', label: '仅自己', description: '只有任务单创建者、项目创建者和管理员可见。' },
-  { value: 'team', label: '同组', description: '同一群组用户可见，前提是他们也能看到项目。' },
-  { value: 'public', label: '项目可见者', description: '所有能看到项目的登录用户都可见。' },
-  { value: 'allowlist', label: '指定用户', description: '只有任务单创建者、项目创建者、管理员和允许名单中的用户可见。' },
+  { value: 'public', label: '项目成员', description: '访问权限由项目成员角色决定。' },
 ]
 const MODEL_PICKER_COLLAPSED_ROWS = 3
 
@@ -805,16 +803,11 @@ export function NewIssueModal({ projectId, onClose, onCreated, defaultUseWorktre
   const { theme, projects } = useStore()
   // 从 store 找父项目: 用来限制 issue 的可见性不能比 project 宽 (反向放大禁止).
   const parentProject: any = (projects || []).find((p: any) => p.id === projectId)
-  const parentVisibility: 'private' | 'team' | 'public' | 'allowlist' =
-    parentProject?.visibility === 'team' || parentProject?.visibility === 'public' || parentProject?.visibility === 'allowlist'
-      ? parentProject.visibility
-      : 'private'
+  const parentVisibility: ProjectVisibility = parentProject?.visibility === 'public' ? 'public' : 'private'
   // 反向放大: 仅当父项目允许时才显示对应档位; inherit 也可选项, 默认值总是 inherit.
   const allowedVisibilities: IssueVisibility[] = ['inherit']
   if (parentVisibility === 'private') allowedVisibilities.push('private')
-  if (parentVisibility === 'team') { allowedVisibilities.push('private', 'team') }
-  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'team', 'public') }
-  if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
+  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'public') }
   const initialVisibility: IssueVisibility =
     (initialDraft?.visibility && allowedVisibilities.includes(initialDraft.visibility)) ? initialDraft.visibility : 'inherit'
   const [title, setTitle] = useState(initialDraft?.title || '')
@@ -1002,20 +995,15 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
   const { theme, projects } = useStore()
   // 反向放大禁止: 不能把 issue visibility 改成比父项目更宽.
   const parentProject: any = (projects || []).find((p: any) => p.id === issue.project_id)
-  const parentVisibility: 'private' | 'team' | 'public' | 'allowlist' =
-    parentProject?.visibility === 'team' || parentProject?.visibility === 'public' || parentProject?.visibility === 'allowlist'
-      ? parentProject.visibility
-      : 'private'
-  const initialIssueVisibility: 'inherit' | 'private' | 'team' | 'public' | 'allowlist' = (() => {
-    if (issue.visibility === 'private' || issue.visibility === 'team' || issue.visibility === 'public' || issue.visibility === 'allowlist') return issue.visibility
+  const parentVisibility: ProjectVisibility = parentProject?.visibility === 'public' ? 'public' : 'private'
+  const initialIssueVisibility: IssueVisibility = (() => {
+    if (issue.visibility === 'private' || issue.visibility === 'public') return issue.visibility
     return 'inherit'
   })()
-  const [visibility, setVisibility] = useState<'inherit' | 'private' | 'team' | 'public' | 'allowlist'>(initialIssueVisibility)
-  const allowedVisibilities: Array<'inherit' | 'private' | 'team' | 'public' | 'allowlist'> = ['inherit']
+  const [visibility, setVisibility] = useState<IssueVisibility>(initialIssueVisibility)
+  const allowedVisibilities: IssueVisibility[] = ['inherit']
   if (parentVisibility === 'private') allowedVisibilities.push('private')
-  if (parentVisibility === 'team') { allowedVisibilities.push('private', 'team') }
-  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'team', 'public') }
-  if (parentVisibility === 'allowlist') { allowedVisibilities.push('private', 'allowlist') }
+  if (parentVisibility === 'public') { allowedVisibilities.push('private', 'public') }
   const submit = async () => {
     if (!name.trim()) { setErr('请输入任务标题'); return }
     setLoading(true); setErr('')
@@ -1045,9 +1033,7 @@ export function RenameIssueModal({ issue, onClose, onRenamed }: { issue: any; on
               {[
                 { value: 'inherit', label: '继承项目', desc: '跟随所属项目的可见性' },
                 { value: 'private', label: '仅自己', desc: '只有任务单创建者、项目创建者和管理员可见' },
-                { value: 'team', label: '同组', desc: '同一群组用户可见，前提是他们也能看到项目' },
                 { value: 'public', label: '项目可见者', desc: '所有能看到项目的登录用户都可见' },
-                { value: 'allowlist', label: '指定用户', desc: '只有任务单创建者、项目创建者、管理员和允许名单中的用户可见' },
               ].filter(opt => allowedVisibilities.includes(opt.value as any)).map((opt) => {
                 const active = visibility === opt.value
                 return (
