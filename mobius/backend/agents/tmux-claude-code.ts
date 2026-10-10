@@ -84,8 +84,9 @@ const READY_TIMEOUT_MS = 25000
 const READY_SENTINEL = 'bypass permissions on'
 
 // First entry into a new directory raises claude's "trust this folder" dialog
-// (--dangerously-skip-permissions does not skip it). The cwd is a platform-created workspace, so the
-// default "Yes, I trust this folder" is fine; claude persists the trust for that directory.
+// (--dangerously-skip-permissions does not skip it). The cwd is a platform-created workspace, so
+// trusting it is fine; claude persists the trust for that directory. 2.1.296 flipped the default
+// highlight to "No, exit", so the handler moves the cursor down when that option is highlighted.
 const TRUST_PROMPT_SENTINELS = [
   'trust this folder',
   'Is this a project you created or one you trust',
@@ -110,13 +111,21 @@ const API_KEY_PROMPT_SENTINELS = [
 const API_KEY_PRESS_INTERVAL_MS = 1500
 
 // "WARNING: Claude Code running in Bypass Permissions mode" dialog: newer claude shows this one-time
-// confirmation under --dangerously-skip-permissions. The default is "1. No, exit", so it takes
-// "2" + Enter to accept and reach the normal TUI.
+// confirmation under --dangerously-skip-permissions. The highlighted option is "No, exit" (2.1.296
+// dropped the numeric shortcuts too), so Down + Enter moves to "Yes, I accept" and accepts.
 const BYPASS_WARN_SENTINELS = [
   'WARNING: Claude Code running in Bypass Permissions mode',
   'Yes, I accept',
 ]
 const BYPASS_WARN_INTERVAL_MS = 1500
+
+// "Try the new fullscreen renderer?" upsell (2.1.296): a one-time blocking prompt with
+// "1. Yes, try it" / "2. Not now". Down + Enter picks "Not now" so the pane keeps the classic
+// renderer that this agent's status-line and dialog parsing was built against.
+const FULLSCREEN_UPSELL_SENTINELS = [
+  'Try the new fullscreen renderer',
+]
+const FULLSCREEN_UPSELL_INTERVAL_MS = 1500
 
 // User-level claude config; projects[absPath] holds the directory trust flag.
 const CLAUDE_CONFIG = path.join(HOME, '.claude.json')
@@ -1879,12 +1888,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // Wait for TUI ready: the footer "bypass permissions on" must appear
     const deadline = Date.now() + READY_TIMEOUT_MS
     let ready = false
-    // 四个时间戳分别给四类自动确认限流，避免刷屏
-    // Four timestamps rate-limit the four auto-confirms so the TUI is not flooded
+    // 五个时间戳分别给五类自动确认限流，避免刷屏
+    // Five timestamps rate-limit the five auto-confirms so the TUI is not flooded
     let lastTrustPress = 0
     let lastOnboardingPress = 0
     let lastApiKeyPress = 0
     let lastBypassPress = 0
+    let lastFullscreenPress = 0
     const target = `${HUB}:${sessionId}`
     // 轮询面板到截止时间，每轮先查就绪再处理弹窗
     // Poll the pane until the deadline: readiness first, then the dialogs
@@ -1895,13 +1905,16 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 出现就绪锚点即结束等待
       // The ready sentinel ends the wait
       if (screen.includes(READY_SENTINEL)) { ready = true; break }
-      // 信任框默认已选中"1. Yes"，直接回车即可确认
-      // The trust box already highlights "1. Yes", so Enter confirms it
+      // 信任框2.1.296起默认高亮"No, exit"，选中它时先下移到"Yes, I trust this folder"
+      // The trust box highlights "No, exit" since 2.1.296, so move down to "Yes, I trust this folder"
       if (TRUST_PROMPT_SENTINELS.some(s => screen.includes(s))) {
         const now = Date.now()
         // 限流重发，TUI偶尔吞掉send-keys，直到弹窗消失
         // Rate-limited re-send covers a swallowed send-keys until the box goes
         if (now - lastTrustPress > TRUST_PRESS_INTERVAL_MS) {
+          if (screen.includes('❯ No, exit')) {
+            tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Down'])
+          }
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
           lastTrustPress = now
           log(`[tmux-claude-code] window=${sessionId} 检测到目录信任对话框, 已自动确认信任 (cwd=${cwd})`)
@@ -1928,15 +1941,26 @@ class TmuxClaudeCodeBackend extends AgentBackend {
           log(`[tmux-claude-code] window=${sessionId} 检测到 API Key 对话框, 已自动选择使用环境变量 Key`)
         }
       }
-      // bypass警告默认1是退出，要按2再回车才接受
-      // The bypass warning defaults to 1 = exit, so 2 + Enter accepts
+      // bypass警告高亮的"No, exit"是退出，下移一格到"Yes, I accept"再回车才接受
+      // The bypass warning highlights "No, exit", so move down to "Yes, I accept" then Enter
       if (BYPASS_WARN_SENTINELS.some(s => screen.includes(s))) {
         const now = Date.now()
         if (now - lastBypassPress > BYPASS_WARN_INTERVAL_MS) {
-          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, '2'])
+          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Down'])
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
           lastBypassPress = now
           log(`[tmux-claude-code] window=${sessionId} 检测到 Bypass Permissions 警告, 已自动确认接受`)
+        }
+      }
+      // 全屏渲染器推广弹窗默认高亮"1. Yes"，下移一格选"2. Not now"保持经典渲染
+      // The fullscreen-renderer upsell highlights "1. Yes, try it", so move down to "2. Not now"
+      if (FULLSCREEN_UPSELL_SENTINELS.some(s => screen.includes(s))) {
+        const now = Date.now()
+        if (now - lastFullscreenPress > FULLSCREEN_UPSELL_INTERVAL_MS) {
+          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Down'])
+          tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
+          lastFullscreenPress = now
+          log(`[tmux-claude-code] window=${sessionId} 检测到全屏渲染器推广弹窗, 已选择 Not now 保持经典渲染`)
         }
       }
       // 歇一个轮询间隔再看屏
