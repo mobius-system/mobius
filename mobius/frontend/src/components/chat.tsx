@@ -1443,13 +1443,12 @@ function parseScheduledWakeupDuration(value: string): number | null {
   return Number.isSafeInteger(seconds) && seconds <= 365 * 24 * 60 * 60 ? seconds : null
 }
 
-// 同一弹窗分区展示 Mobius 后台唤醒与 Claude Code 原生定时任务
-// One modal separates Mobius backend wake-ups from Claude Code native scheduled tasks
+// 展示 Mobius 后台定时唤醒任务
+// Display durable Mobius backend wake-up tasks
 function SessionScheduledTasksModal({ sessionId, onClose }: {
   sessionId: string
   onClose: () => void
 }) {
-  const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [mobiusWakeups, setMobiusWakeups] = useState<any[]>([])
@@ -1463,15 +1462,10 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
     setLoading(true)
     setError('')
     try {
-      const [d, wakeupData] = await Promise.all([
-        api(`/api/sessions/${sessionId}/features/scheduled-tasks`),
-        api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`),
-      ])
-      setData(d)
+      const wakeupData = await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`)
       setMobiusWakeups(Array.isArray(wakeupData?.wakeups) ? wakeupData.wakeups : [])
     } catch (e: any) {
       setError(e?.message || '读取定时任务失败')
-      setData(null)
       setMobiusWakeups([])
     } finally {
       setLoading(false)
@@ -1479,12 +1473,6 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
   }, [sessionId])
 
   useEffect(() => { void load() }, [load])
-
-  const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : []
-  const sessionTasks: any[] = Array.isArray(data?.session_tasks) ? data.session_tasks : []
-  const lock = data?.lock || null
-  const schedulerAlive = !!data?.scheduler_alive
-  const available = data?.available !== false
 
   const createWakeup = useCallback(async () => {
     const seconds = parseScheduledWakeupDuration(wakeupDuration)
@@ -1546,7 +1534,7 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
             <span className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>定时任务</span>
-            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {mobiusWakeups.length + tasks.length + sessionTasks.length} 个</span>
+            <span className="flex-shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>· {mobiusWakeups.length} 个</span>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading}
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-2.5 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40"
@@ -1634,78 +1622,6 @@ function SessionScheduledTasksModal({ sessionId, onClose }: {
                 </div>
               )}
             </section>
-          )}
-          {!loading && !error && (
-            <div className="mb-2 text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-primary)' }}>Claude Code 原生定时任务</div>
-          )}
-          {!loading && !error && !available && (
-            <div className="py-8 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>当前会话所属项目未绑定路径 (bind_path), 无法读取 Claude 原生定时任务</div>
-          )}
-          {!loading && !error && available && (
-            <>
-              <div className="mb-3 rounded-xl border px-3.5 py-3 text-[length:var(--fs-md)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                  <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full" style={{ background: lock ? (schedulerAlive ? '#22c55e' : '#fbbf24') : '#6b7280' }} />
-                  <span>
-                    {lock
-                      ? (schedulerAlive ? '调度器运行中' : '锁文件存在但持锁进程未运行 (任务休眠, 下个 Claude Code 会话接管后恢复)')
-                      : '无活跃调度器 (当前没有 Claude Code 会话在此项目持锁)'}
-                  </span>
-                </div>
-                {lock && (
-                  <div className="mt-1.5 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                    持锁 session: {lock.sessionId || '-'} · pid: {lock.pid || '-'}{lock.acquiredAt ? ` · 接管于 ${formatFeatureTime(lock.acquiredAt)}` : ''}
-                  </div>
-                )}
-                {data?.root && (
-                  <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }} title={String(data.root)}>
-                    读取目录{data?.worktree ? ' (worktree)' : ''}: {String(data.root)}
-                  </div>
-                )}
-                <div className="mt-1.5 text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  durable 任务持久化在 <code className="font-mono">.claude/scheduled_tasks.json</code>, 由持锁会话触发 (创建者 ≠ 触发者)。session-only 任务 (durable:false) 只存在于本会话内存、Claude 退出即消失, 从会话转录重建, 下方以「仅本会话」标记列出。
-                </div>
-              </div>
-
-              {tasks.length === 0 && sessionTasks.length === 0 ? (
-                <div className="py-8 text-center text-[length:var(--fs-lg)]" style={{ color: 'var(--text-muted)' }}>暂无 Claude 原生定时任务</div>
-              ) : (
-                <div className="space-y-3">
-                  {[...tasks.map((t: any) => ({ t, sessionOnly: false })), ...sessionTasks.map((t: any) => ({ t, sessionOnly: true }))].map(({ t, sessionOnly }, i: number) => {
-                    const created = t.createdAt ? formatFeatureTime(t.createdAt) : '-'
-                    const recurring = t.recurring === true
-                    const permanent = t.permanent === true
-                    const promptStr = typeof t.prompt === 'string' ? t.prompt : ''
-                    return (
-                      <div key={(t.id || '') + '-' + i} className="rounded-xl border p-3.5" style={{ background: 'var(--bg-primary)', borderColor: sessionOnly ? 'rgba(251,191,36,0.35)' : 'var(--border-color)' }}>
-                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                          <span className="rounded px-1.5 py-0.5 font-mono" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-primary)' }}>{t.id || '?'}</span>
-                          <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{t.cron || '-'}</span>
-                          {sessionOnly
-                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>仅本会话</span>
-                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>durable</span>}
-                          {recurring
-                            ? <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>循环</span>
-                            : <span className="rounded px-1.5 py-0.5" style={{ background: 'var(--bg-card-hover)' }}>一次性</span>}
-                          {permanent && <span className="rounded px-1.5 py-0.5" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>永久</span>}
-                          {!sessionOnly && created !== '-' && <span>· 创建于 {created}</span>}
-                          {t.lastFiredAt && <span>· 上次触发 {formatFeatureTime(t.lastFiredAt)}</span>}
-                        </div>
-                        {promptStr && (
-                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-[length:var(--fs-sm)] leading-relaxed"
-                            style={{ background: 'var(--prose-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
-                            {promptStr}
-                          </pre>
-                        )}
-                        {sessionOnly
-                          ? <div className="mt-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>session-only: 只存在于本会话内存, Claude 退出即消失</div>
-                          : (t.createdBySessionId && <div className="mt-1.5 truncate font-mono text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>创建 session: {t.createdBySessionId}{t.createdByPid ? ` · pid ${t.createdByPid}` : ''}</div>)}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
           )}
         </div>
       </div>
