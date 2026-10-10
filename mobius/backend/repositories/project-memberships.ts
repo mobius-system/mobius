@@ -4,24 +4,24 @@ import type { ProjectMembershipRole } from '../types/rows';
 // 启用员工 = 未软删除 (与 users.ts ACTIVE_USER_SQL 保持一致).
 const ACTIVE_USER_SQL = "(deleted_at IS NULL OR deleted_at = '')";
 
-// 项目角色: 负责人 > 管理员 > 成员 > 访客. 用于排序与权限比较.
+// 项目角色: 负责人 > 开发者 > 访客 > 显式排除. 用于排序与权限比较.
 export const PROJECT_ROLE_RANK: Record<ProjectMembershipRole, number> = {
   viewer: 0,
-  member: 1,
-  manager: 2,
+  none: -1,
+  developer: 1,
   owner: 3,
 };
 
 export const PROJECT_ROLE_LABELS: Record<ProjectMembershipRole, string> = {
   owner: '项目负责人',
-  manager: '项目管理员',
-  member: '项目成员',
+  developer: '项目开发者',
   viewer: '项目访客',
+  none: '不显示',
 };
 
-const ROLE_SET = new Set<string>(['owner', 'manager', 'member', 'viewer']);
+const ROLE_SET = new Set<string>(['owner', 'developer', 'viewer', 'none']);
 
-const ROLE_ORDER_SQL = `CASE pm.role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 WHEN 'member' THEN 2 ELSE 3 END`;
+const ROLE_ORDER_SQL = `CASE pm.role WHEN 'owner' THEN 0 WHEN 'developer' THEN 1 WHEN 'viewer' THEN 2 ELSE 3 END`;
 
 interface RepoError extends Error {
   status: number;
@@ -33,10 +33,12 @@ function repoError(message: string, status: number = 400): RepoError {
   return e;
 }
 
-// 规范化角色: 非法值回落为 member, 而非拒绝, 降低上层调用心智负担.
+// 规范化角色: 兼容旧客户端的 manager/member，但数据库只保存新角色.
 function normalizeRole(value: unknown): ProjectMembershipRole {
   const r = String(value || '').trim();
-  return ROLE_SET.has(r) ? (r as ProjectMembershipRole) : 'member';
+  if (r === 'manager' || r === 'member') return 'developer';
+  if (!ROLE_SET.has(r)) throw repoError('无效的项目角色', 400);
+  return r as ProjectMembershipRole;
 }
 
 function dedupeIds(input: unknown): string[] {
@@ -87,9 +89,12 @@ const ProjectMemberships = {
     const uid = String(userId || '');
     if (!pid || !uid) return null;
     const row = db.prepare(
-      'SELECT role FROM project_memberships WHERE project_id = ? AND user_id = ?'
-    ).get(pid, uid) as { role?: ProjectMembershipRole } | undefined;
-    return row?.role || null;
+      `SELECT pm.role, p.created_by
+       FROM project_memberships pm JOIN projects p ON p.id = pm.project_id
+       WHERE pm.project_id = ? AND pm.user_id = ?`
+    ).get(pid, uid) as { role?: ProjectMembershipRole; created_by?: string } | undefined;
+    if (!row) return null;
+    return row.role === 'owner' && row.created_by !== uid ? 'viewer' : (row.role || null);
   },
 
   // 创建者首条成员关系 (owner). 已存在则保留不动 (ON CONFLICT DO NOTHING),
@@ -147,18 +152,18 @@ const ProjectMemberships = {
   // 各角色计数 (UI 展示概览).
   counts(projectId: unknown): Record<ProjectMembershipRole, number> {
     const pid = String(projectId || '');
-    if (!pid) return { owner: 0, manager: 0, member: 0, viewer: 0 };
+    if (!pid) return { owner: 0, developer: 0, viewer: 0, none: 0 };
     const rows = db.prepare(
       'SELECT role, COUNT(*) AS c FROM project_memberships WHERE project_id = ? GROUP BY role'
     ).all(pid) as Array<{ role: ProjectMembershipRole; c: number }>;
-    const out: Record<ProjectMembershipRole, number> = { owner: 0, manager: 0, member: 0, viewer: 0 };
+    const out: Record<ProjectMembershipRole, number> = { owner: 0, developer: 0, viewer: 0, none: 0 };
     for (const r of rows) out[r.role] = r.c;
     return out;
   },
 
   // 批量加入成员. 校验全部为启用员工, 任一非法即抛错回滚 (保证事务原子性).
   // 重复添加幂等: ON CONFLICT DO NOTHING, 不覆盖已有更高角色 (尤其保护 owner).
-  addMany({ projectId, userIds, role = 'member', actorId }: {
+  addMany({ projectId, userIds, role = 'developer', actorId }: {
     projectId: string;
     userIds: unknown;
     role?: unknown;
@@ -247,10 +252,10 @@ const ProjectMemberships = {
     if (user.role === 'admin') return true;
     const pid = String(projectId || '');
     if (!pid) return false;
-    const role = ProjectMemberships.roleFor(pid, user.id);
-    if (role === 'owner' || role === 'manager') return true;
     const proj = db.prepare('SELECT created_by FROM projects WHERE id = ?').get(pid) as { created_by?: string } | undefined;
-    return !!proj && proj.created_by === user.id;
+    if (proj?.created_by === user.id) return true;
+    const role = ProjectMemberships.roleFor(pid, user.id);
+    return role === 'owner';
   },
 };
 

@@ -1121,7 +1121,7 @@ export function SessionSkillMemoryEditor({
           />
           <ResourceTabButton
             buttonId="time"
-            label="耗时"
+            label="定时任务与耗时"
             icon={<Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />}
             active={timeActive}
             activeClass="border-sky-400/60 bg-sky-500/15 text-sky-100 shadow-sm"

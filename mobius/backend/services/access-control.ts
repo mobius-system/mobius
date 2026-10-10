@@ -256,29 +256,34 @@ function ensureGroupVisCtx(user: any): { restricted: boolean; whitelist: Set<str
   return ctx;
 }
 
-function canReadProject(user: any, projectOrId: any): boolean {
+type EffectiveProjectRole = 'owner' | 'developer' | 'viewer' | null;
+
+function explicitProjectRole(projectId: string, userId: string): string | null {
+  const row = db.prepare('SELECT role FROM project_memberships WHERE project_id = ? AND user_id = ?')
+    .get(projectId, userId) as { role?: string } | undefined;
+  return row?.role || null;
+}
+
+function effectiveProjectRole(user: any, projectOrId: any): EffectiveProjectRole {
   const project = projectById(projectOrId);
-  if (!project || !user?.id) return false;
-  // 纯成员制 (项目可见性 public/team/allowlist 已退役): admin 全局可见; 创建者可见; 项目成员(任意角色)可读.
-  if (user.role === 'admin') return true;
-  if (project.created_by === user.id) return true;
-  if (ProjectMemberships.roleFor(project.id, user.id)) return true;
-  // 受限群组白名单: 管理员授权给该群组的项目, 视同间接成员.
-  const visCtx = ensureGroupVisCtx(user);
-  if (visCtx.restricted && visCtx.whitelist.has(project.id)) return true;
-  // 项目级 ACL 显式 allow (遗留 allowlist 授权), 保留.
-  if (hasAclEffect(user, 'project', project.id, 'allow')) return true;
-  // 其余非成员一律不可见.
-  return false;
+  if (!project || !user?.id) return null;
+  if (project.created_by === user.id) return 'owner';
+  const explicit = explicitProjectRole(String(project.id), String(user.id));
+  if (explicit === 'developer') return project.kind === 'extension' && user.role !== 'admin' ? 'viewer' : 'developer';
+  if (explicit === 'viewer') return 'viewer';
+  if (explicit === 'none') return null;
+  return project.kind === 'extension' ? 'viewer' : null;
+}
+
+function canReadProject(user: any, projectOrId: any): boolean {
+  return !!effectiveProjectRole(user, projectOrId);
 }
 
 function canManageProject(user: any, projectOrId: any): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
-  if (user.role === 'admin' || project.created_by === user.id) return true;
-  // 项目负责人 / 项目管理员可管理团队与项目设置.
-  const role = ProjectMemberships.roleFor(project.id, user.id);
-  return role === 'owner' || role === 'manager';
+  // 管理员的管理中心权限由对应路由单独授予，不把 admin 身份变成项目内容权限。
+  return project.created_by === user.id || effectiveProjectRole(user, project) === 'owner';
 }
 
 function canCreateIssue(user: any, projectOrId: any): boolean {
@@ -288,12 +293,8 @@ function canCreateIssue(user: any, projectOrId: any): boolean {
 function projectAllowsReaderWrite(user: any, projectOrId: any, _flagColumn: string): boolean {
   const project = projectById(projectOrId);
   if (!project || !user?.id) return false;
-  if (user.role === 'admin' || project.created_by === user.id) return true;
-  // 成员制写权限 (读者开关 can_post_issue/can_run_session 已退役):
-  // owner/manager/member 可写(建任务单/跑会话); viewer 只读; 非成员不可写.
-  const role = ProjectMemberships.roleFor(project.id, user.id);
-  if (role === 'owner' || role === 'manager' || role === 'member') return true;
-  return false;
+  const role = effectiveProjectRole(user, project);
+  return role === 'owner' || role === 'developer';
 }
 
 function canSetIssueVisibilityWithinProject(projectOrId: any, visibility: any): boolean {
@@ -314,24 +315,17 @@ function canReadIssue(user: any, issueOrId: any): boolean {
   if (!issue || !user?.id) return false;
   const project = projectById(issue.project_id);
   if (!project) return false;
-  if (user.role === 'admin' || issue.created_by === user.id || project.created_by === user.id) return true;
+  if (issue.created_by === user.id || project.created_by === user.id) return !!effectiveProjectRole(user, project);
   if (!canReadProject(user, project)) return false;
-  const visibility = normalizeVisibility(issue.visibility, 'inherit', true);
-  if (visibility === 'inherit') return true;
-  return allowedByVisibility(user, {
-    resourceType: 'issue',
-    resourceId: issue.id,
-    ownerId: issue.created_by,
-    teamOwnerId: project.created_by,
-    visibility,
-  });
+  return true;
 }
 
 function canManageIssue(user: any, issueOrId: any): boolean {
   const issue = issueById(issueOrId);
   if (!issue || !user?.id) return false;
   const project = projectById(issue.project_id);
-  return !!(user.role === 'admin' || issue.created_by === user.id || project?.created_by === user.id);
+  const role = project ? effectiveProjectRole(user, project) : null;
+  return !!(project && role && (issue.created_by === user.id || role === 'owner' || role === 'developer'));
 }
 
 function canReadResearch(user: any, researchOrId: any): boolean {
@@ -339,28 +333,20 @@ function canReadResearch(user: any, researchOrId: any): boolean {
   if (!research || !user?.id) return false;
   const project = projectById(research.project_id);
   if (!project) return false;
-  if (user.role === 'admin' || research.created_by === user.id || project.created_by === user.id) return true;
+  if (research.created_by === user.id || project.created_by === user.id) return !!effectiveProjectRole(user, project);
   if (!canReadProject(user, project)) return false;
-  const visibility = normalizeVisibility(research.visibility, 'inherit', true);
-  if (visibility === 'inherit') return true;
-  return allowedByVisibility(user, {
-    resourceType: 'research',
-    resourceId: research.id,
-    ownerId: research.created_by,
-    teamOwnerId: project.created_by,
-    visibility,
-  });
+  return true;
 }
 
 function canManageResearch(user: any, researchOrId: any): boolean {
   const research = researchById(researchOrId);
   if (!research || !user?.id) return false;
   const project = projectById(research.project_id);
-  return !!(user.role === 'admin' || research.created_by === user.id || project?.created_by === user.id);
+  const role = project ? effectiveProjectRole(user, project) : null;
+  return !!(project && role && (research.created_by === user.id || role === 'owner' || role === 'developer'));
 }
 
 function canCreateSessionForIssue(user: any, issueOrId: any): boolean {
-  if (!isV3RunSessionGateEnabled()) return canReadIssue(user, issueOrId);
   const issue = issueById(issueOrId);
   if (!issue || !user?.id) return false;
   if (!canReadIssue(user, issue)) return false;
@@ -368,25 +354,29 @@ function canCreateSessionForIssue(user: any, issueOrId: any): boolean {
 }
 
 function canCreateSessionForResearch(user: any, researchOrId: any): boolean {
-  return canReadResearch(user, researchOrId);
+  const research = researchById(researchOrId);
+  return !!research && canReadResearch(user, research) && projectAllowsReaderWrite(user, research.project_id, 'can_run_session');
 }
 
 function canReadSession(user: any, sessionOrId: any): boolean {
   const session = sessionById(sessionOrId);
   if (!session || !user?.id) return false;
-  if (user.role === 'admin' || session.user_id === user.id) return true;
-  // 固定“验收完成案例”是全员可读教程素材；仅放开读取，不放开操作权限。
-  if (isFixedLogoReviewSession(session)) return true;
   const project = projectById(session.project_id);
-  return !!(project && project.created_by === user.id);
+  if (!project || !effectiveProjectRole(user, project)) return false;
+  // 固定教程会话仍可公开读取，但不授予操作权。
+  if (isFixedLogoReviewSession(session)) return true;
+  return true;
 }
 
 function canOperateSession(user: any, sessionOrId: any): boolean {
   const session = sessionById(sessionOrId);
   if (!session || !user?.id) return false;
-  if (user.role === 'admin' || session.user_id === user.id) return true;
   const project = projectById(session.project_id);
-  return !!(project && project.created_by === user.id);
+  if (!project) return false;
+  if (session.user_id === user.id) return true;
+  const role = effectiveProjectRole(user, project);
+  if (role === 'viewer' || !role) return false;
+  return role === 'owner' || role === 'developer';
 }
 
 function parsedContextId(kind: string, id: any): any {
@@ -412,8 +402,7 @@ function canReadContextItem(user: any, kind: string, item: any): boolean {
   const parsed = parsedContextId(kind, item.id);
   if (!parsed) return false;
   const creatorId = parsed.userId || item.created_by || item.owner_id;
-  if (user.role === 'admin' || creatorId === user.id) return true;
-  const visibility = contextPolicy(kind, item);
+  if (creatorId === user.id) return true;
   if (parsed.scope === 'project') {
     const project = projectById(parsed.projectId || item.owner_id);
     if (!project) return false;
@@ -421,21 +410,15 @@ function canReadContextItem(user: any, kind: string, item: any): boolean {
     // 不再单独设可见性 / 指定用户 (与项目成员制统一).
     return canReadProject(user, project);
   }
-  if (visibility === 'inherit') return false;
-  return allowedByVisibility(user, {
-    resourceType: kind,
-    resourceId: item.id,
-    ownerId: creatorId,
-    teamOwnerId: creatorId,
-    visibility,
-  });
+  // 用户级上下文不再通过 public/team/allowlist/ACL 间接放行。
+  return false;
 }
 
 function canManageContextItem(user: any, kind: string, item: any): boolean {
   if (!item || !user?.id) return false;
   const parsed = parsedContextId(kind, item.id);
   if (!parsed) return false;
-  if (user.role === 'admin' || parsed.userId === user.id) return true;
+  if (parsed.userId === user.id) return true;
   if (parsed.scope === 'project') {
     const project = projectById(parsed.projectId || item.owner_id);
     return project?.created_by === user.id;
@@ -444,7 +427,8 @@ function canManageContextItem(user: any, kind: string, item: any): boolean {
 }
 
 function canContributeProjectContext(user: any, projectOrId: any): boolean {
-  return canManageProject(user, projectOrId);
+  const role = effectiveProjectRole(user, projectOrId);
+  return role === 'owner' || role === 'developer';
 }
 
 function filterReadableContextItems(user: any, kind: string, items: any): any[] {
@@ -510,6 +494,7 @@ export {
   isV3RunSessionGateEnabled,
   canSetIssueVisibilityWithinProject,
   canReadProject,
+  effectiveProjectRole,
   canManageProject,
   projectAllowsReaderWrite,
   canCreateIssue,

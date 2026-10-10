@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Activity,
@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
+  Network,
   Plus,
   Search,
   Settings,
@@ -46,6 +47,10 @@ import {
   type ProjectHierarchySearchResponse,
 } from '../services/project-hierarchy-search'
 import { readListCache, writeListCache, readMapCache, writeMapCache } from '../services/list-swr-cache'
+
+// 纵观 = 与简易模式「全局纵观」同一个总览页, 懒加载后再内嵌进用户主页右栏.
+// Overview = the same cluster page easy mode shows, lazily loaded and embedded in the user page.
+const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
 
 type ProjectFilterKey = 'owned' | 'starred' | 'extension'
 const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: string }> = [
@@ -207,9 +212,9 @@ export default function UserPage() {
   const userParam = params.user || user?.id || ''
 
   const [showNew, setShowNew] = useState(false)
-  // 用户主页改为「左侧导航 + 右侧单视图」: 项目 / 记忆 / 技能 / 数据 / 监控 / 配置. 记忆/技能源自原 Z3 右栏.
-  type UserView = 'projects' | 'memory' | 'skills' | 'data' | 'monitor' | 'config'
-  const USER_VIEWS: UserView[] = ['projects', 'memory', 'skills', 'data', 'monitor', 'config']
+  // 用户主页改为「左侧导航 + 右侧单视图」: 项目 / 纵观 / 记忆 / 技能 / 数据 / 监控 / 配置. 记忆/技能源自原 Z3 右栏.
+  type UserView = 'projects' | 'overview' | 'memory' | 'skills' | 'data' | 'monitor' | 'config'
+  const USER_VIEWS: UserView[] = ['projects', 'overview', 'memory', 'skills', 'data', 'monitor', 'config']
   const [activeView, setActiveView] = useState<UserView>(() => {
     try {
       const v = localStorage.getItem('mobius:ui:user-page:view')
@@ -630,6 +635,9 @@ export default function UserPage() {
             {[
               { key: 'projects', label: '项目', icon: <Folder className="w-4 h-4" strokeWidth={1.8} /> },
               ...(userParam === user?.id ? [
+                // 原简易模式侧栏的「全局纵观」并入本项目导航, 直接排在「项目」下面, 标签简化为「纵观」.
+                // The easy-mode sidebar entry「全局纵观」now lives here right under「项目」, labeled「纵观」.
+                { key: 'overview', label: '纵观', icon: <Network className="w-4 h-4" strokeWidth={1.8} /> },
                 { key: 'memory', label: '记忆', icon: <Brain className="w-4 h-4" strokeWidth={1.8} /> },
                 { key: 'skills', label: '技能', icon: <Sparkles className="w-4 h-4" strokeWidth={1.8} /> },
                 { key: '__divider__', label: '', icon: null as ReactNode },
@@ -653,7 +661,14 @@ export default function UserPage() {
         </ResizablePanel>
 
         {/* 右侧主区 */}
-        <main data-tour="user-projects-main" className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8" style={{ background: 'var(--bg-secondary)' }}>
+        <main data-tour="user-projects-main" className={`flex-1 min-w-0 ${activeView === 'overview' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`} style={{ background: 'var(--bg-secondary)' }}>
+          {userParam === user?.id && activeView === 'overview' && (
+            // 纵观与简易模式同款: 撑满高度的整块面板, 加载期间保持高度不变
+            // Same as easy mode: a full-height panel so the lazy fallback keeps the layout stable
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>正在加载纵观…</div>}>
+              <EmbeddedOverviewCluster embedded />
+            </Suspense>
+          )}
           {activeView === 'projects' && (
           <div className="w-full max-w-7xl mx-auto">
             {/* 页面标题与项目工具栏保持同一层级，先确认位置再筛选内容。 */}

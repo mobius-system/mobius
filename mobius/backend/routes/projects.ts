@@ -45,6 +45,7 @@ import { aimuxRemoteNameFromMeta, parsePcClientMetadata } from '../services/pc-c
 // @ts-ignore — service 仍是 .js
 import {
   canReadProject,
+  effectiveProjectRole,
   canReadIssue,
   canReadResearch,
   canReadSession,
@@ -593,7 +594,7 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
   if (!project) return project;
   const canCreate = canCreateIssue(user, project);
   // 当前用户在该项目的成员角色 (非成员为 null), 供前端区分"项目组成员"与"可见性读者".
-  const membershipRole = user?.id ? ProjectMemberships.roleFor(project.id, user.id) : null;
+  const membershipRole = user?.id ? effectiveProjectRole(user, project) : null;
   const muted = opts.mutedIds
     ? opts.mutedIds.has(project.id)
     : (user?.id ? UserProjectView.isMuted(user.id, project.id) : false);
@@ -616,6 +617,24 @@ function shapeProjectForUser(project: any, user: any, opts: { mutedIds?: Set<str
     muted_label: muted ? '已屏蔽' : null,
     hidden,
   };
+}
+
+async function stopProjectSessionsForUser(projectId: string, userId: string): Promise<void> {
+  try {
+    const { terminateBackgroundSession } = require('./sessions');
+    const rows = db.prepare(`
+      SELECT * FROM sessions_v2
+      WHERE project_id = ? AND user_id = ? AND status = 'active'
+    `).all(projectId, userId) as any[];
+    for (const session of rows) {
+      try { await terminateBackgroundSession(session, String(session.session_id)); } catch (e) {
+        console.warn(`[project-membership] stop session failed ${session.session_id}: ${(e as Error).message}`);
+      }
+      try { db.prepare("UPDATE sessions_v2 SET agent_status = 'idle' WHERE session_id = ?").run(session.session_id); } catch {}
+    }
+  } catch (e) {
+    console.warn(`[project-membership] stop sessions unavailable: ${(e as Error).message}`);
+  }
 }
 
 function normalizeText(value: unknown, fallback: string, maxLength: number): string {
@@ -933,11 +952,25 @@ function loadReadableProject(req: express.Request, res: express.Response, id: st
 }
 
 function loadManageableProject(req: express.Request, res: express.Response, id: string): any | null {
+  const user = userOf(req);
+  const project = user?.role === 'admin' ? Projects.findById(id) : loadReadableProject(req, res, id);
+  if (!project) {
+    if (user?.role === 'admin') res.status(404).json({ error: '项目未找到' });
+    return null;
+  }
+  if (user?.role !== 'admin' && !canManageProject(user, project)) {
+    res.status(403).json({ error: '只有项目 owner/admin 可以修改项目待办' });
+    return null;
+  }
+  return project;
+}
+
+function loadWritableProject(req: express.Request, res: express.Response, id: string): any | null {
   const project = loadReadableProject(req, res, id);
   if (!project) return null;
   const user = userOf(req);
-  if (!canManageProject(user, project)) {
-    res.status(403).json({ error: '只有项目 owner/admin 可以修改项目待办' });
+  if (!projectAllowsReaderWrite(user, project, 'can_write_files')) {
+    res.status(403).json({ error: '当前项目角色没有文件写入权限' });
     return null;
   }
   return project;
@@ -2149,17 +2182,20 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
     kind?: string;
     extensionName?: string;
   };
+  if (bindPathManual && user.role !== 'admin') {
+    return res.status(403).json({ error: '只有管理员可以使用手动绑定路径' });
+  }
   if (!name) return res.status(400).json({ error: '请填写项目名称' });
   const visibility = normalizeProjectVisibility(req.body?.visibility, 'private');
   const canPostIssue = boolFromBody(req.body || {}, 'can_post_issue', 'canPostIssue', false);
   const canRunSession = boolFromBody(req.body || {}, 'can_run_session', 'canRunSession', false);
-  // 创建时一并加入的首批项目组成员; 支持 members (带角色, 优先) 或 member_user_ids (全 member). 排除创建者本人.
+  // 创建时一并加入的首批项目组成员; 支持 members (带角色, 优先) 或 member_user_ids (全 developer). 排除创建者本人.
   const rawMembers = req.body?.members;
   const members = Array.isArray(rawMembers)
     ? (rawMembers as any[])
         .map((m: any) => ({
           user_id: String(m?.user_id ?? m?.userId ?? '').trim(),
-          role: String(m?.role || 'member').trim() || 'member',
+          role: String(m?.role || 'developer').trim() || 'developer',
         }))
         .filter((m: { user_id: string; role: string }) => m.user_id && m.user_id !== user.id)
     : null;
@@ -2170,8 +2206,8 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
   if (kind === 'extension') {
-    if (user.role !== 'admin' && user.role !== 'developer') {
-      return res.status(403).json({ error: '只有管理员或开发者可以创建莫比乌斯拓展项目' });
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: '只有管理员可以创建莫比乌斯拓展项目' });
     }
     if (hasBoolField(req.body || {}, 'can_post_issue', 'canPostIssue')
       || hasBoolField(req.body || {}, 'can_run_session', 'canRunSession')) {
@@ -2280,7 +2316,7 @@ router.get('/:id/members', auth, (req: express.Request, res: express.Response) =
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
   const dbRole = ProjectMemberships.roleFor(id, user.id);
   const actorRole = dbRole || (project.created_by === user.id ? 'owner' : null);
   res.json({
@@ -2298,7 +2334,7 @@ router.get('/:id/member-candidates', auth, (req: express.Request, res: express.R
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
   if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
   const q = String(req.query.q || '').trim();
   const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
@@ -2332,9 +2368,17 @@ router.post('/:id/members', auth, (req: express.Request, res: express.Response) 
   if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
   const rawIds = req.body?.user_ids ?? req.body?.userIds;
   const userIds = Array.isArray(rawIds) ? rawIds : [];
-  const role = String(req.body?.role || 'member').trim() || 'member';
-  // manager 不能添加 owner —— 只有项目负责人/系统管理员可以.
+  const role = String(req.body?.role || 'developer').trim() || 'developer';
+  const targetIds = userIds.map((x: any) => String(x || '').trim()).filter(Boolean);
+  if (project.kind === 'extension' && role !== 'viewer' && role !== 'none') {
+    const targetRows = targetIds.length ? db.prepare(`SELECT id, role FROM users WHERE id IN (${targetIds.map(() => '?').join(',')})`).all(...targetIds) as any[] : [];
+    if (user.role !== 'admin' || targetRows.some((x) => x.role !== 'admin')) {
+      return res.status(400).json({ error: '拓展项目中的普通用户只能是 viewer 或 none' });
+    }
+  }
+  // developer 不能添加 owner —— 只有项目负责人/系统管理员可以.
   const actorRole = ProjectMemberships.roleFor(id, user.id);
+  if (role === 'owner') return res.status(403).json({ error: '项目负责人由项目创建者唯一确定' });
   if (role === 'owner' && actorRole !== 'owner' && user.role !== 'admin') {
     return res.status(403).json({ error: '只有项目负责人可以添加负责人' });
   }
@@ -2357,12 +2401,34 @@ router.patch('/:id/members/:userId', auth, (req: express.Request, res: express.R
   const role = String(req.body?.role || '').trim();
   const actorRole = ProjectMemberships.roleFor(id, user.id);
   const target = ProjectMemberships.roleFor(id, userId);
-  // manager 不能改 owner 的角色, 也不能把人提为 owner.
-  if (actorRole !== 'owner' && user.role !== 'admin' && (target === 'owner' || role === 'owner')) {
-    return res.status(403).json({ error: '只有项目负责人可以调整负责人角色' });
+  const targetSystemRole = (db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as any)?.role;
+  if (project.kind === 'extension' && (role === 'developer' || role === 'owner')
+      && targetSystemRole !== 'admin') {
+    return res.status(400).json({ error: '拓展项目中的普通用户只能是 viewer 或 none' });
+  }
+  // created_by 是唯一 owner 真相；任何人都不能改动项目创建者的 owner 身份。
+  if (userId === project.created_by || target === 'owner' || role === 'owner') {
+    return res.status(403).json({ error: '项目负责人身份不可通过成员接口变更' });
+  }
+  if (user.role !== 'admin') {
+    if (actorRole === 'owner') {
+      // 项目负责人可以调整普通成员，但不能降低管理员的系统权限映射。
+      if (targetSystemRole === 'admin' && role !== 'developer') {
+        return res.status(403).json({ error: '项目负责人只能提升管理员在项目中的角色' });
+      }
+    } else if (actorRole === 'developer') {
+      if (userId !== user.id) return res.status(403).json({ error: '开发者只能调整自己的项目角色' });
+      const rank: Record<string, number> = { none: -1, viewer: 0, developer: 1, owner: 2 };
+      if ((rank[role] ?? -2) > (rank[target || 'developer'] ?? 1)) {
+        return res.status(403).json({ error: '开发者只能降低自己的项目角色' });
+      }
+    } else {
+      return res.status(403).json({ error: '需要项目负责人权限' });
+    }
   }
   try {
     const result = ProjectMemberships.updateRole({ projectId: id, userId, role, actorId: user.id });
+    if (role === 'none' || role === 'viewer') void stopProjectSessionsForUser(id, userId);
     res.json({ ...result, members: ProjectMemberships.list(id), counts: ProjectMemberships.counts(id) });
   } catch (e) {
     const err = e as { status?: number; message?: string };
@@ -2384,6 +2450,7 @@ router.delete('/:id/members/:userId', auth, (req: express.Request, res: express.
   }
   try {
     ProjectMemberships.remove({ projectId: id, userId });
+    void stopProjectSessionsForUser(id, userId);
     res.json({ ok: true, members: ProjectMemberships.list(id), counts: ProjectMemberships.counts(id) });
   } catch (e) {
     const err = e as { status?: number; message?: string };
@@ -2395,7 +2462,7 @@ router.get('/:id/delete-preview', auth, (req: express.Request, res: express.Resp
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
   res.json({
     policy: projectDeletePolicy(project, user),
     impact: ProjectDeletionAudit.impact(id),
@@ -2406,7 +2473,7 @@ router.delete('/:id', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
-  if (!project || !canReadProject(user, project)) return res.status(404).json({ error: '未找到' });
+  if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
 
   const policy = projectDeletePolicy(project, user);
   const impact = ProjectDeletionAudit.impact(id);
@@ -2565,7 +2632,7 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const project = Projects.findById(id);
   if (!project) return res.status(404).json({ error: '未找到' });
-  if (!canManageProject(user, project)) return res.status(403).json({ error: '只有项目 owner/admin 可以修改项目设置' });
+  if (user.role !== 'admin' && !canManageProject(user, project)) return res.status(403).json({ error: '只有项目 owner/admin 可以修改项目设置' });
   const {
     name,
     description,
@@ -2719,6 +2786,9 @@ router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
   }
   let resolvedBindPath: string | undefined;
   if (bindPath !== undefined) {
+    if (bindPathManual && user.role !== 'admin') {
+      return res.status(403).json({ error: '只有管理员可以使用手动绑定路径' });
+    }
     try {
       resolvedBindPath = bindPathManual
         ? resolveBindPathManual(bindPath)
@@ -3411,7 +3481,7 @@ router.get('/:id/remote-file', auth, async (req: express.Request, res: express.R
 });
 
 router.post('/:id/remote-file', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
   const remote = projectRemoteFileSource(project, req.body?.remote, bridge);
@@ -3438,6 +3508,7 @@ router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
   const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
+  try { assertNoSymlink(resolved.root, absPath); } catch { return res.status(403).json({ error: '不支持读取符号链接' }); }
   let stat: fs.Stats;
   try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
   if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
@@ -3463,7 +3534,7 @@ router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
 // content 为字符串且 ≤ 5MB, 同步覆盖写. 不处理并发冲突 (last-write-wins, 编辑器场景可接受).
 const FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
 router.post('/:id/file', auth, (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
 
@@ -3564,7 +3635,7 @@ function ensureGitInitIfNeeded(bindPath: string): void {
 
 // POST /:id/import-zip — multipart 上传 zip/tar, 解压导入到项目 bind_path.
 router.post('/:id/import-zip', auth, importZipUpload.single('file'), (req: express.Request, res: express.Response) => {
-  const project = loadManageableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const file = (req as any).file as { path: string; originalname: string; size: number } | undefined;
@@ -3609,6 +3680,7 @@ router.get('/:id/file/download', auth, async (req: express.Request, res: express
     return res.status(404).json({ error: '文件不存在', code: 'NOT_FOUND' });
   }
   if (lst.isSymbolicLink()) return res.status(400).json({ error: '不支持下载符号链接', code: 'SYMLINK_UNSUPPORTED' });
+  try { await assertNoSymlink(resolved.root, absPath); } catch { return res.status(403).json({ error: '不支持下载符号链接', code: 'SYMLINK_UNSUPPORTED' }); }
   if (!lst.isFile()) return res.status(400).json({ error: '只能下载文件，目录打包下载暂不支持', code: 'INVALID_NAME' });
   const name = path.basename(absPath);
   res.setHeader('Content-Type', contentTypeFor(name));
@@ -3626,7 +3698,7 @@ router.get('/:id/file/download', auth, async (req: express.Request, res: express
 
 // POST /:id/files/copy { sourcePath, targetDir } - 同项目内复制文件/目录 (设计文档 §8.3, §14)。
 router.post('/:id/files/copy', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const src = resolveProjectPath(project.bind_path, req.body?.sourcePath);
@@ -3681,7 +3753,7 @@ router.post('/:id/files/copy', auth, async (req: express.Request, res: express.R
 // POST /:id/files/move { sourcePath, targetDir } - 在项目目录内移动文件/目录到另一目录.
 // 跨目录 fs.rename 即移动 (同卷原子). 拒绝移动到自身/子目录; 同名 CONFLICT; 已在目标目录则空操作.
 router.post('/:id/files/move', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const src = resolveProjectPath(project.bind_path, req.body?.sourcePath);
@@ -3743,7 +3815,7 @@ router.post('/:id/files/move', auth, async (req: express.Request, res: express.R
 
 // POST /:id/files/mkdir { parentPath, name } - 在项目目录内创建单个新目录。
 router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const parent = resolveProjectPath(project.bind_path, req.body?.parentPath || '/');
@@ -3788,7 +3860,7 @@ router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.
 
 // POST /:id/files/create { parentPath, name } - 在项目目录内创建空文件。
 router.post('/:id/files/create', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const parent = resolveProjectPath(project.bind_path, req.body?.parentPath || '/');
@@ -3834,7 +3906,7 @@ router.post('/:id/files/create', auth, async (req: express.Request, res: express
 
 // POST /:id/files/rename { path, newName } - 重命名文件/目录 (设计文档 §8.6, §14)。
 router.post('/:id/files/rename', auth, async (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!ensureProjectWritable(res, project)) return;
   const resolved = resolveProjectPath(project.bind_path, req.body?.path);
@@ -3925,7 +3997,7 @@ router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.
 });
 
 router.post('/:id/main-project-port', auth, (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
   const port = normalizeProjectPort(req.body?.port);
@@ -3952,7 +4024,7 @@ router.get('/:id/dev-ports', auth, (req: express.Request, res: express.Response)
 });
 
 router.post('/:id/dev-ports', auth, (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
   try {
@@ -3982,7 +4054,7 @@ router.post('/:id/dev-ports', auth, (req: express.Request, res: express.Response
 });
 
 router.delete('/:id/dev-ports/:port', auth, (req: express.Request, res: express.Response) => {
-  const project = loadReadableProject(req, res, String(req.params.id));
+  const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未配置 bind_path' });
   const port = normalizeProjectPort(req.params.port);

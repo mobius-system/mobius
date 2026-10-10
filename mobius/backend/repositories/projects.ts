@@ -265,7 +265,7 @@ const Projects = {
     `).all() as ProjectRawRowWithExtras[]).map(hydrate);
   },
 
-  // 创建项目 = 单事务: 写项目行 + 创建者 owner 关系 + 首批成员 (member).
+  // 创建项目 = 单事务: 写项目行 + 创建者 owner 关系 + 首批成员.
   // 任一首批成员非法 → addMany 抛错 → 整个事务回滚, 不会留下"没有项目组的半成品项目".
   insert: ({ id, name, description, createdBy, bindPath, bindPathManual, gitRepos, defaultUseWorktree, researchEnabled, visibility, canPostIssue, canRunSession, defaultModel, memberUserIds, members }: InsertArgs) => {
     const insertProject = db.prepare(
@@ -278,10 +278,10 @@ const Projects = {
         (typeof defaultModel === 'string' && defaultModel.trim()) ? defaultModel.trim() : null);
       // 创建者自动成为项目负责人 (owner).
       ProjectMemberships.ensureOwner(id, createdBy, createdBy);
-      // 首批成员: 优先用带角色的 members, 否则回落到 memberUserIds (全 member). 排除创建者本人.
+      // 首批成员: 优先用带角色的 members, 否则回落到 memberUserIds (全 developer). 排除创建者本人.
       const rawInitial = Array.isArray(members) && members.length
-        ? members.map((m) => ({ user_id: String((m && m.user_id) || '').trim(), role: String((m && m.role) || 'member').trim() || 'member' }))
-        : (Array.isArray(memberUserIds) ? memberUserIds.map((u) => ({ user_id: String(u || '').trim(), role: 'member' })) : []);
+        ? members.map((m) => ({ user_id: String((m && m.user_id) || '').trim(), role: String((m && m.role) || 'developer').trim() || 'developer' }))
+        : (Array.isArray(memberUserIds) ? memberUserIds.map((u) => ({ user_id: String(u || '').trim(), role: 'developer' })) : []);
       // 同一用户只保留首次出现的角色.
       const seen = new Set<string>();
       const byRole = new Map<string, string[]>();

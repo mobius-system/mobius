@@ -38,6 +38,7 @@ const {
   flushPendingOpeners,
 } = require('../services/mobius-agent-history')
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
+import { sandboxCommand } from '../services/agent-sandbox'
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -726,6 +727,7 @@ interface CodexDispatchOpts {
   codexConfigPath?: string | null
   codexSecretEnvKey?: string | null
   codexSecretValue?: string | null
+  sandboxPolicy?: string | null
   [key: string]: unknown
 }
 
@@ -1192,7 +1194,7 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized })
+      spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy: (opts as any).sandboxPolicy || null })
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -1268,6 +1270,7 @@ class TmuxCodexBackend extends AgentBackend {
         agentSessionId: finalAgentSid,
         aimuxRemoteName,
         aimuxGuiAuthorized,
+        sandboxPolicy: (opts as any).sandboxPolicy || null,
       })
       cwd = finalCwd
       flagRoot = flagRoot || persisted?.flagRoot || finalCwd
@@ -1526,7 +1529,7 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // Start a new Codex tmux window and return the launch info used to bind its rollout later.
-  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName, aimuxGuiAuthorized }: CodexDispatchOpts) {
+  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy = null }: CodexDispatchOpts) {
     if (!sessionId || !cwd) throw new Error('_spawnWindow requires sessionId + cwd')
     // Make sure the tmux hub session that hosts agent windows exists.
     ensureHub()
@@ -1666,7 +1669,7 @@ class TmuxCodexBackend extends AgentBackend {
       cmdLines.push(`exec codex ${profileArg} ${subcommand}${argStr}`)
     }
     // Join with && so a failing earlier step prevents the exec.
-    const cmd = cmdLines.join(' && ')
+    const cmd = sandboxCommand(sandboxPolicy || null, cmdLines.join(' && '))
 
     // Pre-write project trust to cut the TUI's startup prompts.
     ensureProjectTrusted(cwd)

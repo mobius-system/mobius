@@ -19,7 +19,7 @@ import cookie from 'cookie';
 import { JWT_SECRET } from '../config';
 import { Projects } from '../repositories/projects';
 // @ts-ignore — service 仍是 .js
-import { canReadProject } from '../services/access-control';
+import { canReadProject, projectAllowsReaderWrite } from '../services/access-control';
 // @ts-ignore — service 仍是 .js
 import * as pool from '../services/code-server-pool';
 // @ts-ignore — service 仍是 .js
@@ -155,6 +155,7 @@ function checkProjectAccess(user: { id: string; role?: string } | null, projectI
   const p = Projects.findById(projectId);
   if (!p) return { ok: false, status: 404, msg: '项目不存在' };
   if (!canReadProject(user, p)) return { ok: false, status: 404, msg: '项目不存在' };
+  if (!projectAllowsReaderWrite(user, p, 'code_server')) return { ok: false, status: 403, msg: '当前项目角色没有代码工作区权限' };
   if (!p.bind_path) return { ok: false, status: 400, msg: '项目未配置 bind_path' };
   return { ok: true, project: p };
 }

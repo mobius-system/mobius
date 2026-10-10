@@ -5,6 +5,7 @@ import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DI
 import { auth } from '../middleware/auth';
 import { Users } from '../repositories/users';
 import { db } from '../../db';
+import { assertUserSandboxAvailable } from '../services/agent-sandbox';
 
 const router = express.Router();
 
@@ -43,6 +44,9 @@ router.post('/login', (req: express.Request, res: express.Response) => {
   if (!user) {
     res.status(401).json({ error: 'User not found' });
     return;
+  }
+  try { assertUserSandboxAvailable(user); } catch (e) {
+    return res.status((e as any).status || 503).json({ error: (e as Error).message, code: 'AGENT_SANDBOX_UNAVAILABLE' });
   }
   if (ENABLE_PASSWORD_LOGIN && !bcrypt.compareSync(password || '', user.password_hash)) {
     res.status(401).json({ error: 'Wrong password' });

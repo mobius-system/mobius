@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','developer','user')),
+  role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
   work_dir TEXT NOT NULL,
   group_id TEXT DEFAULT 'default',
   deleted_at TEXT,
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS project_memberships (
   project_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('owner','manager','member','viewer')),
+  role TEXT NOT NULL CHECK(role IN ('owner','developer','viewer','none')),
   created_by TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

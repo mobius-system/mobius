@@ -7,7 +7,7 @@ import multer from 'multer';
 import { auth, downloadAuth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
 // @ts-ignore — service 仍是 .js
-import { canReadProject } from '../services/access-control';
+import { canReadProject, projectAllowsReaderWrite } from '../services/access-control';
 import { proxyMediaHandler } from '../services/proxy-media';
 import {
   APP_DIR,
@@ -104,6 +104,7 @@ router.post('/upload', auth, upload.single('file'), (req: express.Request, res: 
     const project = Projects.findById(projectId);
     if (!project) { cleanupTemp(); res.status(404).json({ error: '项目未找到' }); return; }
     if (!canReadProject(user, project)) { cleanupTemp(); res.status(403).json({ error: '无权访问此项目' }); return; }
+    if (!projectAllowsReaderWrite(user, project, 'can_write_files')) { cleanupTemp(); res.status(403).json({ error: '当前项目角色没有文件写入权限' }); return; }
     const bindPath = (project.bind_path || '').trim();
     if (!bindPath) { cleanupTemp(); res.status(400).json({ error: '项目未配置 bind_path' }); return; }
     uploadDir = path.join(bindPath, HIDDEN_FOLDER_NAME, 'upload');

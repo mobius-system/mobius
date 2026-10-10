@@ -77,7 +77,7 @@ export function registerMultiagentLinks(ownerUserId: string, selfSessionId: stri
 export function buildChannelOfferPrompt(selfSession: any, targetSession: any): string {
   return [
     '----------',
-    '用户明确要求你和以下智能体建立通讯，你应该主动使用 multiagent_send 发起通讯：',
+    '用户明确要求你和以下智能体建立通讯，你应该主动使用 multiagent_send （命令行指令）发起通讯：',
     '`multiagent_send <self_id> <target_id> "要传达的内容"`',
     '',
     sessionInfoBlock('目标', targetSession),

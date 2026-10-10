@@ -149,6 +149,63 @@ function migrateEmployeeAndProjectMemberships() {
 }
 migrateEmployeeAndProjectMemberships();
 
+// ===== 用户隔离重构: 统一系统/项目角色 =====
+// SQLite 无法直接修改 CHECK 约束；存量库通过一次表重建把旧 manager/member 映射为
+// developer，并保留 owner 行兼容旧前端。none 是显式拒绝，未有记录仍由 access-control
+// 按项目类型计算默认角色。
+function migrateIsolationRoleModel() {
+  try {
+    const userSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as any)?.sql || '';
+    if (userSql.includes("CHECK(role IN ('admin','user'))")) {
+      db.prepare("UPDATE users SET role = 'user' WHERE role <> 'admin'").run();
+    } else {
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(`CREATE TABLE users__isolation_role (
+          id TEXT PRIMARY KEY, display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
+          work_dir TEXT NOT NULL, group_id TEXT DEFAULT 'default', deleted_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE SET NULL
+        )`);
+        db.exec("INSERT INTO users__isolation_role (id,display_name,password_hash,role,work_dir,group_id,deleted_at,created_at) SELECT id,display_name,password_hash,CASE WHEN role='admin' THEN 'admin' ELSE 'user' END,work_dir,group_id,deleted_at,created_at FROM users");
+        db.exec('DROP TABLE users');
+        db.exec('ALTER TABLE users__isolation_role RENAME TO users');
+      })();
+      db.pragma('foreign_keys = ON');
+    }
+
+    const membershipSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='project_memberships'").get() as any)?.sql || '';
+    if (!membershipSql.includes("'none'")) {
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(`CREATE TABLE project_memberships__isolation_role (
+          project_id TEXT NOT NULL, user_id TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('owner','developer','viewer','none')),
+          created_by TEXT, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          PRIMARY KEY (project_id, user_id),
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )`);
+        db.exec("INSERT INTO project_memberships__isolation_role (project_id,user_id,role,created_by,created_at,updated_at) SELECT project_id,user_id,CASE WHEN role IN ('manager','member') THEN 'developer' WHEN role IN ('owner','viewer') THEN role ELSE 'none' END,created_by,created_at,updated_at FROM project_memberships");
+        db.exec('DROP TABLE project_memberships');
+        db.exec('ALTER TABLE project_memberships__isolation_role RENAME TO project_memberships');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_project_memberships_user ON project_memberships(user_id, project_id)');
+      })();
+      db.pragma('foreign_keys = ON');
+    }
+    // projects.created_by 是唯一 owner 真相；历史库中其它 owner 行降为 viewer。
+    db.exec(`UPDATE project_memberships
+             SET role = 'viewer', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+             WHERE role = 'owner'
+               AND user_id <> (SELECT created_by FROM projects WHERE projects.id = project_memberships.project_id)`);
+  } catch (e) {
+    console.warn('[mobius/db] isolation role migration failed:', (e as Error).message);
+  }
+}
+migrateIsolationRoleModel();
+
 // ===== 群组项目可见性 (受限群组) =====
 // 管理员可把某群组(如"试用组")设为"受限": 该组成员默认只能看到 ①自己创建的项目
 // ②自己被加为项目成员的项目 ③管理员在此显式授权的项目; 其余(含公开项目)一律不可见.

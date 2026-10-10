@@ -81,6 +81,7 @@ import {
   canReadIssue,
   canReadResearch,
   canReadSession,
+  canReadContextItem,
 } from '../services/access-control';
 // flag 路径约定单一来源 (与 backend / scanner 一致): <仓库根>/.imac/flags/<sid>/{running,failed}.flag
 // readJobFlagState / safeRemoveRunningFlag 均来自 utils/session-flags (已 TS 化).
@@ -1886,7 +1887,7 @@ router.post('/:id/emphasize', auth, async (req: express.Request, res: express.Re
   let relPath: string | null = null;
   if (kind === 'skill') {
     const skill = Skills.findById(id) as any;
-    if (!skill) { res.status(400).json({ error: 'skill 不存在' }); return; }
+    if (!skill || !canReadContextItem(user, 'skill', skill)) { res.status(404).json({ error: 'skill 不存在或无权访问' }); return; }
     const syncResults = syncSkillsToWorkspace(workDir as string, [{ id: skill.id }]);
     const hit = syncResults.find((r: any) => r.id === skill.id && r.ok);
     if (!hit) { res.status(500).json({ error: '复制 skill 到 session 工作目录失败' }); return; }
@@ -1894,7 +1895,7 @@ router.post('/:id/emphasize', auth, async (req: express.Request, res: express.Re
     messageContent = `用户要求你重视 ${relPath} 文件中的 skill`;
   } else {
     const memory = Memories.findById(id) as any;
-    if (!memory) { res.status(400).json({ error: 'memory 不存在' }); return; }
+    if (!memory || !canReadContextItem(user, 'memory', memory)) { res.status(404).json({ error: 'memory 不存在或无权访问' }); return; }
     const memoryBody = typeof memory.body === 'string' ? memory.body : '';
     messageContent = `用户要求你重视一下记忆：\n\n${memoryBody}`;
   }

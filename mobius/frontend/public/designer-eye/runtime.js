@@ -9,7 +9,11 @@ import {
 } from './self-iteration-client.js'
 
 const ROOT_ATTRIBUTE = 'data-mobius-designer-eye-root'
-const HOTKEY_LABEL = /Mac|iPhone|iPad/i.test(navigator.platform || '') ? '⌘ + ⇧ + E' : 'Ctrl + Shift + E'
+const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || '')
+const HOTKEY_LABEL = IS_MAC ? '⌘ + ⇧ + E' : 'Ctrl + Shift + E'
+// 按住此键时穿透遮罩做正常交互, Mac 上 ⌘ 与 Ctrl 都算
+// Holding it lets clicks reach the page, Mac accepts both ⌘ and Ctrl
+const MODIFIER_LABEL = IS_MAC ? '⌘ / Ctrl' : 'Ctrl'
 
 const SHELL_HTML = `
   <style>
@@ -34,6 +38,12 @@ const SHELL_HTML = `
       cursor: crosshair;
       background: transparent;
       touch-action: none;
+    }
+    /* 按住修饰键时遮罩让路, 点击落到真实页面上
+       While the modifier is held the shield steps aside so clicks hit the page */
+    .shield[data-passthrough] {
+      pointer-events: none;
+      cursor: default;
     }
     .outline {
       position: fixed;
@@ -79,6 +89,9 @@ const SHELL_HTML = `
       display: flex;
       align-items: center;
       gap: 10px;
+      /* left:50% 会把可用宽度压到半屏, 显式 max-content 才能完整放下说明文字
+         left:50% halves the available width; max-content keeps the hints readable */
+      width: max-content;
       max-width: calc(100vw - 32px);
       padding: 8px 12px;
       transform: translateX(-50%);
@@ -101,6 +114,7 @@ const SHELL_HTML = `
       box-shadow: 0 0 0 5px rgba(167, 139, 250, .14);
     }
     .toolbar-copy {
+      min-width: 0;
       overflow: hidden;
       font-size: 12px;
       font-weight: 650;
@@ -113,6 +127,34 @@ const SHELL_HTML = `
       font-family: "JetBrains Mono", ui-monospace, monospace;
       font-size: 10px;
     }
+    .toolbar-hint {
+      flex: none;
+      padding: 3px 9px;
+      border: 1px solid rgba(167, 139, 250, .34);
+      border-radius: 999px;
+      color: #c4b5fd;
+      background: rgba(139, 92, 246, .16);
+      font-size: 11px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    /* 遮罩让路时整条工具条换成绿色, 一眼看出当前处于"直接操作页面"状态
+       The whole bar turns green so the pass-through state is obvious at a glance */
+    .toolbar[data-passthrough] {
+      border-color: rgba(74, 222, 128, .58);
+      background: rgba(6, 46, 30, .94);
+      box-shadow: 0 14px 40px rgba(15, 8, 30, .4), 0 0 0 3px rgba(74, 222, 128, .14);
+    }
+    .toolbar[data-passthrough] .toolbar-dot {
+      background: #4ade80;
+      box-shadow: 0 0 0 5px rgba(74, 222, 128, .18);
+    }
+    .toolbar[data-passthrough] .toolbar-hint {
+      border-color: #4ade80;
+      color: #052e16;
+      background: #4ade80;
+    }
+    .toolbar[data-passthrough] .toolbar-key { color: #86efac; }
     .modal-layer {
       position: fixed;
       inset: 0;
@@ -435,6 +477,7 @@ const SHELL_HTML = `
   <div class="toolbar" data-eye="toolbar" hidden>
     <span class="toolbar-dot"></span>
     <span class="toolbar-copy" data-eye="toolbar-copy">设计师之眼已开启 · 点击选择元素 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc 退出</span>
+    <span class="toolbar-hint" data-eye="hint">按住 Ctrl 可操作页面</span>
     <span class="toolbar-key"></span>
   </div>
   <div class="modal-layer" data-eye="modal-layer" hidden>
@@ -570,6 +613,8 @@ export class DesignerEyeRuntime {
     this.selectedElement = null
     this.selections = []
     this.pointerDownElement = null
+    this.modifierHeld = false
+    this.passthrough = false
     this.generatedPrompt = ''
     this.lastPointerPosition = null
     this.raf = 0
@@ -609,6 +654,12 @@ export class DesignerEyeRuntime {
   install() {
     window.addEventListener('keydown', this.onGlobalKeyDown, true)
     window.addEventListener('keyup', this.onGlobalKeyUp, true)
+    // 切走窗口时收不到 keyup, 不清状态会一直停在穿透模式
+    // A window switch swallows the keyup, so clear it on blur
+    window.addEventListener('blur', () => {
+      this.modifierHeld = false
+      this.applyInteractionState()
+    })
   }
 
   ensureShell() {
@@ -630,6 +681,7 @@ export class DesignerEyeRuntime {
       outlineLabel: this.shadow.querySelector('[data-eye="outline-label"]'),
       toolbar: this.shadow.querySelector('[data-eye="toolbar"]'),
       toolbarCopy: this.shadow.querySelector('[data-eye="toolbar-copy"]'),
+      toolbarHint: this.shadow.querySelector('[data-eye="hint"]'),
       toolbarKey: this.shadow.querySelector('.toolbar-key'),
       modalLayer: this.shadow.querySelector('[data-eye="modal-layer"]'),
       modalSubtitle: this.shadow.querySelector('[data-eye="modal-subtitle"]'),
@@ -714,7 +766,13 @@ export class DesignerEyeRuntime {
       else this.activate()
       return
     }
-    if (this.active && !this.modalOpen && (event.key === 'Shift' || event.key === 'Alt')) {
+    if (this.active) {
+      // 每次按键都按 ctrlKey/metaKey 同步一次, 避免在页面内按下修饰键收不到事件而状态失真
+      // Sync on every keydown from ctrlKey/metaKey so a held modifier never goes stale
+      this.modifierHeld = event.ctrlKey || event.metaKey
+      this.applyInteractionState()
+    }
+    if (this.active && !this.modalOpen && !this.passthrough && (event.key === 'Shift' || event.key === 'Alt')) {
       this.refreshHoveredTarget(event.altKey, event.shiftKey)
     }
     if (!this.active || event.key !== 'Escape') return
@@ -725,8 +783,46 @@ export class DesignerEyeRuntime {
   }
 
   onGlobalKeyUp(event) {
-    if (!this.active || this.modalOpen || (event.key !== 'Shift' && event.key !== 'Alt')) return
+    if (this.active) {
+      this.modifierHeld = event.ctrlKey || event.metaKey
+      this.applyInteractionState()
+    }
+    if (!this.active || this.modalOpen || this.passthrough) return
+    if (event.key !== 'Shift' && event.key !== 'Alt') return
     this.refreshHoveredTarget(event.altKey, event.shiftKey)
+  }
+
+  resetInteractionState() {
+    this.modifierHeld = false
+    this.passthrough = false
+    if (!this.elements?.shield) return
+    this.elements.shield.removeAttribute('data-passthrough')
+    this.elements.toolbar.removeAttribute('data-passthrough')
+  }
+
+  /*
+   * 修饰键按住时让遮罩穿透, 使页面恢复可点击/可展开的正常交互, 并在工具条上点亮提示.
+   * The shield only steps aside while the user holds the modifier and no modal is open,
+   * so selection mode is never silently disabled by a stale key state.
+   */
+  applyInteractionState() {
+    if (!this.elements?.shield) return
+    const on = !!this.modifierHeld && this.active && !this.modalOpen
+    if (on === this.passthrough) return
+    this.passthrough = on
+    if (on) {
+      // 穿透期间不再跟随高亮, 否则会留下一个点不到的假边框
+      // Drop the hover outline: it would sit on an element the user can actually click
+      this.elements.outline.hidden = true
+      this.hoveredElement = null
+      this.pointerDownElement = null
+      this.elements.shield.setAttribute('data-passthrough', '')
+      this.elements.toolbar.setAttribute('data-passthrough', '')
+    } else {
+      this.elements.shield.removeAttribute('data-passthrough')
+      this.elements.toolbar.removeAttribute('data-passthrough')
+    }
+    this.updateToolbar()
   }
 
   activate() {
@@ -742,6 +838,7 @@ export class DesignerEyeRuntime {
     this.selectedElement = null
     this.selections = []
     this.lastPointerPosition = null
+    this.resetInteractionState()
     this.renderSelectedOutlines()
     this.updateToolbar()
     document.documentElement.setAttribute('data-designer-eye-active', '')
@@ -759,6 +856,7 @@ export class DesignerEyeRuntime {
     this.pointerDownElement = null
     this.lastPointerPosition = null
     this.lastCreatedSession = null
+    this.resetInteractionState()
     cancelAnimationFrame(this.raf)
     this.elements.shield.hidden = true
     this.elements.toolbar.hidden = true
@@ -790,12 +888,13 @@ export class DesignerEyeRuntime {
   }
 
   onPointerMove(event) {
-    if (!this.active || this.modalOpen) return
+    if (!this.active || this.modalOpen || this.passthrough) return
     this.lastPointerPosition = { x: event.clientX, y: event.clientY }
     this.refreshHoveredTarget(event.altKey, event.shiftKey)
   }
 
   onPointerDown(event) {
+    if (this.passthrough) return
     if (event.button !== 0) {
       event.preventDefault()
       return
@@ -808,6 +907,10 @@ export class DesignerEyeRuntime {
   }
 
   onPointerUp(event) {
+    if (this.passthrough) {
+      this.pointerDownElement = null
+      return
+    }
     event.preventDefault()
     event.stopPropagation()
     if (event.button !== 0) return
@@ -819,7 +922,7 @@ export class DesignerEyeRuntime {
   }
 
   onWheel(event) {
-    if (!this.active || this.modalOpen) return
+    if (!this.active || this.modalOpen || this.passthrough) return
     event.preventDefault()
     const exact = this.elementAtEvent(event)
     const scroller = scrollContainerFor(exact)
@@ -869,6 +972,11 @@ export class DesignerEyeRuntime {
     this.elements.toolbarCopy.textContent = count
       ? `已选择 ${count} 个元素 · 点击继续添加 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc ${this.modalOpen ? '继续选择' : '退出'}`
       : '设计师之眼已开启 · 点击选择元素 · Shift 选择父元素 · Alt/Option 选择交互宿主 · Esc 退出'
+    // 提示胶囊常驻显示快捷键; 修饰键按下时点亮并换成当前状态说明
+    // The pill is always visible so the affordance is discoverable, and lights up while held
+    this.elements.toolbarHint.textContent = this.passthrough
+      ? `${MODIFIER_LABEL} 已按下 · 点击页面不会选中元素`
+      : `按住 ${MODIFIER_LABEL} 可操作页面`
   }
 
   renderSelectedOutlines() {
@@ -1236,6 +1344,7 @@ export class DesignerEyeRuntime {
     if (existingIndex >= 0) {
       this.selectedElement = selection.semantic
       this.modalOpen = true
+      this.applyInteractionState()
       this.drawOutline(selection.semantic, selection.exact)
       this.elements.shield.hidden = true
       this.elements.modalLayer.hidden = false
@@ -1256,6 +1365,7 @@ export class DesignerEyeRuntime {
     this.selections.push(entry)
     this.selectedElement = selection.semantic
     this.modalOpen = true
+    this.applyInteractionState()
     this.drawOutline(selection.semantic, selection.exact)
     this.elements.shield.hidden = true
     this.elements.modalLayer.hidden = false
@@ -1290,6 +1400,7 @@ export class DesignerEyeRuntime {
   resumeSelection() {
     if (!this.active) return
     this.modalOpen = false
+    this.applyInteractionState()
     this.elements.modalLayer.hidden = true
     this.elements.confirmLayer.hidden = true
     this.elements.shield.hidden = false

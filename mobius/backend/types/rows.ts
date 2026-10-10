@@ -30,7 +30,7 @@ export interface UserGroupMembershipRawRow {
   created_at: string;
 }
 
-export type ProjectMembershipRole = 'owner' | 'manager' | 'member' | 'viewer';
+export type ProjectMembershipRole = 'owner' | 'developer' | 'viewer' | 'none';
 
 export interface ProjectMembershipRawRow {
   project_id: string;
@@ -45,7 +45,7 @@ export interface UserRawRow {
   id: string;
   display_name: string;
   password_hash: string;
-  role: 'admin' | 'developer' | 'user';
+  role: 'admin' | 'user';
   work_dir: string;
   group_id: string | null;
   deleted_at: string | null;

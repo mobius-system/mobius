@@ -38,6 +38,7 @@ import {
 } from '../utils/session-flags';
 import { db } from '../../db';
 import { aimuxRemoteNameFromMeta, aimuxGuiAuthorizedFromMeta } from './pc-client-context';
+import { assertUserSandboxAvailable, writeSandboxPolicy } from './agent-sandbox';
 
 function httpError(message: string, status: number = 500, category: string = ''): Error {
   const err = new Error(message) as Error & { status?: number; category?: string };
@@ -157,6 +158,7 @@ async function runSessionMessage({
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
 
   if (!user?.id) throw httpError('用户不可用', 401);
+  try { assertUserSandboxAvailable(user); } catch (e) { throw httpError((e as Error).message, (e as any).status || 503, 'sandbox'); }
 
   const sess = findSessionOperable(normalizedSessionId, user);
   if (!sess) throw httpError(`session ${normalizedSessionId} 不存在或不属于你`, 404);
@@ -169,6 +171,11 @@ async function runSessionMessage({
   }
   const workDir = workspace.workDir;
   const flagRoot = workspace.projectRoot || workspace.workDir;
+  const sandboxPolicy = user.role === 'admin' ? null : writeSandboxPolicy({
+    userId: user.id,
+    projectId: sess.project_id || null,
+    workDir: workspace.workDir,
+  });
   const normalizedAttachments = normalizeSessionAttachments(
     attachments,
     user,
@@ -268,6 +275,7 @@ async function runSessionMessage({
       mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
       aimuxGuiAuthorized: aimuxGuiAuthorizedFromMeta(sess?.pc_client_metadata),
+      sandboxPolicy,
     };
     // 汇合点: 首轮和普通输入最终都从这里把 finalContent 发给 agent 后端, 之后不再有区别.
     if (urgent) {

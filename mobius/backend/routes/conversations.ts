@@ -198,6 +198,7 @@ function findOwnerCurrentAssistantSession(ownerId: string): any {
 async function triggerAgentMentions(params: {
   conversationId: string;
   conversationName: string;
+  senderId: string;
   senderName: string;
   rawContent: string;
   mentions: any[];
@@ -208,6 +209,8 @@ async function triggerAgentMentions(params: {
     if (!memberId) continue;
     const member = Conversations.findMember(params.conversationId, 'agent', memberId);
     if (!member) continue; // 不在群里 = 未授权, 忽略
+    // 只有 Agent 的拥有者本人可以驱动该 Agent；群成员身份不再构成跨用户执行授权。
+    if (String(member.agent_owner_id || '') !== String(params.senderId)) continue;
     const agentSessionId = member.agent_session_id || memberId;
     const ownerId = member.agent_owner_id;
     if (!ownerId) continue;
@@ -447,6 +450,7 @@ router.post('/:id/messages', auth, (req: express.Request, res: express.Response)
     void triggerAgentMentions({
       conversationId: id,
       conversationName: (Conversations.findById(id) as { name?: string } | undefined)?.name || '群聊',
+      senderId: user.id,
       senderName: user.display_name || user.id,
       rawContent: content,
       mentions,

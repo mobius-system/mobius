@@ -662,19 +662,25 @@ blackboardRouter.get('/:researchId', researchBlackboardUserAccess, (req: express
 });
 
 blackboardRouter.post('/:researchId', researchBlackboardUserAccess, (req: express.Request, res: express.Response) => {
+  const user = (req as any).user;
   const normalized: any = normalizeWriteInput(req.body || {});
   if (normalized.error) { res.status(400).json({ error: normalized.error }); return; }
   const result: any = appendBlackboardRecord({
     researchId: String(req.params.researchId),
-    author: normalized.author,
+    author: `${user?.display_name || user?.id || 'user'}`,
     content: normalized.content,
-    metadata: normalized.metadata,
+    metadata: { ...(normalized.metadata || {}), author_user_id: user?.id || null },
   });
   if (result.error) { res.status(400).json({ error: result.error }); return; }
   res.json({ ok: true, record: result.record });
 });
 
-graphRouter.get('/:researchId', (req: express.Request, res: express.Response) => {
+graphRouter.get('/:researchId', auth, (req: express.Request, res: express.Response) => {
+  const research = Researches.findById(String(req.params.researchId));
+  if (!research || !canReadResearch((req as any).user, research)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
   const result: any = readGraph(String(req.params.researchId));
   if (result.error) { res.status(404).json({ error: result.error }); return; }
   res.json({

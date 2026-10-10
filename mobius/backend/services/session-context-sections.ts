@@ -487,7 +487,7 @@ export const ScheduledWakeupSection = defineSection({
       if (!sessionId || sessionId === '(待创建)') return null;
       return md`
         ${t.zh}
-        当用户要求稍后或周期性继续工作时，使用后台定时唤醒，不要自己 sleep 或轮询等待：
+        当用户要求稍后或周期性继续工作时，使用后台定时唤醒（不要使用CronCreate等ClaudeCode工具，所有定时任务，mobius_schedule_*是唯一可以使用的工具）：
         - 单次：\`mobius_schedule_wake_me_up ${sessionId} --once --after-time 30m --reminder "检查构建结果"\`
         - 周期：\`mobius_schedule_wake_me_up ${sessionId} --interval --interval-time 1h --reminder "检查服务状态"\`
         - 查看：\`mobius_schedule_list\`

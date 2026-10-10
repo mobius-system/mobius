@@ -14,6 +14,7 @@ import path from 'path';
 // @ts-ignore — multer 无 @types
 import multer from 'multer';
 import { auth } from '../middleware/auth';
+import { canImportLocalPath, normalizeImportSourcePath } from '../services/context-import-path';
 import { Memories } from '../repositories/memories';
 import { Projects } from '../repositories/projects';
 import type { AimuxRemoteInventoryEntry } from '../types/rows';
@@ -260,7 +261,10 @@ router.post('/import-local', auth, (req: express.Request, res: express.Response)
   const user = (req as any).user as AccessUser;
   const sourcePath = ((req.body as any)?.path || '').trim();
   if (!sourcePath) return res.status(400).json({ error: '请输入 memory 的服务器绝对路径' });
-  const result = Memories.importLocal({ userId: user.id, sourcePath } as any);
+  if (!canImportLocalPath(user, sourcePath)) return res.status(403).json({ error: '普通用户只能从自己的工作区、可写项目或上传临时目录导入 memory' });
+  const normalizedSourcePath = normalizeImportSourcePath(sourcePath);
+  if (!normalizedSourcePath) return res.status(400).json({ error: '导入路径不存在或无法解析' });
+  const result = Memories.importLocal({ userId: user.id, sourcePath: normalizedSourcePath } as any);
   if (!result.ok) return res.status(400).json({ error: result.error });
   res.json({ memories: (result.memories || []).map((m: any) => shapeMemory(m, user, true)), skipped: result.skipped || [] });
 });
@@ -702,8 +706,11 @@ projectScoped.post('/import-local', auth, (req: express.Request, res: express.Re
   if (!canContributeProjectContext(user, acc.project)) return res.status(403).json({ error: '无权向此项目导入 Memory' });
   const sourcePath = ((req.body as any)?.path || '').trim();
   if (!sourcePath) return res.status(400).json({ error: '请输入 memory 的服务器绝对路径' });
+  if (!canImportLocalPath(user, sourcePath, String(req.params.projectId))) return res.status(403).json({ error: '普通用户只能从自己的工作区、当前可写项目或上传临时目录导入 memory' });
+  const normalizedSourcePath = normalizeImportSourcePath(sourcePath);
+  if (!normalizedSourcePath) return res.status(400).json({ error: '导入路径不存在或无法解析' });
   const result = Memories.importLocal({
-    userId: user.id, projectId: String(req.params.projectId), sourcePath,
+    userId: user.id, projectId: String(req.params.projectId), sourcePath: normalizedSourcePath,
   } as any);
   if (!result.ok) return res.status(400).json({ error: result.error });
   res.json({ memories: (result.memories || []).map((m: any) => shapeMemory(m, user, true)), skipped: result.skipped || [] });

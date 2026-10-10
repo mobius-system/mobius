@@ -26,6 +26,7 @@ const {
 } = require('../utils/session-flags')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
 const { MOBIUS_DATA_PATH } = require('../config')
+import { DRIVER as LANDLOCK_DRIVER } from '../services/agent-sandbox'
 
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-runtime.json')
 const ARCHIVE_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-archive.json')
@@ -259,7 +260,10 @@ class DeepSeekHarnessBackend extends AgentBackend {
       MOBIUS_SESSION_ID: sessionId,
       MOBIUS_USER_ID: String(opts.userId || ''),
     }
-    const child = this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const sandboxPolicy = (optsRaw as any).sandboxPolicy;
+    const child = sandboxPolicy
+      ? this.spawn(LANDLOCK_DRIVER, ['--policy', String(sandboxPolicy), '--', command.command, ...command.args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+      : this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
     const entry = {
       sessionId, agentSessionId, cwd, flagRoot, jsonlPath, nativeRoot, pid: child.pid || null,
       model: opts.model, provider: opts.harnessProvider || 'deepseek-official', maxTokens: opts.harnessMaxTokens || null,

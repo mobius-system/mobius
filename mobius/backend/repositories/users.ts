@@ -11,11 +11,11 @@ import {
 import type { UserRow, UserGroupRawRow } from '../types/rows';
 import type * as BetterSqlite3 from 'better-sqlite3';
 
-// migration: users.role 增加 developer 取值 (旧库 CHECK 仅允许 admin/user, 需重建表放宽约束; 幂等, 已迁移/新库自动跳过).
+// migration: 收紧系统角色为 admin/user，并把历史 developer 账号降为普通用户.
 (() => {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql?: string } | undefined;
   const oldSql = row?.sql || '';
-  if (!oldSql.includes("'admin','user'") || oldSql.includes('developer')) return;
+  if (oldSql.includes("CHECK(role IN ('admin','user'))")) return;
   db.exec('PRAGMA foreign_keys = OFF');
   try {
     db.transaction(() => {
@@ -23,14 +23,14 @@ import type * as BetterSqlite3 from 'better-sqlite3';
         id TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','developer','user')),
+        role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
         work_dir TEXT NOT NULL,
         group_id TEXT DEFAULT 'default',
         deleted_at TEXT,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE SET NULL
       )`);
-      db.exec('INSERT INTO users__role_migration (id, display_name, password_hash, role, work_dir, group_id, deleted_at, created_at) SELECT id, display_name, password_hash, role, work_dir, group_id, deleted_at, created_at FROM users');
+      db.exec("INSERT INTO users__role_migration (id, display_name, password_hash, role, work_dir, group_id, deleted_at, created_at) SELECT id, display_name, password_hash, CASE WHEN role = 'admin' THEN 'admin' ELSE 'user' END, work_dir, group_id, deleted_at, created_at FROM users");
       db.exec('DROP TABLE users');
       db.exec('ALTER TABLE users__role_migration RENAME TO users');
     })();
@@ -314,7 +314,7 @@ interface CreateUserParams {
   id: string;
   display_name: string;
   password_hash: string;
-  role: 'admin' | 'developer' | 'user';
+  role: 'admin' | 'user';
   work_dir: string;
   group_id?: string;
   [key: string]: any;

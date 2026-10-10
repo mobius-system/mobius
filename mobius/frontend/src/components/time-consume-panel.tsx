@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Clock3, PieChart, RefreshCw, Trash2 } from 'lucide-react'
+import { BarChart3, CalendarClock, Clock3, PieChart, RefreshCw, Trash2 } from 'lucide-react'
 import { api } from '../store'
 import { pollRecursive } from '../services/polling'
+import { SessionScheduledTasksPanel } from './session-scheduled-tasks-panel'
 
 type TimeConsumeSegment = {
   kind: string
@@ -35,7 +36,9 @@ type TimeConsumeWaterfallResponse = {
   } | null
 }
 
-type TimeConsumeView = 'waterfall' | 'pie'
+// 第三页「定时任务」由原顶栏「查看定时任务」菜单项迁移而来, 与耗时瀑布/占比并列
+// The third "定时任务" tab was migrated from the top-bar "查看定时任务" menu item
+type TimeConsumeView = 'waterfall' | 'pie' | 'scheduled'
 
 const KIND_LABELS: Record<string, string> = {
   model: '模型推理',
@@ -147,6 +150,9 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   const [view, setView] = useState<TimeConsumeView>('waterfall')
   const [timelineZoom, setTimelineZoom] = useState(1)
   const [timelinePosition, setTimelinePosition] = useState(1000)
+  // 递增该值通知「定时任务」页重新拉取列表, 使面板头部刷新按钮对本页同样生效
+  // Bumping this makes the 定时任务 tab re-fetch, so the header refresh button works there too
+  const [scheduledRefreshKey, setScheduledRefreshKey] = useState(0)
   const userAdjustedZoomRef = useRef(false)
 
   const load = useCallback(async (signal?: AbortSignal, showSpinner = false) => {
@@ -283,47 +289,92 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
   const pieCenter = 60
   let pieCursor = 0
 
+  const scheduledView = view === 'scheduled'
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>
             <Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
-            <span>耗时</span>
+            <span>定时任务与耗时</span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => void load(undefined, true)}
-            disabled={loading || refreshing}
+            onClick={() => { if (scheduledView) setScheduledRefreshKey(key => key + 1); else void load(undefined, true) }}
+            disabled={!scheduledView && (loading || refreshing)}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
             title="刷新"
-            aria-label="刷新耗时统计"
+            aria-label={scheduledView ? '刷新定时任务' : '刷新耗时统计'}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading || refreshing ? 'animate-spin' : ''}`} strokeWidth={1.9} />
+            <RefreshCw className={`h-3.5 w-3.5 ${!scheduledView && (loading || refreshing) ? 'animate-spin' : ''}`} strokeWidth={1.9} />
           </button>
-          <button
-            type="button"
-            onClick={() => void handleClear()}
-            disabled={loading || refreshing || !sessionId}
-            className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
-            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.9} />
-            清空
-          </button>
+          {!scheduledView && (
+            <button
+              type="button"
+              onClick={() => void handleClear()}
+              disabled={loading || refreshing || !sessionId}
+              className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[length:var(--fs-xs)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-wait disabled:opacity-50"
+              style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)' }}
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.9} />
+              清空
+            </button>
+          )}
         </div>
       </div>
 
-      {error && (
+      {/* 耗时统计的加载错误只在瀑布/占比页展示, 免于污染定时任务页 */}
+      {/* The time-consume load error is shown only on the waterfall/pie tabs */}
+      {!scheduledView && error && (
         <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-sm)] text-red-400" style={{ borderColor: 'rgba(248,113,113,0.28)', background: 'rgba(248,113,113,0.06)' }}>
           {error}
         </div>
       )}
 
-      {loading && !data ? (
+      {/* 切换条常驻显示: 无耗时段时也要能进入/退出定时任务页 */}
+      {/* The tab bar is always visible so the 定时任务 tab stays reachable */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex rounded-md p-0.5" style={{ background: 'var(--bg-secondary)' }}>
+          {([
+            { key: 'waterfall' as const, label: '瀑布', icon: BarChart3 },
+            { key: 'pie' as const, label: '占比', icon: PieChart },
+            { key: 'scheduled' as const, label: '定时任务', icon: CalendarClock },
+          ]).map((item) => {
+            const Icon = item.icon
+            const active = view === item.key
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setView(item.key)}
+                aria-pressed={active}
+                className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 py-1.5 text-[length:var(--fs-sm)] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
+                style={{
+                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                  background: active ? 'var(--bg-active)' : 'transparent',
+                  boxShadow: active ? '0 1px 2px rgba(0,0,0,0.14)' : undefined,
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+        {!scheduledView && segments.length > 0 && (
+          <div className="text-right text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
+            <div>总计 {segments.length} 段</div>
+          </div>
+        )}
+      </div>
+
+      {scheduledView ? (
+        <SessionScheduledTasksPanel sessionId={sessionId} refreshKey={scheduledRefreshKey} />
+      ) : loading && !data ? (
         <div className="rounded-lg border px-3 py-8 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
           正在加载耗时统计...
         </div>
@@ -331,41 +382,7 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
         <div className="rounded-lg border px-3 py-8 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
           暂无可统计的耗时段
         </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <div className="inline-flex rounded-md p-0.5" style={{ background: 'var(--bg-secondary)' }}>
-              {([
-                { key: 'waterfall' as const, label: '瀑布', icon: BarChart3 },
-                { key: 'pie' as const, label: '占比', icon: PieChart },
-              ]).map((item) => {
-                const Icon = item.icon
-                const active = view === item.key
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setView(item.key)}
-                    aria-pressed={active}
-                    className="inline-flex min-w-[62px] items-center justify-center gap-1 rounded px-2 py-1.5 text-[length:var(--fs-sm)] font-medium leading-none transition-colors hover:text-[var(--text-primary)]"
-                    style={{
-                      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                      background: active ? 'var(--bg-active)' : 'transparent',
-                      boxShadow: active ? '0 1px 2px rgba(0,0,0,0.14)' : undefined,
-                    }}
-                  >
-                    <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
-                    {item.label}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="text-right text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-              <div>总计 {segments.length} 段</div>
-            </div>
-          </div>
-
-          {view === 'waterfall' ? (
+      ) : view === 'waterfall' ? (
             <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
               <div className="mb-2 min-w-0">
                 <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -532,8 +549,6 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
               </div>
             </div>
           )}
-        </>
-      )}
     </div>
   )
 }

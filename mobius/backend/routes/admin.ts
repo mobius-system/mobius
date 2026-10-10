@@ -37,6 +37,7 @@ import {
   statsSinceMinutes,
 } from '../services/agent-prompt-events';
 import { runningFlagPathOf, failedFlagPathOf, readFailedFlag } from '../utils/session-flags';
+import { landlockAvailable } from '../services/agent-sandbox';
 
 const router = express.Router();
 
@@ -103,8 +104,8 @@ function normalizeEmployeeId(value: unknown): string {
   return id;
 }
 
-function normalizeEmployeeRole(value: unknown): 'admin' | 'developer' | 'user' {
-  if (value === 'admin' || value === 'developer') return value;
+function normalizeEmployeeRole(value: unknown): 'admin' | 'user' {
+  if (value === 'admin') return value;
   return 'user';
 }
 
@@ -617,6 +618,9 @@ router.get('/users', adminAuth, (req: express.Request, res: express.Response) =>
 
 router.post('/users', adminAuth, (req: express.Request, res: express.Response) => {
   try {
+    if (String(req.body?.role || 'user') !== 'admin' && !landlockAvailable()) {
+      return res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止创建普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' });
+    }
     const user = createEmployeeAccount(req.body || {});
     res.status(user.status === 'created' ? 201 : 200).json({ ok: true, user });
   } catch (e) {
@@ -630,6 +634,10 @@ router.post('/users/bulk', adminAuth, (req: express.Request, res: express.Respon
   const employees = Array.isArray(body.employees) ? body.employees : [];
   if (!employees.length) { res.status(400).json({ error: '请提供 employees 数组' }); return; }
   if (employees.length > 200) { res.status(400).json({ error: '单次最多批量添加 200 个员工' }); return; }
+  if (!landlockAvailable() && employees.some((row: any) => String(row?.role || 'user') !== 'admin')) {
+    res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止创建普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' });
+    return;
+  }
 
   const created: any[] = [];
   const restored: any[] = [];
@@ -700,6 +708,9 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
       Object.prototype.hasOwnProperty.call(body, k1) || (k2 !== undefined && Object.prototype.hasOwnProperty.call(body, k2));
     if (hasField('role')) {
       const newRole = normalizeEmployeeRole(body.role);
+      if (newRole === 'user' && target.role !== 'user' && !landlockAvailable()) {
+        res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止设置普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' }); return;
+      }
       if (newRole !== target.role) {
         if (target.role === 'admin' && newRole !== 'admin' && Users.activeAdminCount() <= 1) {
           res.status(400).json({ error: '不能降级最后一个管理员账号' }); return;

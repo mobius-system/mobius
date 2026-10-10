@@ -16,19 +16,27 @@ function isWithinPath(rootPath: any, targetPath: any): boolean {
   return target === root || target.startsWith(root + path.sep);
 }
 
-// /tmp 下的路径一律放行: 临时产物/日志/导出等不归 bind_path 管.
-const TMP_ROOT = '/tmp';
-function isWithinTmp(targetPath: any): boolean {
-  return isWithinPath(TMP_ROOT, targetPath);
+function isSystemTempPath(targetPath: any): boolean {
+  const target = normalizeAbsPath(targetPath);
+  const tmp = path.resolve(require('os').tmpdir());
+  return !!target && (target === tmp || target.startsWith(tmp + path.sep));
 }
 
 function isAllowedWorkspacePath(project: any, targetPath: any): boolean {
-  const target = normalizeAbsPath(targetPath);
-  if (isWithinTmp(target)) return true;
-  const bindRoot = normalizeAbsPath(project?.bind_path);
+  const rawTarget = normalizeAbsPath(targetPath);
+  const rawRoot = normalizeAbsPath(project?.bind_path);
+  if (!rawRoot || !rawTarget) return false;
+  let target = rawTarget;
+  let bindRoot = rawRoot;
+  try {
+    if (fs.existsSync(rawRoot)) bindRoot = fs.realpathSync(rawRoot);
+    if (fs.existsSync(rawTarget)) target = fs.realpathSync(rawTarget);
+  } catch { return false; }
   if (!bindRoot || !target) return false;
-  if (isWithinPath(bindRoot, target)) return true;
-  return target === path.dirname(bindRoot);
+  // code-server 允许打开绑定仓库的直接父目录，便于同一工作区中的多项目编辑；
+  // 但不允许父目录下的任意兄弟目录作为独立入口。
+  const parent = path.dirname(bindRoot);
+  return isWithinPath(bindRoot, target) || target === parent;
 }
 
 function payloadRootForWorkspace(project: any, workspacePath: any): string {
@@ -65,7 +73,7 @@ function resolveCodeServerWorkspace(project: any, requestedFolder: any): { error
   if (!candidate) {
     return { error: 'VSCode 打开路径为空', code: 'BIND_PATH_INVALID' };
   }
-  if (!isAllowedWorkspacePath(project, candidate)) {
+  if (!isSystemTempPath(candidate) && !isAllowedWorkspacePath(project, candidate)) {
     return { error: 'VSCode 打开路径不在项目绑定路径或其上一级目录内', code: 'BIND_PATH_DENIED' };
   }
   if (!fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) {
@@ -96,9 +104,8 @@ function validateCodeServerPayload(project: any, payloadValue: any, workspacePat
   const filePath = extractPayloadPath(payloadValue);
   if (!filePath) return { ok: true };
   const target = normalizeAbsPath(filePath);
-  if (isWithinTmp(target)) return { ok: true };
   const allowedRoot = payloadRootForWorkspace(project, workspacePath);
-  if (!allowedRoot || !target || !isWithinPath(allowedRoot, target)) {
+  if (!allowedRoot || !target || (!isSystemTempPath(target) && !isWithinPath(allowedRoot, target))) {
     return { ok: false, error: 'VSCode 打开文件不在当前允许的工作区内', code: 'BIND_PATH_DENIED' };
   }
   return { ok: true };

@@ -53,6 +53,7 @@ const { MOBIUS_DATA_PATH } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 const { ensureSessionWithProxy } = require('../services/model-access')
+import { sandboxCommand } from '../services/agent-sandbox'
 
 // ── Constants ───────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -905,6 +906,7 @@ interface ClaudeDispatchOpts {
   proxyMode?: string
   settingsPath?: string | null
   forceNoProxy?: boolean
+  sandboxPolicy?: string | null
   [key: string]: unknown
 }
 
@@ -1470,7 +1472,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 窗口还活着就复用，重启后不重复拉起
     // A live window is reused, so a restart never spawns a duplicate
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp })
+      await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp, sandboxPolicy: (opts as any).sandboxPolicy })
     } else {
       // 重启后窗口还在但runtime可能为空，补建一条
       // The window is live but may have no runtime row; rebuild one
@@ -1553,6 +1555,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         aimuxRemoteName,
         aimuxGuiAuthorized,
         enableGulingMcp,
+        sandboxPolicy: (opts as any).sandboxPolicy || null,
       })
     }
     await this._sendMaybeInitialContextPrompt(sessionId, prompt, isInitialContextPrompt)
@@ -1705,7 +1708,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * need a second press. A TUI that never becomes ready has its window killed rather than left
    * behind, and the timeout is thrown with the cwd.
    */
-  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false }: ClaudeDispatchOpts) {
+  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false, sandboxPolicy = null }: ClaudeDispatchOpts) {
     // 入参可为null，此处归一为非空，兜底在调用方
     // Nullable args become non-null here; the persisted fallback is the caller's
     if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
@@ -1878,7 +1881,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
     // 在hub会话里建后台窗口，在cwd下跑bash -lc cmd
     // Create the background window in the hub, running bash -lc cmd in cwd
-    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd])
+    const launchCmd = sandboxCommand(sandboxPolicy || null, cmd)
+    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', launchCmd])
     // 失败时带出stderr，便于定位命令级问题
     // Surface stderr on failure so command-level problems are diagnosable
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)

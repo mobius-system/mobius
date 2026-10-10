@@ -14,6 +14,7 @@ import path from 'path';
 // @ts-ignore — multer 无 @types
 import multer from 'multer';
 import { auth } from '../middleware/auth';
+import { canImportLocalPath, normalizeImportSourcePath } from '../services/context-import-path';
 import { Skills } from '../repositories/skills';
 import { Projects } from '../repositories/projects';
 import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
@@ -314,7 +315,16 @@ router.post('/import-local', auth, (req: express.Request, res: express.Response)
     res.status(400).json({ error: '请输入 skill 的服务器绝对路径' });
     return;
   }
-  const result = Skills.importLocal({ userId: user.id, sourcePath });
+  if (!canImportLocalPath(user, sourcePath)) {
+    res.status(403).json({ error: '普通用户只能从自己的工作区、可写项目或上传临时目录导入 skill' });
+    return;
+  }
+  const normalizedSourcePath = normalizeImportSourcePath(sourcePath);
+  if (!normalizedSourcePath) {
+    res.status(400).json({ error: '导入路径不存在或无法解析' });
+    return;
+  }
+  const result = Skills.importLocal({ userId: user.id, sourcePath: normalizedSourcePath });
   if (!result.ok) {
     res.status(400).json({ error: result.error });
     return;
@@ -735,8 +745,17 @@ projectScoped.post('/import-local', auth, (req: express.Request, res: express.Re
     res.status(400).json({ error: '请输入 skill 的服务器绝对路径' });
     return;
   }
+  if (!canImportLocalPath(user, sourcePath, String(req.params.projectId))) {
+    res.status(403).json({ error: '普通用户只能从自己的工作区、当前可写项目或上传临时目录导入 skill' });
+    return;
+  }
+  const normalizedSourcePath = normalizeImportSourcePath(sourcePath);
+  if (!normalizedSourcePath) {
+    res.status(400).json({ error: '导入路径不存在或无法解析' });
+    return;
+  }
   const result = Skills.importLocal({
-    userId: user.id, projectId: req.params.projectId, sourcePath,
+    userId: user.id, projectId: req.params.projectId, sourcePath: normalizedSourcePath,
   });
   if (!result.ok) {
     res.status(400).json({ error: result.error });
