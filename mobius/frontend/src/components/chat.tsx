@@ -2298,7 +2298,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     })
   }, [])
   // bind_path 与代码对话模式同源 (useEditorAvailability 模块级缓存, 同项目只发一次请求).
-  const easyFilesEnabled = layout === 'easy' && easyFilesMounted && !!currentProjectId && !!currentSession
+  const filesPaneEnabled = (layout === 'easy' ? easyFilesMounted : displayFilesOpen) && !!currentProjectId && !!currentSession
+  const easyFilesEnabled = filesPaneEnabled
   const { bindPath: easyFilesBindPath, vscodeWebUrl: easyFilesVscodeUrl } = useEditorAvailability(currentProjectId, easyFilesEnabled)
   // 侧栏宽度: 默认 ≈ 视口 44%. 上限给对话区留足空间 (简易模式左侧还有近期会话栏,
   // chat-area 实际只有视口 80% 左右, 58% 视口上限已接近其全部宽度).
@@ -4937,7 +4938,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           style={{ borderColor: 'var(--border-color)' }}
           data-testid="easy-files-sidebar"
         >
-          {easyFilesBindPath ? (
+          {(easyFilesBindPath || projectForSession?.bind_path) ? (
             <Suspense
               fallback={(
                 <div className="flex flex-1 items-center justify-center text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
@@ -4948,7 +4949,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               <EasyFilesPane
                 variant="sidebar"
                 projectId={currentProjectId}
-                bindPath={easyFilesBindPath}
+                bindPath={easyFilesBindPath || projectForSession?.bind_path || ''}
                 vscodeWebUrl={easyFilesVscodeUrl}
                 sessionId={currentSession?.session_id || sessionId}
               />
