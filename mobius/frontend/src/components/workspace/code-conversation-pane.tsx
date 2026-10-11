@@ -229,6 +229,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
   const [rootLoaded, setRootLoaded] = useState(false)
   const [rootError, setRootError] = useState('')
+  const treeLoadKeyRef = useRef('')
   const [filter, setFilter] = useState('')
   const [showFileFilter, setShowFileFilter] = useState(false)
 
@@ -415,6 +416,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
 
   useEffect(() => {
     if (source === 'remote' && !remoteSourcesLoaded) return
+    const treeLoadKey = source === 'remote'
+      ? `${projectId}\0${source}\0${remoteName}\0${remoteRoot}\0${remoteSourcesError}`
+      : `${projectId}\0${source}`
+    // 远程清单加载等旁路状态不应重建当前文件树，否则会清掉刚由文件卡片打开的 Tab
+    // Side-state such as remote inventory loading must not rebuild the active tree and erase a card-opened tab
+    if (treeLoadKeyRef.current === treeLoadKey) return
+    treeLoadKeyRef.current = treeLoadKey
     if (source === 'remote' && (!remoteName || remoteSourcesError)) {
       setDirs({})
       setExpanded(new Set(['/']))
