@@ -2274,10 +2274,13 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
     try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
   })
+  // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
+  const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
   useEffect(() => {
     const openFile = (event: Event) => {
       const detail = (event as CustomEvent).detail
       if (!detail || detail.projectId !== currentProjectId || (detail.sessionId && detail.sessionId !== sessionId)) return
+      setDisplayFilesOpen(true)
       setEasyFilesMounted(true)
       setEasyFilesOpen(true)
       try { localStorage.setItem(EASY_FILES_OPEN_KEY, '1') } catch { /* ignore */ }
@@ -4923,14 +4926,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {/* ===== 简易模式右侧文件编辑栏: 文件树 + CodeMirror 编辑器 (复用代码对话 v2).
             easyFilesMounted 首开保活; 关闭仅隐藏 (树展开/选中/草稿不丢).
             side='right' 手柄贴左缘, 拖动调整文件栏与对话区的宽度分配. ===== */}
-      {layout === 'easy' && easyFilesMounted && (
+      {(layout === 'easy' && easyFilesMounted || layout !== 'easy' && displayFilesOpen) && (
         <ResizablePanel
           storageKey="mobius:ui:easy-files-sidebar:width"
           defaultWidth={easyFilesSidebarDefaultWidth}
           minWidth={easyFilesSidebarMinWidth}
           maxWidth={easyFilesSidebarMaxWidth}
           side="right"
-          className={`border-l flex overflow-hidden${easyFilesOpen ? '' : ' hidden'}`}
+          className={`border-l flex overflow-hidden${layout === 'easy' && !easyFilesOpen ? ' hidden' : ''}`}
           style={{ borderColor: 'var(--border-color)' }}
           data-testid="easy-files-sidebar"
         >

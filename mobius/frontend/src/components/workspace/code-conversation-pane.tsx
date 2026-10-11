@@ -160,6 +160,7 @@ type EditorTab = {
   saveError: string
   saveOk: boolean
   mdPreview: boolean
+  htmlPreview: boolean
 }
 
 // 中栏 (含头部工具栏) 的两套固定配色 — 与对应 CodeMirror 主题背景严格匹配, 独立于全局主题.
@@ -505,6 +506,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       saveError: '',
       saveOk: false,
       mdPreview: false,
+      htmlPreview: /\.html?$/i.test(entry.name),
     }
     // ✨ 同步写 ref + state: 双击/连点在同一渲染周期内也不会开出重复 Tab
     tabsRef.current = [...tabsRef.current, tab]
@@ -1032,6 +1034,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     : (source === 'remote' ? (remoteRoot || selectedRemote?.remote_path || '默认登录目录') : bindPath)
   // 是否为可预览的 Markdown 文件 (非二进制/未截断) — 控制右上角预览切换按钮的显示.
   const mdFile = !!selected && /\.(md|markdown)$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
+  const htmlFile = !!selected && /\.html?$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
   return (
     <div className="contents">
@@ -1329,6 +1332,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   {mdPreview ? '源码' : '富文本'}
                 </button>
               )}
+              {htmlFile && (
+                <button type="button" onClick={() => activeKey && patchTab(activeKey, t => ({ htmlPreview: !t.htmlPreview }))}
+                  title={activeTab?.htmlPreview ? '切换为源码编辑' : '预览 HTML'}
+                  className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
+                  style={{ color: activeTab?.htmlPreview ? cc.accent : cc.muted }}>
+                  {activeTab?.htmlPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {activeTab?.htmlPreview ? '源码' : '预览'}
+                </button>
+              )}
               {/* ★ 自动换行开关: 仅代码编辑器 (CodeMirror) 生效, WYSIWYG 富文本模式不显示. Alt+Z 也可切换. */}
               {fileData && !fileData.binary && !fileData.truncated && !(mdFile && mdPreview) && (
                 <button type="button" onClick={toggleWordWrap}
@@ -1394,7 +1406,14 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                     <div className="text-[length:var(--fs-sm)]">如需编辑请在 VSCode 中打开</div>
                   </div>
                 ) : tab.fileData ? (
-                  tabMd && tab.mdPreview ? (
+                  /\.html?$/i.test(tab.entry.name) && tab.htmlPreview ? (
+                    <iframe
+                      title={`HTML 预览: ${tab.entry.name}`}
+                      sandbox=""
+                      srcDoc={tab.doc}
+                      className="h-full w-full border-0 bg-white"
+                    />
+                  ) : tabMd && tab.mdPreview ? (
                     <MarkdownWysiwygEditor value={tab.doc} skin={skin} onChange={onDocChange} />
                   ) : (
                     <Suspense
