@@ -20,6 +20,7 @@ import { RecentSessionGroupList } from './recent-session-group-list'
 import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { projectHref } from '../services/project-url'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入)。三平台 (Win/Linux/mac) 统一: 顶栏右侧渲染
@@ -977,7 +978,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       meta: p.kind === 'extension' ? '拓展项目' : (p.is_self_develop ? '自迭代' : (p.created_by ? `@${p.created_by}` : undefined)),
       status: 'active',
       active: p.id === projectParam,
-      to: `/u/${p.created_by || userParam}/p/${p.id}`,
+      to: projectHref(p, userParam),
     }))
 
   const issueItems: SwitcherItem[] = ((issuesMap[projectParam ?? ''] || []) as any[])

@@ -34,6 +34,7 @@ import {
 import { projectItemOrder } from '../services/project-session-order'
 import { pollRecursive } from '../services/polling'
 import { readListCache, writeListCache } from '../services/list-swr-cache'
+import { projectHref } from '../services/project-url'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
   DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
@@ -945,7 +946,7 @@ export default function ProjectPage() {
 
       {showNewProject && <NewProjectModal onClose={() => setShowNewProject(false)} onCreated={(p: any) => {
         setShowNewProject(false)
-        if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`)
+        if (p?.id) navigate(projectHref(p))
       }} />}
       {showNewIssue && <NewIssueModal projectId={projectId} defaultUseWorktree={!!project?.default_use_worktree} forcePlanning={newIssueForcePlanning}
         onClose={() => { setShowNewIssue(false); setNewIssueForcePlanning(false) }}

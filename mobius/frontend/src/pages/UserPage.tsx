@@ -47,6 +47,7 @@ import {
   type ProjectHierarchySearchResponse,
 } from '../services/project-hierarchy-search'
 import { readListCache, writeListCache, readMapCache, writeMapCache } from '../services/list-swr-cache'
+import { projectHref } from '../services/project-url'
 
 // 纵观 = 与简易模式「全局纵观」同一个总览页, 懒加载后再内嵌进用户主页右栏.
 // Overview = the same cluster page easy mode shows, lazily loaded and embedded in the user page.
@@ -427,8 +428,9 @@ export default function UserPage() {
 
   // 拉取每个 :user 的 project 的 issues 用于卡片预览
   const sortedProjects = useMemo(() => sortProjectsForDisplay(projects as any[]), [projects])
-  // 拓展项目 (kind='extension') 由 mobius/extension/ 同步出来, created_by='system',
-  // 应在每个用户的项目页都显示, 而不仅限于 system 用户名下.
+  // 拓展项目 (kind='extension') 由 mobius/extension/ 同步出来, 所有者为创建它的管理员,
+  // 但 URL 命名空间恒为 system (/u/system/p/<id>, 见 services/project-url.ts), 所以要在
+  // 每个用户的项目页都显示, 而不仅限于所有者名下.
   // 已隐藏 (p.hidden) 的拓展不显示; 撤销隐藏由管理员面板做.
   // 隐藏 (p.muted): 不在主列表和 sidebar 默认列表出现; 搜索命中时仍出现并带"已隐藏"角标.
   // 主体可见规则: 总能看到自己的项目 + 拓展项目;
@@ -765,7 +767,7 @@ export default function UserPage() {
                   <div className="mt-3 space-y-2">
                     {mutedProjects.map((p: any) => (
                       <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-primary)' }}>
-                        <LinklessNav to={`/u/${p.created_by}/p/${p.id}`} className="min-w-0 flex-1">
+                        <LinklessNav to={projectHref(p)} className="min-w-0 flex-1">
                           <div className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
                           <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{p.kind === 'extension' ? '拓展项目' : '普通项目'}</div>
                         </LinklessNav>
@@ -843,7 +845,7 @@ export default function UserPage() {
                       <div className="px-4 py-3 border-b" style={projectCardHeaderStyle(cardTheme)}>
                         <div className="flex items-center gap-2 min-w-0">
                           <svg className="w-4 h-4 flex-shrink-0" style={{ color: cardTheme.iconColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                          <LinklessNav to={projectHref(p)}
                             className="text-[length:var(--fs-xl)] font-semibold truncate flex-1 min-w-0 transition-colors hover:!text-[var(--project-card-accent)]"
                             style={{ color: 'var(--text-primary)' }}
                             title={p.name}>
@@ -977,7 +979,7 @@ export default function UserPage() {
                             <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-muted)' }}>
                               命中内容 {searchGroup?.total_matches || searchMatches.length}
                             </span>
-                            <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                            <LinklessNav to={projectHref(p)}
                               className="text-[length:var(--fs-sm)] text-blue-400 hover:text-blue-300 transition-colors">进入项目 →</LinklessNav>
                           </div>
                           <div className="min-w-0 space-y-0.5">
@@ -995,7 +997,7 @@ export default function UserPage() {
                       <div className="border-t px-4 py-2.5 flex-1" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[length:var(--fs-lg)] font-semibold" style={{ color: 'var(--text-muted)' }}>{overviewLabel}</span>
-                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                          <LinklessNav to={projectHref(p)}
                             className="text-[length:var(--fs-sm)] text-blue-400 hover:text-blue-300 transition-colors">查看全部 →</LinklessNav>
                         </div>
                         {overviewItems.length === 0 ? (
@@ -1007,7 +1009,7 @@ export default function UserPage() {
                         ) : (
                           <div className="space-y-1 min-w-0">
                             {overviewItems.slice(0, 5).map(({ item, kind }) => (
-                              <LinklessNav key={`${kind}:${item.id}`} to={`/u/${p.created_by}/p/${p.id}/${kind === 'research' ? 'r' : 'i'}/${item.id}`}
+                              <LinklessNav key={`${kind}:${item.id}`} to={`${projectHref(p)}/${kind === 'research' ? 'r' : 'i'}/${item.id}`}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors group/iss min-w-0">
                                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${kind === 'research' ? 'bg-emerald-400/80' : 'bg-blue-400/70'}`} />
                                 <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded flex-shrink-0 font-medium"
@@ -1055,7 +1057,7 @@ export default function UserPage() {
                       style={{ background: 'var(--bg-primary)', borderColor: 'rgba(248,113,113,0.45)' }}>
                       <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(248,113,113,0.30)' }}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <LinklessNav to={`/u/${p.created_by}/p/${p.id}`}
+                          <LinklessNav to={projectHref(p)}
                             className="text-[length:var(--fs-xl)] font-semibold truncate flex-1 min-w-0 transition-colors hover:text-blue-400"
                             style={{ color: 'var(--text-primary)' }} title={p.name}>
                             <SearchMatchText text={p.name} query={normalizedSearch} />
@@ -1125,7 +1127,7 @@ export default function UserPage() {
 
       {showNew && <NewProjectModal onClose={() => setShowNew(false)} onCreated={(p: any) => {
         setShowNew(false); refresh()
-        if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`)
+        if (p?.id) navigate(projectHref(p))
       }} />}
       {editingProject && <ProjectSettingsModal project={editingProject} onClose={() => setEditingProject(null)}
         onSaved={(updated: any) => { setEditingProject(null); setProjects(sortProjectsForDisplay(projects.map((pp: any) => pp.id === updated.id ? { ...pp, ...updated } : pp))) }} />}

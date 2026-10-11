@@ -139,7 +139,9 @@ function migrateEmployeeAndProjectMemberships() {
         INSERT OR IGNORE INTO project_memberships (project_id, user_id, role, created_by)
         SELECT p.id, p.created_by, 'owner', p.created_by
         FROM projects p
-        JOIN users u ON u.id = p.created_by;
+        JOIN users u ON u.id = p.created_by
+        -- system 只是拓展项目 URL 的命名空间占位, 不能作为项目所有者, 不为其回填成员行.
+        WHERE p.created_by <> 'system';
       `);
     });
     migrate();

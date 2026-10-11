@@ -2233,6 +2233,8 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
         const error = reloadResult?.errors?.find((item: any) => item?.name === normalizedExtensionName)?.error || '拓展注册失败';
         return res.status(500).json({ error });
       }
+      // 扫描落库时只认兜底管理员, 这里把所有权交给真正点创建的管理员 (created_by 即所有者).
+      Projects.transferOwnership(project.id, user.id);
       setProjectAccess(project.id, { ...projectAccessBody(req.body), visibility });
       return res.json({
         ...shapeProjectForUser(Projects.findById(project.id, user.id), user),

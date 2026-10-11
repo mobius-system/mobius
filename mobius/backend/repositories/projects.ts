@@ -15,6 +15,7 @@ import {
   FORGOTTEN_FLAG_BACKOFF_MAX,
   FORGOTTEN_FLAG_PATIENCE_MIN,
   FORGOTTEN_FLAG_PATIENCE_MAX,
+  EXTENSION_SYSTEM_USER_ID,
 } from '../config';
 import type { AimuxRemoteInventoryEntry, ProjectRow, ProjectRawRow } from '../types/rows';
 import { ProjectMemberships } from './project-memberships';
@@ -202,9 +203,23 @@ interface UpsertExtensionArgs {
   id: string;
   name: string;
   description?: string | null;
-  createdBy: string;
+  // 仅新建时使用; 缺省则落到系统里最早出现的非 system 管理员.
+  createdBy?: string | null;
   bindPath: string;
   extensionName: string;
+}
+
+// 拓展项目由文件系统扫描落库, 磁盘上直接丢进来的目录没有"点创建的人".
+// created_by 就是项目所有者, 且必须是真实用户 (system 只是 URL 命名空间占位, 永不作所有者),
+// 因此兜底取系统里最早出现的非 system 管理员; 一个都没有时返回 null 由调用方报错.
+function resolveExtensionOwner(): string | null {
+  const row = db.prepare(`
+    SELECT id FROM users
+    WHERE role = 'admin' AND id <> ? AND deleted_at IS NULL
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1
+  `).get(EXTENSION_SYSTEM_USER_ID) as { id: string } | undefined;
+  return row ? row.id : null;
 }
 
 interface WhitelistRow {
@@ -317,13 +332,15 @@ const Projects = {
     "SELECT *, 0 AS starred FROM projects WHERE kind = 'extension'"
   ).all() as ProjectRawRowWithExtras[]).map(hydrate),
   // 拓展项目落库: 由 registry 扫描文件系统调用, 不经过 insert 事务,
-  // 因此这里必须自己补创建者 owner 关系, 否则团队面板一直显示"暂无项目成员".
+  // 因此这里必须自己补所有者 owner 关系, 否则团队面板一直显示"暂无项目成员".
   // Extension rows bypass the insert transaction, so the owner membership is ensured here.
   upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName }: UpsertExtensionArgs): string => {
-    const existing = db.prepare('SELECT id FROM projects WHERE extension_name = ?').get(extensionName) as { id: string } | undefined;
+    const existing = db.prepare('SELECT id, created_by FROM projects WHERE extension_name = ?').get(extensionName) as { id: string; created_by: string } | undefined;
     const projectId = existing ? existing.id : id;
+    let ownerId: string;
     if (existing) {
-      // 已存在: 把可能漂移的字段同步回锁定值 (name/description 来自 manifest), 并清 disabled.
+      // 已存在: 所有者不动 (可能已由创建它的管理员接管), 只把漂移字段同步回锁定值并清 disabled.
+      ownerId = existing.created_by;
       db.prepare(`
         UPDATE projects SET
           name = ?, description = ?, bind_path = ?, bind_path_manual = 1,
@@ -332,18 +349,36 @@ const Projects = {
         WHERE id = ?
       `).run(name, description || '', bindPath, existing.id);
     } else {
+      ownerId = createdBy || resolveExtensionOwner() || '';
+      if (!ownerId) {
+        throw new Error(`拓展 "${extensionName}" 落库失败: 系统里没有可用的管理员账号作为所有者`);
+      }
       db.prepare(`
         INSERT INTO projects (
           id, name, description, created_by, bind_path, bind_path_manual,
           git_repos, default_use_worktree, research_enabled,
           kind, extension_name, disabled
         ) VALUES (?, ?, ?, ?, ?, 1, '[]', 0, 0, 'extension', ?, 0)
-      `).run(id, name, description || '', createdBy, bindPath, extensionName);
+      `).run(id, name, description || '', ownerId, bindPath, extensionName);
     }
-    // 幂等补 owner 行, 对齐 db.ts 启动回填的结果 (created_by='system' → 系统(拓展))
-    // Idempotent owner row, matching what the db.ts boot backfill would produce
-    ProjectMemberships.ensureOwner(projectId, createdBy, createdBy);
+    ProjectMemberships.ensureOwner(projectId, ownerId, ownerId);
     return projectId;
+  },
+  // 拓展项目由 registry 先归到兜底管理员, UI 创建路径随后把所有权交给点创建的那个管理员:
+  // 改 created_by (唯一 owner 真相) + 迁移 owner 成员行. 幂等.
+  transferOwnership: (projectId: string, newOwnerId: string): void => {
+    const row = db.prepare('SELECT created_by FROM projects WHERE id = ?').get(projectId) as { created_by: string } | undefined;
+    if (!row || row.created_by === newOwnerId) return;
+    db.transaction(() => {
+      // 旧所有者 (多为兜底占位) 的成员行一并清掉: 非创建者的 owner 行不构成所有者.
+      db.prepare('DELETE FROM project_memberships WHERE project_id = ? AND user_id = ?').run(projectId, row.created_by);
+      db.prepare('UPDATE projects SET created_by = ? WHERE id = ?').run(newOwnerId, projectId);
+      db.prepare(`
+        INSERT INTO project_memberships (project_id, user_id, role, created_by)
+        VALUES (?, ?, 'owner', ?)
+        ON CONFLICT(project_id, user_id) DO UPDATE SET role = 'owner'
+      `).run(projectId, newOwnerId, newOwnerId);
+    })();
   },
   setExtensionDisabled: (extName: string, disabled: boolean) => db.prepare(
     "UPDATE projects SET disabled = ? WHERE kind = 'extension' AND extension_name = ?"

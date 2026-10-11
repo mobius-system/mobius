@@ -22,6 +22,7 @@ import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/glo
 import { ErrBanner } from './error-banner'
 import { PcTaskModeSection } from './pc-task-mode-section'
 import { formatDefaultSessionName } from '../services/session-naming'
+import { projectHref } from '../services/project-url'
 
 import { ToggleSwitch } from './toggle-switch'
 import { SessionModelPicker } from './session-model-picker'
@@ -1342,7 +1343,7 @@ export function GlobalCreateRoot({ kind, ctx, onClose, onNavigate, initialPrompt
   if (kind === 'project') return (
     <NewProjectModal
       onClose={onClose}
-      onCreated={(p: any) => handleDone(p, p?.id && p?.created_by ? `/u/${p.created_by}/p/${p.id}` : undefined)}
+      onCreated={(p: any) => handleDone(p, p?.id ? projectHref(p) : undefined)}
     />
   )
   if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />

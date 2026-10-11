@@ -96,15 +96,23 @@ expectThrows('cannot demote last owner', () => ProjectMemberships.updateRole({ p
 ProjectMemberships.remove({ projectId: 'p1', userId: 'alice' })
 expectEqual('alice removed', ProjectMemberships.roleFor('p1', 'alice'), null)
 
-// 拓展项目由 registry 落库 (不走 insert 事务), 创建者 owner 行同样必须立刻写入,
+// 拓展项目由 registry 落库 (不走 insert 事务), 所有者 owner 行同样必须立刻写入,
 // 否则团队面板在下次重启的历史回填之前一直显示"暂无项目成员".
+// created_by 就是所有者, 且必须是真实用户: system 只是 URL 命名空间占位, 永不作所有者.
 insertUser('system', '系统(拓展)', 'admin')
-Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', createdBy: 'system', bindPath: tempRoot, extensionName: 'demo' })
-expectEqual('extension creator becomes owner', ProjectMemberships.roleFor('ext_demo', 'system'), 'owner')
+Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', bindPath: tempRoot, extensionName: 'demo' })
+expectEqual('extension falls back to earliest non-system admin', ProjectMemberships.roleFor('ext_demo', 'admin'), 'owner')
 expectEqual('extension has 1 member', ProjectMemberships.list('ext_demo').length, 1)
-// 重复 upsert (重启扫描) 幂等, 不多写成员行.
-Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', createdBy: 'system', bindPath: tempRoot, extensionName: 'demo' })
+// 重复 upsert (重启扫描) 幂等, 不多写成员行, 也不改所有者.
+Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', bindPath: tempRoot, extensionName: 'demo' })
 expectEqual('extension upsert idempotent', ProjectMemberships.list('ext_demo').length, 1)
+// UI 创建路径: 扫描落库后把所有权交给点创建的那个管理员.
+Projects.upsertExtension({ id: 'ext_claimed', name: '接管拓展', description: '', bindPath: tempRoot, extensionName: 'claimed' })
+Projects.transferOwnership('ext_claimed', 'alice')
+expectEqual('transferOwnership moves owner', ProjectMemberships.roleFor('ext_claimed', 'alice'), 'owner')
+expectEqual('transferOwnership drops old owner row', ProjectMemberships.roleFor('ext_claimed', 'admin'), null)
+expectEqual('transferOwnership keeps single member', ProjectMemberships.list('ext_claimed').length, 1)
+expectEqual('extension owner is never system', ProjectMemberships.roleFor('ext_demo', 'system'), null)
 
 // counts.
 const c = ProjectMemberships.counts('p2')

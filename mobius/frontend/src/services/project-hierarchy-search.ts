@@ -1,3 +1,5 @@
+import { projectHref } from './project-url'
+
 export type ProjectHierarchyHitKind = 'issue' | 'research' | 'session' | 'research_agent'
 
 export type ProjectHierarchyHit = {
@@ -52,7 +54,7 @@ export function hierarchyHitLabel(kind: ProjectHierarchyHitKind): string {
 }
 
 export function hierarchyHitUrl(project: any, hit: ProjectHierarchyHit): string {
-  const base = `/u/${encodeURIComponent(project.created_by || '')}/p/${encodeURIComponent(project.id || '')}`
+  const base = projectHref(project)
   if (hit.kind === 'issue') return `${base}/i/${encodeURIComponent(hit.id)}`
   if (hit.kind === 'research') return `${base}/r/${encodeURIComponent(hit.id)}`
   if (hit.kind === 'research_agent') {

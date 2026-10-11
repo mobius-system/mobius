@@ -42,8 +42,9 @@ const registry = new Map<string, any>();
 let lastReloadErrors: any[] = [];
 
 function ensureSystemUser(): void {
-  // 拓展项目挂 created_by=EXTENSION_SYSTEM_USER_ID; FK 要求 users 里有这行.
-  // INSERT OR IGNORE, 已存在则不动. work_dir 给个不可能的占位, 避免误用.
+  // system 只是拓展项目 URL 的命名空间占位 (/u/system/p/<id>), 不再是任何项目的所有者;
+  // FK 仍要求 users 里有这行. INSERT OR IGNORE, 已存在则不动.
+  // work_dir 给个不可能的占位, 避免误用.
   db.prepare(`
     INSERT OR IGNORE INTO users (id, display_name, password_hash, role, work_dir)
     VALUES (?, ?, '', 'admin', ?)
@@ -147,11 +148,12 @@ function syncWithDb(found: Map<string, any>): void {
   // 1. upsert 当前发现的拓展
   for (const [name, entry] of found.entries()) {
     if (entry.project && entry.project.sync === false) continue;
+    // 不传 createdBy: 新建时由 repository 兜底归给系统里最早出现的非 system 管理员,
+    // 已有行的所有者不动 (UI 创建路径会随后接管).
     Projects.upsertExtension({
       id: `ext_${name}`,
       name: entry.display_name,
       description: entry.description,
-      createdBy: EXTENSION_SYSTEM_USER_ID,
       bindPath: APP_DIR,
       extensionName: name,
     });

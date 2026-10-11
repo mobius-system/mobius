@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useLayoutMode } from '../services/layout-mode'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
+import { projectHref } from '../services/project-url'
 import {
   EMPTY_PROJECT_HIERARCHY_SEARCH,
   hierarchyHitLabel,
@@ -367,7 +368,7 @@ export function SearchModal({
     const project = group.project || {}
     const target = hit
       ? hierarchyHitUrl(project, hit)
-      : `/u/${encodeURIComponent(project.created_by || user?.id || '')}/p/${encodeURIComponent(project.id || '')}`
+      : projectHref(project, user?.id || '')
     onNavigate(target)
     close()
   }

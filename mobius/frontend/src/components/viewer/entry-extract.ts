@@ -1214,6 +1214,14 @@ export function entryDisplayImages(entry: AnyEntry): string[] {
 
 export type DisplayFileRef = { path: string; remote?: string; root?: string }
 
+// display-files 只接受真正的路径 token —— 与命令自身的校验一致. 带 shell 语法字符的 token
+// (2>&1 / 2>/dev/null / &> / >) 是重定向片段而非路径, 一律不收.
+// display-files only takes real path tokens, mirroring the command's own validation: a token
+// carrying shell syntax characters (2>&1, 2>/dev/null, &>, >) is redirection, not a path.
+function isFileArg(tok: string): boolean {
+  return !!tok && !/[<>|&;`$]/.test(tok)
+}
+
 function collectDisplayFiles(command: string, depth: number, out: DisplayFileRef[]): void {
   if (depth > 3) return
   for (const seg of splitShellSegments(command)) {
@@ -1226,7 +1234,7 @@ function collectDisplayFiles(command: string, depth: number, out: DisplayFileRef
       const paths: string[] = []
       for (let i = 1; i < toks.length; i++) {
         const token = toks[i]
-        if (token === '--') { paths.push(...toks.slice(i + 1)); break }
+        if (token === '--') { paths.push(...toks.slice(i + 1).filter(isFileArg)); break }
         if (token === '--remote' || token === '--root') {
           const value = toks[++i]
           if (value && !value.startsWith('--')) {
@@ -1238,7 +1246,7 @@ function collectDisplayFiles(command: string, depth: number, out: DisplayFileRef
         if (token.startsWith('--remote=')) { remote = token.slice(9); continue }
         if (token.startsWith('--root=')) { root = token.slice(7); continue }
         if (token.startsWith('-')) continue
-        paths.push(token)
+        if (isFileArg(token)) paths.push(token)
       }
       for (const path of paths) if (path) out.push({ path, ...(remote ? { remote } : {}), ...(root ? { root } : {}) })
       continue
