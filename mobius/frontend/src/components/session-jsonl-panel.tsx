@@ -15,6 +15,11 @@ const LIVE_TOKEN_MAX_BUFFER_CHARS = 3200
 const LIVE_TOKEN_MAX_CHARS_PER_SECOND = 60
 const LIVE_TOKEN_TICK_MS = 50
 
+// 接管态的方向判定需要"用户意图背书"的时间窗: 手势发生在先, onScroll 紧随其后 (同一帧或下一帧).
+// 窗口只用来把"刚发生的真实手势"和"浏览器自己补偿的滚动"区分开, 不需要精确.
+// How long a recorded user gesture keeps vouching for the direction check that follows it.
+const INTENT_BACKING_MS = 400
+
 // 显示 buffer 满了的缩容策略: 一次性删除前 2/3、保留后 1/3，腾出空间继续追加,
 // 避免每次追加都 slice(-MAX) 做 O(n) 拷贝 (每 tick 反复触发).
 function trimLiveBuffer(text: string): string {
@@ -285,11 +290,21 @@ function SessionJsonlPanelInner({
   // "向上滚 > 2px"的方向推断 — 慢速小步上滚会被 lerp 追底拉回. 这些事件天然来自用户,
   // 绕开"程序滚动 vs 用户滚动"的来源识别; 恢复钉底仍由 onScroll 的 dist < 4 负责.
   // 不监听 pointerdown: 点按卡片/代码/选中文字等非滚动点击也会触发它, 会把 userScrolledUp
-  // 误置 true 从而永久停掉追底 ("不追底"); 滚动条拖拽仍由 onScroll 的 movedUp 方向判定兜底.
+  // 误置 true 从而永久停掉追底 ("不追底"); 只有落在滚动条带上的 pointerdown 例外 (见下).
   // 最后一次用户滚动意图 (浮窗用): 因 C 的现场 —— "接管态是刚才那一下 wheel 置的, 而它
   // 发生在卡片内部的嵌套滚动区里, 对话本身根本没动".
   // Last user scroll intent, the crime scene for cause C.
   const lastIntentRef = useRef<{ at: number; text: string }>({ at: 0, text: '—' })
+  // 正在拖容器自己的滚动条. 拖滚动条是唯一"不产生 wheel/按键"的用户上滚方式, 只能靠
+  // onScroll 的方向判定兜住; 但必须先用指针落点确认它真的压在滚动条上 —— 否则点击卡片、
+  // 选中文字引起的程序滚动也会被算成用户意图.
+  // Dragging the container's own scrollbar: the one user gesture with no wheel/key events,
+  // so the direction check needs explicit permission from the pointer's landing spot.
+  const draggingScrollbarRef = useRef(false)
+  // 被"无用户意图背书"挡下的方向判定 (浮窗用): 计数即"浏览器补偿发生过几次", 修好后应当
+  // 有计数、无接管态翻转 —— 这正是验证修复是否生效的观测量.
+  // Counter for suppressed direction verdicts: it proves the compensation happened and was caught.
+  const suppressedRef = useRef({ count: 0, at: 0, px: 0 })
 
   useEffect(() => {
     const el = chatContainerRef.current
@@ -340,14 +355,45 @@ function SessionJsonlPanelInner({
         onScrollPositionChange(true, `keydown ${e.key}`)
       }
     }
+    // 指针落点是否压在容器自己的滚动条带上 (内容区右沿之外). 覆盖式滚动条 (offsetWidth ==
+    // clientWidth) 时算不出带宽, 用最后 12px 兜底.
+    // Whether the press landed on the container's own scrollbar band, with a 12px fallback
+    // for overlay scrollbars, where the band has no measurable width.
+    const onScrollbarBand = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect()
+      const borderLeft = parseFloat(window.getComputedStyle(el).borderLeftWidth) || 0
+      const contentRight = rect.left + borderLeft + el.clientWidth
+      const barWidth = el.offsetWidth - el.clientWidth
+      return e.clientX >= (barWidth > 0 ? contentRight : contentRight - 12)
+    }
+    // 滚动条拖拽期间放行 onScroll 的方向判定; 抬手 (含在窗口外抬手) 即收回许可.
+    // Permit the direction check while the scrollbar is held; revoke on release anywhere.
+    const onPointerDown = (e: PointerEvent) => {
+      if (!onScrollbarBand(e)) return
+      scrollDebug('pointerdown: 落在滚动条带 → 方向判定获得许可')
+      draggingScrollbarRef.current = true
+      noteIntent('拖拽滚动条')
+    }
+    const onPointerUp = () => {
+      if (!draggingScrollbarRef.current) return
+      scrollDebug('pointerup: 收回滚动条拖拽许可')
+      draggingScrollbarRef.current = false
+    }
 
     el.addEventListener('wheel', onWheel, { passive: true })
     el.addEventListener('touchmove', onTouchMove, { passive: true })
     el.addEventListener('keydown', onKeyDown)
+    el.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
     return () => {
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('touchmove', onTouchMove)
       el.removeEventListener('keydown', onKeyDown)
+      el.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+      draggingScrollbarRef.current = false
     }
   }, [chatContainerRef, onScrollPositionChange])
 
@@ -377,6 +423,9 @@ function SessionJsonlPanelInner({
         { label: '有可滚动余量', value: bool(mirror.hasScrollRoom) },
         { label: '上一帧 scrollTop', value: lastScrollTopRef.current == null ? '—' : px(lastScrollTopRef.current) },
         { label: '最近用户滚动意图', value: intentText, tone: intent.at ? 'warn' : undefined },
+        // 被挡下的"上滚"判定: 无用户意图背书的方向位移, 通常是浏览器补偿 scrollTop, 挡下即证明 R1 生效.
+        // Suppressed upward-direction moves: browser scrollTop compensation without a user gesture behind it.
+        { label: '被挡下的补偿滚动', value: suppressedRef.current.count ? `${suppressedRef.current.count} 次 (最近 ${ms(Date.now() - suppressedRef.current.at)} 前, 上移 ${px(suppressedRef.current.px)})` : '无', tone: suppressedRef.current.count ? 'ok' : undefined },
         { label: 'LIVE 尾部卡', value: bool(mirror.liveCardMounted, '显示中', '未显示') },
         { label: '搜索命中数', value: String(mirror.hitCount) },
       ],
@@ -402,9 +451,23 @@ function SessionJsonlPanelInner({
           lastScrollTopRef.current = el.scrollTop
           const clampedToEdge = el.scrollTop <= 0 || el.scrollTop >= el.scrollHeight - el.clientHeight - 0.5
           const movedUp = prev !== null && prev - el.scrollTop > 2 && !clampedToEdge
+          // 方向判定必须有用户意图背书: 内容变高变矮时浏览器会自己补偿 scrollTop (滚动锚定 /
+          // 钳制), 它和"用户上滚"在方向上一模一样, 单看方向必然误判 —— 一次补偿就能把接管态
+          // 闩死、整轮追底停摆 (现场见 docs/blueprints/chase_end_err.html).
+          // The direction check needs a user gesture behind it: browser scroll anchoring
+          // compensates for content resizing by moving scrollTop up, which is direction-wise
+          // indistinguishable from a real upward scroll.
+          const intentRecent = Date.now() - lastIntentRef.current.at < INTENT_BACKING_MS
           if (movedUp && dist > 200) {
-            scrollDebug('onScroll: movedUp=true, dist=', dist, '>200 → flag true')
-            onScrollPositionChange(true, `onScroll 向上滚 ${Math.round(prev - el.scrollTop)}px (dist=${Math.round(dist)})`)
+            if (!draggingScrollbarRef.current && !intentRecent) {
+              const up = Math.round(prev - el.scrollTop)
+              suppressedRef.current = { count: suppressedRef.current.count + 1, at: Date.now(), px: up }
+              scrollDebug('onScroll: movedUp=true, dist=', dist, `→ 忽略 (无用户意图背书: 浏览器补偿/程序滚动, 上移 ${up}px)`)
+            } else {
+              const via = draggingScrollbarRef.current ? '拖拽滚动条' : '手势意图'
+              scrollDebug('onScroll: movedUp=true, dist=', dist, '→ flag true (', via, '背书)')
+              onScrollPositionChange(true, `onScroll 向上滚 ${Math.round(prev - el.scrollTop)}px (dist=${Math.round(dist)}, ${via})`)
+            }
           } else if (dist < 4) {
             scrollDebug('onScroll: dist=', dist.toFixed(1), '<4 → flag false (恢复钉底)')
             onScrollPositionChange(false, 'onScroll 贴底 (dist<4)')
