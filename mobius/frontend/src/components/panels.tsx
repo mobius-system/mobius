@@ -8333,7 +8333,9 @@ function AdminProjectPermissionsPanel() {
         {selectedProject ? (
           <>
             <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0"><h3 className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{selectedProject.name || selectedProject.id}</h3><div className="mt-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{selectedProject.bind_path || '未绑定路径'} · 创建者 {selectedProject.created_by_name || selectedProject.created_by || '未知'}</div></div>
+              <div className="min-w-0"><h3 className="truncate text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>{selectedProject.name || selectedProject.id}</h3><div className="mt-1 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>{selectedProject.bind_path || '未绑定路径'} · 创建者 {selectedProject.created_by_name || selectedProject.created_by || '未知'}</div>
+                {membersLoaded && currentUser && !selfInProject && <button type="button" onClick={() => void joinSelf()} disabled={busy} title="把自己加为项目开发者" className="mt-1 text-[length:var(--fs-xs)] hover:underline disabled:opacity-50" style={{ color: 'var(--accent-primary)' }}>把{currentUser.display_name || currentUser.id}自己加入该项目</button>}
+              </div>
             </div>
             {(error || notice) && <div className={`mb-3 rounded-md border px-3 py-2 text-[length:var(--fs-sm)] ${error ? 'border-red-500/25 bg-red-500/10 text-red-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{error || notice}</div>}
             <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
