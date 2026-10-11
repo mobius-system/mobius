@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
-import { useStore, api } from '../store'
+import { useStore, api, friendlyApiError } from '../store'
 import { TopNav } from '../components/shell'
 import {
   NewIssueModal, ConfirmModal,
@@ -578,7 +578,7 @@ export default function ProjectPage() {
   const saveMeta = useCallback(async () => {
     if (!project) return
     if (project.can_manage === false) {
-      setMetaErr('只有项目 owner/admin 可以修改项目设置')
+      setMetaErr('你当前是项目访客，只能查看和使用项目；只有项目所有者可以修改项目设置。')
       return
     }
     if (!isExtensionProject && !editName.trim()) {
@@ -633,7 +633,7 @@ export default function ProjectPage() {
       })
       setProjects(projects.map((p: any) => p.id === updated.id ? { ...p, ...updated } : p))
       setCurrentProject({ ...project, ...updated })
-    } catch (e: any) { setMetaErr(e?.message || '保存失败') }
+    } catch (e: any) { setMetaErr(friendlyApiError(e, '项目设置保存失败，请检查你的项目角色。')) }
     finally { setSavingMeta(false) }
   }, [
     project,

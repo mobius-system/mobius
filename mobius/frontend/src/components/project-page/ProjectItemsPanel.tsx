@@ -235,6 +235,9 @@ export function ProjectItemsPanel({
           <PrimaryActionButton onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
             data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
             disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}
+            title={section === 'issues'
+              ? (canCreateIssue ? '新建任务' : '当前项目角色只能查看，无法新建任务')
+              : (!project.research_enabled ? '项目尚未启用研究系统' : (canCreateResearch ? '新建研究' : '当前项目角色没有创建研究的权限'))}
             icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
             {section === 'issues' ? '新建任务' : '新建研究'}
           </PrimaryActionButton>

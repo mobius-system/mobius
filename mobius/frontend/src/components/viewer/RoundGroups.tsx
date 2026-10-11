@@ -18,7 +18,6 @@ import { buildHeaderSummary } from './header-summary'
 import { isEasyFlatEntry, isEasyMicroEntry, JsonEntryCard } from './EntryCard'
 import { DisplayImagesCard } from './DisplayImages'
 import { DisplayFilesCard } from './DisplayFiles'
-import { useDisplayFileContext } from './DisplayFileContext'
 import type { TaskPlanByUuid } from './task-progress'
 import type { RoundHeaderPalette } from './round-header-palette'
 import { ASSISTANT_END_TURN_THEME } from './themes'
@@ -79,7 +78,7 @@ export function EntryCardWithImages({ entry, lineNo, bashResults = [], readResul
     <>
       <JsonEntryCard entry={entry} lineNo={lineNo} forceOpen={forceOpen} searchHighlighted={searchHighlighted} parentOrderedCollapse={parentOrderedCollapse} showMeta={showMeta} dense={dense} easyMode={easyMode} easyOpenerOverride={easyOpenerOverride} bashResults={bashResults} readResults={readResults} toolStatus={toolStatus} taskPlan={(uuid && taskPlans) ? taskPlans.get(uuid) ?? null : null} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} easyMode={easyMode} />}
-      {/* File cards are rendered by the round summary so collapsed tool steps cannot hide them. */}
+      {displayFiles.length > 0 && <DisplayFilesCard files={displayFiles} projectId={projectId} sessionId={sessionId} easyMode={easyMode} />}
     </>
   )
 }
@@ -285,7 +284,6 @@ function EasyMicroStepGroup({ items, showMeta, toolStatusMap, collapseLineNos, f
 // 用户点过一次后 sticky=true, 自动规则永不再接管. 展开即加载由 store 状态机保证.
 // memo: 未收数据的组全部 prop 身份稳定 (round 缓存 + 回调缓存 + map 缓存), 整组跳过重渲染.
 function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, onlyGroup, open, sticky = false, loading = false, failed = false, resident = false, onUserToggle, onAutoOpen, onAutoClose, onRetry, forceOpen = false, searchActive = false, searchHighlighted = false, showMeta = true, easyMode = false, showGroupDivider = false, toolStatusMap, collapseLineNos, focusLineNo, headerPalette, taskPlans, headerTitle, headerSummary }: { round: Round; isLast: boolean; isSecondLast: boolean; isRecentTail?: boolean; onlyGroup: boolean; open: boolean; sticky?: boolean; loading?: boolean; failed?: boolean; resident?: boolean; onUserToggle: () => void; onAutoOpen: () => void; onAutoClose: () => void; onRetry: () => void; forceOpen?: boolean; searchActive?: boolean; searchHighlighted?: boolean; showMeta?: boolean; easyMode?: boolean; showGroupDivider?: boolean; toolStatusMap?: ToolStatusMap | null; collapseLineNos?: Set<number>; focusLineNo?: number | null; headerPalette: RoundHeaderPalette; taskPlans?: TaskPlanByUuid | null; headerTitle?: string; headerSummary?: string }) {
-  const displayFileContext = useDisplayFileContext()
   const alwaysOpen = easyMode && isRecentTail
   const autoOpen = isLast || isSecondLast || alwaysOpen
   // 自动开合同步: store 状态落后于期望态时推一把 (首次挂载/轮次升跌时).
@@ -348,12 +346,6 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
   const renderSeq: ExploreRenderItem[] = easyMode
     ? round.items.map((item) => ({ kind: 'single' as const, item }))
     : groupExploreItems(round.items, toolStatusMap)
-  const roundDisplayFiles = Array.from(new Map(
-    round.items.flatMap((item) => entryDisplayFiles(item.entry)).map((file) => [
-      `${file.remote || ''}\0${file.root || ''}\0${file.path}`,
-      file,
-    ]),
-  ).values())
   // 简易模式末组折叠平铺文本前的微缩串，或把无后续卡片且超过五张的末尾微缩串裁成最后五张；历史组整段折叠。
   // Easy mode folds runs before flat text, trims an overlong card-less tail to five, and folds every run in older groups.
   const easyStepRuns = new Map<number, RoundItem[]>()
@@ -361,12 +353,12 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
   if (easyMode) {
     for (let index = 0; index < renderSeq.length; index += 1) {
       const current = renderSeq[index]
-      if (current.kind !== 'single' || !isEasyMicroEntry(current.item.entry)) continue
+      if (current.kind !== 'single' || !isEasyMicroEntry(current.item.entry) || entryDisplayFiles(current.item.entry).length > 0) continue
       const run: RoundItem[] = [current.item]
       let end = index + 1
       while (end < renderSeq.length) {
         const next = renderSeq[end]
-        if (next.kind !== 'single' || !isEasyMicroEntry(next.item.entry)) break
+        if (next.kind !== 'single' || !isEasyMicroEntry(next.item.entry) || entryDisplayFiles(next.item.entry).length > 0) break
         run.push(next.item)
         end += 1
       }
@@ -452,14 +444,6 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
       {easyGroupDivider}
       {collapsedOpener}
       {collapsedSummaryOpener}
-      {roundDisplayFiles.length > 0 && (
-        <DisplayFilesCard
-          files={roundDisplayFiles}
-          projectId={displayFileContext?.projectId}
-          sessionId={displayFileContext?.sessionId}
-          easyMode={easyMode}
-        />
-      )}
       {!easyTriggerHidden && (
         <button
           type="button"

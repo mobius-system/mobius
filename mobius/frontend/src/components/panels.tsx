@@ -52,7 +52,7 @@ import {
   Users as UsersIcon,
   WandSparkles,
 } from 'lucide-react'
-import { SERVER_BRAND_NAME, api, useStore } from '../store'
+import { SERVER_BRAND_NAME, api, friendlyApiError, useStore } from '../store'
 import {
   TEXT_REDACTION_ENABLED_EVENT,
   TEXT_REDACTION_ENABLED_STORAGE_KEY,
@@ -405,7 +405,7 @@ function AdminUsersPanel() {
       setError('')
     } catch (e: any) {
       if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '加载运行监控失败'))
     } finally {
       if (!quiet) setLoading(false)
     }
@@ -512,7 +512,7 @@ function AdminUsersPanel() {
       const warning = data?.user?.warning ? ` · ${data.user.warning}` : ''
       setNotice(`${data?.user?.status === 'restored' ? '已恢复' : '已添加'}员工 ${data?.user?.id || form.id}${warning}`)
     } catch (e: any) {
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '创建用户失败'))
     } finally {
       setSubmitting(false)
     }
@@ -542,7 +542,7 @@ function AdminUsersPanel() {
         setError(first)
       }
     } catch (e: any) {
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '批量创建用户失败'))
     } finally {
       setBulkSubmitting(false)
     }
@@ -559,7 +559,7 @@ function AdminUsersPanel() {
       await refresh(true)
       setNotice(`已删除员工 ${row.id}`)
     } catch (e: any) {
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '删除用户失败'))
     } finally {
       setDeletingId(null)
     }
@@ -593,7 +593,7 @@ function AdminUsersPanel() {
       await refresh(true)
       setNotice(`已更新员工 ${label}`)
     } catch (e: any) {
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '更新用户失败'))
     } finally {
       setSavingEdit(false)
     }
@@ -8215,7 +8215,7 @@ function AdminProjectPermissionsPanel() {
       if (!selectedId && list[0]?.id) setSelectedId(list[0].id)
       setError('')
     } catch (e: any) {
-      setError(e?.message || '加载项目失败')
+      setError(friendlyApiError(e, '加载项目失败'))
     } finally {
       setLoading(false)
     }
@@ -8233,7 +8233,7 @@ function AdminProjectPermissionsPanel() {
       setError('')
     } catch (e: any) {
       setMembers([])
-      setError(e?.message || '加载项目成员失败')
+      setError(friendlyApiError(e, '加载项目成员失败'))
     }
   }
 
@@ -8246,7 +8246,7 @@ function AdminProjectPermissionsPanel() {
       const data = await api(`/api/projects/${encodeURIComponent(selectedId)}/member-candidates?q=${encodeURIComponent(candidateId)}`)
       setCandidates(Array.isArray(data) ? data : [])
     } catch (e: any) {
-      setError(e?.message || '加载候选用户失败')
+      setError(friendlyApiError(e, '加载候选用户失败'))
     }
   }
 
@@ -8263,7 +8263,7 @@ function AdminProjectPermissionsPanel() {
       setCandidateId('')
       setCandidates([])
     } catch (e: any) {
-      setError(e?.message || '添加项目成员失败')
+      setError(friendlyApiError(e, '添加项目成员失败'))
     } finally {
       setBusy(false)
     }
@@ -8284,7 +8284,7 @@ function AdminProjectPermissionsPanel() {
       await loadMembers(selectedId)
       setNotice('已把自己加入该项目（项目开发者）')
     } catch (e: any) {
-      setError(e?.message || '加入项目失败')
+      setError(friendlyApiError(e, '加入项目失败'))
     } finally {
       setBusy(false)
     }
@@ -8301,7 +8301,7 @@ function AdminProjectPermissionsPanel() {
       await loadMembers(selectedId)
       setNotice('项目权限已更新')
     } catch (e: any) {
-      setError(e?.message || '更新项目权限失败')
+      setError(friendlyApiError(e, '更新项目权限失败'))
     } finally {
       setBusy(false)
     }
@@ -8383,7 +8383,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
       setError('')
     } catch (e: any) {
       if (e?.name === 'AbortError') return // 轮询超时/卸载放弃, 不算错误
-      setError(e?.message || String(e))
+      setError(friendlyApiError(e, '加载用户列表失败'))
     } finally {
       if (!quiet) setLoading(false)
     }

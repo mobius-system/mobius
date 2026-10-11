@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../../store'
+import { api, friendlyApiError } from '../../store'
 import { UserPicker } from '../user-picker'
 
 type Role = 'owner' | 'developer' | 'viewer' | 'none'
@@ -76,7 +76,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
         setCounts(data?.counts || { owner: 0, developer: 0, viewer: 0, none: 0 })
         setErr('')
       })
-      .catch((e: any) => { if (!cancelled) setErr(e?.message || '加载成员失败') })
+      .catch((e: any) => { if (!cancelled) setErr(friendlyApiError(e, '加载项目成员失败')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [projectId])
@@ -98,7 +98,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       setPendingIds([])
       setShowAdd(false)
     } catch (e: any) {
-      setErr(e?.message || '添加成员失败')
+      setErr(friendlyApiError(e, '添加项目成员失败'))
     } finally {
       setAdding(false)
     }
@@ -114,7 +114,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       })
       applyResult(data)
     } catch (e: any) {
-      setErr(e?.message || '修改角色失败')
+      setErr(friendlyApiError(e, '修改项目角色失败'))
     } finally {
       setBusyId('')
     }
@@ -126,7 +126,7 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
       const data = await api(`/api/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
       applyResult(data)
     } catch (e: any) {
-      setErr(e?.message || '移除成员失败')
+      setErr(friendlyApiError(e, '移除项目成员失败'))
     } finally {
       setBusyId('')
     }
@@ -302,7 +302,11 @@ export function ProjectTeamPanel({ projectId, canManage, actorRole }: ProjectTea
 
       {!canManage && (
         <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-          仅项目所有者可以管理成员与角色。
+          {actorRole === 'developer'
+            ? '你当前是项目开发者，可以编辑项目内容，但只有项目所有者可以管理成员与角色。'
+            : actorRole === 'viewer' || actorRole === 'none'
+              ? '你当前是项目访客，只能查看项目内容，不能管理成员与角色。'
+              : '只有项目所有者可以管理成员与角色。'}
         </div>
       )}
     </div>

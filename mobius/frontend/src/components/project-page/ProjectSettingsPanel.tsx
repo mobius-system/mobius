@@ -844,6 +844,14 @@ export function ProjectSettingsPanel({
         ) : activePane === 'members' ? (
           <div className="w-full min-w-0 p-3 space-y-4">
             <SettingsCard title="项目权限" hint="管理项目成员及角色（所有者/开发者/访客/不显示），决定谁能访问本项目。">
+              {!canManageProject && (
+                <div className="mb-3 rounded-lg border px-3 py-2 text-[length:var(--fs-md)] leading-5" role="status"
+                  style={{ borderColor: 'rgba(248,113,113,0.28)', background: 'rgba(248,113,113,0.08)', color: 'var(--text-secondary)' }}>
+                  {project.project_role === 'developer'
+                    ? '你当前是项目开发者，可以修改项目内容，但只有项目所有者可以管理成员和角色。'
+                    : '你当前是项目访客，只能查看项目内容，不能管理成员和角色。'}
+                </div>
+              )}
               {/* 项目权限由成员角色决定，隐藏列表只影响展示偏好，不参与权限判断。 */}
               {/* 项目成员管理 (照 Aone 权限页样式: 角色筛选 Tab + 表格 + 搜索) ——
                   与主页「编辑项目」弹窗 modals.tsx 共用同一个 ProjectTeamPanel. */}
@@ -894,7 +902,9 @@ export function ProjectSettingsPanel({
           {!canManageProject && (
             <div className="rounded-lg border px-3 py-2 text-[length:var(--fs-md)] leading-5"
               style={{ borderColor: 'rgba(59,130,246,0.28)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)' }}>
-              当前账号可以查看和使用此项目；项目设置只有 owner/admin 可以修改。
+              {project.project_role === 'developer'
+                ? '你当前是项目开发者，可以编辑项目内容；项目设置和成员管理只有项目所有者可以修改。'
+                : '你当前是项目访客，只能查看和使用项目；项目设置只有项目所有者可以修改。'}
             </div>
           )}
           {/* 拓展项目: name / description / bindPath / worktree / research 都由 manifest 锁定 */}

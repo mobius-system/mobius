@@ -47,15 +47,26 @@ assert.deepEqual(entryDisplayFiles({
   type: 'assistant',
   message: { content: [{ type: 'tool_use', name: 'Edit', input: { command: 'display-files /tmp/a.ts' } }] },
 }), [])
-// 重定向片段不是文件名 (与 display_images 的 isImageArg 同款做法: 参数不合法就不收)
-// Redirection fragments are not file names (same trick as display_images' isImageArg: invalid arg, no card)
+assert.deepEqual(entryDisplayFiles({
+  type: 'response_item',
+  payload: { type: 'function_call', name: 'some_other_tool', arguments: JSON.stringify({ command: 'display-files /tmp/a.ts' }) },
+}), [])
+// shell 控制符和重定向结束 argv；带引号或转义的同名字符仍可属于合法文件名
+// Shell controls and redirects end argv; quoted or escaped copies remain valid file-name characters
 assert.deepEqual(
   entryDisplayFiles(bashEntry('display-files mobius/a.ts mobius/b.js 2>&1 | tail -5')),
   [{ path: 'mobius/a.ts' }, { path: 'mobius/b.js' }],
 )
 assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts 2>&1')), [{ path: 'a.ts' }])
 assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts 2>/dev/null')), [{ path: 'a.ts' }])
-assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts & b.ts')), [{ path: 'a.ts' }, { path: 'b.ts' }])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts > output.log')), [{ path: 'a.ts' }])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts 2> /tmp/error.log')), [{ path: 'a.ts' }])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files a.ts & echo b.ts')), [{ path: 'a.ts' }])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files "a&b.txt" "report>draft.md"')), [
+  { path: 'a&b.txt' },
+  { path: 'report>draft.md' },
+])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files a\\&b.txt')), [{ path: 'a&b.txt' }])
 // 文件名里恰好带数字时不受影响
 // A file name that merely ends in a digit stays intact
 assert.deepEqual(entryDisplayFiles(bashEntry('display-files v2.ts')), [{ path: 'v2.ts' }])

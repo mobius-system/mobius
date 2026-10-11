@@ -551,6 +551,39 @@ export const useStore = create<AppState>((set) => ({
 
 // API helper
 const API = ''
+export class ApiError extends Error {
+  status: number
+  path: string
+  code?: string
+  constructor(message: string, status: number, path: string, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.path = path
+    this.code = code
+  }
+}
+
+export function friendlyApiError(error: unknown, fallback = '操作失败'): string {
+  const value = error as Partial<ApiError> & { message?: unknown }
+  const status = Number(value?.status || 0)
+  const message = typeof value?.message === 'string' ? value.message.trim() : ''
+  const lower = message.toLowerCase()
+  if (status === 401 || /^(unauthorized|no token|invalid token|user not found)$/i.test(message)) return '登录状态已失效，请重新登录。'
+  if (status === 410 || /group|群组/.test(lower)) return '群组权限模型已移除，请使用项目成员角色管理权限。'
+  if (status === 503 && /sandbox|agent_sandbox_unavailable/.test(lower)) return '当前服务器未启用安全沙盒，普通用户暂时不能登录或使用 Agent。'
+  if (/拓展项目中的普通用户只能是 viewer 或 none/.test(message)) return '拓展项目中的普通用户不能设置为项目开发者，只能设置为项目访客或不显示。'
+  if (/当前项目角色没有文件写入权限/.test(message)) return '你当前是只读角色，无法修改项目文件。'
+  if (/无权在此项目创建 Issue/.test(message)) return '你当前的项目角色无法创建任务，请联系项目所有者申请项目开发者权限。'
+  if (status === 403 || /^(admin only|access denied|forbidden)$/i.test(message)) {
+    if (/admin only/i.test(message)) return '你没有访问管理员功能的权限。只有系统管理员可以使用此功能。'
+    if (/无权.*成员|需要项目管理权限|项目所有者|owner\/admin|修改项目设置/.test(message)) return '只有项目所有者可以管理项目成员和项目设置。'
+    return message && !/access denied|forbidden/i.test(message) ? `你当前没有执行此操作的权限：${message}` : '你当前没有执行此操作的权限。请检查项目角色或联系项目所有者。'
+  }
+  if (status === 404 && !message || message === 'Not found') return '资源不存在，或你没有访问权限。'
+  return message || fallback
+}
+
 export async function api(path: string, options?: RequestInit) {
   const token = localStorage.getItem('cc-token')
   const isFormData = options?.body instanceof FormData
@@ -567,8 +600,8 @@ export async function api(path: string, options?: RequestInit) {
   if (res.status === 401 && path !== '/api/auth/login') {
     localStorage.removeItem('cc-token')
     window.location.href = '/'
-    throw new Error(data?.error || 'Unauthorized')
+    throw new ApiError(data?.error || 'Unauthorized', res.status, path, data?.code)
   }
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
+  if (!res.ok) throw new ApiError(data?.error || `HTTP ${res.status}`, res.status, path, data?.code)
   return data
 }
