@@ -452,6 +452,14 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
       {easyGroupDivider}
       {collapsedOpener}
       {collapsedSummaryOpener}
+      {roundDisplayFiles.length > 0 && (
+        <DisplayFilesCard
+          files={roundDisplayFiles}
+          projectId={displayFileContext?.projectId}
+          sessionId={displayFileContext?.sessionId}
+          easyMode={easyMode}
+        />
+      )}
       {!easyTriggerHidden && (
         <button
           type="button"
@@ -617,14 +625,6 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
           ))}
           </div>
         </div>
-      )}
-      {roundDisplayFiles.length > 0 && (
-        <DisplayFilesCard
-          files={roundDisplayFiles}
-          projectId={displayFileContext?.projectId}
-          sessionId={displayFileContext?.sessionId}
-          easyMode={easyMode}
-        />
       )}
     </div>
   )

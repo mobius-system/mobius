@@ -2276,10 +2276,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   })
   // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
   const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
+  // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
+  // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
+  const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)
   useEffect(() => {
     const openFile = (event: Event) => {
       const detail = (event as CustomEvent).detail
       if (!detail || detail.projectId !== currentProjectId || (detail.sessionId && detail.sessionId !== sessionId)) return
+      setDisplayFileRequest(detail)
       setDisplayFilesOpen(true)
       setEasyFilesMounted(true)
       setEasyFilesOpen(true)
@@ -4952,6 +4956,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 bindPath={easyFilesBindPath || projectForSession?.bind_path || ''}
                 vscodeWebUrl={easyFilesVscodeUrl}
                 sessionId={currentSession?.session_id || sessionId}
+                openFileRequest={displayFileRequest || undefined}
               />
             </Suspense>
           ) : (

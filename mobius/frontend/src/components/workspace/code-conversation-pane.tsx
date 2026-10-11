@@ -54,6 +54,8 @@ type CodeConversationPaneProps = {
   // variant='sidebar': 嵌入窄容器 (简易模式右侧文件栏). 宽度记忆与 page 模式分开,
   // 编辑器列改 flex-1 占满剩余宽度 (拖拽由外层侧栏承担), 文件树范围收窄一档.
   variant?: 'page' | 'sidebar'
+  // Optional durable request supplied by the chat shell while this lazy pane mounts.
+  openFileRequest?: OpenFileRequest
 }
 
 type FileSource = 'hub' | 'local' | 'remote'
@@ -184,7 +186,7 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page' }: CodeConversationPaneProps) {
+export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', openFileRequest }: CodeConversationPaneProps) {
   const compact = variant === 'sidebar'
   const desktop = getDesktopBridge()
   const isDesktop = !!desktop?.isDesktop
@@ -539,6 +541,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     window.addEventListener('mobius:open-file-in-sidebar', onOpen)
     return () => window.removeEventListener('mobius:open-file-in-sidebar', onOpen)
   }, [projectId, sessionId])
+
+  // The chat shell keeps this request in state so lazy mounting cannot lose it.
+  useEffect(() => {
+    if (openFileRequest) setOpenRequest(openFileRequest)
+  }, [openFileRequest])
 
   useEffect(() => {
     if (!openRequest || openRequest.projectId !== projectId || (openRequest.sessionId && openRequest.sessionId !== sessionId)) return
@@ -1408,9 +1415,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 ) : tab.fileData ? (
                   /\.html?$/i.test(tab.entry.name) && tab.htmlPreview ? (
                     <iframe
+                      key={`${tab.key}:${tab.doc}`}
                       title={`HTML 预览: ${tab.entry.name}`}
-                      sandbox=""
+                      sandbox="allow-scripts"
                       srcDoc={tab.doc}
+                      referrerPolicy="no-referrer"
                       className="h-full w-full border-0 bg-white"
                     />
                   ) : tabMd && tab.mdPreview ? (
