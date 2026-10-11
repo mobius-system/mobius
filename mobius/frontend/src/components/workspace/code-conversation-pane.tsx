@@ -558,11 +558,13 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     }
     if (anyDirty && needsSourceChange) clearEditorState()
     if (nextSource !== source) {
+      setRootLoaded(false)
       setSourceState(nextSource)
       try { localStorage.setItem(fileSourceStorageKey(projectId), nextSource) } catch { /* 静默 */ }
       return
     }
     if (nextSource === 'remote' && targetRemote !== remoteName) {
+      setRootLoaded(false)
       setRemoteName(targetRemote)
       try { localStorage.setItem(remoteMachineStorageKey(projectId), targetRemote) } catch { /* 静默 */ }
       return
@@ -570,6 +572,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     if (nextSource === 'remote') {
       const root = openRequest.root || ''
       if (root !== remoteRoot) {
+        setRootLoaded(false)
         setRemoteRoot(root)
         try {
           if (root) localStorage.setItem(remoteRootStorageKey(projectId, targetRemote), root)
@@ -578,6 +581,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         return
       }
     }
+    // 文件树初始化会清空编辑状态；等根目录就绪后再开文件，避免懒加载侧栏把目标 Tab 擦掉
+    // Tree initialization clears editor state, so wait for its root before opening the requested tab
+    if (!rootLoaded) return
     setOpenRequest(null)
     const path = openRequest.path
     if (nextSource === 'remote' && (openRequest.path.startsWith('/') || openRequest.path.split(/[\\/]/).some(part => part === '..'))) {
@@ -593,7 +599,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       ...(nextSource === 'remote' ? { rel_path: `/${path}` } : {}),
     }
     void onSelectFile(entry)
-  }, [openRequest, projectId, sessionId, anyDirty, source, remoteName, remoteRoot, bindPath, onSelectFile, clearEditorState])
+  }, [openRequest, projectId, sessionId, anyDirty, source, remoteName, remoteRoot, rootLoaded, bindPath, onSelectFile, clearEditorState])
 
   // 关闭 Tab: 有未保存修改先确认; 关闭的是当前 Tab 时激活右侧相邻 (无则左侧) Tab.
   const closeTab = useCallback((key: string) => {
