@@ -82,6 +82,7 @@ import {
 import { pollRecursive } from '../services/polling'
 import { startSceneTour } from '../services/tour'
 import { InlineWebTerminal } from './web-terminal-modal'
+import { PrimaryActionButton } from './primary-action-button'
 import { ToggleSwitch } from './toggle-switch'
 import { SkillMarketLink } from './skill-market-link'
 
@@ -343,6 +344,42 @@ function parseBulkEmployees(text: string) {
     })
 }
 
+// 单个添加向导的三步: 每步只问一类信息, 配一句说明
+// The single-add wizard: three steps, each asking about exactly one thing
+const ADMIN_USER_WIZARD_STEPS = [
+  { key: 'identity', label: '基本资料', lead: '员工 ID 既是登录名，也决定默认工作目录。' },
+  { key: 'secret', label: '登录密码', lead: '给员工一个初始密码，员工首次登录后应自行修改。' },
+  { key: 'access', label: '角色与目录', lead: '角色决定权限范围，工作目录决定文件落在哪里。' },
+] as const
+
+// 下面四个校验镜像后端 normalizeEmployee* 的规则, 让错误就地出现而不必等接口回错
+// These validators mirror the backend normalizeEmployee* rules so mistakes surface in place
+function validateEmployeeId(value: string): string {
+  const id = value.trim()
+  if (!id) return '请填写员工 ID'
+  if (id.length > 64) return '员工 ID 最多 64 个字符'
+  if (id === '.' || id === '..') return '员工 ID 不能是 . 或 ..'
+  if (!/^[A-Za-z0-9._@-]+$/.test(id)) return '员工 ID 只能包含字母、数字、点、下划线、横线和 @'
+  return ''
+}
+
+function validateEmployeeDisplayName(value: string): string {
+  return value.trim().length > 80 ? '显示名称最多 80 个字符' : ''
+}
+
+function validateEmployeePassword(value: string): string {
+  if (!value) return '请填写初始密码'
+  return value.length < 6 ? '密码至少 6 位' : ''
+}
+
+function validateEmployeeWorkDir(value: string): string {
+  const dir = value.trim()
+  if (!dir) return ''
+  if (dir.length > 500) return '工作目录最多 500 个字符'
+  if (!dir.startsWith('/')) return '工作目录必须是绝对路径（以 / 开头）'
+  return ''
+}
+
 function AdminUsersPanel() {
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -350,6 +387,9 @@ function AdminUsersPanel() {
   const [notice, setNotice] = useState('')
   const [form, setForm] = useState<EmployeeFormState>({ id: '', display_name: '', password: '', role: 'user', work_dir: '' })
   const [bulkText, setBulkText] = useState('')
+  const [wizardStep, setWizardStep] = useState(0)
+  const [wizardError, setWizardError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -420,7 +460,42 @@ function AdminUsersPanel() {
     color: 'var(--text-primary)',
   }
 
+  const fieldClass = 'h-9 w-full min-w-0 rounded-md border px-2.5 text-[length:var(--fs-md)] outline-none transition-colors focus:border-blue-500/50'
+  const labelClass = 'mb-1 block text-[length:var(--fs-sm)]'
+  // "清空" 仅在表单有内容时可点, 避免空表单下的无效操作
+  // The clear button is only enabled when the form actually holds something
+  const formDirty = Boolean(form.id || form.display_name || form.password || form.work_dir) || form.role !== 'user'
+
   const resetForm = () => setForm({ id: '', display_name: '', password: '', role: 'user', work_dir: '' })
+
+  // 当前步的校验结果; wizardError 只在点了"下一步/创建"后才亮出来, 不打断首次填写
+  // Current step's validation result; the error only shows after a next/create click
+  const stepError = [
+    validateEmployeeId(form.id) || validateEmployeeDisplayName(form.display_name),
+    validateEmployeePassword(form.password),
+    validateEmployeeWorkDir(form.work_dir),
+  ][wizardStep]
+
+  const resetWizard = () => { setWizardStep(0); setWizardError(''); setShowPassword(false) }
+
+  const gotoTab = (index: number) => {
+    // 只允许往回跳到已完成的步骤; 前进必须走"下一步"以便逐字段校验
+    // Only completed steps are clickable; moving forward must pass validation
+    if (index > wizardStep) return
+    setWizardStep(index)
+    setWizardError('')
+  }
+
+  const wizardNext = () => {
+    if (stepError) { setWizardError(stepError); return }
+    setWizardError('')
+    if (wizardStep < ADMIN_USER_WIZARD_STEPS.length - 1) setWizardStep(wizardStep + 1)
+    else void submitCreate()
+  }
+
+  // 批量框里能识别的行数 (跳过空行与 # 注释行), 提交前就告诉管理员会创建多少条
+  // Rows the bulk box can actually parse, so the admin knows the batch size before submitting
+  const bulkRowCount = useMemo(() => parseBulkEmployees(bulkText).length, [bulkText])
 
   const submitCreate = async () => {
     setError('')
@@ -432,6 +507,7 @@ function AdminUsersPanel() {
         body: JSON.stringify(form),
       })
       resetForm()
+      resetWizard()
       await refresh(true)
       const warning = data?.user?.warning ? ` · ${data.user.warning}` : ''
       setNotice(`${data?.user?.status === 'restored' ? '已恢复' : '已添加'}员工 ${data?.user?.id || form.id}${warning}`)
@@ -645,80 +721,238 @@ function AdminUsersPanel() {
           </div>
         </div>
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.1fr)]">
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <input
-                value={form.id}
-                onChange={(e) => { setForm((f) => ({ ...f, id: e.target.value })); setError(''); setNotice('') }}
-                placeholder="员工 ID"
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              />
-              <input
-                value={form.display_name}
-                onChange={(e) => { setForm((f) => ({ ...f, display_name: e.target.value })); setError(''); setNotice('') }}
-                placeholder="显示名称"
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              />
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => { setForm((f) => ({ ...f, password: e.target.value })); setError(''); setNotice('') }}
-                placeholder="初始密码，至少 6 位"
-                onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) submitCreate() }}
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              />
-              <select
-                value={form.role}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setForm((f) => ({ ...f, role: v === 'admin' ? 'admin' : 'user' }))
-                }}
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              >
-                <option value="user">普通用户</option>
-                <option value="admin">管理员</option>
-              </select>
-              <input
-                value={form.work_dir}
-                onChange={(e) => { setForm((f) => ({ ...f, work_dir: e.target.value })); setError(''); setNotice('') }}
-                placeholder="工作目录（选填，默认 /home/员工ID/cc-workspace）"
-                className="h-9 rounded-md border px-3 text-[length:var(--fs-md)] outline-none focus:border-blue-500/50"
-                style={fieldStyle}
-              />
+        <div className="grid items-stretch gap-3 xl:grid-cols-2">
+          {/* 输入区落在卡片面上 (bg-tertiary), 字段用 input-bg 浮在其上, 双层背景都有对比 */}
+          {/* The forms sit on a card surface (bg-tertiary) so the input-bg fields stand out */}
+          <div className="flex flex-col rounded-lg border p-3" data-tour="admin-users-create" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+                <UserPlus className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>单个添加</div>
+                <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>跟着向导走，一次创建一个账号</div>
+              </div>
+              <span className="flex-shrink-0 tabular-nums text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
+                第 {wizardStep + 1} 步 / 共 {ADMIN_USER_WIZARD_STEPS.length} 步
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={submitCreate}
-              disabled={submitting}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-500 px-3 text-[length:var(--fs-md)] font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-            >
-              {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              添加员工
-            </button>
+
+            {/* 步骤条: 已完成的步骤可点回去改, 前进只能走"下一步"以便逐字段校验 */}
+            {/* Step rail: finished steps can be reopened, forward movement goes through Next */}
+            <div className="mb-3 flex items-center gap-1">
+              {ADMIN_USER_WIZARD_STEPS.map((s, index) => {
+                const done = index < wizardStep
+                const active = index === wizardStep
+                return (
+                  <Fragment key={s.key}>
+                    {index > 0 && <span className="h-px flex-1" style={{ background: done || active ? 'var(--accent-primary)' : 'var(--border-color-strong)' }} />}
+                    <button
+                      type="button"
+                      onClick={() => gotoTab(index)}
+                      disabled={index > wizardStep}
+                      className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[length:var(--fs-sm)] transition-colors disabled:cursor-default"
+                      style={{
+                        background: active ? 'var(--bg-active)' : 'transparent',
+                        color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                      }}
+                    >
+                      <span
+                        className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border text-[length:var(--fs-2xs)]"
+                        style={{
+                          borderColor: done ? 'rgba(16,185,129,0.5)' : active ? 'var(--accent-primary)' : 'var(--border-color-strong)',
+                          background: done ? 'rgba(16,185,129,0.15)' : 'transparent',
+                          color: done ? '#34d399' : undefined,
+                        }}
+                      >
+                        {done ? <Check className="h-2.5 w-2.5" /> : index + 1}
+                      </span>
+                      {s.label}
+                    </button>
+                  </Fragment>
+                )
+              })}
+            </div>
+
+            {/* 步骤体固定最小高度, 三步之间切换不跳高 */}
+            {/* Fixed min-height keeps the card from jumping between steps */}
+            <div className="flex flex-1 flex-col gap-2.5 xl:min-h-[176px]">
+              <p className="text-[length:var(--fs-sm)] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                {ADMIN_USER_WIZARD_STEPS[wizardStep].lead}
+              </p>
+
+              {wizardStep === 0 && (
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <label className="block min-w-0">
+                    <span className={labelClass} style={{ color: 'var(--text-secondary)' }}>员工 ID</span>
+                    <input
+                      value={form.id}
+                      autoFocus
+                      onChange={(e) => { setForm((f) => ({ ...f, id: e.target.value })); setError(''); setNotice(''); setWizardError('') }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) wizardNext() }}
+                      placeholder="如 zhangsan"
+                      className={fieldClass}
+                      style={fieldStyle}
+                    />
+                  </label>
+                  <label className="block min-w-0">
+                    <span className={labelClass} style={{ color: 'var(--text-secondary)' }}>显示名称</span>
+                    <input
+                      value={form.display_name}
+                      onChange={(e) => { setForm((f) => ({ ...f, display_name: e.target.value })); setError(''); setNotice(''); setWizardError('') }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) wizardNext() }}
+                      placeholder="如 张三，留空则同员工 ID"
+                      className={fieldClass}
+                      style={fieldStyle}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {wizardStep === 1 && (
+                <label className="block min-w-0">
+                  <span className={labelClass} style={{ color: 'var(--text-secondary)' }}>初始密码</span>
+                  <span className="relative block">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      autoFocus
+                      onChange={(e) => { setForm((f) => ({ ...f, password: e.target.value })); setError(''); setNotice(''); setWizardError('') }}
+                      placeholder="至少 6 位"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) wizardNext() }}
+                      className={`${fieldClass} pr-9`}
+                      style={fieldStyle}
+                    />
+                    {/* 明文/密文切换: 管理员要口头或书面对员工转交密码, 需要能核对 */}
+                    {/* Reveal toggle: the admin hands this password to the employee and must read it back */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      title={showPassword ? '隐藏密码' : '显示密码'}
+                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                      className="absolute inset-y-0 right-0 inline-flex w-8 items-center justify-center rounded-r-md transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </span>
+                  <span className="mt-1 block text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
+                    密码由管理员设定并转交给员工；员工登录后可在个人设置里修改。
+                  </span>
+                </label>
+              )}
+
+              {wizardStep === 2 && (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {([
+                      { value: 'user', title: '普通用户', desc: '只能看到自己的项目、会话与数据' },
+                      { value: 'admin', title: '管理员', desc: '可进入管理中心，管理员工、模型与全站配置' },
+                    ] as const).map((option) => {
+                      const active = form.role === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, role: option.value }))}
+                          className="rounded-md border p-2 text-left transition-colors"
+                          style={{
+                            borderColor: active ? 'var(--accent-primary)' : 'var(--input-border)',
+                            background: active ? 'var(--bg-active)' : 'var(--input-bg)',
+                          }}
+                        >
+                          <span className="flex items-center gap-1.5 text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {active && <Check className="h-3 w-3 text-sky-400" />}
+                            {option.title}
+                          </span>
+                          <span className="mt-0.5 block text-[length:var(--fs-xs)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                            {option.desc}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <label className="block min-w-0">
+                    <span className={labelClass} style={{ color: 'var(--text-secondary)' }}>工作目录（选填）</span>
+                    <input
+                      value={form.work_dir}
+                      onChange={(e) => { setForm((f) => ({ ...f, work_dir: e.target.value })); setError(''); setNotice(''); setWizardError('') }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) wizardNext() }}
+                      placeholder={`默认 /home/${form.id.trim() || '员工ID'}/cc-workspace`}
+                      className={`${fieldClass} font-mono`}
+                      style={fieldStyle}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {wizardError && (
+              <div className="mt-2 flex items-start gap-1.5 text-[length:var(--fs-sm)] text-red-400">
+                <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                <span>{wizardError}</span>
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center gap-2 border-t border-[var(--border-color)] pt-3">
+              <button
+                type="button"
+                onClick={() => gotoTab(wizardStep - 1)}
+                disabled={wizardStep === 0}
+                className="inline-flex h-7 items-center rounded-md border px-2.5 text-[length:var(--fs-md)] transition-colors enabled:hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                style={{ borderColor: 'var(--border-color-strong)', color: 'var(--text-secondary)' }}
+              >
+                上一步
+              </button>
+              <button
+                type="button"
+                onClick={() => { resetForm(); resetWizard() }}
+                disabled={!formDirty || submitting}
+                className="inline-flex h-7 items-center rounded-md px-2.5 text-[length:var(--fs-md)] transition-colors enabled:hover:bg-[var(--bg-hover)] enabled:hover:text-[var(--text-primary)] disabled:opacity-40"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                清空
+              </button>
+              <span className="flex-1" />
+              <PrimaryActionButton
+                type="button"
+                onClick={wizardNext}
+                disabled={submitting}
+                icon={submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : wizardStep === ADMIN_USER_WIZARD_STEPS.length - 1 ? <Check className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
+              >
+                {submitting ? '创建中…' : wizardStep === ADMIN_USER_WIZARD_STEPS.length - 1 ? '创建员工' : '下一步'}
+              </PrimaryActionButton>
+            </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col rounded-lg border p-3" data-tour="admin-users-bulk" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)' }}>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-sky-500/25 bg-sky-500/10 text-sky-400">
+                <Upload className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>批量导入</div>
+                <div className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>每行一个员工，一次性创建多个账号</div>
+              </div>
+            </div>
             <textarea
               value={bulkText}
               onChange={(e) => { setBulkText(e.target.value); setError(''); setNotice('') }}
-              placeholder={'每行一个员工: ID,密码,角色,显示名称,工作目录\nzhangsan,pass123,user,张三,/home/zhangsan/cc-workspace'}
-              className="min-h-28 w-full resize-y rounded-md border px-3 py-2 font-mono text-[length:var(--fs-md)] leading-relaxed outline-none focus:border-blue-500/50"
+              placeholder={'ID,密码,角色,显示名称,工作目录\nzhangsan,pass123,user,张三,/home/zhangsan/cc-workspace'}
+              className="min-h-32 w-full flex-1 resize-y rounded-md border px-2.5 py-2 font-mono text-[length:var(--fs-md)] leading-relaxed outline-none transition-colors focus:border-blue-500/50"
               style={fieldStyle}
             />
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                支持逗号或空白分隔；角色仅支持 admin 或 user。
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border-color)] pt-3">
+              <span className="text-[length:var(--fs-xs)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                列顺序 ID / 密码 / 角色 / 显示名称 / 工作目录，逗号或空白分隔；角色仅支持 admin 或 user。
+                {bulkRowCount > 0 && <span className="ml-1.5 text-sky-400">已识别 {bulkRowCount} 行</span>}
               </span>
               <button
                 type="button"
                 onClick={submitBulk}
-                disabled={bulkSubmitting}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[length:var(--fs-md)] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                disabled={bulkSubmitting || !bulkText.trim()}
+                className="inline-flex h-7 flex-shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-color-strong)] px-3 text-[length:var(--fs-md)] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                style={{ color: 'var(--text-primary)' }}
               >
                 {bulkSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                 批量增加
@@ -7945,6 +8179,7 @@ function AdminProjectPermissionsPanel() {
   const [projects, setProjects] = useState<AdminPermissionProject[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [members, setMembers] = useState<AdminPermissionMember[]>([])
+  const [membersLoaded, setMembersLoaded] = useState(false)
   const [candidates, setCandidates] = useState<Array<{ id: string; display_name: string; already_member?: boolean }>>([])
   const [candidateId, setCandidateId] = useState('')
   const [role, setRole] = useState<'developer' | 'viewer' | 'none'>('viewer')
@@ -7954,7 +8189,17 @@ function AdminProjectPermissionsPanel() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  // 当前登录用户: 决定头部是否给出"把自己加入该项目"的入口
+  // Current login user: decides whether the header offers the "add myself" shortcut
+  const currentUser = useStore((s) => s.user)
+
   const selectedProject = projects.find((p) => p.id === selectedId) || null
+  // 自己在项目中的角色; 角色 none 表示"不显示", 等同于不在项目内
+  // Own role in the project; a 'none' role means hidden, i.e. treated as outside
+  const selfRole = currentUser ? members.find((m) => m.user_id === currentUser.id)?.role || null : null
+  // 已在项目内: 创建者即为负责人, 成员列表里可能没有 owner 行
+  // Already inside: the creator is the owner and may have no row in the member list
+  const selfInProject = Boolean(currentUser && (selectedProject?.created_by === currentUser.id || (selfRole && selfRole !== 'none')))
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return projects
@@ -7977,10 +8222,14 @@ function AdminProjectPermissionsPanel() {
   }
 
   const loadMembers = async (projectId: string) => {
-    if (!projectId) { setMembers([]); return }
+    if (!projectId) { setMembers([]); setMembersLoaded(false); return }
+    // 重新加载期间先收起入口, 避免成员列表未就绪时误判"自己不在项目内"
+    // Hide the shortcut while reloading so a not-yet-loaded list cannot misjudge membership
+    setMembersLoaded(false)
     try {
       const data = await api(`/api/projects/${encodeURIComponent(projectId)}/members`)
       setMembers(Array.isArray(data?.members) ? data.members : [])
+      setMembersLoaded(true)
       setError('')
     } catch (e: any) {
       setMembers([])
@@ -8015,6 +8264,27 @@ function AdminProjectPermissionsPanel() {
       setCandidates([])
     } catch (e: any) {
       setError(e?.message || '添加项目成员失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 一键把当前登录用户以项目开发者身份加入当前项目
+  // Add the current login user to the selected project as a developer in one click
+  const joinSelf = async () => {
+    if (!selectedId || !currentUser) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      // ✨ 核心代码行: 复用成员接口把"自己"作为 developer 加进去
+      // ✨ Core line: reuse the member API to add "myself" as a developer
+      await api(`/api/projects/${encodeURIComponent(selectedId)}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ user_ids: [currentUser.id], role: 'developer' }),
+      })
+      await loadMembers(selectedId)
+      setNotice('已把自己加入该项目（项目开发者）')
+    } catch (e: any) {
+      setError(e?.message || '加入项目失败')
     } finally {
       setBusy(false)
     }

@@ -316,8 +316,12 @@ const Projects = {
   listExtensions: (): Array<ProjectRow | null | undefined> => (db.prepare(
     "SELECT *, 0 AS starred FROM projects WHERE kind = 'extension'"
   ).all() as ProjectRawRowWithExtras[]).map(hydrate),
+  // 拓展项目落库: 由 registry 扫描文件系统调用, 不经过 insert 事务,
+  // 因此这里必须自己补创建者 owner 关系, 否则团队面板一直显示"暂无项目成员".
+  // Extension rows bypass the insert transaction, so the owner membership is ensured here.
   upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName }: UpsertExtensionArgs): string => {
     const existing = db.prepare('SELECT id FROM projects WHERE extension_name = ?').get(extensionName) as { id: string } | undefined;
+    const projectId = existing ? existing.id : id;
     if (existing) {
       // 已存在: 把可能漂移的字段同步回锁定值 (name/description 来自 manifest), 并清 disabled.
       db.prepare(`
@@ -327,16 +331,19 @@ const Projects = {
           kind = 'extension', disabled = 0
         WHERE id = ?
       `).run(name, description || '', bindPath, existing.id);
-      return existing.id;
+    } else {
+      db.prepare(`
+        INSERT INTO projects (
+          id, name, description, created_by, bind_path, bind_path_manual,
+          git_repos, default_use_worktree, research_enabled,
+          kind, extension_name, disabled
+        ) VALUES (?, ?, ?, ?, ?, 1, '[]', 0, 0, 'extension', ?, 0)
+      `).run(id, name, description || '', createdBy, bindPath, extensionName);
     }
-    db.prepare(`
-      INSERT INTO projects (
-        id, name, description, created_by, bind_path, bind_path_manual,
-        git_repos, default_use_worktree, research_enabled,
-        kind, extension_name, disabled
-      ) VALUES (?, ?, ?, ?, ?, 1, '[]', 0, 0, 'extension', ?, 0)
-    `).run(id, name, description || '', createdBy, bindPath, extensionName);
-    return id;
+    // 幂等补 owner 行, 对齐 db.ts 启动回填的结果 (created_by='system' → 系统(拓展))
+    // Idempotent owner row, matching what the db.ts boot backfill would produce
+    ProjectMemberships.ensureOwner(projectId, createdBy, createdBy);
+    return projectId;
   },
   setExtensionDisabled: (extName: string, disabled: boolean) => db.prepare(
     "UPDATE projects SET disabled = ? WHERE kind = 'extension' AND extension_name = ?"

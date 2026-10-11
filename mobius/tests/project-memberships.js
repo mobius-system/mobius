@@ -57,11 +57,11 @@ Projects.insert({ id: 'p1', name: '项目一', createdBy: 'owner' })
 expectEqual('creator becomes owner', ProjectMemberships.roleFor('p1', 'owner'), 'owner')
 expectEqual('non-member has no role', ProjectMemberships.roleFor('p1', 'alice'), null)
 
-// 创建时带首批成员 (member 角色), 自动排除创建者本人, 去重.
+// 创建时带首批成员 (developer 角色), 自动排除创建者本人, 去重.
 Projects.insert({ id: 'p2', name: '项目二', createdBy: 'owner', memberUserIds: ['alice', 'bob', 'owner', 'alice'] })
 expectEqual('p2 creator is owner', ProjectMemberships.roleFor('p2', 'owner'), 'owner')
-expectEqual('p2 alice is member', ProjectMemberships.roleFor('p2', 'alice'), 'member')
-expectEqual('p2 bob is member', ProjectMemberships.roleFor('p2', 'bob'), 'member')
+expectEqual('p2 alice is developer', ProjectMemberships.roleFor('p2', 'alice'), 'developer')
+expectEqual('p2 bob is developer', ProjectMemberships.roleFor('p2', 'bob'), 'developer')
 expectEqual('p2 has 3 members', ProjectMemberships.list('p2').length, 3)
 
 // 非法成员 → 整个创建事务回滚, 不留半成品项目.
@@ -70,35 +70,45 @@ expectThrows('invalid initial member rolls back creation', () => {
 }, '不存在或已停用')
 assert(!Projects.findById('p3'), 'p3 must not exist after rollback')
 
-// canManage: owner/manager/admin 放行, 普通成员/外人拒绝.
+// canManage: owner/admin 放行, 普通成员/外人拒绝.
 expectEqual('owner can manage', ProjectMemberships.canManage('p2', { id: 'owner' }), true)
-expectEqual('member cannot manage', ProjectMemberships.canManage('p2', { id: 'alice' }), false)
+expectEqual('developer cannot manage', ProjectMemberships.canManage('p2', { id: 'alice' }), false)
 expectEqual('outsider cannot manage', ProjectMemberships.canManage('p2', { id: 'stranger' }), false)
 expectEqual('admin can manage', ProjectMemberships.canManage('p2', { id: 'admin', role: 'admin' }), true)
 
 // addMany 幂等 + 非法拒绝.
-ProjectMemberships.addMany({ projectId: 'p1', userIds: ['alice'], role: 'member', actorId: 'owner' })
-expectEqual('addMany adds member', ProjectMemberships.roleFor('p1', 'alice'), 'member')
-ProjectMemberships.addMany({ projectId: 'p1', userIds: ['alice'], role: 'member', actorId: 'owner' })
+ProjectMemberships.addMany({ projectId: 'p1', userIds: ['alice'], role: 'developer', actorId: 'owner' })
+expectEqual('addMany adds developer', ProjectMemberships.roleFor('p1', 'alice'), 'developer')
+ProjectMemberships.addMany({ projectId: 'p1', userIds: ['alice'], role: 'developer', actorId: 'owner' })
 expectEqual('addMany idempotent', ProjectMemberships.list('p1').length, 2)
 expectThrows('addMany rejects invalid user', () => ProjectMemberships.addMany({ projectId: 'p1', userIds: ['ghost'] }), '不存在或已停用')
 
-// updateRole 升级.
-ProjectMemberships.updateRole({ projectId: 'p1', userId: 'alice', role: 'manager', actorId: 'owner' })
-expectEqual('promote alice to manager', ProjectMemberships.roleFor('p1', 'alice'), 'manager')
-expectEqual('manager can manage', ProjectMemberships.canManage('p1', { id: 'alice' }), true)
+// updateRole 改角色 (owner 只认 projects.created_by, 非创建者升 owner 仍按 viewer 读).
+ProjectMemberships.updateRole({ projectId: 'p1', userId: 'alice', role: 'viewer', actorId: 'owner' })
+expectEqual('demote alice to viewer', ProjectMemberships.roleFor('p1', 'alice'), 'viewer')
+expectEqual('viewer cannot manage', ProjectMemberships.canManage('p1', { id: 'alice' }), false)
 
 // last-owner 保护: 唯一 owner 不能被移除/降级.
-expectThrows('cannot remove last owner', () => ProjectMemberships.remove({ projectId: 'p1', userId: 'owner' }), '至少保留')
-expectThrows('cannot demote last owner', () => ProjectMemberships.updateRole({ projectId: 'p1', userId: 'owner', role: 'manager' }), '至少保留')
+expectThrows('cannot remove last owner', () => ProjectMemberships.remove({ projectId: 'p2', userId: 'owner' }), '至少保留')
+expectThrows('cannot demote last owner', () => ProjectMemberships.updateRole({ projectId: 'p2', userId: 'owner', role: 'viewer' }), '至少保留')
 
 // 普通成员可正常移除.
 ProjectMemberships.remove({ projectId: 'p1', userId: 'alice' })
 expectEqual('alice removed', ProjectMemberships.roleFor('p1', 'alice'), null)
 
+// 拓展项目由 registry 落库 (不走 insert 事务), 创建者 owner 行同样必须立刻写入,
+// 否则团队面板在下次重启的历史回填之前一直显示"暂无项目成员".
+insertUser('system', '系统(拓展)', 'admin')
+Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', createdBy: 'system', bindPath: tempRoot, extensionName: 'demo' })
+expectEqual('extension creator becomes owner', ProjectMemberships.roleFor('ext_demo', 'system'), 'owner')
+expectEqual('extension has 1 member', ProjectMemberships.list('ext_demo').length, 1)
+// 重复 upsert (重启扫描) 幂等, 不多写成员行.
+Projects.upsertExtension({ id: 'ext_demo', name: '演示拓展', description: '', createdBy: 'system', bindPath: tempRoot, extensionName: 'demo' })
+expectEqual('extension upsert idempotent', ProjectMemberships.list('ext_demo').length, 1)
+
 // counts.
 const c = ProjectMemberships.counts('p2')
 expectEqual('p2 owner count', c.owner, 1)
-expectEqual('p2 member count', c.member, 2)
+expectEqual('p2 developer count', c.developer, 2)
 
 console.log('project-memberships: ok')
