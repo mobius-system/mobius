@@ -80,15 +80,19 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   const deny: string[] = [];
   const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
   const roots = others.map((row) => resolveRealPath(row.work_dir));
-  // 主机自身有一条固定 deny: 部署目录 (APP_DIR, 源码 + .env) 对普通用户的 Agent 不可见.
-  // 它不属于任何账号, 所以不挂在 users 表上; 走的还是下面同一套拆分逻辑, 因此自迭代类项目
-  // (bind_path = APP_DIR) 里属于本人/自己项目的那部分仍被例外放行, 不会把会话锁死.
-  // A fixed host-level deny: an ordinary account's agent cannot see the deployment dir (APP_DIR,
-  // source plus .env). It belongs to no account, so it is not on the users table; it runs through
-  // the same split below, so a session whose own work dir lives inside APP_DIR keeps its exception.
-  if (APP_DIR && APP_DIR !== '/') {
-    const appRoot = resolveRealPath(String(APP_DIR));
-    if (!roots.includes(appRoot)) roots.push(appRoot);
+  // 主机自身的固定 deny: 部署目录对普通用户的 Agent 不可见 —— APP_DIR (本机部署, 源码 + .env)
+  // 与 /app_image (镜像内的部署路径, 本机不存在时自动跳过). 它们不属于任何账号, 所以不挂在
+  // users 表上; 走的还是下面同一套拆分逻辑, 因此自迭代类项目 (bind_path = APP_DIR) 里属于
+  // 本人/自己项目的那部分仍被例外放行, 不会把会话锁死.
+  // Fixed host-level denies: an ordinary account's agent cannot see the deployment dirs -- APP_DIR
+  // (this host: source plus .env) and /app_image (the image's deploy path, skipped when absent).
+  // They belong to no account, so they are not on the users table; they run through the same split
+  // below, so a session whose own work dir lives inside one of them keeps its exception.
+  for (const candidate of [APP_DIR, '/app_image']) {
+    if (!candidate || candidate === '/') continue;
+    const root = resolveRealPath(String(candidate));
+    if (!fs.existsSync(root) || roots.includes(root)) continue;
+    roots.push(root);
   }
   for (const root of roots) {
     // 例外正好等于这个根 (本人的工作目录就是它): 那是本人的地盘, 整块放行. 若照常拆分,
