@@ -91,9 +91,20 @@ P.S. 字母换行时，视频会瞬间黑一下，修复这个问题
 
 ## Record With Playwright
 
-Use the project Playwright skill if present. Scripts should live under `/tmp`,
+Use the project Playwright skill if present. Scripts should live under `$TMPDIR`,
 not inside the repo. Playwright's `recordVideo` produces WebM clips; keep these
 raw clips and later convert the final output to MP4.
+
+> **`$TMPDIR` 是每个会话专属的临时目录** (agent 启动时注入, 形如
+> `/tmp/mobius/mobius-<uid>/`, 不存在时会自动建)。**别写死 `/tmp`** —— 只有 `$TMPDIR`
+> 里面 (及其子目录) 的文件才能被 `display_images` / 前端图片卡片正常打开, 裸 `/tmp`
+> 下的产物会 403。写进脚本字符串 / 文件内容时按语言展开成真实路径:
+> JS `process.env.TMPDIR`, Python `os.environ['TMPDIR']`, 写 concat 列表时用 shell 展开。
+>
+> `$TMPDIR` is the per-session temp dir (injected at agent start, e.g.
+> `/tmp/mobius/mobius-<uid>/`, created on demand). **Never hardcode `/tmp`**: only
+> files under `$TMPDIR` can be shown through `display_images` or the front-end
+> image cards; artifacts left in bare `/tmp` are rejected.
 
 Prefer `headless: true` when no reliable display is available. Headful Chromium
 can hang on stale X11 sockets; headless recording is still a valid browser
@@ -104,7 +115,9 @@ Use a stable viewport:
 ```js
 const context = await browser.newContext({
   viewport: { width: 1440, height: 900 },
-  recordVideo: { dir: '/tmp/imac-demo-video/raw', size: { width: 1440, height: 900 } },
+  // process.env.TMPDIR 是会话专属临时目录 (别写死 /tmp, 否则产物前端打不开)
+  // process.env.TMPDIR is the per-session temp dir (do not hardcode /tmp)
+  recordVideo: { dir: `${process.env.TMPDIR}/imac-demo-video/raw`, size: { width: 1440, height: 900 } },
 });
 await context.addInitScript((value) => {
   localStorage.setItem('cc-token', value);
@@ -117,7 +130,7 @@ Save each clip explicitly:
 ```js
 const video = page.video();
 await context.close();
-await video.saveAs('/tmp/imac-demo-video/part1-before.webm');
+await video.saveAs(`${process.env.TMPDIR}/imac-demo-video/part1-before.webm`);
 await browser.close();
 ```
 
@@ -246,10 +259,10 @@ black `color` video sources, internal fades, and normalized MP4 concatenation:
 
 ```bash
 python3 skills/mobius-self-evo-demo/scripts/render_demo_video.py \
-  --work-dir /tmp/imac-demo-video \
-  --part1 /tmp/imac-demo-video/part1-before.webm \
-  --part2 /tmp/imac-demo-video/part2-request.webm \
-  --part3 /tmp/imac-demo-video/part3-after.webm \
+  --work-dir $TMPDIR/imac-demo-video \
+  --part1 $TMPDIR/imac-demo-video/part1-before.webm \
+  --part2 $TMPDIR/imac-demo-video/part2-request.webm \
+  --part3 $TMPDIR/imac-demo-video/part3-after.webm \
   --intro "让我们来尝试给版本追踪 tab 添加 Git 操作菜单，|支持拉取、推送和暂存。|首先我们看一下自我迭代之前的样子。" \
   --trim-start 2 \
   --output .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4
@@ -264,35 +277,35 @@ The renderer creates:
 
 Only fall back to manual concatenation when the renderer is unavailable.
 
-Create a concat list:
+Create a concat list. ffmpeg 的 concat 列表**不做变量展开**, 必须写进去真实绝对路径
+(用 shell 展开后重定向, 别把 `$TMPDIR` 字面量留在文件里):
 
-```text
-file '/tmp/imac-demo-video/part1-before.webm'
-file '/tmp/imac-demo-video/part2-request.webm'
-file '/tmp/imac-demo-video/part3-after.webm'
+```bash
+V="$TMPDIR/imac-demo-video"
+for part in part1-before part2-request part3-after; do echo "file '$V/$part.webm'"; done > "$V/concat.txt"
 ```
 
 Concatenate to a combined WebM:
 
 ```bash
 ffmpeg -y -f concat -safe 0 \
-  -i /tmp/imac-demo-video/concat.txt \
-  -c copy /tmp/imac-demo-video/self-evolution-demo.webm
+  -i $TMPDIR/imac-demo-video/concat.txt \
+  -c copy $TMPDIR/imac-demo-video/self-evolution-demo.webm
 ```
 
 Convert the final video to MP4:
 
 ```bash
-ffmpeg -y -i /tmp/imac-demo-video/self-evolution-demo.webm \
+ffmpeg -y -i $TMPDIR/imac-demo-video/self-evolution-demo.webm \
   -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
-  /tmp/imac-demo-video/self-evolution-demo.mp4
+  $TMPDIR/imac-demo-video/self-evolution-demo.mp4
 ```
 
 Copy the MP4 into a persistent project artifact directory:
 
 ```bash
 mkdir -p .imac/generated_videos/<session-or-flag-id>
-cp /tmp/imac-demo-video/self-evolution-demo.mp4 \
+cp $TMPDIR/imac-demo-video/self-evolution-demo.mp4 \
   .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4
 ```
 
@@ -304,9 +317,9 @@ transcode directly:
 
 ```bash
 ffmpeg -y -f concat -safe 0 \
-  -i /tmp/imac-demo-video/concat.txt \
+  -i $TMPDIR/imac-demo-video/concat.txt \
   -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
-  /tmp/imac-demo-video/self-evolution-demo.mp4
+  $TMPDIR/imac-demo-video/self-evolution-demo.mp4
 ```
 
 ## Verify Video
@@ -314,15 +327,15 @@ ffmpeg -y -f concat -safe 0 \
 `ffprobe` may not be installed. Use `ffmpeg` for decode validation:
 
 ```bash
-ffmpeg -i /tmp/imac-demo-video/self-evolution-demo.mp4 -f null -
+ffmpeg -i $TMPDIR/imac-demo-video/self-evolution-demo.mp4 -f null -
 ```
 
 Extract and inspect a final frame:
 
 ```bash
 ffmpeg -y -sseof -2 \
-  -i /tmp/imac-demo-video/self-evolution-demo.mp4 \
-  -update 1 -vframes 1 /tmp/imac-demo-video/final-last-frame.png
+  -i $TMPDIR/imac-demo-video/self-evolution-demo.mp4 \
+  -update 1 -vframes 1 $TMPDIR/imac-demo-video/final-last-frame.png
 ```
 
 Use `view_image` or `display_images` to confirm the final frame shows the
@@ -335,17 +348,17 @@ when the renderer switches to the next typed line:
 ```bash
 ffmpeg -y -ss 3.4 \
   -i .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4 \
-  -update 1 -vframes 1 /tmp/imac-demo-video/intro-linebreak-check.png
+  -update 1 -vframes 1 $TMPDIR/imac-demo-video/intro-linebreak-check.png
 
 ffmpeg -y -ss 5.1 \
   -i .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4 \
-  -update 1 -vframes 1 /tmp/imac-demo-video/intro-final-check.png
+  -update 1 -vframes 1 $TMPDIR/imac-demo-video/intro-final-check.png
 ```
 
 Inspect generated ASS files when a title card flashes:
 
 ```bash
-sed -n '1,140p' /tmp/imac-demo-video/intro.ass
+sed -n '1,140p' $TMPDIR/imac-demo-video/intro.ass
 ```
 
 The `End` time of one visible state should match the `Start` time of the next
@@ -356,6 +369,7 @@ Use this check to catch subtitle gaps automatically:
 
 ```bash
 python3 - <<'PY'
+import os
 from pathlib import Path
 
 def seconds(ts):
@@ -365,7 +379,7 @@ def seconds(ts):
 
 for name in ('intro.ass', 'transition1.ass', 'transition2.ass'):
     events = []
-    for line in (Path('/tmp/imac-demo-video') / name).read_text(encoding='utf-8').splitlines():
+    for line in (Path(os.environ['TMPDIR'], 'imac-demo-video') / name).read_text(encoding='utf-8').splitlines():
         if line.startswith('Dialogue:'):
             parts = line.split(',', 9)
             events.append((seconds(parts[1]), seconds(parts[2])))

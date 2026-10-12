@@ -153,7 +153,7 @@ Verified end-to-end on 2026-06-10 in an imac-test session that had no MCP auto-l
 ```bash
 MINIMAX_API_KEY="sk-cp-..." \
 MINIMAX_API_HOST="https://api.minimaxi.com" \
-MINIMAX_MCP_BASE_PATH="/tmp/mcp-out" \
+MINIMAX_MCP_BASE_PATH="$TMPDIR/mcp-out" \
 MINIMAX_API_RESOURCE_MODE="url" \
 uvx --from minimax-coding-plan-mcp minimax-coding-plan-mcp -y
 ```
@@ -202,7 +202,7 @@ After this, **new** sessions get `mcp__MiniMax__web_search` and `mcp__MiniMax__u
 - **Env var not picked up** — servers usually read env only at startup. Set them *before* spawning. Mutating `os.environ` after `Popen` is too late.
 - **`uvx` not found** — install with the one-liner above; it lands in `~/.local/bin/uvx`, which is not on every shell's default `PATH`. Prefix `export PATH="$HOME/.local/bin:$PATH"`.
 - **Server hangs after first call** — JSON-RPC needs newline-delimited frames. `text=True, bufsize=1` and a `"\n"` after every `json.dumps(req)` are mandatory.
-- **Output files cluttering the repo** — `MINIMAX_MCP_BASE_PATH` defaults to `./.trash` for the MiniMax MCP; point it at `/tmp/...` or your `.imac/scratch/` to keep the project clean.
+- **Output files cluttering the repo** — `MINIMAX_MCP_BASE_PATH` defaults to `./.trash` for the MiniMax MCP; point it at `$TMPDIR/...` (会话专属临时目录, 唯一可被前端展示的位置) or your `.imac/scratch/` to keep the project clean.
 - **Auth key leakage in logs** — many MCP servers log the env var name (not the value) on startup. Fine, but don't `set -x` the parent shell if the value is sensitive.
 
 ## Pattern: shell-only quick call
@@ -217,7 +217,7 @@ KEY="sk-cp-..."
   echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"web_search","arguments":{"query":"today news"}}}'
   sleep 20
 } | MINIMAX_API_KEY="$KEY" MINIMAX_API_HOST="https://api.minimaxi.com" \
-  MINIMAX_MCP_BASE_PATH="/tmp/mcp-out" \
+  MINIMAX_MCP_BASE_PATH="$TMPDIR/mcp-out" \
   uvx --from minimax-coding-plan-mcp minimax-coding-plan-mcp -y \
   2>/dev/null | head -1
 ```

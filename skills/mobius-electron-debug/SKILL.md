@@ -69,7 +69,7 @@ aimux send_files <remote> 'C:\tmp\new-asar' 'mobius/desktop/release/win-unpacked
 把 `swap-asar.ps1`（见 §3）推到真机并 detached 执行：
 
 ```bash
-aimux send_files <remote> 'C:\tmp\new-asar' '/tmp/swap-asar.ps1'
+aimux send_files <remote> 'C:\tmp\new-asar' '$TMPDIR/swap-asar.ps1'
 # detached 启动：Start-Process 起独立 powershell 进程，当前 session 命令立即返回
 aimux send-keys "<remote>/sw" -- 'Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-File","C:\tmp\new-asar\swap-asar.ps1"; echo LAUNCHED' Enter
 ```
@@ -169,14 +169,14 @@ aimux capture "<remote>/chk" --lines 5   # 看到 shot=xxxx 即成功
 
 ### 4.2 下载到本地
 ```bash
-aimux get_files <remote> /tmp/host-screen 'C:\tmp\new-asar\screen.png'
+aimux get_files <remote> $TMPDIR/host-screen 'C:\tmp\new-asar\screen.png'
 ```
 
 ### 4.3 裁剪 + 放大要看的区域
 全屏图（可能双屏 3840×1080）细节看不清。用 ffmpeg 裁目标区域放大：
 
 ```bash
-cd /tmp/host-screen
+cd $TMPDIR/host-screen
 # 裁右上角窗口按钮区（坐标按实际截图调整：crop=宽:高:x:y，原点左上）
 ffmpeg -y -loglevel error -i screen.png -filter "crop=380:130:3460:0,scale=1140:390" topright.png
 # 裁整个顶栏
@@ -268,7 +268,7 @@ python3 build.py --build-electron --targets win-x64 --skip-menu-sync
 
 # 3. 推 asar + 脚本到临时目录
 aimux send_files $REMOTE 'C:\tmp\new-asar' 'mobius/desktop/release/win-unpacked/resources/app.asar'
-aimux send_files $REMOTE 'C:\tmp\new-asar' '/tmp/swap-asar.ps1'
+aimux send_files $REMOTE 'C:\tmp\new-asar' '$TMPDIR/swap-asar.ps1'
 
 # 4. detached 原子替换 + 重启
 aimux new --remote $REMOTE --profile powershell --name sw --reuse
@@ -283,8 +283,8 @@ sleep 3 && aimux capture "$REMOTE/chk" --lines 6
 # 6. 截图 → 下载 → 裁剪 → 看
 aimux send-keys "$REMOTE/chk" -- 'powershell -ExecutionPolicy Bypass -File C:\tmp\new-asar\screenshot.ps1' Enter
 sleep 6
-aimux get_files $REMOTE /tmp/host-screen 'C:\tmp\new-asar\screen.png'
-cd /tmp/host-screen && ffmpeg -y -loglevel error -i screen.png -filter "crop=380:130:3460:0,scale=1140:390" topright.png
+aimux get_files $REMOTE $TMPDIR/host-screen 'C:\tmp\new-asar\screen.png'
+cd $TMPDIR/host-screen && ffmpeg -y -loglevel error -i screen.png -filter "crop=380:130:3460:0,scale=1140:390" topright.png
 # Read topright.png 看效果; 不满意回到步骤 1
 ```
 
