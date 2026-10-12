@@ -33,7 +33,7 @@ export type AimuxLauncher =
   | { kind: 'exe'; path: string }
   | { kind: 'module'; python: string }
 
-const AIMUX_TARGET_VERSION = '0.3.70'
+const AIMUX_TARGET_VERSION = '0.3.71'
 const AIMUX_PACKAGE = `aimux==${AIMUX_TARGET_VERSION}`
 const WIN = process.platform === 'win32'
 const venvDir = () => path.join(mobiusHome(), 'aimux-venv')
