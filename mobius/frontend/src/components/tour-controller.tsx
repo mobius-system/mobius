@@ -14,6 +14,9 @@ export function TourController() {
   useEffect(() => {
     const userId = user?.id || ''
     if (!userId) return
+    // 讲解内容覆盖的是全站管理面 (用户管理 / 运行监控 / 模型接入 …), 普通用户的管理中心只有
+    // Skill与Memory管理 + 其他设置, 目标元素都不存在, 自动启动只会白等 → 直接不触发.
+    if (user?.role !== 'admin') return
     let cancelled = false
     let timer: number | null = null
 

@@ -109,9 +109,10 @@ function readSkillFiles(sourceDir: string): { ok: true; files: { path: string; c
 }
 
 // ---- Inventory -----------------------------------------------------------
-// 列出当前管理员能用于导出的所有 Skill 与 Memory.
-// 用户级: 只列出请求者 (userId) 自己的; 项目级: 跨用户合并的全部.
+// 列出请求者能用于导出的所有 Skill 与 Memory.
+// 用户级: 只列出请求者 (userId) 自己的; 项目级: 管理员 = 全站项目, 普通用户 = 自己可读的项目.
 function buildInventory({ userId, user, projects }: { userId: string; user: any; projects: any[] }): any {
+  const isAdmin = !!user && user.role === 'admin';
   const projectMap = new Map((projects || []).map((p) => [p.id, p]));
   const inventory: any = {
     current_user_id: userId,
@@ -149,6 +150,8 @@ function buildInventory({ userId, user, projects }: { userId: string; user: any;
   inventory.others_user_scopes.sort((a: any, b: any) => a.owner_id.localeCompare(b.owner_id));
 
   for (const p of projects) {
+    // 普通用户只看自己可读的项目; 管理员这一页保持全站清单.
+    if (!isAdmin && !accessControl.canReadProject(user, p)) continue;
     inventory.project_scopes.push({
       project_id: p.id,
       project_name: p.name,
@@ -201,19 +204,26 @@ function shapeInventorySkill(sk: any, user: any, project?: any): any {
 
 // ---- Export --------------------------------------------------------------
 // 根据用户勾选的 memory_ids / skill_ids 生成 bundle, 返回 base64 字符串.
-function buildExportBundle({ userId, memoryIds, skillIds }: { userId: string; memoryIds?: string[]; skillIds?: string[] }): any {
+// 普通用户每个 id 都要过 canReadContextItem: id 由客户端提交, 不能只凭 findById 命中就读正文.
+// 管理员保持原有全站导出能力, 不做这道过滤.
+function buildExportBundle({ userId, user, memoryIds, skillIds }: { userId: string; user?: any; memoryIds?: string[]; skillIds?: string[] }): any {
   const memIds = Array.from(new Set((memoryIds || []).filter(Boolean)));
   const skIds = Array.from(new Set((skillIds || []).filter(Boolean)));
   if (memIds.length === 0 && skIds.length === 0) {
     return { ok: false, error: '请至少勾选一条 skill 或 memory' };
   }
 
+  const enforceReadAccess = !!user && user.role !== 'admin';
   const items: any[] = [];
   const skippedSources: any[] = [];
 
   for (const id of memIds) {
     const m = memoriesFs.findById(id);
     if (!m) { skippedSources.push({ id, kind: 'memory', reason: '不存在或不可访问' }); continue; }
+    if (enforceReadAccess && !accessControl.canReadContextItem(user, 'memory', m)) {
+      skippedSources.push({ id, kind: 'memory', reason: '不存在或不可访问' });
+      continue;
+    }
     items.push({
       kind: 'memory',
       name: m.name,
@@ -225,6 +235,10 @@ function buildExportBundle({ userId, memoryIds, skillIds }: { userId: string; me
   for (const id of skIds) {
     const sk = skillsFs.findById(id);
     if (!sk) { skippedSources.push({ id, kind: 'skill', reason: '不存在或不可访问' }); continue; }
+    if (enforceReadAccess && !accessControl.canReadContextItem(user, 'skill', sk)) {
+      skippedSources.push({ id, kind: 'skill', reason: '不存在或不可访问' });
+      continue;
+    }
     const dir = skillsFs.getSourceDir(id);
     if (!dir || !fs.existsSync(dir)) { skippedSources.push({ id, kind: 'skill', reason: '源目录不存在' }); continue; }
     const filesResult = readSkillFiles(dir);
@@ -368,12 +382,17 @@ function previewBundle(base64: any): any {
 
 // ---- Import --------------------------------------------------------------
 // target: { scope: 'user'|'project', project_id?: '...' }
-function importBundle({ requesterUserId, base64, target, selectedIndexes }: { requesterUserId: string; base64: any; target: { scope: string; project_id?: string | null }; selectedIndexes?: any[] | null }): any {
+// 目标项目级只在两种情况下允许: 管理员, 或对该项目有写权限 (owner/developer) 的成员.
+function importBundle({ requesterUserId, user, base64, target, selectedIndexes }: { requesterUserId: string; user?: any; base64: any; target: { scope: string; project_id?: string | null }; selectedIndexes?: any[] | null }): any {
   const decoded = decodeBundle(base64);
   if (!decoded.ok) return decoded;
   const scope = target && target.scope === 'project' ? 'project' : 'user';
   const projectId = scope === 'project' ? String(target.project_id || '').trim() : null;
   if (scope === 'project' && !projectId) return { ok: false, error: '导入到项目级时必须指定 project_id' };
+  if (scope === 'project' && user && user.role !== 'admin'
+      && !accessControl.canContributeProjectContext(user, projectId)) {
+    return { ok: false, error: '你对该项目没有写入权限' };
+  }
 
   let indexes: any[] = Array.isArray(selectedIndexes) ? selectedIndexes : null as any;
   if (indexes === null) indexes = decoded.items.map((it: any) => it.index); // 默认全选

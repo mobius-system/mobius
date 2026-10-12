@@ -1509,7 +1509,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <div className="absolute right-0 top-9 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
                 style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
                 onClick={e => e.stopPropagation()}>
-                {user?.role === 'admin' && (
+                {user && (
                   <button onClick={() => { setShowUserMenu(false); window.openAdminOverlay?.() }}
                     className="w-full px-3 py-1.5 text-left text-[length:var(--fs-md)] hover:bg-[var(--bg-hover)] flex items-center gap-2"
                     style={{ color: 'var(--text-primary)' }}>

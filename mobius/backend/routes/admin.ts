@@ -1741,8 +1741,11 @@ router.delete('/model-access/deepseek-harness/:key', adminAuth, (req: express.Re
 });
 
 // ── Skill 与 Memory 备份/迁移 ──────────────────────────────────────────────
-// 列出当前管理员可用于导出的 Skill / Memory 清单 (用户级 = 自己 + 他人只读; 项目级 = 全部项目).
-router.get('/skill-memory/inventory', adminAuth, (req: express.Request, res: express.Response) => {
+// 这一组是「自己的 Skill / Memory」入口, 普通用户也要能用 —— 所以挂 auth 而非 adminAuth,
+// 由 service 按调用者身份收窄: 用户级只列自己的, 项目级普通用户只见自己可读的项目,
+// 导出逐条过 canReadContextItem, 导入到项目级要求对该项目有写权限.
+// 列出请求者可用于导出的 Skill / Memory 清单 (管理员: 用户级 = 自己 + 他人只读, 项目级 = 全部项目).
+router.get('/skill-memory/inventory', auth, (req: express.Request, res: express.Response) => {
   try {
     const projects = Projects.listAll().map((p: any) => ({
       id: p.id, name: p.name, created_by: p.created_by,
@@ -1760,10 +1763,12 @@ router.get('/skill-memory/inventory', adminAuth, (req: express.Request, res: exp
 });
 
 // 按勾选的 memory_ids / skill_ids 生成 base64 字符串.
-router.post('/skill-memory/export', adminAuth, (req: express.Request, res: express.Response) => {
+router.post('/skill-memory/export', auth, (req: express.Request, res: express.Response) => {
   const { memory_ids, skill_ids } = (req.body || {}) as { memory_ids?: unknown; skill_ids?: unknown };
+  const user = adminReqUser(req);
   const result = skillMemoryMigration.buildExportBundle({
-    userId: adminReqUser(req).id,
+    userId: user.id,
+    user,
     memoryIds: Array.isArray(memory_ids) ? memory_ids : [],
     skillIds: Array.isArray(skill_ids) ? skill_ids : [],
   });
@@ -1772,7 +1777,7 @@ router.post('/skill-memory/export', adminAuth, (req: express.Request, res: expre
 });
 
 // 预览备份字符串中的条目, 不写盘.
-router.post('/skill-memory/preview', adminAuth, (req: express.Request, res: express.Response) => {
+router.post('/skill-memory/preview', auth, (req: express.Request, res: express.Response) => {
   const { bundle } = (req.body || {}) as { bundle?: unknown };
   const result = skillMemoryMigration.previewBundle(bundle || '');
   if (!result.ok) { res.status(400).json({ error: (result as any).error }); return; }
@@ -1780,7 +1785,7 @@ router.post('/skill-memory/preview', adminAuth, (req: express.Request, res: expr
 });
 
 // 把勾选条目导入到指定 scope: { scope: 'user'|'project', project_id?, indexes? }.
-router.post('/skill-memory/import', adminAuth, (req: express.Request, res: express.Response) => {
+router.post('/skill-memory/import', auth, (req: express.Request, res: express.Response) => {
   const body = (req.body || {}) as {
     bundle?: unknown;
     target?: any;
@@ -1801,6 +1806,7 @@ router.post('/skill-memory/import', adminAuth, (req: express.Request, res: expre
   }
   const result = skillMemoryMigration.importBundle({
     requesterUserId: adminReqUser(req).id,
+    user: adminReqUser(req),
     base64: bundle || '',
     target: {
       scope: target.scope,

@@ -5777,6 +5777,7 @@ function ChecklistRow({
 
 function SkillMemoryMigrationPanel() {
   const [mode, setMode] = useState<'manage' | 'export' | 'import'>('manage')
+  const isAdmin = useStore((s) => s.user?.role === 'admin')
   return (
     <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -5785,7 +5786,9 @@ function SkillMemoryMigrationPanel() {
             Skill 与 Memory 管理
           </h3>
           <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-            管理、备份和迁移自己的用户级 / 项目级 Skill 与 Memory; 他人创建的条目仅可查看.
+            {isAdmin
+              ? '管理、备份和迁移自己的用户级 / 项目级 Skill 与 Memory; 他人创建的条目仅可查看.'
+              : '管理、备份和迁移你自己的用户级 Skill 与 Memory, 以及你能看到的项目级条目; 他人的条目仅可查看.'}
           </div>
         </div>
         <div className="flex rounded-md border border-[var(--border-color)] p-0.5">
@@ -8421,9 +8424,25 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'others', label: '其他设置', icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
 ]
 
+// 普通用户能进的 tab: 「Skill与Memory管理」只管自己的用户级条目与自己做主的项目,
+// 「其他设置」是浏览器本地设置 (Logo / 名称 / 文本遮蔽规则), 都不涉及全站数据.
+// 其余 tab 全是全站管理面, 对普通用户既不显示也不可达.
+const NON_ADMIN_PANEL_TAB_KEYS: readonly AdminPanelTab[] = ['migration', 'others']
+
 export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {
-  // 初次渲染时取 initialTab (外部 openAdminOverlay(tab) 传入, 通常用于「监控」按钮直接落在「运行监控」tab)
-  const [activeTab, setActiveTab] = useState<AdminPanelTab>(initialTab || 'users')
+  const isAdmin = useStore((s) => s.user?.role === 'admin')
+  const tabs = useMemo(
+    () => (isAdmin ? ADMIN_PANEL_TABS : ADMIN_PANEL_TABS.filter((tab) => NON_ADMIN_PANEL_TAB_KEYS.includes(tab.key))),
+    [isAdmin],
+  )
+  // 初次渲染时取 initialTab (外部 openAdminOverlay(tab) 传入, 通常用于「监控」按钮直接落在「运行监控」tab);
+  // 普通用户拿到不可达的 initialTab (如引导脚本传 'runtime') 时回落到自己的首个 tab.
+  const [activeTab, setActiveTab] = useState<AdminPanelTab>(() => {
+    const first = isAdmin ? 'users' : 'migration'
+    if (!initialTab) return first
+    const allowed = isAdmin || NON_ADMIN_PANEL_TAB_KEYS.includes(initialTab)
+    return allowed ? initialTab : first
+  })
   const [data, setData] = useState<AdminTmuxPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -8445,11 +8464,13 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
   }
 
   useEffect(() => {
+    // 运行监控接口仅管理员可读; 普通用户开这页只为 Skill/Memory 与其他设置, 不发这次请求.
+    if (!isAdmin) return undefined
     refresh()
     // 自递归轮询: 上一次返回(或超时放弃)后才排下一次, 10s 超时主动 abort, 卡顿时不堆积.
     const stop = pollRecursive((signal) => refresh(true, signal), 5_000, 10_000, { startImmediately: false })
     return () => stop()
-  }, [])
+  }, [isAdmin])
 
   const totals = useMemo(() => ({
     questions: data?.question_count ?? 0,
@@ -8484,7 +8505,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
     }
   }
 
-  const activeTabLabel = ADMIN_PANEL_TABS.find((tab) => tab.key === activeTab)?.label || '管理中心'
+  const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label || '管理中心'
 
   return (
     <div className="flex h-screen min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-secondary)' }}>
@@ -8506,16 +8527,19 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {/* 全项目仅剩的引导路线: 在这里手动重温管理中心各模块讲解 (首触时由 TourController 自动启动). */}
-          <button
-            type="button"
-            title="重温管理中心引导"
-            aria-label="重温管理中心引导"
-            onClick={() => { void startSceneTour('admin-center') }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <CircleQuestionMark className="h-4 w-4" />
-          </button>
+          {/* 全项目仅剩的引导路线: 在这里手动重温管理中心各模块讲解 (首触时由 TourController 自动启动).
+              讲解覆盖的是全站管理面, 普通用户的这一页只有两个 tab, 不提供入口. */}
+          {isAdmin && (
+            <button
+              type="button"
+              title="重温管理中心引导"
+              aria-label="重温管理中心引导"
+              onClick={() => { void startSceneTour('admin-center') }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-color)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              <CircleQuestionMark className="h-4 w-4" />
+            </button>
+          )}
           {activeTab === 'runtime' && (
             <button
               type="button"
@@ -8533,7 +8557,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-4">
           <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-2" data-tour="admin-tab-bar">
-            {ADMIN_PANEL_TABS.map((tab) => {
+            {tabs.map((tab) => {
               const active = activeTab === tab.key
               return (
                 <button
