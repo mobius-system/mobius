@@ -35,14 +35,27 @@ function inside(root: string, target: string): boolean {
   return isWithin(root, target);
 }
 
-function exceptionPathsFor(userId: string, projectId: string | null): string[] {
-  if (!projectId) return [];
+function resolveRealPath(p: string): string {
+  const abs = path.resolve(p);
+  try { return fs.realpathSync(abs); } catch { return abs; }
+}
+
+function exceptionPathsFor(userId: string, projectId: string | null, workDir: string | null): string[] {
+  const out: string[] = [];
+  // 会话归属者自己的工作区永远在例外里 —— 沙盒语义是"自己的工作区 + 有写权限的项目"。
+  // 本人的工作区可能嵌在他人工作区之下 (如 <他人 home>/cc-workspace/_employees/<id>),
+  // 少了这条, 枚举编译会把本人目录连同他人工作区一起 deny 掉, 连 CLI 需要的 $HOME 都进不去。
+  // The subject's own work dir is always an exception: the sandbox means "own work dir plus
+  // projects you may write". Without it, a work dir nested under someone else's gets denied with it.
+  if (workDir) out.push(resolveRealPath(workDir));
+  if (!projectId) return out;
   const project = db.prepare('SELECT bind_path FROM projects WHERE id = ?').get(projectId) as { bind_path?: string } | undefined;
-  if (!project?.bind_path) return [];
+  if (!project?.bind_path) return out;
   const row = db.prepare('SELECT role FROM project_memberships WHERE project_id = ? AND user_id = ?').get(projectId, userId) as { role?: string } | undefined;
   const creator = db.prepare('SELECT created_by FROM projects WHERE id = ?').get(projectId) as { created_by?: string } | undefined;
-  if (creator?.created_by !== userId && row?.role !== 'developer' && row?.role !== 'owner') return [];
-  try { return [fs.realpathSync(path.resolve(project.bind_path))]; } catch { return []; }
+  if (creator?.created_by !== userId && row?.role !== 'developer' && row?.role !== 'owner') return out;
+  out.push(resolveRealPath(project.bind_path));
+  return out;
 }
 
 function compileDeniedChildren(root: string, allowed: string[], out: string[]): void {
@@ -62,12 +75,11 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   if (!landlockAvailable()) return null;
   const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role?: string } | undefined;
   if (user?.role === 'admin') return null;
-  const exceptions = exceptionPathsFor(userId, projectId || null);
+  const exceptions = exceptionPathsFor(userId, projectId || null, workDir || null);
   const deny: string[] = [];
   const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
   for (const row of others) {
-    let root: string;
-    try { root = fs.realpathSync(path.resolve(row.work_dir)); } catch { root = path.resolve(row.work_dir); }
+    const root = resolveRealPath(row.work_dir);
     if (exceptions.some((p) => inside(root, p))) compileDeniedChildren(root, exceptions, deny);
     else deny.push(root);
   }
