@@ -395,6 +395,8 @@ function AdminUsersPanel() {
   const [editingUser, setEditingUser] = useState<AdminUserRow | null>(null)
   const [editForm, setEditForm] = useState<{ display_name: string; role: 'user' | 'admin'; work_dir: string; password: string }>({ display_name: '', role: 'user', work_dir: '', password: '' })
   const [savingEdit, setSavingEdit] = useState(false)
+  // 新建向导里"默认工作目录"由后端算, 不在前端拼路径 —— 见 AdminUsersPanel 的占位符
+  const [defaultWorkDir, setDefaultWorkDir] = useState('')
 
   const refresh = async (quiet = false, signal?: AbortSignal) => {
     if (!quiet) setLoading(true)
@@ -416,6 +418,19 @@ function AdminUsersPanel() {
     const stop = pollRecursive((signal) => refresh(true, signal), 10_000, 10_000, { startImmediately: false })
     return () => stop()
   }, [])
+
+  // 向导第 2 步的"默认工作目录"按输入的 ID 向后端要, 输入防抖 300ms 避免每个字符一次请求.
+  useEffect(() => {
+    if (wizardStep !== 2) return
+    const id = form.id.trim()
+    if (!id) { setDefaultWorkDir(''); return }
+    const timer = setTimeout(() => {
+      api(`/api/admin/users/default-work-dir?id=${encodeURIComponent(id)}`)
+        .then((data: any) => setDefaultWorkDir(String(data?.work_dir || '')))
+        .catch(() => setDefaultWorkDir(''))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [wizardStep, form.id])
 
   const activeUsers = useMemo(() => users.filter((u) => !u.deleted_at), [users])
 
@@ -877,7 +892,7 @@ function AdminUsersPanel() {
                       value={form.work_dir}
                       onChange={(e) => { setForm((f) => ({ ...f, work_dir: e.target.value })); setError(''); setNotice(''); setWizardError('') }}
                       onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) wizardNext() }}
-                      placeholder={`默认 /home/${form.id.trim() || '员工ID'}/cc-workspace`}
+                      placeholder={defaultWorkDir ? `默认 ${defaultWorkDir}` : '留空则由系统按 ID 分配'}
                       className={`${fieldClass} font-mono`}
                       style={fieldStyle}
                     />
@@ -937,7 +952,7 @@ function AdminUsersPanel() {
             <textarea
               value={bulkText}
               onChange={(e) => { setBulkText(e.target.value); setError(''); setNotice('') }}
-              placeholder={'ID,密码,角色,显示名称,工作目录\nzhangsan,pass123,user,张三,/home/zhangsan/cc-workspace'}
+              placeholder={'ID,密码,角色,显示名称,工作目录(选填)\nzhangsan,pass123,user,张三,'}
               className="min-h-32 w-full flex-1 resize-y rounded-md border px-2.5 py-2 font-mono text-[length:var(--fs-md)] leading-relaxed outline-none transition-colors focus:border-blue-500/50"
               style={fieldStyle}
             />

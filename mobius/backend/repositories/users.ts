@@ -394,6 +394,47 @@ function usableDirectory(p: string): string | null {
   return null;
 }
 
+/*
+ * 只探测不落盘的 "mkdir -p 能不能成功": 目录已存在即算可用, 否则向上找最近的存在祖先,
+ * 看它可不可写. 预览不能有副作用, 所以不能直接调用 tryEnsureDirectory.
+ * Side-effect-free stand-in for tryEnsureDirectory: walk up to the nearest existing
+ * ancestor and test writability, so a preview never creates directories.
+ */
+function canCreateUnder(p: string): boolean {
+  const resolved = normalizePath(p);
+  if (!resolved) return false;
+  if (isDirectory(resolved)) return true;
+  let dir = path.dirname(resolved);
+  while (dir !== path.dirname(dir) && !fs.existsSync(dir)) dir = path.dirname(dir);
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/*
+ * 预览新建账号会拿到的工作目录. 候选链与 ensureUsableWorkDir 对新账号的判定一致
+ * (先 homeWorkDirFor, 建不出来再 fallbackWorkDirFor), 但不创建任何目录.
+ * 管理端表单的 "默认 …" 占位符用它, 免得前端自己猜路径.
+ * Preview of the work dir a brand-new account would get: same candidate order as
+ * ensureUsableWorkDir, without touching the filesystem.
+ */
+export function previewDefaultWorkDir(userId: string): { work_dir: string; source: 'home' | 'fallback' } {
+  const candidates: Array<{ p: string; source: 'home' | 'fallback' }> = [
+    { p: homeWorkDirFor(userId), source: 'home' },
+    { p: fallbackWorkDirFor(userId), source: 'fallback' },
+  ];
+  for (const candidate of candidates) {
+    const resolved = normalizePath(candidate.p);
+    if (resolved && canCreateUnder(resolved)) return { work_dir: resolved, source: candidate.source };
+  }
+  // 两个候选都建不出来时, 真实创建流程会保留 payload 里的 home 路径并给出警告,
+  // 预览跟着保留 home, 不假装 fallback 可用.
+  return { work_dir: normalizePath(homeWorkDirFor(userId)), source: 'home' };
+}
+
 function ensureUsableWorkDir<T extends { id: string; work_dir?: string | null } | null | undefined>(user: T): T {
   if (!user || !user.id) return user;
   const currentWorkDir = user.work_dir || homeWorkDirFor(user.id);

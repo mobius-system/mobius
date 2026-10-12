@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { adminAuth, auth } from '../middleware/auth';
-import { Users } from '../repositories/users';
+import { Users, previewDefaultWorkDir } from '../repositories/users';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 // @ts-ignore — bridge instance 仍是 .js
@@ -622,6 +622,20 @@ router.get('/users', adminAuth, (req: express.Request, res: express.Response) =>
     const { group_id: _groupId, group_name: _groupName, group_description: _groupDescription, ...publicUser } = u;
     return { ...publicUser, stats: taskMap[u.id] || emptyStats };
   }));
+});
+
+// 预览新建账号的默认工作目录. 占位符显示的就是这里返回的路径 —— 默认值由后端
+// (HOME_WORKSPACE_ROOT 是否可建 -> LOCAL_WORKSPACE_ROOT) 决定, 前端不该自己拼.
+// Preview of the default work dir for a prospective account, so the form placeholder
+// shows the path the backend would actually use instead of a guessed one.
+router.get('/users/default-work-dir', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const id = normalizeEmployeeId(req.query.id ?? req.query.user_id);
+    res.json({ ok: true, id, ...previewDefaultWorkDir(id) });
+  } catch (e) {
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
+  }
 });
 
 router.post('/users', adminAuth, (req: express.Request, res: express.Response) => {

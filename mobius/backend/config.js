@@ -23,7 +23,7 @@ function homeWorkDirFor(userId) {
 }
 
 function defaultLocalWorkspaceRoot() {
-  return path.join(WORKSPACE_ROOT, '_employees');
+  return path.join(WORKSPACE_ROOT, 'mobius-users');
 }
 
 const LOCAL_WORKSPACE_ROOT = process.env.LOCAL_WORKSPACE_ROOT || defaultLocalWorkspaceRoot();
