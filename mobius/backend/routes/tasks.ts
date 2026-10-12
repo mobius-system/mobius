@@ -1,12 +1,10 @@
 import express from 'express';
-import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { auth } from '../middleware/auth';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 // @ts-ignore — service 仍是 .js
 import { withSessionProxyState, withSessionProxyStates } from '../services/session-proxy-state';
-import { withLiveAgentStatus } from '../services/session-live-status';
 // @ts-ignore — service 仍是 .js
 import { canOperateSession, canReadSession } from '../services/access-control';
 
@@ -31,13 +29,11 @@ router.get('/recent', auth, (req: express.Request, res: express.Response) => {
   const user = (req as any).user;
   const rawLimit = Number(req.query.limit || 12);
   const limit = Math.max(1, Math.min(50, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 12));
-  const rows = Sessions.listRecentForUser(user.id, limit);
-  // 近期会话行同样按需实时重算: 库值最老 60s, 侧栏小圆点等不起.
-  // Recompute recent rows on demand too: the stored column can be 60s old, too slow for the sidebar.
-  res.json(withLiveAgentStatus(rows, (row: any) => {
-    const bindPath = row.project_bind_path;
-    return bindPath ? path.resolve(bindPath) : null;
-  }));
+  // agent_status 由 session-status-refresher 每 2s 刷新的快查字段提供, 这里只读不算:
+  // 探测走 spawnSync 与请求共用事件循环, 放在读路径上会把请求排在探测后面.
+  // agent_status comes from the fast field refreshed every 2s by session-status-refresher;
+  // this path only reads it — probing here would queue the request behind spawnSync work.
+  res.json(Sessions.listRecentForUser(user.id, limit));
 });
 
 router.post('/', auth, (req: express.Request, res: express.Response) => {

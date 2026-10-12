@@ -298,6 +298,7 @@ const { startResearchBlackboardDeliveryScanner } = require('./backend/services/r
 const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
 const { startScheduledWakeupScheduler } = require('./backend/services/scheduled-wakeup-scheduler');
 const { startAgentStatusSyncer } = require('./backend/services/agent-status-syncer');
+const { startSessionStatusRefresher } = require('./backend/services/session-status-refresher');
 const { startSessionTitleSyncer } = require('./backend/services/session-title-syncer');
 const { startSessionTitleGenerator } = require('./backend/services/session-title-generator');
 const { startBestApiAutoSync } = require('./backend/services/bestapi-integration');
@@ -420,8 +421,12 @@ server.listen(PORT, () => {
   // Mobius 定时唤醒: 扫描 SQLite 中到期任务，通过标准 Session 消息链路投递提醒
   // Mobius scheduled wake-ups scan durable SQLite tasks and deliver through the normal Session message path
   startScheduledWakeupScheduler();
-  // agent_status 单一真相源: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
+  // agent_status 快查字段的热点刷新: 每 2s 只重算「近 15 分钟有活动」∪「当前 alive」的
+  // 那一小撮会话 (实测 5~15 行 vs 全表 2664 行), 侧栏读到的新鲜度由此保证.
+  startSessionStatusRefresher();
+  // agent_status 全表兜底: 每 60s 用与 /api/sessions/:id/status 相同的判定重算
   // 活跃态 session 的 agent_status 并写回; 终态(failed/stale)每小时扫一次.
+  // 热点之外的冷行变化极慢, 由这一层兜底即可.
   startAgentStatusSyncer();
   // 自动生成 Session 标题: 订阅 agent shared watcher 的 raw_entry 事件; 功能默认关闭,
   // 开启后仅在 agent 明确产出 type=ai-title 时更新, 不走前端/SSE 回灌/状态轮询.

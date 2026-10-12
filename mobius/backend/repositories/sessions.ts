@@ -34,9 +34,6 @@ interface SessionWithJoinsRow extends SessionRow {
   issue_title?: string | null;
   research_title?: string | null;
   project_name?: string | null;
-  // 项目绑定目录: 供列表接口按需重算 agent_status 时定位 flag 文件.
-  // The project bind path, used to locate job flags when recomputing agent_status on demand.
-  project_bind_path?: string | null;
 }
 
 interface SessionListRow {
@@ -161,8 +158,7 @@ const Sessions = {
   `).all(userId) as SessionWithJoinsRow[],
 
   listRecentForUser: (userId: string, limit: number): SessionWithJoinsRow[] => db.prepare(`
-    SELECT ${SESSION_LIST_COLUMNS}, i.title as issue_title, r.title as research_title, p.name as project_name,
-      p.bind_path as project_bind_path
+    SELECT ${SESSION_LIST_COLUMNS}, i.title as issue_title, r.title as research_title, p.name as project_name
     FROM sessions_v2 s
     LEFT JOIN issues i ON s.issue_id = i.id
     LEFT JOIN researches r ON s.research_id = r.id

@@ -1,24 +1,26 @@
 /**
- * session-live-status.ts — 侧栏列表的实时状态叠加层.
+ * session-live-status.ts — 会话实时状态的探测封装 (真相源访问层).
  *
- * 背景: sessions_v2.agent_status 由 agent-status-syncer 每 60s 才重算一次, 而侧栏列表接口
- * 原先只读这个库值, 于是非当前会话的状态点最坏要 ~60s(后台重算) + 10s(前端轮询) 才追上.
+ * sessions_v2.agent_status 只是真相源的一张快照 (快查字段); 真相源本身是
+ * computeSessionRuntimeStatus 的实时探测 (tmux 窗口 + transcript 尾读 + flag 文件).
  *
- * 做法: 在列表接口内只对「本次要返回给用户的这几行」按需重算, 并用进程内 2s TTL 缓存去重
- * 同一会话的并发请求. 迟滞因此降到前端轮询间隔本身, 成本也只与可见行数成正比, 不再依赖全表扫描.
- * 判定逻辑仍复用 utils/session-runtime-status.ts, 与 /status 接口、agent-status-syncer 同源.
+ * 本模块只负责"怎样问真相源", 并叠一层 2s 进程内 TTL 缓存去重同一会话的并发探测.
+ * "什么时候问" 由 session-status-refresher.ts (热点集刷新) 与 agent-status-syncer.ts
+ * (全表兜底) 决定 —— 探测刻意不放在 HTTP 请求路径上: 该路径与 spawnSync 的 tmux 抓屏
+ * 共用事件循环, 放进去会把请求排在探测后面 (实测 limit=1 的请求最慢要 1.8s).
  */
 
 import {
   computeSessionRuntimeStatus,
   runtimeStatusToAgentStatus,
   syncAgentStatusIfChanged,
+  type AgentStatusValue,
   type RuntimeStatus,
 } from '../utils/session-runtime-status';
 
-// 2s TTL: 一屏轮询间隔量级, 足够让同一会话被多行/多用户请求时只算一次, 又不至于让人眼感知到陈旧.
-// 2s TTL: one screen-poll apart — dedupes repeated probes without a perceivable staleness.
-const LIVE_STATUS_TTL_MS = 2000;
+// 2s: 与热点刷新周期同量级, 只用于去重同一会话的并发探测, 不承担时效职责.
+// 2s: same order as the hot refresh cycle — dedupes concurrent probes, not a freshness budget.
+const PROBE_TTL_MS = 2000;
 
 // 超过这个规模就顺手清理过期项, 避免长跑累积 (每会话一条).
 // Prune expired entries past this size so a long-lived process cannot grow unbounded.
@@ -28,12 +30,12 @@ const cache = new Map<string, { at: number; runtime: RuntimeStatus }>();
 
 function pruneExpired(now: number): void {
   for (const [key, entry] of cache) {
-    if (now - entry.at > LIVE_STATUS_TTL_MS) cache.delete(key);
+    if (now - entry.at > PROBE_TTL_MS) cache.delete(key);
   }
 }
 
 /**
- * Live runtime status for one session, probed from the backend (not read off the DB column).
+ * Live runtime status for one session, probed from the backend.
  * Returns null when the session is not probeable, so callers keep the stored value untouched.
  */
 export function probeLiveStatus(
@@ -46,7 +48,7 @@ export function probeLiveStatus(
 
   const now = Date.now();
   const hit = cache.get(session.session_id);
-  if (hit && now - hit.at <= LIVE_STATUS_TTL_MS) return hit.runtime;
+  if (hit && now - hit.at <= PROBE_TTL_MS) return hit.runtime;
 
   let runtime: RuntimeStatus;
   try {
@@ -68,22 +70,19 @@ export function probeLiveStatus(
 }
 
 /**
- * Overlay live agent_status onto list rows, writing changes back to sessions_v2 so the stored
- * column stays fresh as a by-product for consumers that still read it.
+ * Probe one session and flush the result into sessions_v2.agent_status when it changed.
+ * Returns the status, or null when the probe failed.
  */
-export function withLiveAgentStatus<T extends { session_id: string; agent_status?: string }>(
-  rows: T[],
-  bindPathOf: (row: T) => string | null,
-): T[] {
-  if (!Array.isArray(rows)) return rows;
-  return rows.map((row) => {
-    const runtime = probeLiveStatus(row, bindPathOf(row));
-    if (!runtime) return row;
-    try {
-      // 顺带回写库值, 让读 DB 的其它消费方 (概览页等) 也吃到新鲜状态.
-      // Write the value back too, so other DB readers (overview pages) benefit as well.
-      syncAgentStatusIfChanged(row.session_id, row.agent_status, runtime);
-    } catch {}
-    return { ...row, agent_status: runtimeStatusToAgentStatus(runtime) };
-  });
+export function refreshStoredStatus(
+  session: { session_id: string; model?: string | null; agent_status?: string | null },
+  bindPath: string | null | undefined,
+): AgentStatusValue | null {
+  const runtime = probeLiveStatus(session, bindPath);
+  if (!runtime) return null;
+  try {
+    // ⭐ 把探测结果落到快查字段; 其它读库的页面 (概览页等) 因此一同受益.
+    // Flush the probe into the fast field so every DB reader benefits too.
+    syncAgentStatusIfChanged(session.session_id, session.agent_status, runtime);
+  } catch {}
+  return runtimeStatusToAgentStatus(runtime);
 }
