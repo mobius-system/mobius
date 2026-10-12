@@ -33,7 +33,7 @@ export type AimuxLauncher =
   | { kind: 'exe'; path: string }
   | { kind: 'module'; python: string }
 
-const AIMUX_TARGET_VERSION = '0.3.69'
+const AIMUX_TARGET_VERSION = '0.3.70'
 const AIMUX_PACKAGE = `aimux==${AIMUX_TARGET_VERSION}`
 const WIN = process.platform === 'win32'
 const venvDir = () => path.join(mobiusHome(), 'aimux-venv')
@@ -94,7 +94,7 @@ async function pythonForAimux(onProgress?: (p: InstallProgress) => void): Promis
 // 系统 python（如被精简掉 ensurepip 的容器镜像）。aimux 全部依赖为纯 Python，
 // 故三平台可共用同一套打包产物，分别按 arch 发布到 CDN。
 /** Plan B 内置运行时包版本；每次发版跟 aimux pin 一起 +1，测试也从这里取。 */
-export const BUNDLE_VER = '17'
+export const BUNDLE_VER = '18'
 const BUNDLE_AIMUX_VERSION = AIMUX_TARGET_VERSION
 /** Version expected from the installed or bundled AIMUX runtime. */
 export const AIMUX_VERSION = BUNDLE_AIMUX_VERSION

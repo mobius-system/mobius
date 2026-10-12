@@ -262,7 +262,7 @@ function pcTaskModePromptFor(
 /** GUI (computer-use) authorization sentence, appended when the session opted in. */
 function guiAuthorizationTail(aimuxId: string, language: ContextLanguage): string {
   return language === 'en'
-    ? `This session is authorized to drive the graphical interface of ${aimuxId} with the registered remote_gui_* MCP tools (list windows, screenshot + outline, semantic press/setText, read text, wait, focus). ` +
+    ? `This session is authorized to drive the graphical interface of ${aimuxId} with the registered remote_gui_* MCP tools (list windows, screenshot + outline, semantic press/setText, read text, wait, focus, record a window to MP4). ` +
       `GUI actions default to the ax_only policy — they go through the accessibility tree and never inject real mouse/keyboard input. ` +
       `Prefer remote_gui_* over remote_exec_command whenever the task is a desktop UI operation.`
     : `本会话已授权你使用已注册的 remote_gui_* MCP（GUI/计算机操作）工具操作 ${aimuxId} 的图形界面（枚举窗口、截图+元素大纲、语义点击/输入、读文本、等待、切前台）。` +
