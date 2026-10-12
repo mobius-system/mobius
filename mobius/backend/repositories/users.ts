@@ -4,13 +4,7 @@ import { randomUUID } from 'crypto';
 import { db } from '../../db';
 import { isWithin } from '../services/file-access';
 import {
-  HOME_WORKSPACE_ROOT,
-  LEGACY_LOCAL_WORKSPACE_ROOT,
-  LOCAL_WORKSPACE_ROOT,
   WORKSPACE_ROOT,
-  fallbackWorkDirFor,
-  homeWorkDirFor,
-  legacyFallbackWorkDirFor,
   workDirFor,
 } from '../config';
 import type { UserRow, UserGroupRawRow } from '../types/rows';
@@ -373,23 +367,13 @@ function normalizePath(p: string | null | undefined): string {
 }
 
 function generatedWorkDirsFor(userId: string): string[] {
-  return [
-    workDirFor(userId),
-    homeWorkDirFor(userId),
-    fallbackWorkDirFor(userId),
-    legacyFallbackWorkDirFor(userId),
-  ].map(normalizePath).filter(Boolean);
+  return [workDirFor(userId)].map(normalizePath).filter(Boolean);
 }
 
 function isGeneratedWorkDir(userId: string, currentWorkDir: string | null | undefined): boolean {
   if (!currentWorkDir) return true;
   const current = normalizePath(currentWorkDir);
   return !!current && generatedWorkDirsFor(userId).includes(current);
-}
-
-function isLegacyFallbackWorkDir(userId: string, currentWorkDir: string | null | undefined): boolean {
-  const current = normalizePath(currentWorkDir);
-  return !!current && current === normalizePath(legacyFallbackWorkDirFor(userId));
 }
 
 function usableDirectory(p: string): string | null {
@@ -419,7 +403,7 @@ function canCreateUnder(p: string): boolean {
   }
 }
 
-const WORKSPACE_ROOTS = [WORKSPACE_ROOT, HOME_WORKSPACE_ROOT, LOCAL_WORKSPACE_ROOT, LEGACY_LOCAL_WORKSPACE_ROOT]
+const WORKSPACE_ROOTS = [WORKSPACE_ROOT]
   .map((p) => normalizePath(p))
   .filter(Boolean);
 
@@ -466,44 +450,54 @@ function workDirConflict(userId: string, p: string): string | null {
 }
 
 /*
- * 新增/编辑员工时的工作目录校验. 原值回填 (目标就是该账号当前记录的工作目录) 放行,
- * 否则按 workDirConflict 判定. 抛出的错误带 status=400, 由路由回给管理端.
+ * 角色与工作目录的搭配是否合法. 普通用户的工作目录必须在工作区根 (WORKSPACE_ROOT)
+ * 之下 —— 那里既是 landlock 整棵授权的边界, 也是本系统唯一负责创建/回收的目录树;
+ * 管理员不受此限, 可以显式指到别处 (例如自己的家目录). 返回错误文案, null = 合法.
  */
-export function assertWorkDirAssignable(userId: string, p: string): void {
+export function workDirRoleProblem(p: string | null | undefined, role?: string | null): string | null {
+  if (String(role || 'user') === 'admin') return null;
+  const target = normalizePath(p);
+  if (!target) return '工作目录不能为空';
+  const root = normalizePath(WORKSPACE_ROOT);
+  if (!isWithin(root, target)) return `普通用户的工作目录必须位于工作区根下: ${root}`;
+  return null;
+}
+
+/*
+ * 新增/编辑员工时的工作目录校验. 原值回填 (目标就是该账号当前记录的工作目录) 放行,
+ * 否则先按角色判 (见 workDirRoleProblem), 再按 workDirConflict 判内容/包含关系.
+ * 抛出的错误带 status=400, 由路由回给管理端.
+ */
+export function assertWorkDirAssignable(userId: string, p: string, role?: string | null): void {
   const target = normalizePath(p);
   if (!target) throw repoError('工作目录不能为空');
   const row = db.prepare('SELECT work_dir FROM users WHERE id = ?').get(userId) as { work_dir?: string } | undefined;
   if (row?.work_dir && normalizePath(row.work_dir) === target) return;
+  const roleProblem = workDirRoleProblem(target, role);
+  if (roleProblem) throw repoError(roleProblem);
   const conflict = workDirConflict(userId, target);
   if (conflict) throw repoError(conflict);
 }
 
 /*
- * 预览新建账号会拿到的工作目录. 候选链与 ensureUsableWorkDir 对新账号的判定一致
- * (先 homeWorkDirFor, 建不出来再 fallbackWorkDirFor), 但不创建任何目录, 且跳过
- * 会被 workDirConflict 拒绝的候选 —— 占位符不能显示一个建号时必然报错的路径.
+ * 预览新建账号会拿到的工作目录: 工作区根下的 <WORKSPACE_ROOT>/<id>. 与
+ * ensureUsableWorkDir 对新账号的判定一致, 但不创建任何目录, 且跳过会被
+ * workDirConflict 拒绝的候选 —— 占位符不能显示一个建号时必然报错的路径.
  * 全不可用时返回空路径, 前端回落到"留空则由系统按 ID 分配".
- * Preview of the work dir a brand-new account would get: same candidate order as
- * ensureUsableWorkDir, but without touching the filesystem and skipping candidates the
- * create flow would reject.
+ * Preview of the work dir a brand-new account would get: the per-account directory under
+ * the workspace root, without touching the filesystem.
  */
-export function previewDefaultWorkDir(userId: string): { work_dir: string; source: 'home' | 'fallback' | 'none' } {
-  const candidates: Array<{ p: string; source: 'home' | 'fallback' }> = [
-    { p: homeWorkDirFor(userId), source: 'home' },
-    { p: fallbackWorkDirFor(userId), source: 'fallback' },
-  ];
-  for (const candidate of candidates) {
-    const resolved = normalizePath(candidate.p);
-    if (resolved && canCreateUnder(resolved) && !workDirConflict(userId, resolved)) {
-      return { work_dir: resolved, source: candidate.source };
-    }
+export function previewDefaultWorkDir(userId: string): { work_dir: string; source: 'workspace' | 'none' } {
+  const resolved = normalizePath(workDirFor(userId));
+  if (resolved && canCreateUnder(resolved) && !workDirConflict(userId, resolved)) {
+    return { work_dir: resolved, source: 'workspace' };
   }
   return { work_dir: '', source: 'none' };
 }
 
 function ensureUsableWorkDir<T extends { id: string; work_dir?: string | null } | null | undefined>(user: T): T {
   if (!user || !user.id) return user;
-  const currentWorkDir = user.work_dir || homeWorkDirFor(user.id);
+  const currentWorkDir = user.work_dir || workDirFor(user.id);
   const current = normalizePath(currentWorkDir);
   const generated = isGeneratedWorkDir(user.id, currentWorkDir);
 
@@ -512,9 +506,9 @@ function ensureUsableWorkDir<T extends { id: string; work_dir?: string | null } 
     return (usable ? { ...user, work_dir: usable } : user) as T;
   }
 
-  const candidates = isLegacyFallbackWorkDir(user.id, currentWorkDir)
-    ? [homeWorkDirFor(user.id), fallbackWorkDirFor(user.id), current]
-    : [current, homeWorkDirFor(user.id), fallbackWorkDirFor(user.id)];
+  // 唯一的自动分配位置就是工作区根下的 <id>; 记录里留下的别处路径走上面 !generated 分支,
+  // 只做"能建/可用就保留", 不会被这里改掉.
+  const candidates = [current, normalizePath(workDirFor(user.id))].filter(Boolean);
   for (const candidate of candidates) {
     const usable = usableDirectory(candidate);
     if (!usable) continue;

@@ -43,7 +43,7 @@ function resolveRealPath(p: string): string {
 function exceptionPathsFor(userId: string, projectId: string | null, workDir: string | null): string[] {
   const out: string[] = [];
   // 会话归属者自己的工作区永远在例外里 —— 沙盒语义是"自己的工作区 + 有写权限的项目"。
-  // 本人的工作区可能嵌在他人工作区之下 (如 <他人 home>/cc-workspace/_employees/<id>),
+  // 本人的工作区可能嵌在他人工作区之下 (如某管理员的工作目录把整个工作区根都含在里面),
   // 少了这条, 枚举编译会把本人目录连同他人工作区一起 deny 掉, 连 CLI 需要的 $HOME 都进不去。
   // The subject's own work dir is always an exception: the sandbox means "own work dir plus
   // projects you may write". Without it, a work dir nested under someone else's gets denied with it.

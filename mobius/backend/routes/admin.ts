@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { adminAuth, auth } from '../middleware/auth';
-import { Users, assertWorkDirAssignable, previewDefaultWorkDir } from '../repositories/users';
+import { Users, assertWorkDirAssignable, previewDefaultWorkDir, workDirRoleProblem } from '../repositories/users';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 // @ts-ignore — bridge instance 仍是 .js
@@ -12,7 +12,7 @@ import { bridge } from '../bridge/instance';
 import { db } from '../../db';
 // @ts-ignore — agents 仍是 .js
 import agents from '../agents';
-import { homeWorkDirFor, ENABLE_PASSWORD_LOGIN } from '../config';
+import { workDirFor, ENABLE_PASSWORD_LOGIN } from '../config';
 // @ts-ignore — service 仍是 .js
 import adminSettings from '../services/admin-settings';
 // @ts-ignore — service 仍是 .js
@@ -167,7 +167,7 @@ function normalizeEmployeePayload(input: EmployeeInput | null | undefined): any 
     display_name: normalizeDisplayName(src.display_name ?? src.name, id),
     password,
     role: normalizeEmployeeRole(src.role),
-    work_dir: explicitWorkDir || homeWorkDirFor(id),
+    work_dir: explicitWorkDir || workDirFor(id),
     work_dir_explicit: !!explicitWorkDir,
     group_id: group.id,
     group_name: group.name,
@@ -186,8 +186,9 @@ function tryCreateWorkDir(workDir: string): string | null {
 
 function createEmployeeAccount(input: EmployeeInput | null | undefined): any {
   const payload = normalizeEmployeePayload(input);
-  // 先把工作目录审一遍再建号: 指向已有内容的目录 / 别人的工作目录一律拒绝.
-  assertWorkDirAssignable(payload.id, payload.work_dir);
+  // 先把工作目录审一遍再建号: 普通用户必须落在工作区根下; 指向已有内容的目录 /
+  // 别人的工作目录一律拒绝.
+  assertWorkDirAssignable(payload.id, payload.work_dir, payload.role);
   const result = Users.createOrRestore({
     id: payload.id,
     display_name: payload.display_name,
@@ -627,7 +628,7 @@ router.get('/users', adminAuth, (req: express.Request, res: express.Response) =>
 });
 
 // 预览新建账号的默认工作目录. 占位符显示的就是这里返回的路径 —— 默认值由后端
-// (HOME_WORKSPACE_ROOT 是否可建 -> LOCAL_WORKSPACE_ROOT) 决定, 前端不该自己拼.
+// (工作区根下是否可建) 决定, 前端不该自己拼.
 // Preview of the default work dir for a prospective account, so the form placeholder
 // shows the path the backend would actually use instead of a guessed one.
 router.get('/users/default-work-dir', adminAuth, (req: express.Request, res: express.Response) => {
@@ -731,10 +732,21 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
     const hasField = (k1: string, k2?: string) =>
       Object.prototype.hasOwnProperty.call(body, k1) || (k2 !== undefined && Object.prototype.hasOwnProperty.call(body, k2));
     // 工作目录先校验后落库: 否则被拒时角色/显示名已经改完了, 管理端看到的是"报错但改了一半".
+    // 校验按本次请求生效后的角色算: 同一次请求里既改角色又改目录时, 不能拿旧角色放行.
+    const effectiveRole = hasField('role') ? normalizeEmployeeRole(body.role) : target.role;
     const nextWorkDir = hasField('work_dir', 'workDir') ? normalizeEmployeeWorkDir(body.work_dir ?? body.workDir) : '';
-    if (nextWorkDir) assertWorkDirAssignable(id, nextWorkDir);
+    if (nextWorkDir) assertWorkDirAssignable(id, nextWorkDir, effectiveRole);
+    if (hasField('role') && effectiveRole !== 'admin' && target.role !== effectiveRole) {
+      // 角色改成普通用户时, 这次要用的目录 (新值优先, 否则沿用记录里的) 也必须落在
+      // 工作区根下 —— 否则等于把账号留在根外, 违反"普通用户只允许在工作区根下".
+      // 只改显示名/密码这类无关字段不动这个判断: 历史遗留的根外账号仍然能正常改动.
+      const roleProblem = workDirRoleProblem(nextWorkDir || target.work_dir, effectiveRole);
+      if (roleProblem) {
+        res.status(400).json({ error: `${roleProblem}（改角色前请先把工作目录设到该根下）` }); return;
+      }
+    }
     if (hasField('role')) {
-      const newRole = normalizeEmployeeRole(body.role);
+      const newRole = effectiveRole;
       if (newRole === 'user' && target.role !== 'user' && !landlockAvailable()) {
         res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止设置普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' }); return;
       }

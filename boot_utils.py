@@ -78,8 +78,6 @@ RUNTIME_SETTINGS = ordered_unique(
         "ENABLE_PASSWORD_LOGIN",
         "AUTO_LOGIN_USER_ID",
         "WORKSPACE_ROOT",
-        "HOME_WORKSPACE_ROOT",
-        "LOCAL_WORKSPACE_ROOT",
         "TURNS_SUMMARY_DIR",
         "CODEX_HOME",
         "MOBIUS_DEBUG_ENV_FILE",

@@ -13,8 +13,6 @@ process.env.MOBIUS_DATA_PATH = tempRoot
 process.env.CORE_DATA_PATH = tempRoot
 process.env.MODEL_ACCESS_PATH = path.join(tempRoot, 'model-access.json')
 process.env.WORKSPACE_ROOT = path.join(tempRoot, 'workspace')
-process.env.HOME_WORKSPACE_ROOT = path.join(tempRoot, 'home')
-process.env.LOCAL_WORKSPACE_ROOT = path.join(tempRoot, 'local')
 process.env.ENABLE_PASSWORD_LOGIN = 'false'
 process.env.JWT_SECRET = 'project-delete-route-test-secret'
 

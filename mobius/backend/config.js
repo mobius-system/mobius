@@ -7,32 +7,14 @@ const DEFAULT_AGENT_BACKEND = 'tmux-codex';
 // caller's/default tmux server. `tmux -L` accepts a socket name, not a path.
 const AGENT_TMUX_SOCKET = String(process.env.MOBIUS_AGENT_TMUX_SOCKET || 'mobius-agent').trim() || 'mobius-agent';
 
-// 工作区根: 每个用户的 work_dir = WORKSPACE_ROOT/<userId>,
-// 新建项目的 bind_path 必须落在该用户 work_dir 之内 (见 routes/projects.js resolveBindPath)。
+// 工作区根, 也是唯一的工作区根: 每个账号的 work_dir = WORKSPACE_ROOT/<userId>,
+// 新建项目的 bind_path 必须落在该用户 work_dir 之内 (见 routes/projects.ts resolveBindPath)。
+// 普通用户只允许在工作区根下创建工作目录 (见 repositories/users.ts assertWorkDirAssignable);
+// 管理员可以显式指定别处 (例如自己的家目录)。
 // 容器默认把持久化工作区放在 /data/workspace; 现有部署通过 .env 显式覆盖旧路径以免迁移。
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/data/workspace';
 function workDirFor(userId) {
   return path.join(WORKSPACE_ROOT, String(userId));
-}
-
-// 员工账号默认工作区父目录。容器默认仍在 /data/workspace 下; 当前本机部署
-// 通过 .env 覆盖为 /home, 保留 /home/<userId>/cc-workspace 语义。
-const HOME_WORKSPACE_ROOT = process.env.HOME_WORKSPACE_ROOT || path.join(WORKSPACE_ROOT, 'home');
-function homeWorkDirFor(userId) {
-  return path.join(HOME_WORKSPACE_ROOT, String(userId), 'cc-workspace');
-}
-
-function defaultLocalWorkspaceRoot() {
-  return path.join(WORKSPACE_ROOT, 'mobius-users');
-}
-
-const LOCAL_WORKSPACE_ROOT = process.env.LOCAL_WORKSPACE_ROOT || defaultLocalWorkspaceRoot();
-function fallbackWorkDirFor(userId) {
-  return path.join(LOCAL_WORKSPACE_ROOT, String(userId));
-}
-const LEGACY_LOCAL_WORKSPACE_ROOT = path.join(TEST_ROOT, 'workspace');
-function legacyFallbackWorkDirFor(userId) {
-  return path.join(LEGACY_LOCAL_WORKSPACE_ROOT, String(userId));
 }
 
 const MOBIUS_DATA_PATH = process.env.MOBIUS_DATA_PATH || '/data';
@@ -197,12 +179,6 @@ module.exports = {
 
   WORKSPACE_ROOT,
   workDirFor,
-  HOME_WORKSPACE_ROOT,
-  homeWorkDirFor,
-  LOCAL_WORKSPACE_ROOT,
-  fallbackWorkDirFor,
-  LEGACY_LOCAL_WORKSPACE_ROOT,
-  legacyFallbackWorkDirFor,
 
   // 拓展系统: APP_DIR = TEST_ROOT (mobius 源码所在仓库根). 特殊拓展项目的 bind_path
   // 锁死指向这里, 不启用 worktree / research. 拓展代码扫描 mobius/extension/*/,
