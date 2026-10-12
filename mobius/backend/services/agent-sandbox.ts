@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { db } from '../../db';
-import { isWithin, tempRootFor } from './file-access';
+import { isWithin } from './file-access';
 
 const DRIVER = path.join(__dirname, '..', 'agents', 'mobius-landlock');
 let cached: boolean | null = null;
@@ -64,20 +64,24 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   if (user?.role === 'admin') return null;
   const exceptions = exceptionPathsFor(userId, projectId || null);
   const deny: string[] = [];
-  const others = db.prepare("SELECT id, work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '')").all(userId) as Array<{ id: string; work_dir: string }>;
+  const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
   for (const row of others) {
-    // 别人的 per-user temp 目录也不许碰 (与 file-access 的 temp 规则同口径)。
-    // 不存在的路径会被驱动跳过, 所以这里不用先探测存在性。
-    // Other users' per-user temp dirs are off limits too, matching file-access;
-    // non-existent paths are skipped by the driver, so no existence probe needed here.
-    const otherTemp = tempRootFor(row.id);
-    if (otherTemp !== tempRootFor(userId)) deny.push(otherTemp);
-    if (!row.work_dir) continue;
     let root: string;
     try { root = fs.realpathSync(path.resolve(row.work_dir)); } catch { root = path.resolve(row.work_dir); }
     if (exceptions.some((p) => inside(root, p))) compileDeniedChildren(root, exceptions, deny);
     else deny.push(root);
   }
+  // 说明: 这里刻意不为 temp 根加 deny. 本驱动的语义是"默认全可访问, 只排除 deny 子树",
+  // 而 landlock 同一 ruleset 内的规则取并集 —— 一旦某目录下存在 deny, walk() 就不再给该
+  // 目录本身授权(否则授权会覆盖 deny). 因此给 /tmp/mobius/mobius-<别人> 加 deny 会让
+  // /tmp 本身失去授权, 沙箱内 agent 连在 /tmp 下 mkdir 都会 EACCES (已实测)。
+  // 结论: temp 的"本人读+写"只在 Mobius API 层 (file-access) 强制, OS 层 /tmp 对同机
+  // 同 OS 用户的 agent 仍是共享的。
+  // Note: temp roots are deliberately NOT denied here. This driver grants everything by
+  // default and only excludes deny subtrees; landlock unions rules within one ruleset, so a
+  // directory holding a deny can never be granted itself. Denying a sibling temp dir would
+  // therefore leave /tmp ungranted and break `mkdir /tmp/...` inside the sandbox (measured).
+  // Temp isolation is enforced at the Mobius API layer instead.
   const file = path.join(os.tmpdir(), `mobius-landlock-${userId}-${process.pid}-${Date.now()}.policy`);
   fs.writeFileSync(file, deny.map((p) => `deny ${p}`).join('\n') + (deny.length ? '\n' : ''), { mode: 0o600 });
   return file;

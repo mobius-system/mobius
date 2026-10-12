@@ -1,14 +1,14 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { APP_DIR, HIDDEN_FOLDER_NAME } from '../config';
 import { Projects } from '../repositories/projects';
 import { effectiveProjectRole } from './access-control';
+import { isWithin, tempRootFor } from './file-access';
 
 function inside(root: string, target: string): boolean {
-  const r = path.resolve(root);
-  const t = path.resolve(target);
-  return t === r || t.startsWith(r + path.sep);
+  // 越界判断统一走 file-access.isWithin, 不再手写 startsWith
+  // Containment goes through file-access.isWithin instead of a local check
+  return isWithin(root, target);
 }
 
 function realExisting(value: unknown): string | null {
@@ -30,8 +30,12 @@ export function canImportLocalPath(user: any, sourcePath: unknown, projectId?: s
   if (user.role === 'admin') return true;
 
   if (inside(user.work_dir, target)) return true;
+  // temp 只认本人的 per-user 根 (原先是整个 os.tmpdir()), 与 file-access 同口径;
+  // agent 侧的 TMPDIR 已指向这里, 所以"agent 产物 → 导入 skill/memory"照常可用。
+  // Only the subject's own per-user temp root (was all of os.tmpdir()), matching
+  // file-access; agents get TMPDIR pointed here, so their artifacts still import.
   const uploadRoots = [
-    path.join(os.tmpdir()),
+    tempRootFor(user.id),
     path.join(APP_DIR, HIDDEN_FOLDER_NAME, 'upload'),
   ];
   if (uploadRoots.some((root) => inside(root, target))) return true;

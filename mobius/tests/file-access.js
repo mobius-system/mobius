@@ -11,6 +11,7 @@ const {
   joinWithin,
   normalizePath,
   tempRootFor,
+  ensureTempRoot,
 } = require('../backend/services/file-access');
 
 // scratch 根必须不在 /tmp, 否则 temp 用例与工作区用例互相污染.
@@ -55,6 +56,13 @@ try {
   assert.strictEqual(joinWithin(project, 'src', '..', '..', 'outside'), null);
   assert.strictEqual(normalizePath('  '), '');
   assert.strictEqual(tempRootFor('u1'), path.join('/tmp', 'mobius', 'mobius-u1'));
+  // ensureTempRoot: 与 tempRootFor 同一路径, 并真的建出目录 (agent TMPDIR 就指这里); 幂等
+  const created = ensureTempRoot('u1', scratchBase);
+  assert.strictEqual(created, tempRootFor('u1', scratchBase));
+  assert.strictEqual(fs.statSync(created).isDirectory(), true);
+  assert.strictEqual(ensureTempRoot('u1', scratchBase), created);
+  // uid 里的路径分隔符等危险字符被替换, 不会逃出 temp 根
+  assert.strictEqual(tempRootFor('../../evil'), path.join('/tmp', 'mobius', 'mobius-.._.._evil'));
 
   // ── admin 全通 ────────────────────────────────────────────
   assert.strictEqual(canAccess(admin, 'read', path.join(outside, 'x.md'), []), true);
