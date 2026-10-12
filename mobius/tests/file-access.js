@@ -37,7 +37,7 @@ try {
   const outside = mk('outside');
   const extUser = mk('extdata', 'acme', 'users', 'u1');
   const extOther = mk('extdata', 'acme', 'users', 'u2');
-  const upload = mk('upload');
+  const upload = mk('projects', 'p1', '.mobius', 'upload');
   const builtin = mk('builtin');
   const ctxPersonal = mk('ctx', 'personal');
   const ctxProject = mk('ctx', 'project');
@@ -100,10 +100,13 @@ try {
   const selfExtOnly = [{ kind: 'extension_user_data', path: extUser }];
   deny(authorize(user, 'read', path.join(extOther, 'x.bin'), selfExtOnly));
 
-  // ── mobius_upload: 所有人读, 写入不给普通用户 ─────────────
-  const uploadRoots = [{ kind: 'mobius_upload', path: upload }];
-  assert.strictEqual(canAccess(user, 'read', path.join(upload, 'a.pdf'), uploadRoots), true);
-  deny(authorize(user, 'write', path.join(upload, 'a.pdf'), uploadRoots), 'ACTION_DENIED');
+  // ── 上传产物: 已并入 project / user_home, 不再有"全员可读"的独立上传根 ──
+  // 项目内的 .imac/upload 按项目规则 (developer 可读写), 非成员仍看不到
+  assert.strictEqual(canAccess(user, 'read', path.join(upload, 'a.pdf'), devRoots), true);
+  assert.strictEqual(canAccess(user, 'write', path.join(upload, 'a.pdf'), devRoots), true);
+  assert.strictEqual(canAccess(user, 'read', path.join(upload, 'a.pdf'), viewerRoots), true);
+  deny(authorize(user, 'write', path.join(upload, 'a.pdf'), viewerRoots), 'ACTION_DENIED');
+  deny(authorize(user, 'read', path.join(upload, 'a.pdf'), nonMemberRoots));
 
   // ── temp: 只放行本人的 /tmp/mobius/mobius-<uid>/ ───────────
   const tempRoots = [{ kind: 'temp', path: myTemp }];

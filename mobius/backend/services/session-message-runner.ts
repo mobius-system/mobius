@@ -176,11 +176,7 @@ async function runSessionMessage({
     projectId: sess.project_id || null,
     workDir: workspace.workDir,
   });
-  const normalizedAttachments = normalizeSessionAttachments(
-    attachments,
-    user,
-    [workspace.projectRoot, workspace.workDir],
-  );
+  const normalizedAttachments = normalizeSessionAttachments(attachments, user, sess.project_id);
   const normalizedMentions: NormalizedAgentMention[] = normalizeAgentMentions(mentions, normalizedContent);
   const mentionMetadata = sessionMentionMetadata(user, normalizedSessionId, normalizedMentions);
   if (!normalizedContent.trim() && normalizedAttachments.length === 0) {

@@ -13,6 +13,7 @@ import { Issues } from '../repositories/issues';
 import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { parseSkillId } from './skills-fs';
+import { joinWithin } from './file-access';
 import { buildSessionSelectionSnapshot, buildIssueSelectionDefaults } from './session-context';
 import modelRegistry from './model-registry';
 import modelPromptLimits from './model-prompt-limits';
@@ -37,11 +38,10 @@ function sanitizeSlug(value: any, fallback = 'extension'): string {
 }
 
 function resolveUnder(root: any, ...parts: any[]): string {
-  const base = path.resolve(root);
-  const abs = path.resolve(base, ...parts);
-  if (abs !== base && !abs.startsWith(base + path.sep)) {
-    throw new Error('extension workspace path escapes user work_dir');
-  }
+  // 越界判断统一走 file-access.joinWithin (原先此处自带一份实现)
+  // Containment goes through file-access.joinWithin instead of a local copy
+  const abs = joinWithin(root, ...parts);
+  if (!abs) throw new Error('extension workspace path escapes user work_dir');
   return abs;
 }
 

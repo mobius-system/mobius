@@ -4,6 +4,7 @@ import * as yaml from 'js-yaml';
 
 import { Researches } from '../repositories/researches';
 import { HIDDEN_FOLDER_NAME } from '../config';
+import { isWithin } from './file-access';
 
 const GRAPH_FILENAME = 'research-graph.yml';
 const ALLOWED_VISUAL_EFFECTS = ['in_progress', 'completed', 'failed', 'successful'];
@@ -136,7 +137,8 @@ function resolveGraphImage(researchId: any, requestedPath: any): any {
   if (!requestedPath || typeof requestedPath !== 'string') return { error: 'path 不能为空' };
   const absPath = path.resolve(requestedPath);
   const root = resolved.root;
-  if (absPath !== root && !absPath.startsWith(root + path.sep)) {
+  // 越界判断统一走 file-access.isWithin (下同)
+  if (!isWithin(root, absPath)) {
     return { error: '图片路径越界 (必须位于 research 绑定目录内)' };
   }
   let realPath;
@@ -146,7 +148,7 @@ function resolveGraphImage(researchId: any, requestedPath: any): any {
     return { error: '图片不存在' };
   }
   const realRoot = fs.realpathSync(root);
-  if (realPath !== realRoot && !realPath.startsWith(realRoot + path.sep)) {
+  if (!isWithin(realRoot, realPath)) {
     return { error: '图片路径越界 (符号链接指向目录外)' };
   }
   if (!IMAGE_EXTS.has(path.extname(realPath).toLowerCase())) {

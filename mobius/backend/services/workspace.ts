@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { db } from '../../db';
+import { isWithin } from './file-access';
 
 interface SessionWorkspaceRow {
   project_id: string | null;
@@ -101,7 +102,7 @@ function resolveSessionWorkspace(user: any, sessionId: string): any {
 
     const branch = ((session.worktree_branch || '').trim() || session.issue_id) as string;
     const wtPath = path.join(abs, branch);
-    if (wtPath !== abs && !wtPath.startsWith(abs + path.sep)) {
+    if (!isWithin(abs, wtPath)) {
       return { error: `worktree 分支名非法 (路径越界): ${branch}` };
     }
     // 平台只创建空占位目录; agent 第一步会清理并 git worktree add.

@@ -21,7 +21,6 @@
  *   user_home                    owner self 读+写
  *   project / session_dir        viewer 及以上读, developer 及以上写
  *   extension_user_data          本人读+写
- *   mobius_upload                所有登录用户读, 仅经 /api/upload 写
  *   temp (/tmp/mobius/mobius-<uid>/) 本人读+写
  *   builtin_assets               所有人读, 仅 admin 写
  *   context_personal             本人读+写
@@ -31,7 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../../db';
-import { APP_DIR, HIDDEN_FOLDER_NAME, EXTENSION_DATA_ROOT } from '../config';
+import { EXTENSION_DATA_ROOT } from '../config';
 import { effectiveProjectRole } from './access-control';
 
 // 访问动作. open 视同 read (code-server / 终端 cwd 只要求该根目录可读).
@@ -46,7 +45,6 @@ type RootKind =
   | 'project'
   | 'session_dir'
   | 'extension_user_data'
-  | 'mobius_upload'
   | 'temp'
   | 'builtin_assets'
   | 'context_personal'
@@ -169,10 +167,6 @@ function capabilitiesFor(spec: RootSpec, user: Subject | null | undefined): { re
       // 这些根在组装时已限定为"本人", 因此读+写都放给本人
       // These roots are already scoped to the subject, so both directions are granted
       return { read: true, write: true };
-    case 'mobius_upload':
-      // 所有登录用户可读; 写只走 /api/upload 的特权路径
-      // Readable by any signed-in user; writes go through /api/upload only
-      return { read: true, write: false };
     case 'builtin_assets':
     case 'context_builtin':
       // 内置资源所有人可读, 只有 admin 可写 (admin 已在上方返回)
@@ -289,10 +283,6 @@ interface BackendRootsOptions {
 const USER_LEVEL_SKILL_DIR = 'skills';
 const USER_LEVEL_MEMORY_DIR = 'memories';
 
-function mobiusUploadRoot(): string {
-  return path.join(APP_DIR, HIDDEN_FOLDER_NAME, 'upload');
-}
-
 /*
  * Per-extension user data dirs owned by `userId`: <EXTENSION_DATA_ROOT>/<name>/users/<uid>.
  * A normal user only ever receives their own uid here, so the rule stays "self only".
@@ -340,7 +330,10 @@ function backendRoots(user: Subject | null | undefined, opts: BackendRootsOption
   } catch { /* 迁移未完成等场景下跳过项目根, 不阻断其他根 */ }
 
   roots.push(...extensionUserRoots(uid));
-  roots.push({ kind: 'mobius_upload', path: mobiusUploadRoot() });
+  // 上传产物落在项目 bind_path/.imac/upload 或 user.work_dir/uploads, 已分别被
+  // project / user_home 两个根覆盖, 不再单列一个"全员可读"的上传根。
+  // Uploaded files live under the project's .imac/upload or the user's work_dir,
+  // already covered by the project / user_home roots.
   roots.push({ kind: 'temp', path: tempRootFor(uid) });
 
   if (opts.includeContext) {
@@ -379,7 +372,6 @@ export {
   authorize,
   canAccess,
   backendRoots,
-  mobiusUploadRoot,
   extensionUserRoots,
   canDownloadPath,
 };

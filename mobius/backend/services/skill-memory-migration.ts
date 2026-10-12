@@ -29,6 +29,7 @@ import * as path from 'path';
 import * as memoriesFs from './memories-fs';
 import * as skillsFs from './skills-fs';
 import * as accessControl from './access-control';
+import { isWithin } from './file-access';
 
 const FORMAT_TAG = 'imac-skill-memory-bundle';
 const FORMAT_VERSION = 1;
@@ -445,7 +446,8 @@ function writeSkillFromBundle({ requesterUserId, projectId, item }: { requesterU
     for (const f of item.files) {
       const dest = path.join(destDir, f.path);
       const destResolved = path.resolve(dest);
-      if (!destResolved.startsWith(path.resolve(destDir) + path.sep) && destResolved !== path.resolve(destDir)) {
+      // 越界判断统一走 file-access.isWithin
+      if (!isWithin(destDir, destResolved)) {
         return { ok: false, error: `非法相对路径: ${f.path}` };
       }
       fs.mkdirSync(path.dirname(dest), { recursive: true });

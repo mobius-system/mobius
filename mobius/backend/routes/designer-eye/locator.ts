@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { APP_DIR } from '../../config';
+import { isWithin } from '../../services/file-access';
 
 const ALLOWED_EXTENSIONS = new Set(['.tsx', '.ts', '.jsx', '.js', '.mjs', '.css', '.scss', '.html', '.vue']);
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', 'release', 'build', '.git', '.cache', 'coverage']);
@@ -141,7 +142,8 @@ function matchedLabel(signal: LocatorSignal): string {
 export function locateSourceCandidates(request: LocatorRequest): { scope: string; candidates: SourceCandidate[] } {
   const root = path.resolve(request.root);
   const appRoot = path.resolve(APP_DIR);
-  if (root !== appRoot && !root.startsWith(appRoot + path.sep)) {
+  // 越界判断统一走 file-access.isWithin
+  if (!isWithin(appRoot, root)) {
     throw new Error('源码搜索目录超出 APP_DIR');
   }
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {

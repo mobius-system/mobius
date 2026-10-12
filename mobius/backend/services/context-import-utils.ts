@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import { isWithin, joinWithin } from './file-access';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -20,11 +21,10 @@ function formatBytes(bytes: any): string {
   return `${n}B`;
 }
 
+// 越界判断统一走 file-access.joinWithin: 实现只有一处, 旧名保留给既有调用方.
+// Containment delegates to file-access.joinWithin; the old name stays for callers.
 function safeResolveUnder(root: string, ...parts: string[]): string | null {
-  const base = path.resolve(root);
-  const abs = path.resolve(base, ...parts);
-  if (abs !== base && !abs.startsWith(base + path.sep)) return null;
-  return abs;
+  return joinWithin(root, ...parts);
 }
 
 function safeOriginalName(name: any, fallback = 'upload'): string {
@@ -135,7 +135,7 @@ function inspectExtractedTree(root: string, {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       const resolved = path.resolve(abs);
-      if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+      if (!isWithin(base, resolved)) {
         throw new Error(`压缩包解压路径越界: ${entry.name}`);
       }
       const stat = fs.lstatSync(abs);

@@ -601,7 +601,8 @@ function assistantPrompt(question: string, sessionId: string, clientContext: any
 }
 
 function normalizeAssistantAttachments(raw: any, user: any, project: any): any[] {
-  return normalizeSessionAttachments(raw, user, [project?.bind_path]);
+  // 附件准入交由 file-access 的权限表判断, 这里只传项目 id (不传 bind_path 白名单)
+  return normalizeSessionAttachments(raw, user, project?.id);
 }
 
 function assistantQuestionWithAttachments(question: string, attachments: any[]): string {

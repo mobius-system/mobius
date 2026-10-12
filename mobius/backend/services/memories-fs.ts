@@ -233,6 +233,7 @@ function targetPathFor({ userId, projectId, slug }: any): string {
   return path.join(dir, `${slug}.md`);
 }
 
+// 刻意严于 file-access.isWithin: 连 ROOT 自身也拒 (目标始终是 ROOT 下的 .md 文件, 不是 ROOT).
 function withinRoot(p: string): boolean {
   return path.resolve(p).startsWith(path.resolve(ROOT) + path.sep);
 }

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { HIDDEN_FOLDER_NAME } from '../config';
+import { isWithin } from './file-access';
 
 const INPUT_LIST_FILE = 'session_input_list.json';
 
@@ -18,7 +19,8 @@ function resolveSessionInputListPath(projectRoot: any, sessionId: any): { sessio
   const sid = safeSessionId(sessionId);
   const baseDir = path.resolve(root, HIDDEN_FOLDER_NAME, 'session_inputs');
   const sessionDir = path.resolve(baseDir, sid);
-  if (sessionDir !== baseDir && !sessionDir.startsWith(baseDir + path.sep)) {
+  // 越界判断统一走 file-access.isWithin
+  if (!isWithin(baseDir, sessionDir)) {
     throw new Error('session input 路径越界');
   }
   return {

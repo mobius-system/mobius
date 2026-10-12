@@ -8,6 +8,7 @@ import { Projects } from '../repositories/projects';
 import { Skills } from '../repositories/skills';
 // @ts-ignore — service 仍是 .js
 import { resolveEffectiveSkills } from '../services/skill-resolver';
+import { isWithin } from '../services/file-access';
 // @ts-ignore — service 仍是 .js
 import { buildIssueContextPreview, buildIssueSelectionDefaults, buildSessionSelectionSnapshot, gatherIssueSources, stripContextItemBodies } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
@@ -148,7 +149,7 @@ projectScoped.post('/', auth, (req: express.Request, res: express.Response) => {
 
     const abs = path.resolve(bindPath);
     const wtPath = path.join(abs, worktreeBranch);
-    if (wtPath !== abs && !wtPath.startsWith(abs + path.sep)) {
+    if (!isWithin(abs, wtPath)) {
       res.status(400).json({ error: '分支名导致路径越出绑定路径, 请重新输入' });
       return;
     }

@@ -1,23 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { APP_DIR, HIDDEN_FOLDER_NAME } from '../config';
+import { backendRoots, canAccess } from './file-access';
 
 const SESSION_ATTACHMENT_MAX_COUNT = 6;
 const SESSION_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 
-function isPathInside(parent: string, child: string): boolean {
-  if (!parent || !child) return false;
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
-function normalizeSessionAttachments(raw: any, user: any, extraRoots: string[] = []): any[] {
+// 附件路径准入不再自带一份白名单根清单, 统一走 file-access 的权限表:
+// 本模块只提供事实(用户的 work_dir / 所属项目), 规则由 file-access 决定。
+// Attachment admission no longer keeps its own allowed-roots list: the rule comes
+// from file-access, this module only supplies the facts (work_dir, project).
+function normalizeSessionAttachments(raw: any, user: any, projectId?: string | null): any[] {
   const arr = Array.isArray(raw) ? raw : [];
-  const allowedRoots = [
-    ...extraRoots,
-    user?.work_dir,
-    path.join(APP_DIR, HIDDEN_FOLDER_NAME, 'upload'),
-  ].filter(Boolean).map((item) => path.resolve(item as string));
+  const roots = backendRoots(user, { projectId: projectId || null });
   const out: any[] = [];
   const seen = new Set<string>();
 
@@ -28,7 +22,7 @@ function normalizeSessionAttachments(raw: any, user: any, extraRoots: string[] =
     if (!rawPath || !path.isAbsolute(rawPath)) continue;
     const absPath = path.resolve(rawPath);
     if (seen.has(absPath)) continue;
-    if (!allowedRoots.some((root) => isPathInside(root, absPath))) continue;
+    if (!canAccess(user, 'read', absPath, roots)) continue;
     const ext = path.extname(absPath).toLowerCase();
     const requestedType = item.type === 'image' ? 'image' : 'file';
     const type = SESSION_IMAGE_EXTENSIONS.has(ext) ? 'image' : requestedType;
