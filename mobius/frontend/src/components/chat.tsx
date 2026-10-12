@@ -2274,8 +2274,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
     try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
   })
-  // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
-  const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
+  // 常规模式的文件编辑栏开合走 store: 顶栏「原生文件编辑器」入口与 display-files 卡片写同一份状态.
+  // The standard-mode file pane open-state lives in the store so the top-bar entry and cards share one source.
+  const displayFilesOpen = useStore(s => s.fileEditorOpen)
+  const setDisplayFilesOpen = useStore(s => s.setFileEditorOpen)
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
   // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
   const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)

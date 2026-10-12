@@ -388,6 +388,10 @@ interface AppState {
   mobileNavBreakpoint: number
   // 工作区布局模式 (session | editor-chat | code-conversation). 按会话独立保存.
   workspaceLayoutMode: WorkspaceLayoutMode
+  // 常规模式下右侧「原生文件编辑器」栏的开合. 顶栏布局入口与 display-files 卡片共用它,
+  // 保证「文件编辑」只有这一个面板 (与简易模式的 easyFilesOpen 相互独立).
+  // Whether the standard-mode right-side file editor pane is open; shared by the top-bar entry and display-files cards.
+  fileEditorOpen: boolean
   // Actions
   setAuth: (token: string, user: User) => void
   logout: () => void
@@ -403,6 +407,8 @@ interface AppState {
   toggleWorkspaceLayoutMode: () => void
   // 切换到某会话时调用: 恢复该会话保存的布局, 未保存过则回落默认 (不写回).
   applySessionWorkspaceLayout: (sessionId: string | null | undefined) => void
+  // 开合常规模式右侧文件编辑栏 (顶栏「原生文件编辑器」入口与 display-files 卡片共用).
+  setFileEditorOpen: (open: boolean) => void
   setIssues: (issues: Issue[]) => void
   setIssuesMap: (projectId: string, issues: Issue[]) => void
   setCurrentIssue: (issue: Issue | null) => void
@@ -465,6 +471,7 @@ export const useStore = create<AppState>((set) => ({
   mobileNavBreakpoint: 900,
   // 启动默认值; 进入会话后由 applySessionWorkspaceLayout 按会话校正.
   workspaceLayoutMode: WORKSPACE_LAYOUT_DEFAULT,
+  fileEditorOpen: false,
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user, authChecking: false })
@@ -496,6 +503,7 @@ export const useStore = create<AppState>((set) => ({
     const next = loadSessionLayoutMode(sessionId)
     set((s) => (s.workspaceLayoutMode === next ? s : { workspaceLayoutMode: next }))
   },
+  setFileEditorOpen: (open) => set({ fileEditorOpen: !!open }),
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),
