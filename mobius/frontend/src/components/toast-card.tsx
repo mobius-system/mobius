@@ -16,6 +16,8 @@ export interface ToastCardProps {
   actionLabel?: string
   /** 关闭回调; 不传则不渲染关闭按钮 */
   onClose?: () => void
+  /** 长文案(如后端报错原文)改成换行完整显示; 默认单行截断, 保持通知卡高度整齐 */
+  wrap?: boolean
   className?: string
 }
 
@@ -40,8 +42,10 @@ export function ToastCard({
   onAction,
   actionLabel,
   onClose,
+  wrap = false,
   className = '',
 }: ToastCardProps) {
+  const textClass = wrap ? 'whitespace-normal break-words' : 'truncate'
   const clickable = typeof onAction === 'function'
   return (
     <div
@@ -59,8 +63,8 @@ export function ToastCard({
         {icon}
       </div>
       <div className="min-w-0 flex-1 text-[length:var(--fs-xl)] font-medium leading-5">
-        <div className="truncate">{title}</div>
-        {subtitle ? <div className="truncate text-[length:var(--fs-md)] font-normal opacity-80">{subtitle}</div> : null}
+        <div className={textClass}>{title}</div>
+        {subtitle ? <div className={`${textClass} text-[length:var(--fs-md)] font-normal opacity-80`}>{subtitle}</div> : null}
       </div>
       {clickable && actionLabel ? (
         <span className="flex-shrink-0 text-[length:var(--fs-md)] font-semibold text-emerald-400">{actionLabel}</span>

@@ -83,6 +83,7 @@ import { startSceneTour } from '../services/tour'
 import { InlineWebTerminal } from './web-terminal-modal'
 import { PrimaryActionButton } from './primary-action-button'
 import { ToggleSwitch } from './toggle-switch'
+import { ToastCard } from './toast-card'
 import { SkillMarketLink } from './skill-market-link'
 
 type AdminTmuxContext = {
@@ -379,7 +380,37 @@ function validateEmployeeWorkDir(value: string): string {
   return ''
 }
 
+/*
+ * 管理端操作失败的即时提示. 面板顶部那行内联横幅在向导滚到第 3 步、或列表很长时
+ * 已经在视口外 —— 失败那一刻看不到, 就成了"点了没反应". 这里统一顶一条右上角 toast,
+ * 文案用后端原文 (换行完整显示, 不截断), 8 秒自动收起, 也可以手动关.
+ * A transient top-right toast for failed admin actions: the inline banner at the top of
+ * the panel is usually scrolled out of view, so a rejected save looked like a no-op.
+ */
+function useErrorToast() {
+  const [toast, setToast] = useState<{ title: string; detail?: string } | null>(null)
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 8000)
+    return () => clearTimeout(timer)
+  }, [toast])
+  return {
+    showError: (title: string, detail?: string) => setToast({ title, detail }),
+    errorToast: toast ? (
+      <ToastCard
+        tone="error"
+        wrap
+        icon={<AlertTriangle className="h-4 w-4" />}
+        title={toast.title}
+        subtitle={toast.detail}
+        onClose={() => setToast(null)}
+      />
+    ) : null,
+  }
+}
+
 function AdminUsersPanel() {
+  const { showError, errorToast } = useErrorToast()
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -526,7 +557,9 @@ function AdminUsersPanel() {
       const warning = data?.user?.warning ? ` · ${data.user.warning}` : ''
       setNotice(`${data?.user?.status === 'restored' ? '已恢复' : '已添加'}员工 ${data?.user?.id || form.id}${warning}`)
     } catch (e: any) {
-      setError(friendlyApiError(e, '创建用户失败'))
+      const message = friendlyApiError(e, '创建用户失败')
+      setError(message)
+      showError(message)
     } finally {
       setSubmitting(false)
     }
@@ -538,6 +571,7 @@ function AdminUsersPanel() {
     const employees = parseBulkEmployees(bulkText)
     if (!employees.length) {
       setError('请先输入批量员工列表')
+      showError('请先输入批量员工列表')
       return
     }
     setBulkSubmitting(true)
@@ -554,9 +588,12 @@ function AdminUsersPanel() {
       if (data?.failed?.length) {
         const first = data.failed.slice(0, 3).map((f: any) => `第 ${Number(f.index) + 1} 行: ${f.error}`).join('; ')
         setError(first)
+        showError(`批量创建有 ${data.failed.length} 条未成功`, first)
       }
     } catch (e: any) {
-      setError(friendlyApiError(e, '批量创建用户失败'))
+      const message = friendlyApiError(e, '批量创建用户失败')
+      setError(message)
+      showError(message)
     } finally {
       setBulkSubmitting(false)
     }
@@ -573,7 +610,9 @@ function AdminUsersPanel() {
       await refresh(true)
       setNotice(`已删除员工 ${row.id}`)
     } catch (e: any) {
-      setError(friendlyApiError(e, '删除用户失败'))
+      const message = friendlyApiError(e, '删除用户失败')
+      setError(message)
+      showError(message)
     } finally {
       setDeletingId(null)
     }
@@ -607,7 +646,9 @@ function AdminUsersPanel() {
       await refresh(true)
       setNotice(`已更新员工 ${label}`)
     } catch (e: any) {
-      setError(friendlyApiError(e, '更新用户失败'))
+      const message = friendlyApiError(e, '更新用户失败')
+      setError(message)
+      showError(message)
     } finally {
       setSavingEdit(false)
     }
@@ -615,6 +656,7 @@ function AdminUsersPanel() {
 
   return (
     <div className="space-y-4">
+      {errorToast}
       <section className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] p-4" data-tour="admin-section-users">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
