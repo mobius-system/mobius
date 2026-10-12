@@ -80,15 +80,17 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   const deny: string[] = [];
   const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
   const roots = others.map((row) => resolveRealPath(row.work_dir));
-  // 主机自身的固定 deny: 部署目录对普通用户的 Agent 不可见 —— APP_DIR (本机部署, 源码 + .env)
-  // 与 /app_image (镜像内的部署路径, 本机不存在时自动跳过). 它们不属于任何账号, 所以不挂在
-  // users 表上; 走的还是下面同一套拆分逻辑, 因此自迭代类项目 (bind_path = APP_DIR) 里属于
-  // 本人/自己项目的那部分仍被例外放行, 不会把会话锁死.
-  // Fixed host-level denies: an ordinary account's agent cannot see the deployment dirs -- APP_DIR
-  // (this host: source plus .env) and /app_image (the image's deploy path, skipped when absent).
-  // They belong to no account, so they are not on the users table; they run through the same split
-  // below, so a session whose own work dir lives inside one of them keeps its exception.
-  for (const candidate of [APP_DIR, '/app_image']) {
+  // 主机自身的固定 deny: 不属于任何账号, 所以不挂在 users 表上, 每次生成策略时无条件加上.
+  //   - APP_DIR: 本机部署目录 (源码 + .env)
+  //   - /app_image: 镜像内的部署路径 (本机不存在时自动跳过)
+  //   - /etc/passwd: 账户名单 (用户名 / UID / 家目录 / 登录 shell), 普通用户会话不给看
+  // 走的是下面同一套拆分逻辑, 因此自迭代类项目 (bind_path = APP_DIR) 里属于本人/自己项目的
+  // 那部分仍被例外放行, 不会把会话锁死.
+  // Fixed host-level denies: not owned by any account, so they are not on the users table and are
+  // appended unconditionally. APP_DIR (this host's deploy dir: source plus .env), /app_image (the
+  // image's deploy path, skipped when absent) and /etc/passwd (the account list). They run through
+  // the same split below, so a session whose own work dir lives inside one keeps its exception.
+  for (const candidate of [APP_DIR, '/app_image', '/etc/passwd']) {
     if (!candidate || candidate === '/') continue;
     const root = resolveRealPath(String(candidate));
     if (!fs.existsSync(root) || roots.includes(root)) continue;
