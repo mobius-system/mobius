@@ -730,6 +730,9 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
     const body = req.body || {};
     const hasField = (k1: string, k2?: string) =>
       Object.prototype.hasOwnProperty.call(body, k1) || (k2 !== undefined && Object.prototype.hasOwnProperty.call(body, k2));
+    // 工作目录先校验后落库: 否则被拒时角色/显示名已经改完了, 管理端看到的是"报错但改了一半".
+    const nextWorkDir = hasField('work_dir', 'workDir') ? normalizeEmployeeWorkDir(body.work_dir ?? body.workDir) : '';
+    if (nextWorkDir) assertWorkDirAssignable(id, nextWorkDir);
     if (hasField('role')) {
       const newRole = normalizeEmployeeRole(body.role);
       if (newRole === 'user' && target.role !== 'user' && !landlockAvailable()) {
@@ -748,13 +751,7 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
     if (hasField('display_name', 'displayName')) {
       Users.updateDisplayName(id, normalizeDisplayName(body.display_name ?? body.displayName, id));
     }
-    if (hasField('work_dir', 'workDir')) {
-      const wd = normalizeEmployeeWorkDir(body.work_dir ?? body.workDir);
-      if (wd) {
-        assertWorkDirAssignable(id, wd);
-        Users.updateWorkDir(id, wd);
-      }
-    }
+    if (nextWorkDir) Users.updateWorkDir(id, nextWorkDir);
     const pwd = body.password ?? body.newPassword;
     if (typeof pwd === 'string' && pwd.length > 0) {
       if (pwd.length < 6) { res.status(400).json({ error: '密码至少 6 位' }); return; }
