@@ -10,6 +10,7 @@ import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
 import { NewSessionModal } from './modals'
+import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
 import { ResizablePanel } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
@@ -5080,10 +5081,28 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         />
       )}
 
-      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
+      {continueModalOpen && currentSession?.session_id && currentIssueId && (
+        <CreateSessionForm
+          defaultProjectId={currentProjectId || (currentSession as any).project_id}
+          defaultIssueId={currentIssueId}
+          projectKind={projectForSession?.kind}
+          onClose={() => setContinueModalOpen(false)}
+          onDone={handleContinueSessionCreated}
+          continueFromSessionId={currentSession.session_id}
+          initialName={continueSessionName(currentSession)}
+          initialDescription={(currentSession as any).description || ''}
+          initialIssueTitle={(currentIssue as any)?.title || (currentTask as any)?.title}
+          initialDevice={{
+            aimuxId: (currentSession as any).pc_client_metadata?.aimux_id || null,
+            guiAuthorized: (currentSession as any).pc_client_metadata?.gui_authorized === true,
+            requiresAimux: ['pc', 'dual'].includes((currentSession as any).pc_client_metadata?.work_mode),
+          }}
+        />
+      )}
+      {continueModalOpen && currentSession?.session_id && !currentIssueId && (currentSession as any)?.research_id && (
         <NewSessionModal
-          issueId={currentIssueId || undefined}
-          researchId={(currentSession as any)?.research_id || undefined}
+          issueId={undefined}
+          researchId={(currentSession as any).research_id}
           onClose={() => setContinueModalOpen(false)}
           onCreated={handleContinueSessionCreated}
           defaultName={continueSessionName(currentSession)}

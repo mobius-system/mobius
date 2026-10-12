@@ -158,18 +158,19 @@ function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose,
   )
 }
 
-export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId, initialPrompt = '', successMode = 'dialog', projectKind }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string; initialPrompt?: string; successMode?: 'dialog' | 'external'; projectKind?: string }) {
+export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId, initialPrompt = '', successMode = 'dialog', projectKind, continueFromSessionId, initialName, initialDescription, initialIssueTitle, initialDevice }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string; initialPrompt?: string; successMode?: 'dialog' | 'external'; projectKind?: string; continueFromSessionId?: string; initialName?: string; initialDescription?: string; initialIssueTitle?: string; initialDevice?: { aimuxId?: string | null; guiAuthorized?: boolean; requiresAimux?: boolean } }) {
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const userParam = user?.id
-  const DRAFT_KEY = 'gc:new-session'
+  const isContinue = !!continueFromSessionId
+  const DRAFT_KEY = isContinue ? `continue-session:new:${continueFromSessionId}` : 'gc:new-session'
   const d = draftLoad<any>(DRAFT_KEY) || {}
   const [projectId, setProjectId] = useState(defaultProjectId || d.projectId || '')
   const [issueId, setIssueId] = useState(defaultIssueId || d.issueId || '')
-  const [name, setName] = useState(d.name || SESSION_NAME_PLACEHOLDER)
+  const [name, setName] = useState(isContinue ? (d.name || initialName || SESSION_NAME_PLACEHOLDER) : (d.name || SESSION_NAME_PLACEHOLDER))
   // 会话名称是否被人类用户手动编辑过. false → 当前是占位/自动生成, 更换目标任务时跟随重生成; true → 用户权威, 不覆盖.
-  const nameUserTouchedRef = useRef<boolean>(!!d.name_touched)
-  const [desc, setDesc] = useState(d.desc || initialPrompt || '')
+  const nameUserTouchedRef = useRef<boolean>(isContinue || !!d.name_touched)
+  const [desc, setDesc] = useState(isContinue ? (d.desc ?? initialDescription ?? '') : (d.desc || initialPrompt || ''))
   const [selectedMentions, setSelectedMentions] = useState<SessionMentionSelection[]>(
     Array.isArray(d.mentions) ? d.mentions : [],
   )
@@ -208,7 +209,9 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   // 经 pc_client_metadata 注入 session 提示词; pc/dual 时 mobius-aimux skill 强制必选.
   // web 端无 window.mobiusDesktop → workMode 恒 null → 不渲染区块、不附 body、不锁 skill, 行为完全不变.
   const isDesktop = typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop
-  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(isDesktop ? 'dual' : null)
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(
+    isDesktop || (isContinue && (initialDevice?.requiresAimux || initialDevice?.aimuxId)) ? 'dual' : null,
+  )
   const [aimuxId, setAimuxId] = useState<string | null>(null)
   const [pcPath, setPcPath] = useState<string>('')
   // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
@@ -228,10 +231,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   // 协作设备 (aimux bridge): 显式指定本会话绑定的设备, 覆盖桌面端 bootData 注入的本机标识.
   // null = 跟随本机 (与改动前完全一致); 哨兵值代表"跟随本机"这一项.
   // Explicit aimux bridge device for this session; null keeps the previous behaviour (follow the local identifier)
-  const [deviceOverride, setDeviceOverride] = useState<string | null>(null)
+  const [deviceOverride, setDeviceOverride] = useState<string | null>(initialDevice?.aimuxId || null)
   // GUI 授权变体: 选中 "xxx (授权操作图形界面)" 时置 true, 随 pc_client_metadata.gui_authorized 下发
   // GUI-authorized variant: set when the "(授权操作图形界面)" option is picked, sent as gui_authorized
-  const [guiAuthorized, setGuiAuthorized] = useState(false)
+  const [guiAuthorized, setGuiAuthorized] = useState(!!initialDevice?.guiAuthorized)
   const [bridgeDevices, setBridgeDevices] = useState<Array<{ name: string; status?: string; platform?: string; gui?: { available?: boolean } }>>([])
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [devicesLoaded, setDevicesLoaded] = useState(false)
@@ -311,6 +314,14 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
       } else if (selectionReadyRef.current && ((d.excluded_skills && d.excluded_skills.length) || (d.excluded_memories && d.excluded_memories.length))) {
         setExcludedSkills(new Set((d.excluded_skills || []).filter((id: string) => skillIds.has(id))))
         setExcludedMemories(new Set((d.excluded_memories || []).filter((id: string) => memIds.has(id))))
+      } else if (isContinue) {
+        // A continuation starts with no optional Skills or Memories selected.
+        const requiredDirs = new Set([
+          ...(projectKind === 'extension' ? ['mobius-extension'] : []),
+          ...(initialDevice?.requiresAimux || initialDevice?.aimuxId ? ['mobius-aimux'] : []),
+        ])
+        setExcludedSkills(new Set(skills.filter((s: any) => !requiredDirs.has((s.dirName || '').replace(/_/g, '-'))).map((s: any) => s.id)))
+        setExcludedMemories(new Set(memories.map((m: any) => m.id)))
       } else {
         setExcludedSkills(new Set((defaults?.excluded_skill_ids || []).filter((id: string) => skillIds.has(id))))
         setExcludedMemories(new Set((defaults?.excluded_memory_ids || []).filter((id: string) => memIds.has(id))))
@@ -377,13 +388,20 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         name, description: finalDesc, model, language,
         mentions: sessionMentionPayload(selectedMentions),
         excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
+        ...(continueFromSessionId ? { continue_from_session_id: continueFromSessionId } : {}),
         // 用户手填过名称 → 标记 name_touched, 后端置 name_human_edited=1, AI 标题生成器不再覆盖此名.
         name_touched: nameUserTouchedRef.current,
         // PC 任务模式: 桌面端恒有 workMode; web 端仅在用户显式选了协作设备时才附 (effectiveWorkMode 随之非空).
         // PC task mode: always on desktop, and on web once a collaboration device was explicitly picked
-        ...(effectiveWorkMode ? { pc_client_metadata: { work_mode: effectiveWorkMode, aimux_id: effectiveAimuxId || undefined, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true, ...(guiAuthorized ? { gui_authorized: true } : {}) } } : {}),
+        ...(!isContinue && effectiveWorkMode ? { pc_client_metadata: { work_mode: effectiveWorkMode, aimux_id: effectiveAimuxId || undefined, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true, ...(guiAuthorized ? { gui_authorized: true } : {}) } } : {}),
       }) })
       if (s?.error) { setErr(s.error); return }
+      if (isContinue) {
+        draftClear(DRAFT_KEY)
+        const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
+        onDone(s, detailUrl)
+        return
+      }
       // 记录「恢复上次选择」快照 (项目/任务/语言/Skill·Memory), 下次新建可一键回填. 与工作草稿 (gc:new-session) 不同键, 提交清草稿不影响此快照.
       saveLastSelection({
         projectId, issueId,
@@ -473,6 +491,12 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   const handlePreviewCreated = (s: any, meta?: { excluded_skill_ids?: string[]; excluded_memory_ids?: string[] }) => {
     const finalSkills = meta?.excluded_skill_ids ?? Array.from(excludedSkills)
     const finalMemories = meta?.excluded_memory_ids ?? Array.from(excludedMemories)
+    if (isContinue) {
+      draftClear(DRAFT_KEY)
+      const detailUrl = s?.session_id && userParam ? `/u/${userParam}/p/${projectId}/i/${issueId}?session=${s.session_id}` : undefined
+      onDone(s, detailUrl)
+      return
+    }
     const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
     const startContent = [name.trim(), finalDesc].filter(Boolean).join('\n\n')
     if (s?.session_id && startContent) {
@@ -512,8 +536,8 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
     <>
       {/* 预览期间隐藏表单而不卸载: 项目/任务/名称/描述等 state 原样保留, 返回时无缝接续 */}
       <div style={previewOpen ? { display: 'none' } : undefined}>
-        <CreateModalShell title="新建快捷会话" onClose={onClose} dark={dark} width={600} headerExtra={headerExtra}
-          footer={<Footer loading={loading} submitText="创建" onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId}
+        <CreateModalShell title={isContinue ? '修改模型并继续' : '新建快捷会话'} onClose={onClose} dark={dark} width={600} headerExtra={isContinue ? null : headerExtra}
+          footer={<Footer loading={loading} submitText={isContinue ? '创建并继续' : '创建'} onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId}
             preview={{ onClick: openPreview, disabled: !projectId || !issueId }} />}>
           {/* 目标项目 / 目标任务 并排一行省高度; 窄屏 (手机) 仍退回上下两行
               Project + task sit on one row to save vertical space; they stack again on narrow screens */}
@@ -521,7 +545,8 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
             <SelectShell label="目标项目" current={selectedProject?.name} loading={projects.loading} onRefresh={projects.refresh} dark={dark}>
               <DropdownSelect
                 value={projectId}
-                onChange={v => { setProjectId(v); setIssueId(''); setErr('') }}
+                onChange={v => { if (isContinue) return; setProjectId(v); setIssueId(''); setErr('') }}
+                disabled={isContinue}
                 dark={dark}
                 placeholder="— 选择项目 —"
                 emptyText="暂无可用项目"
@@ -536,20 +561,21 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                 ]}
               />
             </SelectShell>
-            <SelectShell label="目标任务" current={selectedIssue?.title} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
+            <SelectShell label="目标任务" current={selectedIssue?.title || (isContinue ? initialIssueTitle : undefined)} loading={issues.loading} onRefresh={issues.refresh} dark={dark} hint={projectId ? '' : '请先选择项目'}>
               <DropdownSelect
                 value={issueId}
-                onChange={v => { setIssueId(v); setSelectionReady(false); setErr('') }}
-                disabled={!projectId}
+                onChange={v => { if (isContinue) return; setIssueId(v); setSelectionReady(false); setErr('') }}
+                disabled={isContinue || !projectId}
                 dark={dark}
                 placeholder={projectId ? '— 选择任务 —' : '请先选择项目'}
                 emptyText={projectId ? '该项目下暂无任务' : '请先选择项目'}
-                panelAction={projectId ? {
+                panelAction={!isContinue && projectId ? {
                   label: '在当前项目新建任务',
                   onClick: () => setCreateIssueOpen(true),
                 } : undefined}
                 options={[
                   { value: '', label: projectId ? '— 选择任务 —' : '请先选择项目', description: '取消选择' },
+                  ...(!issues.list.some((i: any) => String(i.id) === issueId) && isContinue && initialIssueTitle ? [{ value: issueId, label: initialIssueTitle }] : []),
                   ...issues.list.map((i: any) => ({
                     value: String(i.id),
                     label: String(i.title),
@@ -569,7 +595,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
             issueId={issueId || undefined}
             disabled={!issueId}
           />
-          {isDesktop && (
+          {isDesktop && !isContinue && (
             <PcTaskModeSection projectId={projectId || undefined} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
           )}
           <button type="button" onClick={() => setMoreOpen(v => !v)}
@@ -600,6 +626,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                       else { setDeviceOverride(v); setGuiAuthorized(false) }
                     }}
                     dark={dark}
+                    disabled={isContinue}
                     placeholder="— 中枢 —"
                     emptyText="暂无可协作设备"
                     options={[
@@ -697,7 +724,11 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
               attachments,
             }}
             defaultModel={selectedProject?.default_model ?? null}
-            projectKind={selectedProject?.kind}
+            projectKind={selectedProject?.kind || projectKind}
+            requiredSkill={isContinue && (initialDevice?.requiresAimux || initialDevice?.aimuxId)
+              ? { dirName: 'mobius-aimux', name: 'mobius-aimux', label: 'mobius-aimux' }
+              : undefined}
+            continueFromSessionId={continueFromSessionId}
             onBack={handleBackFromPreview}
             onClose={onClose}
             onCreated={handlePreviewCreated}

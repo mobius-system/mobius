@@ -17,11 +17,10 @@ export const BUILTIN_MEMORIES: BuiltinMemory[] = [
     name: '会话内展示和编辑文件',
     description: '用 display-files 让会话文件浏览器展示项目文件或 aimux 远程文件。',
     body: [
-      '`display-files` 是供 Mobius 前端扫描的标记命令，不会读写文件。凡是生成、修改或交付支持的文本、源码、HTML、Markdown、README 文件，都必须在最终回复前调用它，文件才会显示为可点击卡片。',
+      '`display-files` 是供 Mobius 前端扫描的标记命令。只要是你希望用户看到的源码、HTML、Markdown、README 文件，尤其是核心产物性质、总结性质的文件，都建议使用这个命令把这个文件呈现给用户（所谓呈现，意思是在前端显示文件卡片，点击卡片会在当前会话的简易文件侧栏打开文件；支持的远程文本文件可以直接编辑并保存）。',
       '项目中枢文件可传项目绑定目录内的绝对路径，也可传相对路径；绝对路径必须位于绑定目录内。支持预览文本、源码、HTML 和 README。',
       '远程文件使用 `display-files --remote <remote-name> [--root <remote-root>] <relative-path>...`。路径相对于 `--root`；未提供 root 时使用项目为该 remote 配置的路径。远程文件路径不能以 `/` 开头，也不能包含 `..`。',
       '示例：`display-files --remote gptac-zs-dev --root /workspace/app src/main.py README.md`',
-      '点击卡片会在当前会话的简易文件侧栏打开文件；支持的远程文本文件可以直接编辑并保存。',
     ].join('\n'),
   },
   {
@@ -38,16 +37,16 @@ export const BUILTIN_MEMORIES: BuiltinMemory[] = [
       '  display_images https://example.com/photo.jpg',
     ].join('\n'),
   },
-  {
-    scope: 'builtin',
-    name: '向用户呈现文件',
-    description: '为用户呈现文件路径时使用标准 markdown 格式 [文件相对路径](文件绝对路径), 便于点击跳转。',
-    body: [
-      '当你为用户呈现文件时，需要使用标准的markdown格式，形式是 [文件相对路径](文件绝对路径)，举例：',
-      '',
-      '| 文件 | 路径 | 大小 |',
-      '|---|---|---|',
-      '| `3dbc83ce.log` | [best-api/log/debug/3dbc83ce.log](/home/mobius/cc-workspace/kind_star/best-api/log/debug/3dbc83ce.log) | 153 KB |',
-    ].join('\n'),
-  },
+  // {
+  //   scope: 'builtin',
+  //   name: '向用户呈现中枢文件',
+  //   description: '为用户呈现文件路径时使用标准 markdown 格式 [文件相对路径](文件绝对路径), 便于点击跳转。（注意，这种方式呈现的文件必须存在中枢上。如果文件在其他计算机上，不要使用[...](...)语法，建议额外使用display-files）。',
+  //   body: [
+  //     '当你为用户呈现文件时，需要使用标准的markdown格式，形式是 [文件相对路径](文件绝对路径)，举例：',
+  //     '',
+  //     '| 文件 | 路径 | 大小 |',
+  //     '|---|---|---|',
+  //     '| `3dbc83ce.log` | [best-api/log/debug/3dbc83ce.log](/home/mobius/cc-workspace/kind_star/best-api/log/debug/3dbc83ce.log) | 153 KB |',
+  //   ].join('\n'),
+  // },
 ];
