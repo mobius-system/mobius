@@ -9,6 +9,7 @@
  */
 import { Suspense, lazy, useState } from 'react'
 import {
+  AlarmClock,
   BookOpen,
   Brain,
   ChevronDown,
@@ -32,6 +33,8 @@ import { CompactPlainTextFallback } from './text-preview'
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
 
 // 块 key → 图标 + 展示名 (UI 固定中文, 与 themes.ts 徽章惯例一致)
+// 顺序与 session-context-sections 的 SESSION_SECTIONS 目录一致; 目录新增块必须在此补齐,
+// 否则该块回落 FileText + 原始 markdown 标题。
 const BLOCK_META: Record<string, { icon: LucideIcon; label: string }> = {
   user: { icon: UserRound, label: '用户' },
   project: { icon: FolderKanban, label: '项目' },
@@ -41,6 +44,7 @@ const BLOCK_META: Record<string, { icon: LucideIcon; label: string }> = {
   memory: { icon: Brain, label: '持久记忆' },
   skills: { icon: Wrench, label: '必要技能' },
   worktree: { icon: GitBranch, label: 'Git 工作区' },
+  scheduledWakeup: { icon: AlarmClock, label: '定时唤醒' },
   completionFlag: { icon: Flag, label: '完成标记' },
   issue: { icon: CircleDot, label: '任务' },
   session: { icon: MessagesSquare, label: '会话信息' },
