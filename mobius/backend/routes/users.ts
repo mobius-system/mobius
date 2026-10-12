@@ -1,5 +1,5 @@
 import express from 'express';
-import { auth } from '../middleware/auth';
+import { adminAuth } from '../middleware/auth';
 import { db } from '../../db';
 
 const router = express.Router();
@@ -7,9 +7,10 @@ const router = express.Router();
 const ACTIVE = "(deleted_at IS NULL OR deleted_at = '')";
 const MAX_PAGE_SIZE = 200;
 
-// 全部已注册用户列表(脱敏 {id, display_name, role}), 支持搜索框 q + 分页.
-// 供微信式群聊"邀请成员"首屏使用. 不按组织部门过滤, 不返回 password_hash/work_dir.
-router.get('/', auth, (req: express.Request, res: express.Response) => {
+// 全部已注册用户列表({id, display_name, role}), 支持搜索框 q + 分页.
+// 这是系统账号名录的**全量**出口, 只给管理员: 普通用户不得获得系统用户清单
+// (他们需要"按账号找人"时走 /api/auth/user-search 的精确解析, 见 services/user-directory).
+router.get('/', adminAuth, (req: express.Request, res: express.Response) => {
   const me = (req as any).user;
   const q = String(req.query.q || '').trim();
   const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);

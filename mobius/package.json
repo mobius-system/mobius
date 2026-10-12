@@ -13,6 +13,7 @@
     "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",
     "test:user-isolation-v3": "node --require tsx/cjs tests/user-isolation-v3.js",
     "test:user-work-dir-role": "node --require tsx/cjs tests/user-work-dir-role.js",
+    "test:user-directory-policy": "node --require tsx/cjs tests/user-directory-policy.js",
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
     "test:assistant-auto-compact": "node --require tsx/cjs tests/assistant-auto-compact.js",
     "test:forgotten-flag-notify-timing": "node --require tsx/cjs tests/forgotten-flag-notify-timing.js",

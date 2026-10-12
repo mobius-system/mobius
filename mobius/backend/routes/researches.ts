@@ -692,6 +692,13 @@ graphRouter.get('/:researchId', auth, (req: express.Request, res: express.Respon
 });
 
 graphRouter.get('/:researchId/image', downloadAuth, (req: express.Request, res: express.Response) => {
+  // 与上面的 graphRouter.get('/:researchId') 同口径: 图片走的是研究项目 bind_path 里的文件,
+  // 不能只凭 token 就放行 —— 否则换个 researchId 就能读别人项目里的图.
+  const research = Researches.findById(String(req.params.researchId));
+  if (!research || !canReadResearch((req as any).user, research)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
   const result: any = resolveGraphImage(String(req.params.researchId), req.query.path);
   if (result.error) { res.status(result.error.includes('不存在') ? 404 : 403).json({ error: result.error }); return; }
   res.sendFile(result.absPath);

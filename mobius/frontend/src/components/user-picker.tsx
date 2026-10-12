@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { api } from '../store'
+import { api, useStore } from '../store'
 import { computeUserPickerPlacement, type UserPickerPlacement } from './user-picker-position'
 
 type UserOption = {
@@ -18,6 +18,13 @@ const ROLE_LABEL: Record<string, string> = {
 // 下拉候选框的期望高度 (px). 对应旧版非 portal 时的 max-h-56 (224px);
 // 超出则内部滚动, 不足则自适应收缩. 见下方定位 effect 的注释.
 const DESIRED_MENU_HEIGHT = 224
+
+// 非管理员的搜索行为由后端收窄为「精确解析」(见 backend/services/user-directory.ts):
+// 只有完整账号 id / 完整姓名才命中, 不再返回任何账号列表. 文案必须跟着改,
+// 否则用户会以为是"搜不到"而不是"要输完整".
+const EXACT_PLACEHOLDER = '输入完整账号或完整姓名添加'
+const EXACT_EMPTY_HINT = '输入完整的账号或姓名（不支持模糊搜索）'
+const EXACT_NO_MATCH_HINT = '没有找到（需要输入完整的账号或姓名）'
 
 function labelFor(user: UserOption | undefined) {
   if (!user) return ''
@@ -73,6 +80,12 @@ export function UserPicker({
     [selectedIds],
   )
 
+  // 管理员可搜索名册; 普通用户只能精确解析 (后端同一套判定), 文案与空态跟着分档.
+  const me = useStore((s) => s.user)
+  const canSearchDirectory = me?.role === 'admin'
+  const effectivePlaceholder = canSearchDirectory ? placeholder : EXACT_PLACEHOLDER
+  const effectiveEmptyHint = canSearchDirectory ? emptyHint : EXACT_EMPTY_HINT
+
   // 解析已选 ID 的展示信息: 通过批量接口一次性拿到所有已选 ID 的昵称.
   useEffect(() => {
     if (!uniqueSelected.length) {
@@ -104,6 +117,13 @@ export function UserPicker({
   useEffect(() => {
     if (!open) return
     const q = query.trim()
+    // 普通用户没有"空查询给首屏候选"这回事, 不发这次请求 (后端也只会回空).
+    if (!q && !canSearchDirectory) {
+      setOptions([])
+      setErr('')
+      setLoading(false)
+      return
+    }
     let alive = true
     setLoading(true)
     setErr('')
@@ -123,7 +143,7 @@ export function UserPicker({
     }
     const timer = window.setTimeout(load, 180)
     return () => { alive = false; window.clearTimeout(timer) }
-  }, [query, searchPath, open])
+  }, [query, searchPath, open, canSearchDirectory])
 
   // 顶层浮层定位: 不受设置卡片、弹窗、抽屉的 overflow 规则裁剪.
   // 注意: 期望菜单高度用常量 (DESIRED_MENU_HEIGHT), 不能读 menuRef.offsetHeight ——
@@ -225,7 +245,7 @@ export function UserPicker({
       >
         {uniqueSelected.length === 0 && !query && (
           <span className="text-[length:var(--fs-md)] px-1" style={{ color: 'var(--placeholder-color)' }}>
-            {emptyHint}
+            {effectiveEmptyHint}
           </span>
         )}
         {uniqueSelected.map((id) => {
@@ -256,7 +276,7 @@ export function UserPicker({
           onFocus={() => setOpen(true)}
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={effectivePlaceholder}
           className="flex-1 min-w-[120px] px-1 py-0.5 text-[length:var(--fs-md)] font-mono focus:outline-none disabled:cursor-not-allowed"
           style={{ background: 'transparent', color: 'var(--text-primary)' }}
         />
@@ -284,7 +304,9 @@ export function UserPicker({
             <div className="px-3 py-2 text-[length:var(--fs-md)] text-red-400">{err}</div>
           )}
           {!loading && !err && options.length === 0 && (
-            <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>没有匹配的用户</div>
+            <div className="px-3 py-2 text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>
+              {canSearchDirectory ? '没有匹配的用户' : EXACT_NO_MATCH_HINT}
+            </div>
           )}
           {!loading && options.map((opt, idx) => {
             const picked = uniqueSelected.includes(opt.id)

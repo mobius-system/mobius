@@ -28,6 +28,7 @@ import {
 } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { ensureGuidedDemoAssets } from '../services/guided-demo-assets';
+import { searchDirectory } from '../services/user-directory';
 // @ts-ignore — service 仍是 .js
 import { defaultCodeServerWorkspace } from '../services/code-server-workspace';
 import {
@@ -2313,7 +2314,6 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
 // ===== 项目组成员管理 (project membership) =====
 // 与"项目可见性 / allowlist"是两个层次: 成员是协作层 (有角色, 可读可写可管理),
 // 可见性是共享层 (只读). 写操作统一要求 owner/manager (canManage); reader 仅能 GET 列表.
-const ACTIVE_USER_SQL_FOR_QUERY = "(deleted_at IS NULL OR deleted_at = '')";
 
 router.get('/:id/members', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
@@ -2331,25 +2331,18 @@ router.get('/:id/members', auth, (req: express.Request, res: express.Response) =
   });
 });
 
-// 项目团队管理者可搜的候选员工; 只返回 id/display_name/groups/already_member,
+// 项目团队管理者可搜的候选员工; 只返回 id/display_name/already_member,
 // 绝不暴露 password/work_dir/preference/管理员字段.
+// 名册查询走 services/user-directory: 管理员可包含匹配, 普通用户 (即使他有本项目
+// 管理权限) 也只能按完整账号 id / 完整昵称精确解析, 拿不到全站账号列表.
 router.get('/:id/member-candidates', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
   if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
   if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
-  const q = String(req.query.q || '').trim();
-  const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
   const memberIds = new Set(ProjectMemberships.list(id).map((m) => m.user_id));
-  const rows = db.prepare(
-    `SELECT id, display_name FROM users
-     WHERE ${ACTIVE_USER_SQL_FOR_QUERY}
-       AND (id LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')
-     ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, display_name COLLATE NOCASE ASC
-     LIMIT 30`
-  ).all(like, like, q) as Array<{ id: string; display_name: string }>;
-  const candidates = rows.map((r) => ({
+  const candidates = searchDirectory(user, req.query.q, 30).map((r) => ({
     id: r.id,
     display_name: r.display_name || r.id,
     already_member: memberIds.has(r.id),
@@ -3983,6 +3976,7 @@ router.get('/:id/main-project-port', auth, (req: express.Request, res: express.R
 });
 
 router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
 
@@ -3996,6 +3990,9 @@ router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.
   if (!sshPort) missing.push('MOBIUS_SSH_PORT');
   if (!key.privateKeyExists) missing.push('ssh_private_key');
 
+  // 私钥本体是服务器 forward 账号的登录凭据: 只要给出去就等于交出主机访问权,
+  // 所以只有管理员能拿到; 普通项目成员只看到"有没有配好"和连接参数.
+  const isAdmin = user?.role === 'admin';
   res.json({
     enabled: missing.length === 0,
     ssh_url: MOBIUS_SSH_URL || '',
@@ -4003,8 +4000,8 @@ router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.
     port: sshPort,
     mobius_ssh_port: MOBIUS_SSH_PORT || null,
     user: MOBIUS_SSH_FORWARD_USER,
-    private_key: key.privateKey,
-    private_key_path: MOBIUS_SSH_PRIVATE_KEY_PATH || '',
+    private_key: isAdmin ? key.privateKey : '',
+    private_key_path: isAdmin ? (MOBIUS_SSH_PRIVATE_KEY_PATH || '') : '',
     private_key_exists: key.privateKeyExists,
     missing,
   });
