@@ -189,6 +189,13 @@ def build_ruleset(spec, log):
                 st = os.lstat(c)
             except OSError:
                 continue
+            # 文件级 deny 同样必须生效：目录靠 walk() 提前返回挡住，普通文件走的是下面的
+            # grant(c, False)，此前不看 deny 名单，等于把 "deny /etc/passwd" 这类单文件策略
+            # 静默忽略。命中 deny 就一个字都不授予，访问自然会 EACCES。
+            # File-level denies count too: directories are covered by walk() returning early, but
+            # regular files fall through to grant(c, False), which used to ignore the deny list.
+            if any(inside(c, d) for d in spec.paths):
+                continue
             if stat.S_ISLNK(st.st_mode):
                 # 软链一律不授予：O_PATH 打开会跟随到目标，若目标是 deny 目录
                 # 就等于把 deny 撤销了。不授予也安全 —— 软链自身的可访问性由
