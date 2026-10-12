@@ -223,9 +223,10 @@ async function runAdminCenterTour(onDestroyed?: () => void): Promise<boolean> {
     description: '模型创建配额、全局默认模型和代理链都在这里。',
     doneBtnText: '下一个模块',
   })
-  addAdminTabStep(steps, '[data-tour="admin-tab-extensions"]', '[data-tour="admin-section-extensions"]', {
-    title: '拓展管理',
-    description: '安装、启用、隐藏莫比乌斯的拓展插件。',
+  // 「拓展管理」tab 已并入「项目权限」tab, 故这里切到该 tab 后高亮其中的「已隐藏的拓展」section.
+  addAdminTabStep(steps, '[data-tour="admin-tab-project-permissions"]', '[data-tour="admin-section-extensions"]', {
+    title: '项目权限',
+    description: '管理各项目的成员角色；用户在项目页隐藏的拓展卡片也在这里恢复或清理。',
     doneBtnText: '下一个模块',
   })
   addAdminTabStep(steps, '[data-tour="admin-tab-migration"]', '[data-tour="skill-memory-manage-panel"]', {

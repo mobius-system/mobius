@@ -35,7 +35,6 @@ import {
   Pencil,
   Plus,
   Power,
-  Puzzle,
   RefreshCw,
   RotateCcw,
   Save,
@@ -8352,7 +8351,7 @@ function AdminProjectPermissionsPanel() {
   )
 }
 
-export type AdminPanelTab = 'users' | 'project-permissions' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'extensions' | 'migration'
+export type AdminPanelTab = 'users' | 'project-permissions' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'migration'
 
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
@@ -8360,7 +8359,6 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'runtime', label: '运行监控', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
   { key: 'settings', label: '系统设置', icon: <Settings className="h-3.5 w-3.5" /> },
   { key: 'models', label: '模型接入', icon: <Terminal className="h-3.5 w-3.5" /> },
-  { key: 'extensions', label: '拓展管理', icon: <Puzzle className="h-3.5 w-3.5" /> },
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
   { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
   { key: 'others', label: '其他设置', icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
@@ -8502,7 +8500,13 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
 
           {activeTab === 'users' && <AdminUsersPanel />}
 
-          {activeTab === 'project-permissions' && <AdminProjectPermissionsPanel />}
+          {/* 原「拓展管理」tab 已并入「项目权限」: 已隐藏的拓展同样按 项目×用户 维度管理. */}
+          {activeTab === 'project-permissions' && (
+            <div className="flex flex-col gap-3">
+              <AdminProjectPermissionsPanel />
+              <HiddenExtensionsCard />
+            </div>
+          )}
 
           {activeTab === 'others' && (
             <div className="flex flex-col gap-3">
@@ -8528,8 +8532,6 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
               <AdminLightModelApiCard />
             </div>
           )}
-
-          {activeTab === 'extensions' && <HiddenExtensionsCard />}
 
           {activeTab === 'migration' && <SkillMemoryMigrationPanel />}
 
