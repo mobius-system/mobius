@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { db } from '../../db';
+import { APP_DIR } from '../config';
 import { isWithin } from './file-access';
 
 const DRIVER = path.join(__dirname, '..', 'agents', 'mobius-landlock');
@@ -78,8 +79,23 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   const exceptions = exceptionPathsFor(userId, projectId || null, workDir || null);
   const deny: string[] = [];
   const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
-  for (const row of others) {
-    const root = resolveRealPath(row.work_dir);
+  const roots = others.map((row) => resolveRealPath(row.work_dir));
+  // 主机自身有一条固定 deny: 部署目录 (APP_DIR, 源码 + .env) 对普通用户的 Agent 不可见.
+  // 它不属于任何账号, 所以不挂在 users 表上; 走的还是下面同一套拆分逻辑, 因此自迭代类项目
+  // (bind_path = APP_DIR) 里属于本人/自己项目的那部分仍被例外放行, 不会把会话锁死.
+  // A fixed host-level deny: an ordinary account's agent cannot see the deployment dir (APP_DIR,
+  // source plus .env). It belongs to no account, so it is not on the users table; it runs through
+  // the same split below, so a session whose own work dir lives inside APP_DIR keeps its exception.
+  if (APP_DIR && APP_DIR !== '/') {
+    const appRoot = resolveRealPath(String(APP_DIR));
+    if (!roots.includes(appRoot)) roots.push(appRoot);
+  }
+  for (const root of roots) {
+    // 例外正好等于这个根 (本人的工作目录就是它): 那是本人的地盘, 整块放行. 若照常拆分,
+    // 每个子项都会被 deny, 而根自身又会因为"下面存在 deny"拿不到授权, 结果连自己的目录都进不去.
+    // An exception equal to the root means it IS the subject's own dir: leave it granted. Splitting
+    // it would deny every child and leave the root ungranted, locking the session out of its own cwd.
+    if (exceptions.includes(root)) continue;
     if (exceptions.some((p) => inside(root, p))) compileDeniedChildren(root, exceptions, deny);
     else deny.push(root);
   }
