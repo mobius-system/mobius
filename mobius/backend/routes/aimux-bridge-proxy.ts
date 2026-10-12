@@ -28,6 +28,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config';
 import { auth, authOrQuery } from '../middleware/auth';
 import { Users } from '../repositories/users';
+import { bridgeTargetFor, ensureBroker } from '../services/user-isolation/bridge';
 
 const router = express.Router();
 
@@ -116,7 +117,13 @@ function pathWithoutQuery(rawPath: string): string {
 function proxyRequest(req: express.Request, res: express.Response): void {
   let target: BridgeTarget;
   try {
-    target = readBridgeTarget();
+    // docker 隔离: 普通用户路由到其沙箱容器内的 broker (懒启动), 其余走宿主全局 broker
+    if ((req as any).user?.id) {
+      try { ensureBroker(String((req as any).user.id)); } catch { /* broker 启动失败按 BRIDGE_DOWN 走 */ }
+      target = bridgeTargetFor(String((req as any).user.id));
+    } else {
+      target = readBridgeTarget();
+    }
   } catch (e) {
     const err = e as BridgeError;
     res.status(503).json({
@@ -234,6 +241,20 @@ function proxyRequest(req: express.Request, res: express.Response): void {
 router.get('/client/events', authOrQuery, proxyRequest);
 router.use(auth, proxyRequest);
 
+// docker 隔离的 WS upgrade 路由需要用户身份: 解 JWT 返回 payload (校验失败返回 null).
+function verifyUserPayload(req: any): { id: string } | null {
+  const authorization = String(req.headers?.authorization || '');
+  const token = authorization.replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  try {
+    const payload: any = jwt.verify(token, JWT_SECRET);
+    const id = typeof payload === 'string' ? payload : payload?.id;
+    return id && Users.findAuthById(id) ? { id } : null;
+  } catch {
+    return null;
+  }
+}
+
 function verifyUpgrade(req: any): boolean {
   const authorization = String(req.headers?.authorization || '');
   const token = authorization.replace(/^Bearer\s+/i, '');
@@ -255,7 +276,8 @@ function handleUpgrade(req: any, socket: any, head: Buffer): void {
   }
   let target: BridgeTarget;
   try {
-    target = readBridgeTarget();
+    const upgradeUser = verifyUserPayload(req);
+    target = upgradeUser?.id ? bridgeTargetFor(String(upgradeUser.id)) : readBridgeTarget();
   } catch {
     socket.destroy();
     return;

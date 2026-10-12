@@ -294,6 +294,7 @@ export function JsonlView({
   searchNavigationRequested = false,
   onScrollResolved,
   onPauseToDequeue,
+  onUserNavigation,
 }: {
   // agent-history-store 的快照 (rev 驱动重渲染).
   snapshot: HistorySnapshot
@@ -313,6 +314,12 @@ export function JsonlView({
   onScrollResolved?: () => void
   // 排队卡片闪电按钮: 打断当前 turn 并出队下一条排队指令.
   onPauseToDequeue?: () => void
+  // 用户按下轮次跳转控件 (▲/▼/摘要) 时上报: 这是一次明确的"我要离开底部看历史"的意图,
+  // 与 wheel 上滚同义 —— 面板据此停掉追底, 否则追底环会逐帧把视野拽回底部, 跳转看着像没反应.
+  // Reported when the user presses a round-jump control: an explicit intent to leave the
+  // bottom for history, same as a wheel-up. The panel stops the chase, or it would drag the
+  // viewport back and the jump would look like it did nothing.
+  onUserNavigation?: (reason: string) => void
 }) {
   const groups = snapshot.groups
   const [roundHeaderPaletteIndex, setRoundHeaderPaletteIndex] = useState(readRoundHeaderPaletteIndex)
@@ -480,6 +487,9 @@ export function JsonlView({
   const jumpToGroupStart = (index: number) => {
     const headerEl = headerRef.current
     if (!headerEl) return
+    // 先声明接管再起步: 追底环下一帧就该停下, 不能等平滑滚动跑了一半才让位
+    // Declare the takeover before moving: the chase must stop on its next frame
+    onUserNavigation?.(`点击摘要跳转 第 ${index + 1} 轮`)
     const offset = headerEl.offsetHeight
     jumpToGroup(() => {
       const top = groupEdgeOf(index, 'start')
@@ -505,6 +515,14 @@ export function JsonlView({
         if (dir > 0 ? tail > viewBottom : tail < viewBottom) return i
       }
       return -1
+    }
+    // 先解出目标再决定要不要交还控制权: ▼ 跳到末轮结尾 = "追平直播尾巴", 这时应当继续
+    // 追底 (贴底判定会自动恢复), 不算离开底部; 其余跳转都是用户要去看历史, 先停追底再滚.
+    // Resolve the target first: ▼ onto the last round is catching up with the live tail, so
+    // following must stay on. Every other jump is the user leaving the bottom — stop the chase.
+    const plannedTarget = resolveTarget()
+    if (!(dir > 0 && plannedTarget === groups.length - 1)) {
+      onUserNavigation?.(dir > 0 ? '跳到下一轮结尾' : '跳到上一轮结尾')
     }
     jumpToGroup(() => {
       const target = resolveTarget()

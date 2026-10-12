@@ -39,6 +39,8 @@ const {
 } = require('../services/mobius-agent-history')
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
+// 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -75,6 +77,19 @@ const PROXY_CONF = path.join(HOME, 'proxychains_config_for_llm_models.conf')
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, '.codex')
 const CODEX_CONFIG = path.join(CODEX_HOME, 'config.toml')
 const CODEX_STATE_DB = path.join(CODEX_HOME, 'state_5.sqlite')
+
+// 会话归属者: docker 隔离下 codex 的 state db / sessions / config 都按用户分目录,
+// 查询函数用它定位. runtime entry 优先 (无 DB 往返), 否则查 sessions_v2 归属.
+function ownerUserIdOf(sessionId: string | null | undefined, entry?: any): string | null {
+  const e = entry || (backendRuntimeGet as any)?.(sessionId)
+  if (e?.userId) return e.userId
+  try {
+    const row = (require('../../db') as any).db
+      .prepare('SELECT user_id FROM sessions_v2 WHERE session_id = ?').get(String(sessionId || ''))
+    return row?.user_id || null
+  } catch { return null }
+}
+let backendRuntimeGet: ((sid: string) => any) | null = null
 // Each channel TOML declares env_key; this backend exports the matching env var when the window starts.
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'codex-hub-runtime.json')
 // archive: one row per session ever started (sessionId → jsonlPath/agentSessionId/cwd...), never
@@ -287,8 +302,10 @@ function listWindowsRowsCached() {
   const rows = r.status === 0
     ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
-  _listWindowsCache = { ts: now, rows }
-  return rows
+  // docker 隔离: 各沙箱容器内的窗口行并入
+  const allRows = [...rows, ...listWindowsRowsFromSandboxes(HUB)]
+  _listWindowsCache = { ts: now, rows: allRows }
+  return allRows
 }
 
 function shellQuote(s: string) {
@@ -315,21 +332,23 @@ function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settings
 }
 
 // Digital-rain codex per-session withproxy: base_url→token-proxy, api_key→mpx1 token (wire=openai).
-function codexWithProxyPathFor(profileKey: string, sessionId: string): string {
+function codexWithProxyPathFor(profileKey: string, sessionId: string, userId?: string | null): string {
   const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')
-  return path.join(CODEX_HOME, `${profileKey}.withproxy.${safe}.config.toml`)
+  return path.join(codexHomeFor(userId), `${profileKey}.withproxy.${safe}.config.toml`)
 }
 
 // Copy the profile TOML with base_url/api_key rewritten to the token proxy; throws when either key is absent.
-function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: string, upstream: any): string {
+function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: string, upstream: any, userId?: string | null): string {
   const raw = fs.readFileSync(srcPath, 'utf8')
   const proxyToken = encodeProxyToken(upstream)
-  const outPath = codexWithProxyPathFor(profileKey, sessionId)
+  const outPath = codexWithProxyPathFor(profileKey, sessionId, userId)
+  // 隔离用户: token-proxy 地址换成沙箱网关 IP (容器内 127.0.0.1 不可达宿主服务)
+  const finalBaseUrl = userId ? TOKEN_PROXY_BASE_URL.replace(/127\.0\.0\.1/, require('../services/user-isolation').SBX_GATEWAY_IP) : TOKEN_PROXY_BASE_URL
   const lines = raw.split(/\r?\n/)
   let baseUrlHit = false
   let apiKeyHit = false
   const outLines = lines.map((line: string) => {
-    if (/^\s*base_url\s*=/.test(line)) { baseUrlHit = true; return `base_url = "${TOKEN_PROXY_BASE_URL}"` }
+    if (/^\s*base_url\s*=/.test(line)) { baseUrlHit = true; return `base_url = "${finalBaseUrl}"` }
     if (/^\s*api_key\s*=/.test(line)) { apiKeyHit = true; return `api_key = "${proxyToken}"` }
     return line
   })
@@ -426,17 +445,19 @@ function codexProjectHeader(cwd: string) {
 
 // Pre-write trust_level = "trusted" for [projects.<cwd>] in config.toml so the TUI skips the trust
 // prompt. Writes through a temp file + rename; a failure leaves the on-screen fallback to handle it.
-function ensureProjectTrusted(cwd: string) {
+function ensureProjectTrusted(cwd: string, userId?: string | null) {
   try {
-    fs.mkdirSync(CODEX_HOME, { recursive: true })
+    // 隔离用户: 信任写在容器 CODEX_HOME (.sbx-home/.codex/config.toml, seed 已复制全局配置)
+    const configPath = userId ? path.join(codexHomeFor(userId), 'config.toml') : CODEX_CONFIG
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
     const header = codexProjectHeader(cwd)
-    let text = fs.existsSync(CODEX_CONFIG) ? fs.readFileSync(CODEX_CONFIG, 'utf8') : ''
+    let text = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : ''
     const lines = text.split(/\r?\n/)
     let start = lines.findIndex((line: string) => line.trim() === header)
     if (start < 0) {
       if (text && !text.endsWith('\n')) text += '\n'
-      fs.writeFileSync(CODEX_CONFIG, `${text}\n${header}\ntrust_level = "trusted"\n`)
-      log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
+      fs.writeFileSync(configPath, `${text}\n${header}\ntrust_level = "trusted"\n`)
+      log(`[tmux-codex] trusted project in ${configPath}: ${path.resolve(cwd)}`)
       return true
     }
 
@@ -452,10 +473,10 @@ function ensureProjectTrusted(cwd: string) {
     } else {
       lines.splice(start + 1, 0, 'trust_level = "trusted"')
     }
-    const tmp = `${CODEX_CONFIG}.imac-tmp-${process.pid}-${Date.now()}`
+    const tmp = `${configPath}.imac-tmp-${process.pid}-${Date.now()}`
     fs.writeFileSync(tmp, lines.join('\n'))
-    fs.renameSync(tmp, CODEX_CONFIG)
-    log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
+    fs.renameSync(tmp, configPath)
+    log(`[tmux-codex] trusted project in ${configPath}: ${path.resolve(cwd)}`)
     return true
   } catch (e) {
     console.warn(`[tmux-codex] failed to pre-trust project; screen fallback will handle it: ${e.message}`)
@@ -510,9 +531,10 @@ function findPasteMarker(text: string) {
 })()
 
 // Read-only handle on codex's state_5.sqlite; null when better-sqlite3 or the file is missing.
-function openStateDb() {
-  if (!Database || !fs.existsSync(CODEX_STATE_DB)) return null
-  try { return new Database(CODEX_STATE_DB, { readonly: true, fileMustExist: true }) }
+function openStateDb(userId?: string | null) {
+  const dbPath = userId ? path.join(codexHomeFor(userId), 'state_5.sqlite') : CODEX_STATE_DB
+  if (!Database || !fs.existsSync(dbPath)) return null
+  try { return new Database(dbPath, { readonly: true, fileMustExist: true }) }
   catch (e) {
     console.warn(`[tmux-codex] failed to open state db: ${e.message}`)
     return null
@@ -520,8 +542,8 @@ function openStateDb() {
 }
 
 // Every thread id already recorded for this cwd; empty when the state db is unreadable.
-function snapshotThreadIds(cwd: string | null | undefined) {
-  const db = openStateDb()
+function snapshotThreadIds(cwd: string | null | undefined, userId?: string | null) {
+  const db = openStateDb(userId)
   if (!db) return new Set()
   try {
     const rows = db.prepare('SELECT id FROM threads WHERE cwd = ?').all(path.resolve(cwd))
@@ -534,9 +556,9 @@ function snapshotThreadIds(cwd: string | null | undefined) {
 }
 
 // One thread row by id (rollout_path/cwd/model and ms-normalized timestamps), or null.
-function codexThreadById(threadId: string) {
+function codexThreadById(threadId: string, userId?: string | null) {
   if (!threadId) return null
-  const db = openStateDb()
+  const db = openStateDb(userId)
   if (!db) return null
   try {
     return db.prepare(`
@@ -565,9 +587,9 @@ function normalizeCodexTitle(value: unknown): string | null {
 // thread is unknown or Codex has not titled it yet. Codex 0.154+ writes its own concise session
 // title there (tui/src/app/thread_title.rs) and no longer puts a title event in the rollout jsonl.
 // Older state dbs have no `name` column at all: that SELECT throws, and the caller falls back.
-function codexThreadTitleById(threadId: string | null): string | null {
+function codexThreadTitleById(threadId: string | null, userId?: string | null): string | null {
   if (!threadId) return null
-  const db = openStateDb()
+  const db = openStateDb(userId)
   if (!db) return null
   try {
     const row: any = db.prepare('SELECT name FROM threads WHERE id = ?').get(threadId)
@@ -587,11 +609,11 @@ function codexThreadIdFromRolloutPath(jsonlPath: string | null | undefined): str
 }
 
 // rollout_path from the state db, else a recursive walk of $CODEX_HOME/sessions for <threadId>.jsonl.
-function findRolloutPathByThreadId(threadId: string) {
-  const row = codexThreadById(threadId)
+function findRolloutPathByThreadId(threadId: string, userId?: string | null) {
+  const row = codexThreadById(threadId, userId)
   if (row?.rollout_path) return row.rollout_path
 
-  const root = path.join(CODEX_HOME, 'sessions')
+  const root = path.join(codexHomeFor(userId), 'sessions')
   if (!threadId || !fs.existsSync(root)) return null
   const suffix = `${threadId}.jsonl`
   const stack = [root]
@@ -610,8 +632,8 @@ function findRolloutPathByThreadId(threadId: string) {
 
 // Newest thread created in this cwd at/after sinceMs, among the latest 20 rows, skipping excludeIds
 // and any model mismatch. A model of "" or null matches anything.
-function findNewestThread({ cwd, model, sinceMs, excludeIds }: { cwd: string; model: string; sinceMs: number; excludeIds?: Set<string> | null }) {
-  const db = openStateDb()
+function findNewestThread({ cwd, model, sinceMs, excludeIds }: { cwd: string; model: string; sinceMs: number; excludeIds?: Set<string> | null }, userId?: string | null) {
+  const db = openStateDb(userId)
   if (!db) return null
   try {
     const rows = db.prepare(`
@@ -640,8 +662,8 @@ function findNewestThread({ cwd, model, sinceMs, excludeIds }: { cwd: string; mo
 
 // Newest thread updated in this cwd at/after sinceMs, among the latest 20 rows, model-checked.
 // Fallback for a pre-existing window whose thread was created before the dispatch.
-function findRecentlyUpdatedThread({ cwd, model, sinceMs }: { cwd: string; model: string; sinceMs: number }) {
-  const db = openStateDb()
+function findRecentlyUpdatedThread({ cwd, model, sinceMs }: { cwd: string; model: string; sinceMs: number }, userId?: string | null) {
+  const db = openStateDb(userId)
   if (!db) return null
   try {
     const rows = db.prepare(`
@@ -667,8 +689,8 @@ function findRecentlyUpdatedThread({ cwd, model, sinceMs }: { cwd: string; model
   }
 }
 
-function codexRolloutPathOf(threadId: string) {
-  return findRolloutPathByThreadId(threadId)
+function codexRolloutPathOf(threadId: string, userId?: string | null) {
+  return findRolloutPathByThreadId(threadId, userId)
 }
 
 function isCodexTaskComplete(entry: any) {
@@ -737,6 +759,7 @@ class TmuxCodexBackend extends AgentBackend {
   constructor() {
     super({ name: 'tmux-codex', runtimeFile: RUNTIME_FILE, archiveFile: ARCHIVE_FILE })
     this.runtime = new Map()
+    backendRuntimeGet = (sid: string) => this.runtime.get(sid)
     this._restoreFromPersisted()
   }
 
@@ -748,13 +771,14 @@ class TmuxCodexBackend extends AgentBackend {
       total++
       if (!p?.agentSessionId) {
         if (!p?.cwd || !windowExists(sid)) continue
+        const pOwner = ownerUserIdOf(sid, p)
         const recovered = findNewestThread({
           cwd: p.cwd,
           model: p.model || DEFAULT_MODEL,
           sinceMs: Math.max(0, (p.startedAt || 0) - THREAD_BIND_UPDATED_SKEW_MS),
           excludeIds: null,
-        })
-        const recoveredJsonl = recovered?.id ? (recovered.rollout_path || codexRolloutPathOf(recovered.id)) : null
+        }, pOwner)
+        const recoveredJsonl = recovered?.id ? (recovered.rollout_path || codexRolloutPathOf(recovered.id, pOwner)) : null
         if (recovered?.id && recoveredJsonl && fs.existsSync(recoveredJsonl)) {
           const entry = {
             agentSessionId: recovered.id,
@@ -811,7 +835,7 @@ class TmuxCodexBackend extends AgentBackend {
         log(`[tmux-codex] restored pending runtime ${sid}; waiting for codex thread bind`)
         continue
       }
-      const jsonlPath = p.jsonlPath || codexRolloutPathOf(p.agentSessionId)
+      const jsonlPath = p.jsonlPath || codexRolloutPathOf(p.agentSessionId, ownerUserIdOf(sid, p))
       if (!jsonlPath || !fs.existsSync(jsonlPath)) {
         log(`[tmux-codex] dropping runtime ${sid}; rollout jsonl missing: ${jsonlPath}`)
         continue
@@ -1138,7 +1162,7 @@ class TmuxCodexBackend extends AgentBackend {
   // New Codex (0.154+) writes it there and nothing title-shaped into the rollout jsonl, so the
   // base jsonl scan finds nothing; the rollouts of older Codex keep going through that scan.
   getSessionTitle(sessionId: string, opts: QueryOpts = {}): string | null {
-    return codexThreadTitleById(this._resolveAgentSessionId(sessionId))
+    return codexThreadTitleById(this._resolveAgentSessionId(sessionId), ownerUserIdOf(sessionId))
         || super.getSessionTitle(sessionId, opts)
   }
 
@@ -1197,11 +1221,11 @@ class TmuxCodexBackend extends AgentBackend {
     if (!windowExists(sessionId)) {
       spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy: (opts as any).sandboxPolicy || null })
     } else {
-      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
+      await this._ensureRuntimeFromKnownThread({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
     }
 
-    const bindKnownThreadIds = spawnInfo?.knownThreadIds || snapshotThreadIds(cwd)
+    const bindKnownThreadIds = spawnInfo?.knownThreadIds || snapshotThreadIds(cwd, userId)
     const bindSinceMs = spawnInfo?.startedAt || Date.now()
     await this._sendPromptToWindow(sessionId, initialPrompt)
     let entry = this.runtime.get(sessionId)
@@ -1283,11 +1307,11 @@ class TmuxCodexBackend extends AgentBackend {
       codexSecretEnvKey = finalSecretEnvKey ?? null
       displayName = displayName || (persisted?.displayName ?? null)
     } else {
-      await this._ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
+      await this._ensureRuntimeFromKnownThread({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
     }
 
-    const bindKnownThreadIds = spawnInfo?.knownThreadIds || snapshotThreadIds(cwd)
+    const bindKnownThreadIds = spawnInfo?.knownThreadIds || snapshotThreadIds(cwd, userId)
     const bindSinceMs = spawnInfo?.startedAt || Date.now()
     const entry = this.runtime.get(sessionId)
     if (entry) entry.working = true
@@ -1401,14 +1425,15 @@ class TmuxCodexBackend extends AgentBackend {
   }
 
   // Register the runtime entry for an already-known thread, for a window that is still open.
-  async _ensureRuntimeFromKnownThread({ sessionId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }: CodexDispatchOpts) {
+  async _ensureRuntimeFromKnownThread({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId }: CodexDispatchOpts) {
     if (!sessionId || !cwd) return null
     if (this.runtime.has(sessionId)) return this.runtime.get(sessionId)
     if (!agentSessionId) return null
-    const jsonlPath = codexRolloutPathOf(agentSessionId!)
+    const jsonlPath = codexRolloutPathOf(agentSessionId!, userId || ownerUserIdOf(sessionId))
     if (!jsonlPath) return null
     const entry = {
       agentSessionId,
+      userId: userId || ownerUserIdOf(sessionId) || undefined,
       cwd,
       flagRoot: flagRoot || cwd,
       model: model || DEFAULT_MODEL,
@@ -1457,7 +1482,7 @@ class TmuxCodexBackend extends AgentBackend {
         model: model || DEFAULT_MODEL,
         sinceMs: Number(sinceMs) || Date.now() - 10000,
         excludeIds: (knownThreadIds as Set<string> | null | undefined) || new Set<string>(),
-      })
+      }, ownerUserIdOf(sessionId))
       if (found?.id) {
         foundBy = 'created'
         break
@@ -1467,7 +1492,7 @@ class TmuxCodexBackend extends AgentBackend {
           cwd: cwd || '',
           model: model || DEFAULT_MODEL,
           sinceMs: Math.max(0, (Number(sinceMs) || Date.now()) - THREAD_BIND_UPDATED_SKEW_MS),
-        })
+        }, ownerUserIdOf(sessionId))
         if (found?.id) {
           foundBy = 'updated'
           break
@@ -1477,10 +1502,11 @@ class TmuxCodexBackend extends AgentBackend {
     }
     if (!found?.id) throw new Error(`Codex thread was not recorded within ${THREAD_BIND_TIMEOUT_MS}ms (cwd=${cwd})`)
 
-    const jsonlPath = found.rollout_path || codexRolloutPathOf(found.id)
+    const jsonlPath = found.rollout_path || codexRolloutPathOf(found.id, ownerUserIdOf(sessionId))
     if (!jsonlPath) throw new Error(`Codex thread ${found.id} has no rollout_path`)
     const entry = {
       agentSessionId: found.id,
+      userId: ownerUserIdOf(sessionId) || undefined,
       cwd,
       flagRoot: flagRoot || cwd,
       model: found.model || model || DEFAULT_MODEL,
@@ -1537,7 +1563,7 @@ class TmuxCodexBackend extends AgentBackend {
     // Launch time, later written into runtime and persisted state.
     const startedAt = Date.now()
     // Snapshot existing Codex threads for this cwd so a new session can spot the added rollout later.
-    const knownThreadIds = snapshotThreadIds(cwd)
+    const knownThreadIds = snapshotThreadIds(cwd, userId)
     // Running flags default to cwd; a caller-supplied flagRoot wins as the stable root.
     const effFlagRoot = flagRoot || cwd
     // Fall back to the backend's default model when none is given.
@@ -1572,7 +1598,7 @@ class TmuxCodexBackend extends AgentBackend {
         const authToken = secretValue || resolveCodexConfigSecretValue(configText, codexSecretValue)
         if (!baseUrl || !authToken) throw new Error(`codex 缺 base_url/api_key (base_url=${!!baseUrl}, authToken=${!!authToken})`)
         const upstream = { wire: 'openai', baseUrl, authToken, model: finalModel, sessionId, agent: displayName || null }
-        withProxyPath = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream)
+        withProxyPath = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream, userId)
         finalProfileKey = `${profileKey}.withproxy.${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
       } catch (e: any) {
         console.warn(`[tmux-codex] per-session withproxy 生成失败, 回落原 profile (${sessionId}): ${e?.message || e}`)
@@ -1593,7 +1619,7 @@ class TmuxCodexBackend extends AgentBackend {
     // Only resume needs an old rollout lookup.
     if (useResume) {
       // Locate the rollout file for this Codex thread id.
-      rolloutPath = codexRolloutPathOf(agentSessionId!)
+      rolloutPath = codexRolloutPathOf(agentSessionId!, userId)
       // Without a rollout, the resume cannot be trusted.
       if (!rolloutPath) {
         // Warn and degrade to a fresh thread.
@@ -1612,7 +1638,7 @@ class TmuxCodexBackend extends AgentBackend {
     // (remote_execute/read_file/write_file/ping/apply_patch).
     // codex parses `-c key=value` values as TOML, so the args use an inline array.
     if (aimuxRemoteName) {
-      const aimuxBinPath = resolveAimuxBin()
+      const aimuxBinPath = rewriteAimuxBin(userId, resolveAimuxBin())
       // GUI 会话: 远端当前真的报 gui.available 才上 classic-and-gui; 否则退回 classic,
       // 不能让整个 aimux MCP 因 fail-fast 挂掉 (remote_* 也没了).
       // GUI session: only serve the gui toolset when the remote currently reports
@@ -1660,11 +1686,11 @@ class TmuxCodexBackend extends AgentBackend {
       // Load the proxy env vars (new name first, legacy .bash as fallback). set -a lets bare
       // assignments in the sourced file (legacy conf with no export prefix) reach the environment
       // and be inherited by child processes; set +a reverts it afterwards.
-      cmdLines.push(`set -a && source ${shellQuote(resolveProxyEnvsFile())} && set +a`)
+      cmdLines.push(`set -a && source ${shellQuote(rewriteHostPath(userId, resolveProxyEnvsFile()))} && set +a`)
     }
     if (finalProxyMode === 'proxychains' || finalProxyMode === 'env_proxychains') {
       // Start Codex through proxychains, passing the profile, subcommand and args.
-      cmdLines.push(`exec proxychains -q -f ${shellQuote(PROXY_CONF)} codex ${profileArg} ${subcommand}${argStr}`)
+      cmdLines.push(`exec proxychains -q -f ${shellQuote(rewriteHostPath(userId, PROXY_CONF))} codex ${profileArg} ${subcommand}${argStr}`)
     } else {
       // direct / env start Codex directly.
       cmdLines.push(`exec codex ${profileArg} ${subcommand}${argStr}`)
@@ -1673,7 +1699,9 @@ class TmuxCodexBackend extends AgentBackend {
     const cmd = sandboxCommand(sandboxPolicy || null, cmdLines.join(' && '))
 
     // Pre-write project trust to cut the TUI's startup prompts.
-    ensureProjectTrusted(cwd)
+    ensureProjectTrusted(cwd, userId)
+    // 隔离用户: 确保沙箱容器与容器内 tmux server 就绪, 窗口显式走容器
+    const sbxContainer = prepareSpawn(userId, sessionId)
 
     // The channel secret rides only on this window's environment: never embedded in the shell
     // command, never written to the backend runtime file.
@@ -1689,7 +1717,7 @@ class TmuxCodexBackend extends AgentBackend {
     // Create the background tmux window under the hub session and run bash -lc cmd in cwd.
     const r = tmux(
       ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
-      { redactEnvironmentKeys: secretEnvKey ? [secretEnvKey] : [] },
+      { redactEnvironmentKeys: secretEnvKey ? [secretEnvKey] : [], container: sbxContainer || undefined },
     )
     // Surface stderr on failure so command-level problems are diagnosable.
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)

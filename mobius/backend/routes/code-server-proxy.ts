@@ -22,6 +22,7 @@ import { Projects } from '../repositories/projects';
 import { canReadProject, projectAllowsReaderWrite } from '../services/access-control';
 // @ts-ignore — service 仍是 .js
 import * as pool from '../services/code-server-pool';
+import { proxyTargetHost } from '../services/user-isolation/code-server';
 // @ts-ignore — service 仍是 .js
 import { resolveCodeServerWorkspace, validateCodeServerPayload } from '../services/code-server-workspace';
 
@@ -242,7 +243,7 @@ router.use(async (req: express.Request, res: express.Response, next: express.Nex
       `$1${encodeURIComponent(workspace.workspacePath)}`,
     );
   }
-  proxy.web(req, res, { target: `http://127.0.0.1:${entry.port}` });
+  proxy.web(req, res, { target: `http://${proxyTargetHost(parsed.userId)}:${entry.port}` });
 });
 
 async function handleUpgrade(req: any, socket: any, head: Buffer): Promise<void> {
@@ -272,7 +273,7 @@ async function handleUpgrade(req: any, socket: any, head: Buffer): Promise<void>
   pool.touch(parsed.key);
 
   req.url = parsed.rest + (req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '');
-  proxy.ws(req, socket, head, { target: `ws://127.0.0.1:${entry.port}` });
+  proxy.ws(req, socket, head, { target: `ws://${proxyTargetHost(parsed.userId)}:${entry.port}` });
 }
 
 const adminRouter = express.Router();

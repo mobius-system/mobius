@@ -132,6 +132,8 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/memories', memoryJsonParser, memoriesRoutes);
 app.use('/api/admin/designer-eye', designerEyeRoutes);
 app.use('/api/admin', adminRoutes);
+// 用户隔离 (docker 模式) 的沙箱运维面: 列表 / 强制重建 / 停止 (adminAuth 由路由内部? 否 — 挂在 admin 前缀下, 由 adminRoutes 同款 adminAuth 保护)
+app.use('/api/admin/sandboxes', require('./backend/middleware/auth').adminAuth, require('./backend/services/user-isolation/admin-routes'));
 app.use('/api/aimux', aimuxRoutes);
 app.use('/api/scheduled-wake-ups', scheduledWakeupsRoutes);
 // /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
@@ -394,6 +396,11 @@ server.listen(PORT, () => {
   console.log(`[mobius] backend: tmux agents (socket=${AGENT_TMUX_SOCKET}, window-per-session) + jsonl-watcher`);
   // 启动即确保 agent 专用 tmux server (tmux -L mobius-agent) 存在: 不存在则创建,
   // 并固定 default-terminal=tmux-256color, 使所有 detached agent pane 的 $TERM 一致.
+  try {
+    require('./backend/services/user-isolation').onBackendStart();
+  } catch (e) {
+    console.warn('[mobius] user-isolation onBackendStart failed:', e.message);
+  }
   try {
     require('./backend/agents/tmux-operation-log').ensureAgentTmuxServer();
   } catch (e) {

@@ -20,6 +20,11 @@ const LIVE_TOKEN_TICK_MS = 50
 // How long a recorded user gesture keeps vouching for the direction check that follows it.
 const INTENT_BACKING_MS = 400
 
+// 轮次跳转的守卫窗: 平滑滚动起步到离开底部只需几帧, 但第一个 scroll 事件一定还在底部.
+// 这段时间内不把"贴底"当成用户滚回底部, 否则刚声明的接管态会被清掉 (见 navigationAtRef).
+// How long a round-jump keeps the bottom reading from clearing the takeover it declared.
+const NAVIGATION_GUARD_MS = 700
+
 // 显示 buffer 满了的缩容策略: 一次性删除前 2/3、保留后 1/3，腾出空间继续追加,
 // 避免每次追加都 slice(-MAX) 做 O(n) 拷贝 (每 tick 反复触发).
 function trimLiveBuffer(text: string): string {
@@ -305,6 +310,13 @@ function SessionJsonlPanelInner({
   // 有计数、无接管态翻转 —— 这正是验证修复是否生效的观测量.
   // Counter for suppressed direction verdicts: it proves the compensation happened and was caught.
   const suppressedRef = useRef({ count: 0, at: 0, px: 0 })
+  // 轮次跳转控件 (▲/▼/摘要) 的接管时刻. 平滑滚动起步时第一个 scroll 事件仍报"还在底部"
+  // (动画还没挪动), 会被下面的"贴底恢复钉底"当成用户滚回底部, 把刚声明的接管态清掉,
+  // 追底环随之把视野拽回底部 —— 跳转看着无效. 守卫窗内不采信贴底读数.
+  // When a round-jump control is pressed, the animation's first scroll event still reports
+  // the old bottom position; the "restore pinning" rule below would read that as the user
+  // returning to the bottom, clear the takeover, and let the chase drag the view back.
+  const navigationAtRef = useRef(0)
 
   useEffect(() => {
     const el = chatContainerRef.current
@@ -469,8 +481,14 @@ function SessionJsonlPanelInner({
               onScrollPositionChange(true, `onScroll 向上滚 ${Math.round(prev - el.scrollTop)}px (dist=${Math.round(dist)}, ${via})`)
             }
           } else if (dist < 4) {
-            scrollDebug('onScroll: dist=', dist.toFixed(1), '<4 → flag false (恢复钉底)')
-            onScrollPositionChange(false, 'onScroll 贴底 (dist<4)')
+            // 跳转守卫窗内清不得: 跳转起步那一帧还在底部, 清了就等于把跳转让给追底环
+            // Not during a round-jump's guard window: that first frame is still at the bottom
+            if (Date.now() - navigationAtRef.current < NAVIGATION_GUARD_MS) {
+              scrollDebug('onScroll: dist=', dist.toFixed(1), '<4 → 忽略 (轮次跳转守卫窗内)')
+            } else {
+              scrollDebug('onScroll: dist=', dist.toFixed(1), '<4 → flag false (恢复钉底)')
+              onScrollPositionChange(false, 'onScroll 贴底 (dist<4)')
+            }
           }
         }}
       >
@@ -512,6 +530,13 @@ function SessionJsonlPanelInner({
                   searchNavigationRequested={!!(scrollToEntryUuid || scrollToMatchTs)}
                   onScrollResolved={onMatchScrollResolved}
                   onPauseToDequeue={onPauseToDequeue}
+                  // 轮次跳转控件 = 明确的用户意图: 停掉追底并开守卫窗, 否则跳转会被逐帧拽回底部
+                  // Round-jump controls are explicit user intent: stop the chase and hold the
+                  // guard window, or it would drag the viewport back frame by frame
+                  onUserNavigation={(reason) => {
+                    navigationAtRef.current = Date.now()
+                    onScrollPositionChange(true, reason)
+                  }}
                 />
               )}
               {liveCardVisible && (

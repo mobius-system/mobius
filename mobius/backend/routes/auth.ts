@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DIR } from '../config';
 import { auth } from '../middleware/auth';
 import { Users } from '../repositories/users';
-import { assertUserSandboxAvailable } from '../services/agent-sandbox';
+import { assertUserIsolationAvailable } from '../services/user-isolation';
 import { searchDirectory, resolveDirectoryIds } from '../services/user-directory';
 
 const router = express.Router();
@@ -45,7 +45,7 @@ router.post('/login', (req: express.Request, res: express.Response) => {
     res.status(401).json({ error: 'User not found' });
     return;
   }
-  try { assertUserSandboxAvailable(user); } catch (e) {
+  try { assertUserIsolationAvailable(user); } catch (e) {
     return res.status((e as any).status || 503).json({ error: (e as Error).message, code: 'AGENT_SANDBOX_UNAVAILABLE' });
   }
   if (ENABLE_PASSWORD_LOGIN && !bcrypt.compareSync(password || '', user.password_hash)) {

@@ -1,0 +1,55 @@
+# mobius-system-sbx: 普通用户沙箱容器镜像 (USER_ISOLATION_DOCKER_IMAGE).
+#
+# 纯工具链层, 不 COPY 仓库源码/凭证 (工作路径与一切 --volume 由 docker run 挂载):
+#   - node18 (基础镜像自带, npm 装全局 CLI 用) + node22 (deepseek-harness runtime)
+#   - claude-code / codex CLI (与 deploy/Dockerfile 同 pin)
+#   - aimux (容器内 per-user bridge broker + agent MCP)
+#   - code-server / tmux / git / python3 / g++ / make / ffmpeg 等工具链
+# 与 Dockerfile4zh-base 同源的工具链段; 版本升级与主镜像 pin 联动.
+
+FROM docker.1ms.run/library/node:18-bookworm
+
+RUN sed -i 's@//.*deb.debian.org@//mirrors.aliyun.com@g; s@//.*security.debian.org@//mirrors.aliyun.com@g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        nano tmux proxychains-ng git curl ca-certificates tini \
+        python3 python3-pip make g++ procps psmisc iproute2 less \
+        ffmpeg unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+# code-server (官方 deb, 与 Dockerfile4zh-base 同源)
+ARG CODESERVER_DEB_AMD64=https://serve.nutshellai.cn/publish/auto/tutorial/code-server_4.19.1_amd64.deb
+ARG CODESERVER_DEB_ARM64=https://serve.nutshellai.cn/publish/auto/tutorial/code-server_4.19.1_arm64.deb
+RUN ARCH=$(dpkg --print-architecture) \
+ && curl -fsSL -o /tmp/code-server.deb \
+      $( [ "$ARCH" = "amd64" ] && echo "$CODESERVER_DEB_AMD64" || echo "$CODESERVER_DEB_ARM64" ) \
+ && apt-get install -y --no-install-recommends /tmp/code-server.deb \
+ && rm -f /tmp/code-server.deb \
+ && test -x /usr/bin/code-server
+
+# 全局 CLI: claude + codex (与 deploy/Dockerfile 同 pin; 版本沿革见那边注释)
+RUN npm install -g @anthropic-ai/claude-code@2.1.296 @openai/codex@0.144.6
+
+# node22 (deepseek-harness runtime 要求; exec-router 将 node 路径改写到 /usr/local/node22/bin/node)
+RUN curl -fsSL https://mirrors.aliyun.com/nodejs-release/v22.22.2/node-v22.22.2-linux-x64.tar.xz \
+      -o /tmp/node22.tar.xz \
+ && mkdir -p /usr/local/node22 \
+ && tar -xJf /tmp/node22.tar.xz -C /usr/local/node22 --strip-components=1 \
+ && rm -f /tmp/node22.tar.xz \
+ && test -x /usr/local/node22/bin/node
+
+# aimux (容器内 bridge broker + agent MCP; 与 mobius/.venv-aimux 同 pin)
+RUN pip3 install --no-cache-dir --break-system-packages \
+      --index-url https://mirrors.aliyun.com/pypi/simple/ aimux==0.3.71 \
+ && test -x /usr/local/bin/aimux
+
+# CLI 配置模板 (占位, 无凭证): 容器 HOME 初始化播种用 (见 user-isolation/seed 逻辑)
+COPY ./deploy/claude /opt/claude-seed
+COPY ./deploy/codex /opt/codex-seed
+
+# Git 全局身份占位 (真实身份由 mobius 后端按会话注入)
+RUN git config --global user.email "agent@mobius.local" \
+ && git config --global user.name "Mobius Agent" \
+ && git config --global --add safe.directory '*'
+
+CMD ["sleep", "infinity"]

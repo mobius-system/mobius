@@ -161,6 +161,12 @@ function JsonlCountSlot({ store, children }: { store: SessionHistoryStore | null
 // lerp 跟随系数 (调参台定稿 0.06, 见 tmp/frontend_unit_mock): 每帧走"距底剩余距离"的比例.
 const LERP_FOLLOW_K = 0.06
 
+// 吸附阈值: lerp 单帧增量 = 剩余距离 * 0.06, 剩余不足 ~17px 时增量已小于 1px, 而 scrollTop
+// 按整像素生效 —— 增量被整个吞掉, 环既追不平 (delta 永远 > 0.5) 也推不动一格, 于是每帧空转
+// 并把视野死钉在底部, 任何程序滚动 (轮次跳转按钮/摘要跳转) 都被它逐帧按回去 = "按钮无效".
+// 剩余距离进这个阈值就直接吸附到底并收环. 24px 留足整像素余量, 视觉上仍是"到底".
+const LERP_SNAP_PX = 24
+
 // 两个触发源 (条数变化 / 内容长高) 共用同一个自续 RAF 追赶环: 每帧只走剩余距离的
 // LERP_FOLLOW_K — 落后越多追得越快, 逼近底部自动减速, 高卡/批量呈现为先快后慢的
 // 缓动, 小增量轻带即到; 底部在长高中途变化也自然 retarget. 系数按 60Hz 手感调的,
@@ -210,6 +216,14 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (!el) { diagRef.current.lastStop = '滚动容器不存在'; return }
     const delta = el.scrollHeight - el.scrollTop - el.clientHeight
     if (delta <= 0.5) { diagRef.current.lastStop = '已在底部 (delta<=0.5)'; scrollDebug('chase: done (delta<=0.5)'); return }
+    // 剩余距离已在 lerp 分辨率之下: 直接吸附到底并收环, 否则环空转不休 (见 LERP_SNAP_PX)
+    // Inside the lerp's dead zone: snap to the bottom and end the loop, or it would spin forever
+    if (delta <= LERP_SNAP_PX) {
+      el.scrollTop = el.scrollHeight
+      diagRef.current.lastStop = '已在底部 (吸附收环)'
+      scrollDebug('chase: snap to bottom then stop, delta=', delta.toFixed(1))
+      return
+    }
     diagRef.current.frames += 1
     diagRef.current.lastFrameAt = Date.now()
     diagRef.current.lastStop = '追赶中'
@@ -228,7 +242,14 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (rafRef.current) { diag.scheduleBlocked += 1; return }
     rafRef.current = requestAnimationFrame(chase)
   }
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+  // 卸载时取消在跑的帧, 并把句柄归零: 取消掉的帧不算"环还在跑", 留着非 0 句柄会让
+  // schedulePin 的守卫永远挡下后续排帧, 环再也不会启动 (dev StrictMode 双调用必现).
+  // Cancel the pending frame and clear the handle: a cancelled frame is not a running loop,
+  // and a stale non-zero handle would make schedulePin's guard block every later start.
+  useEffect(() => () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = 0
+  }, [])
 
   // 浮窗探针: 读实时 DOM + 计数器, 给出"环是否还活着"和"被谁挡住"的结论.
   // Panel probe: reads live DOM plus the counters to say whether the loop is alive and what blocks it.

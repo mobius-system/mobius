@@ -35,6 +35,7 @@ try {
 import fs from 'fs';
 import os from 'os';
 import { AGENT_TMUX_SOCKET, JWT_SECRET } from '../config';
+import { webTerminalAllowedFor } from '../services/user-isolation';
 // @ts-ignore — repository 仍是 .js 语义, tsx 透明转译
 import { Sessions } from '../repositories/sessions';
 // @ts-ignore
@@ -129,6 +130,12 @@ function resolveSessionTerminal(sid: string, userId: string): { cwd: string; den
 export function handleUpgrade(req: any, socket: any, head: Buffer): void {
   const user = verifyUser(extractToken(req));
   if (!user) { socket.destroy(); return; }
+  // docker 隔离模式: 普通用户的 web 终端不再支持 (code-server 有内置终端), 节省一个端口
+  if (!webTerminalAllowedFor(user)) {
+    try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\nweb terminal disabled in docker isolation mode\n'); } catch {}
+    socket.destroy();
+    return;
+  }
 
   const mode = terminalMode(req.url);
 

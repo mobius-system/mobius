@@ -41,7 +41,8 @@ function resolveRealPath(p: string): string {
   try { return fs.realpathSync(abs); } catch { return abs; }
 }
 
-function exceptionPathsFor(userId: string, projectId: string | null, workDir: string | null): string[] {
+// 导出供 user-isolation 复用 (docker 模式的挂载集与 landlock 例外集同口径).
+export function exceptionPathsFor(userId: string, projectId: string | null, workDir: string | null): string[] {
   const out: string[] = [];
   // 会话归属者自己的工作区永远在例外里 —— 沙盒语义是"自己的工作区 + 有写权限的项目"。
   // 本人的工作区可能嵌在他人工作区之下 (如某管理员的工作目录把整个工作区根都含在里面),

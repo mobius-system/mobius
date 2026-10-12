@@ -409,3 +409,19 @@ app.all('*', (req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`[token-proxy] listening on http://${HOST}:${PORT} (mobius 数字雨中转代理)`)
 })
+
+// docker 用户隔离: 沙箱容器经 mobius-sbx-net 网关 (172.20.0.1) 回连本代理.
+// 127.0.0.1 不经网关, 容器内不可达, 因此加一个网关 IP 监听 (仅 docker 模式; 网络未建时
+// 每 60s 重试, 失败不影响回环服务).
+const SBX_GATEWAY = '172.20.0.1'
+if (String(process.env.USER_ISOLATION_METHOD || '').trim() === 'docker') {
+  const trySbxListen = () => {
+    app.listen(PORT, SBX_GATEWAY, () => {
+      console.log(`[token-proxy] sandbox gateway listening on http://${SBX_GATEWAY}:${PORT}`)
+    }).once('error', (err: any) => {
+      console.warn(`[token-proxy] sandbox gateway listen retry: ${err.message}`)
+      setTimeout(trySbxListen, 60_000)
+    })
+  }
+  trySbxListen()
+}

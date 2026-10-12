@@ -37,7 +37,7 @@ import {
   statsSinceMinutes,
 } from '../services/agent-prompt-events';
 import { runningFlagPathOf, failedFlagPathOf, readFailedFlag } from '../utils/session-flags';
-import { landlockAvailable } from '../services/agent-sandbox';
+import { isolationAllowsNormalUsers } from '../services/user-isolation';
 
 const router = express.Router();
 
@@ -643,7 +643,7 @@ router.get('/users/default-work-dir', adminAuth, (req: express.Request, res: exp
 
 router.post('/users', adminAuth, (req: express.Request, res: express.Response) => {
   try {
-    if (String(req.body?.role || 'user') !== 'admin' && !landlockAvailable()) {
+    if (String(req.body?.role || 'user') !== 'admin' && !isolationAllowsNormalUsers()) {
       return res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止创建普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' });
     }
     const user = createEmployeeAccount(req.body || {});
@@ -659,7 +659,7 @@ router.post('/users/bulk', adminAuth, (req: express.Request, res: express.Respon
   const employees = Array.isArray(body.employees) ? body.employees : [];
   if (!employees.length) { res.status(400).json({ error: '请提供 employees 数组' }); return; }
   if (employees.length > 200) { res.status(400).json({ error: '单次最多批量添加 200 个员工' }); return; }
-  if (!landlockAvailable() && employees.some((row: any) => String(row?.role || 'user') !== 'admin')) {
+  if (!isolationAllowsNormalUsers() && employees.some((row: any) => String(row?.role || 'user') !== 'admin')) {
     res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止创建普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' });
     return;
   }
@@ -747,7 +747,7 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
     }
     if (hasField('role')) {
       const newRole = effectiveRole;
-      if (newRole === 'user' && target.role !== 'user' && !landlockAvailable()) {
+      if (newRole === 'user' && target.role !== 'user' && !isolationAllowsNormalUsers()) {
         res.status(503).json({ error: 'Landlock 沙盒不可用，当前禁止设置普通用户账号', code: 'AGENT_SANDBOX_UNAVAILABLE' }); return;
       }
       if (newRole !== target.role) {

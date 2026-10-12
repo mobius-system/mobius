@@ -55,6 +55,8 @@ const { take_tmux_window_text } = require('./tmux_utils')
 const { ensureSessionWithProxy } = require('../services/model-access')
 const { ensureTempRoot } = require('../services/file-access')
 import { sandboxCommand } from '../services/agent-sandbox'
+// 用户隔离 (docker 模式): spawn 前确保沙箱容器 + tmux server, HOME/路径按用户重定向
+const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, materializeSettingsForSbx } = require('../services/user-isolation')
 
 // ── Constants ───────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -150,15 +152,20 @@ const CLAUDE_CONFIG = path.join(HOME, '.claude.json')
  * blocked by this, because the ready poll's screenshot auto-confirm with
  * Enter is the fallback (belt and braces).
  */
-function ensureProjectTrusted(cwd: string) {
+function ensureProjectTrusted(cwd: string, userId?: string | null) {
   try {
     // 信任按绝对路径记账，先归一化再查表
     // Trust is keyed by absolute path, normalize before looking it up
     const abs = path.resolve(cwd)
-    // 配置文件还没生成，交给截屏兜底，不凭空造一个
-    // No config yet, leave it to the screenshot fallback, do not invent one
-    if (!fs.existsSync(CLAUDE_CONFIG)) return false
-    const j = JSON.parse(fs.readFileSync(CLAUDE_CONFIG, 'utf8'))
+    // 隔离用户的信任写在容器 HOME (.sbx-home) 下; 文件不存在则造一个空表
+    // (容器 HOME 可写, claude 首跑前由后端预置信任, 不依赖截屏兜底)
+    const configFile = userId ? path.join(claudeHomeFor(userId), '.claude.json') : CLAUDE_CONFIG
+    if (!fs.existsSync(configFile)) {
+      if (!userId) return false
+      fs.mkdirSync(path.dirname(configFile), { recursive: true })
+      fs.writeFileSync(configFile, JSON.stringify({ projects: {} }, null, 2))
+    }
+    const j = JSON.parse(fs.readFileSync(configFile, 'utf8'))
     if (!j.projects || typeof j.projects !== 'object') j.projects = {}
     const cur = j.projects[abs]
     // 已经信任过就直接返回，不动别人的状态
@@ -169,10 +176,10 @@ function ensureProjectTrusted(cwd: string) {
     j.projects[abs] = { ...(cur || {}), hasTrustDialogAccepted: true }
     // 先写临时文件再原子改名，配置不会被读到一半
     // Write tmp then rename atomically, the config is never read half-written
-    const tmp = `${CLAUDE_CONFIG}.imac-tmp-${process.pid}-${Date.now()}`
+    const tmp = `${configFile}.imac-tmp-${process.pid}-${Date.now()}`
     fs.writeFileSync(tmp, JSON.stringify(j, null, 2))
-    fs.renameSync(tmp, CLAUDE_CONFIG)
-    log(`[tmux-claude-code] 预置目录信任: ${abs} → ~/.claude.json`)
+    fs.renameSync(tmp, configFile)
+    log(`[tmux-claude-code] 预置目录信任: ${abs} → ${configFile}`)
     return true
   } catch (e) {
     // 失败只告警不抛出，启动照常走截屏自动确认
@@ -487,8 +494,10 @@ function listWindowsRowsCached() {
   const rows = r.status === 0
     ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
-  _listWindowsCache = { ts: now, rows }
-  return rows
+  // docker 隔离: 各沙箱容器内的窗口行并入 (窗口级操作由 tmux() 自动路由回各自容器)
+  const allRows = [...rows, ...listWindowsRowsFromSandboxes(HUB)]
+  _listWindowsCache = { ts: now, rows: allRows }
+  return allRows
 }
 
 /*
@@ -508,8 +517,9 @@ function encodeCwd(cwd: string) {
  * must know whether the file is there (a resume whose jsonl is missing
  * degrades to a fresh session, see _spawnWindow).
  */
-function jsonlPathOf(cwd: string, claudeSessionId: string) {
-  return path.join(HOME, '.claude', 'projects', encodeCwd(cwd), `${claudeSessionId}.jsonl`)
+function jsonlPathOf(cwd: string, claudeSessionId: string, userId?: string | null) {
+  // 隔离用户的 transcript 在容器 HOME (.sbx-home) 下, 后端按用户取基准目录
+  return path.join(claudeHomeFor(userId), '.claude', 'projects', encodeCwd(cwd), `${claudeSessionId}.jsonl`)
 }
 
 /*
@@ -1478,7 +1488,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 重启后窗口还在但runtime可能为空，补建一条
       // The window is live but may have no runtime row; rebuild one
       if (!this.runtime.has(sessionId) && agentSessionId) {
-        const jp = jsonlPathOf(cwd, agentSessionId)
+        const jp = jsonlPathOf(cwd, agentSessionId, userId)
         const finalSettingsPath = settingsPath || null
         const resolved = resolveClaudeProxyMode(useProxy, forceNoProxy, false, proxyMode)
         this.runtime.set(sessionId, {
@@ -1744,6 +1754,9 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     if (finalSettingsPath && !fs.existsSync(finalSettingsPath)) {
       throw new Error(`Claude Code settings 文件不存在: ${finalSettingsPath}`)
     }
+    // 隔离用户: settings 物化到容器 HOME (token-proxy 地址改沙箱网关), 容器内读容器版
+    const sbxSettings = materializeSettingsForSbx(userId, finalSettingsPath)
+    if (sbxSettings) finalSettingsPath = sbxSettings
     // 代理档位与settings互相独立，代理分支一样要传--settings
     // Proxy tier and settings are independent; the proxy branch passes settings too
     const proxyMode = resolveClaudeProxyMode(!!useProxy, !!forceNoProxy, false, proxyModeArg ?? null)
@@ -1759,7 +1772,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     let useResume = !!finalAgentSid
     // 旧SDK链路的jsonl可能不在本cwd下，恢复前先核实
     // An old SDK-chain jsonl may sit outside this cwd, so verify before resuming
-    if (useResume && finalAgentSid && !fs.existsSync(jsonlPathOf(cwd, finalAgentSid))) {
+    if (useResume && finalAgentSid && !fs.existsSync(jsonlPathOf(cwd, finalAgentSid, userId))) {
       // jsonl不在就告警降级为新会话，恢复不可信
       // A missing jsonl warns and degrades to a new session, resume is untrustworthy
       console.warn(`[tmux-claude-code] resume target jsonl 不存在 (${agentSessionId}), fallback 为新 session`)
@@ -1800,7 +1813,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         if (guiOk) aimuxArgs.push('--toolset', 'classic-and-gui')
         else console.warn(`[tmux-claude-code] session authorized GUI but remote ${aimuxRemoteName} has gui off; serving classic toolset`)
       }
-      mcpServers.aimux = { command: resolveAimuxBin(), args: aimuxArgs }
+      mcpServers.aimux = { command: rewriteAimuxBin(userId, resolveAimuxBin()), args: aimuxArgs }
     }
     // 小莫会话注入guling实盘MCP，直接读资金和持仓
     // Xiaomo sessions get the guling trading MCP to read funds and positions
@@ -1883,12 +1896,15 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // Pre-set the trust so the trust-folder dialog never shows up
     // 这一步失败由就绪轮询里的截屏自动确认兜底
     // A failure here falls back to the screenshot auto-confirm in the ready poll
-    ensureProjectTrusted(cwd)
+    ensureProjectTrusted(cwd, userId)
 
     // 在hub会话里建后台窗口，在cwd下跑bash -lc cmd
     // Create the background window in the hub, running bash -lc cmd in cwd
     const launchCmd = sandboxCommand(sandboxPolicy || null, cmd)
-    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', launchCmd])
+    // 隔离用户: 先确保沙箱容器与容器内 tmux server 就绪, 窗口归属登记后显式走容器
+    const sbxContainer = prepareSpawn(userId, sessionId)
+    const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', launchCmd],
+      { container: sbxContainer || undefined })
     // 失败时带出stderr，便于定位命令级问题
     // Surface stderr on failure so command-level problems are diagnosable
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)
@@ -1989,7 +2005,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
     // jsonl路径由cwd和claude会话id推导，不做探测
     // The jsonl path is derived from cwd and the claude session id
-    const jp = jsonlPathOf(cwd, claudeSessionId)
+    const jp = jsonlPathOf(cwd, claudeSessionId, userId)
     // 在内存里登记这个窗口的运行时状态
     // Register this window's runtime state in memory
     this.runtime.set(sessionId, {

@@ -52,6 +52,13 @@ const TOKEN_PROXY_HOST = process.env.MOBIUS_TOKEN_PROXY_HOST || '127.0.0.1';
 const TOKEN_PROXY_PORT = parseInt(process.env.MOBIUS_TOKEN_PROXY_PORT || '45630', 10);
 const TOKEN_PROXY_BASE_URL = `http://${TOKEN_PROXY_HOST}:${TOKEN_PROXY_PORT}`;
 
+// 用户隔离模式: landlock (默认, 现状) | docker (普通用户执行面进沙箱容器).
+// 真正的消费与校验在 backend/services/user-isolation/config.ts; 这里读取仅作
+// 第三道闸登记与 CJS 侧导出. USER_ISOLATION_DOCKER_IMAGE 在 docker 模式下必填,
+// 留空 = 启动自检 fail-closed (禁止普通用户, admin 不受影响).
+const USER_ISOLATION_METHOD = process.env.USER_ISOLATION_METHOD || 'landlock';
+const USER_ISOLATION_DOCKER_IMAGE = process.env.USER_ISOLATION_DOCKER_IMAGE || '';
+
 function parseMobiusSshPort(raw) {
   const text = String(raw || '').trim();
   if (!text) return null;
@@ -229,6 +236,10 @@ module.exports = {
   TOKEN_PROXY_HOST,
   TOKEN_PROXY_PORT,
   TOKEN_PROXY_BASE_URL,
+
+  // 用户隔离模式 (消费见 backend/services/user-isolation/).
+  USER_ISOLATION_METHOD,
+  USER_ISOLATION_DOCKER_IMAGE,
 
   TEST_ROOT,
 };

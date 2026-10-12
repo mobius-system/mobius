@@ -28,6 +28,8 @@ const { recordPromptPaste } = require('../services/agent-prompt-events')
 const { MOBIUS_DATA_PATH } = require('../config')
 const { ensureTempRoot } = require('../services/file-access')
 import { DRIVER as LANDLOCK_DRIVER } from '../services/agent-sandbox'
+// 用户隔离 (docker 模式): spawn 分派进沙箱容器 (node 换容器内 node22)
+const { spawnHarnessChild, isolationActiveFor } = require('../services/user-isolation')
 
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-runtime.json')
 const ARCHIVE_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-archive.json')
@@ -148,6 +150,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
   // (TS2339). For the narrowed runtime type, see the base class comment.
   declare runtime: Map<string, HarnessSessionEntry>
   spawn: (cmd: string, args: string[], opts: any) => any // injectable fake for tests
+  spawnHarness: (userId: any, command: { command: string; args: string[] }, opts: { cwd: string; env: Record<string, any> }) => any // docker 隔离分派 (可注入 fake)
   runtimeOptions: Record<string, unknown>
   sessionRoot: string
 
@@ -155,6 +158,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
     super({ name: 'deepseek-harness', runtimeFile: opts.runtimeFile || RUNTIME_FILE, archiveFile: opts.archiveFile || ARCHIVE_FILE })
     this.runtime = new Map()
     this.spawn = opts.spawn || spawn
+    this.spawnHarness = spawnHarnessChild
     this.runtimeOptions = opts.runtimeOptions || {}
     this.sessionRoot = opts.sessionRoot || SESSION_ROOT
     for (const [sessionId, entry] of Object.entries(this.persisted) as Array<[string, any]>) {
@@ -265,9 +269,12 @@ class DeepSeekHarnessBackend extends AgentBackend {
       TMPDIR: ensureTempRoot(opts.userId),
     }
     const sandboxPolicy = (optsRaw as any).sandboxPolicy;
-    const child = sandboxPolicy
-      ? this.spawn(LANDLOCK_DRIVER, ['--policy', String(sandboxPolicy), '--', command.command, ...command.args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
-      : this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+    // docker 隔离优先于 landlock: 普通用户进沙箱容器 (docker 模式下 sandboxPolicy 恒为 null)
+    const child = isolationActiveFor(opts.userId)
+      ? this.spawnHarness(opts.userId, command, { cwd, env })
+      : sandboxPolicy
+        ? this.spawn(LANDLOCK_DRIVER, ['--policy', String(sandboxPolicy), '--', command.command, ...command.args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
+        : this.spawn(command.command, command.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
     const entry = {
       sessionId, agentSessionId, cwd, flagRoot, jsonlPath, nativeRoot, pid: child.pid || null,
       model: opts.model, provider: opts.harnessProvider || 'deepseek-official', maxTokens: opts.harnessMaxTokens || null,

@@ -164,7 +164,17 @@ function recordTmuxCommand(args: string[], opts: TmuxCallOpts = {}) {
 
 // Run tmux against the private agent server, retrying the call once if the server had been
 // killed externally.
+// Docker isolation routing (user-isolation): opts.container runs the call inside that
+// sandbox container (`docker exec`); otherwise window-level calls whose target window is
+// registered to a sandboxed user are auto-routed the same way (zero call-site changes).
 function tmux(args: string[], opts: TmuxCallOpts = {}) {
+  const container = opts.container || routeWindowContainer(args)
+  if (container) {
+    const effectiveArgs = ['-L', AGENT_TMUX_SOCKET, ...args]
+    recordTmuxCommand(effectiveArgs, opts)
+    const { redactEnvironmentKeys: _r, container: _c, ...spawnOpts } = opts as any
+    return spawnSync('docker', ['exec', '-i', container, 'tmux', ...effectiveArgs], { encoding: 'utf8', ...spawnOpts })
+  }
   ensureAgentTmuxServer()
   const effectiveArgs = ['-L', AGENT_TMUX_SOCKET, ...args]
   recordTmuxCommand(effectiveArgs, opts)
@@ -179,6 +189,12 @@ function tmux(args: string[], opts: TmuxCallOpts = {}) {
     result = spawnSync('tmux', effectiveArgs, { encoding: 'utf8', ...spawnOpts })
   }
   return result
+}
+
+// Auto-routing resolver, injected lazily to avoid a circular import at module load.
+let routeWindowContainer: (args: string[]) => string | null = () => null
+export function setWindowRouteResolver(resolver: (args: string[]) => string | null): void {
+  routeWindowContainer = resolver
 }
 
 // Append to the log file (best-effort) and echo to stdout.
@@ -206,6 +222,7 @@ module.exports = {
   redactEnvironmentArgs,
   recordTmuxCommand,
   shouldRecordTmuxCommand,
+  setWindowRouteResolver,
   tmux,
   tmuxCommandString,
 }
