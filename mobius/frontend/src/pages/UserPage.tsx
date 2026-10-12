@@ -646,7 +646,11 @@ export default function UserPage() {
                 // 「数据 / 监控 / 配置」改为跳转: 数据 -> 系统可视化, 监控 -> 管理中心·运行监控, 配置 -> 管理中心.
                 // 这三个不再走 setActiveView 切视图, 因此也不再触发 activeView 高亮.
                 { key: 'data', label: '数据', icon: <Database className="w-4 h-4" strokeWidth={1.8} />, action: () => navigate(`/u/${userParam}/mobius_overview_cluster`) },
-                { key: 'monitor', label: '监控', icon: <Activity className="w-4 h-4" strokeWidth={1.8} />, action: () => window.openAdminOverlay?.('runtime') },
+                // 「监控」直通管理中心·运行监控, 那个 tab 只有管理员可见 —— 普通用户不显示这一项.
+                ...(user?.role === 'admin' ? [
+                  { key: 'monitor', label: '监控', icon: <Activity className="w-4 h-4" strokeWidth={1.8} />, action: () => window.openAdminOverlay?.('runtime') },
+                ] : []),
+                // 「配置」进管理中心; 普通用户落在自己的第一个 tab (Skill与Memory管理), 管理员落在用户管理.
                 { key: 'config', label: '配置', icon: <Settings className="w-4 h-4" strokeWidth={1.8} />, action: () => window.openAdminOverlay?.() },
               ] : []),
             ].map((item) => item.key === '__divider__' ? (
