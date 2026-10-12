@@ -41,15 +41,22 @@ export function ensureBroker(userId: string): void {
   if (r.status === 0 && r.stdout.trim()) return;
   const workDir = (db.prepare('SELECT work_dir FROM users WHERE id = ?').get(userId) as { work_dir?: string })?.work_dir || '';
   const home = sbxHomeFor(workDir);
+  // HOME 指向容器 sbx-home: broker 默认把 runtime.json 写到 $HOME/.aimux/bridge/
   const run = spawnSync('docker', ['exec', '-d', '-e', `HOME=${home}`, name,
     'aimux', 'bridge', 'deploy', '--host', '0.0.0.0', '--port', String(BRIDGE_PORT),
-    '--runtime', path.join(home, '.aimux', 'bridge', 'runtime.json'),
   ], { encoding: 'utf8', timeout: 30000 });
   if (run.status !== 0) {
     console.warn(`[user-isolation/bridge] 容器内 broker 启动失败: ${run.stderr || run.error?.message}`);
-  } else {
-    console.log(`[user-isolation/bridge] broker started in ${name} :${BRIDGE_PORT}`);
+    return;
   }
+  // 就绪等待: broker 绑定端口前代理转发会 ECONNREFUSED (容器内 TCP 探测, 最多 15s)
+  for (let i = 0; i < 30; i++) {
+    const probe = spawnSync('docker', ['exec', name, 'bash', '-c',
+      `</dev/tcp/127.0.0.1/${BRIDGE_PORT}`], { encoding: 'utf8', timeout: 5000 });
+    if (probe.status === 0) break;
+    spawnSync('sleep', ['0.5']);
+  }
+  console.log(`[user-isolation/bridge] broker started in ${name} :${BRIDGE_PORT}`);
 }
 
 // 代理目标解析 (aimux-bridge-proxy 调用): 隔离用户 → 容器内 runtime.json,

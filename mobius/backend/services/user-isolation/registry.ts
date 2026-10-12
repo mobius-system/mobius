@@ -76,14 +76,14 @@ export function removeEntry(userId: string): void {
   persist();
 }
 
-// 静态 IP 分配: 取未占用的 172.20.0.<n>, 没有空位抛错 (253 用户上限).
+// 静态 IP 分配: 取未占用的 172.28.0.<n>, 没有空位抛错 (253 用户上限).
 export function allocateIp(): string {
   const used = new Set(allEntries().map((e) => e.ip));
   for (let n = SBX_IP_FIRST; n <= SBX_IP_LAST; n++) {
-    const ip = `${SBX_IP_BASE}.20.0.${n}`;
+    const ip = `${SBX_IP_BASE}.${n}`;
     if (!used.has(ip)) return ip;
   }
-  throw new Error('user-isolation: 沙箱 IP 池已满 (172.20.0.2-254)');
+  throw new Error('user-isolation: 沙箱 IP 池已满 (172.28.0.2-254)');
 }
 
 export function recordCodeServer(userId: string, projectId: string, port: number): void {

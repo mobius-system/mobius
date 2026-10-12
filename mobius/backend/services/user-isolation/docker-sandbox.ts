@@ -170,6 +170,10 @@ export function ensureSandbox(userId: string): void {
   const ip = registry.allocateIp();
   const args = [
     'run', '-d', '--name', name,
+    // ⚠️ 临时: 本机 docker 29.1.3 + runc 1.3.4 的默认 seccomp profile 会让容器 init
+    // 进程起不来 ("can't get final child's PID from pipe: EOF", 已实测 unconfined 可绕过).
+    // 升级 runc >= 1.3.5 或修复 daemon 后必须移除本行, 恢复默认 seccomp 防护.
+    '--security-opt', 'seccomp=unconfined',
     '--network', SBX_NETWORK, '--ip', ip,
     '--memory', SBX_MEMORY, '--cpus', SBX_CPUS, '--pids-limit', String(SBX_PIDS_LIMIT),
     '--init', '--stop-timeout', '30',
@@ -220,10 +224,13 @@ export function rebuildNow(userIds: Array<string | null | undefined>): void {
 // ── agent 活跃判定 + 全灭即删 ───────────────────────────────────────────────
 function userHasActiveAgent(userId: string): boolean {
   const name = containerNameFor(userId);
-  // tmux 两个 hub 任一有存活窗口 = 活跃
+  // tmux 两个 hub 任一有存活 agent 窗口 = 活跃 (_root 是引导占位窗口, 不算)
   for (const hub of ['imac_claude_code_agent_hub', 'imac_codex_agent_hub']) {
-    const r = docker(['exec', name, 'tmux', '-L', 'mobius-agent', 'list-windows', '-t', hub], 15000);
-    if (r.status === 0 && r.stdout.trim()) return true;
+    const r = docker(['exec', name, 'tmux', '-L', 'mobius-agent', 'list-windows', '-t', hub, '-F', '#{window_name}'], 15000);
+    if (r.status === 0) {
+      const agentWindows = r.stdout.trim().split('\n').filter((w) => w.trim() && w.trim() !== '_root');
+      if (agentWindows.length > 0) return true;
+    }
   }
   // deepseek-harness: dsh-jsonrpc-agent 进程存活 = 活跃
   const dsh = docker(['exec', name, 'pgrep', '-f', 'dsh-jsonrpc-agent'], 15000);

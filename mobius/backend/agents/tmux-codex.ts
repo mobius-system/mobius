@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -280,6 +280,8 @@ function ensureHub() {
 function windowExists(name: string) {
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}'])
   if (r.status !== 0) return false
+  // docker 隔离: 沙箱容器内的窗口也算存在 (宿主 hub 看不到它们)
+  if (listWindowsRowsFromSandboxes(HUB).some((cols: string[]) => cols[0] === name)) return true
   return r.stdout.split('\n').includes(name)
 }
 
@@ -1962,18 +1964,18 @@ class TmuxCodexBackend extends AgentBackend {
 
     // 末尾的-表示从stdin读，提示词不进命令行，避免超长和泄漏
     // Trailing - reads stdin, keeps the prompt out of argv and ps
-    const r1 = tmux(['load-buffer', '-b', bufName, '-'], { input: text })
+    const r1 = tmux(['load-buffer', '-b', bufName, '-'], { input: text, container: containerForWindow(sessionId) || undefined })
     // 装载buffer失败直接抛出错误
     // Throw when loading the buffer fails
     if (r1.status !== 0) throw new Error(`tmux load-buffer failed: ${r1.stderr}`)
 
     // -p括号粘贴，-d粘贴成功后删buffer，-t指定目标窗口
     // -p bracketed paste, -d drop the buffer, -t target window
-    const r2 = tmux(['paste-buffer', '-p', '-d', '-b', bufName, '-t', `${HUB}:${sessionId}`])
+    const r2 = tmux(['paste-buffer', '-p', '-d', '-b', bufName, '-t', `${HUB}:${sessionId}`], { container: containerForWindow(sessionId) || undefined })
     if (r2.status !== 0) {
       // -d只在成功时生效，失败要手动清理buffer
       // -d only fires on success, clean the buffer by hand here
-      tmux(['delete-buffer', '-b', bufName])
+      tmux(['delete-buffer', '-b', bufName], { container: containerForWindow(sessionId) || undefined })
       // 粘贴失败抛出错误
       // Throw when pasting fails
       throw new Error(`tmux paste-buffer failed: ${r2.stderr}`)

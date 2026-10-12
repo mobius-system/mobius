@@ -10,9 +10,9 @@ export {
   reconcileSandboxes, startBackgroundTimers,
 } from './docker-sandbox';
 export {
-  prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner,
+  prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow,
   listWindowsRowsFromSandboxes, claudeHomeFor, codexHomeFor,
-  rewriteHostPath, rewriteEnvUrls, rewriteAimuxBin, spawnHarnessChild,
+  rewriteHostPath, rewriteEnvUrls, rewriteAimuxBin, spawnHarnessChild, materializeSettingsForSbx,
 } from './exec-router';
 export { dockerCodeServerActive, ensureDocker, killDocker, proxyTargetHost, listDocker } from './code-server';
 export { bridgeRoutedFor, ensureBroker, bridgeTargetFor } from './bridge';

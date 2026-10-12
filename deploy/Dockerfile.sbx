@@ -36,12 +36,11 @@ RUN curl -fsSL https://mirrors.aliyun.com/nodejs-release/v22.22.2/node-v22.22.2-
  && mkdir -p /usr/local/node22 \
  && tar -xJf /tmp/node22.tar.xz -C /usr/local/node22 --strip-components=1 \
  && rm -f /tmp/node22.tar.xz \
- && test -x /usr/local/node22/bin/node
+ && test -x /usr/local/node22/bin/node && /usr/local/node22/bin/node --version
 
-# aimux (容器内 bridge broker + agent MCP; 与 mobius/.venv-aimux 同 pin)
-RUN pip3 install --no-cache-dir --break-system-packages \
-      --index-url https://mirrors.aliyun.com/pypi/simple/ aimux==0.3.71 \
- && test -x /usr/local/bin/aimux
+# aimux (容器内 bridge broker + agent MCP; 与 mobius/.venv-aimux 同 pin; 镜像源未同步时回退官方)
+RUN python3 -m pip install --no-cache-dir --break-system-packages --index-url https://mirrors.aliyun.com/pypi/simple/ aimux==0.3.71 || python3 -m pip install --no-cache-dir --break-system-packages aimux==0.3.71
+RUN test -x /usr/local/bin/aimux
 
 # CLI 配置模板 (占位, 无凭证): 容器 HOME 初始化播种用 (见 user-isolation/seed 逻辑)
 COPY ./deploy/claude /opt/claude-seed

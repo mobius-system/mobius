@@ -22,9 +22,9 @@ export function isDockerIsolation(): boolean {
 
 // ── 沙箱容器规格常量 (2026-10-13 用户拍板: 2g / 4 cpu) ────────────────────────
 export const SBX_NETWORK = 'mobius-sbx-net';
-export const SBX_SUBNET = '172.20.0.0/24';
-export const SBX_GATEWAY_IP = '172.20.0.1';     // 容器回连宿主服务 (token-proxy) 的固定地址
-export const SBX_IP_BASE = 172;                  // 172.20.0.<n>, n ∈ [2, 254]
+export const SBX_SUBNET = '172.28.0.0/24';
+export const SBX_GATEWAY_IP = '172.28.0.1';     // 容器回连宿主服务 (token-proxy) 的固定地址
+export const SBX_IP_BASE = '172.28.0';            // 172.28.0.<n>, n ∈ [2, 254]
 export const SBX_IP_FIRST = 2;
 export const SBX_IP_LAST = 254;
 export const SBX_MEMORY = '2g';

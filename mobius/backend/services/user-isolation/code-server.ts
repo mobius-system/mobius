@@ -71,9 +71,16 @@ export async function ensureDocker(
   const name = containerNameFor(String(user.id));
   const k = `${user.id}__${projectId}`;
 
-  const existing = instances.get(k);
-  if (existing && !portBusyInContainer(name, existing.port)) {
-    return { port: existing.port, key: k, started: false };
+  // 复用优先: 内存表 → registry (后端重启后内存丢失, registry 是持久事实源).
+  // portBusyInContainer = 端口被占 = 实例活着; 空闲说明进程死了, 必须重新起.
+  const memo = instances.get(k);
+  if (memo && portBusyInContainer(name, memo.port)) {
+    return { port: memo.port, key: k, started: false };
+  }
+  const reg = registry.getEntry(String(user.id))?.services.codeServer?.find((s) => s.projectId === projectId);
+  if (reg && portBusyInContainer(name, reg.port)) {
+    instances.set(k, { port: reg.port, startedAt: reg.startedAt });
+    return { port: reg.port, key: k, started: false };
   }
 
   // 容器内端口分配: 同号段池取号 (容器网络独立栈, 与宿主监听无冲突)

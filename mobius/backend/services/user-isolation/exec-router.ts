@@ -28,6 +28,13 @@ export function setWindowOwner(sessionId: string, userId: string): void {
   windowOwner.set(sessionId, userId);
 }
 
+// 按窗口名反查容器 (无路由目标返回 null → 宿主执行).
+export function containerForWindow(sessionId: string): string | null {
+  const userId = windowOwner.get(sessionId);
+  if (!userId || !isolationActiveFor(userId)) return null;
+  return containerNameFor(userId);
+}
+
 export function clearWindowOwner(sessionId: string): void {
   windowOwner.delete(sessionId);
 }
@@ -67,7 +74,13 @@ export function ensureContainerTmuxServer(userId: string): void {
     'set-option', '-g', 'history-limit', '100000', ';',
     'set-option', '-g', 'default-terminal', 'tmux-256color',
   ], { encoding: 'utf8', timeout: 30000 });
-  if (r.status === 0) guidedContainers.add(name);
+  if (r.status !== 0) return;
+  // 容器内还要预建两个 agent hub session (宿主侧 ensureHub 不会进容器): 幂等.
+  for (const hub of ['imac_claude_code_agent_hub', 'imac_codex_agent_hub']) {
+    spawnSync('docker', ['exec', name, 'tmux', '-L', 'mobius-agent',
+      'new-session', '-d', '-s', hub, '-n', '_root'], { encoding: 'utf8', timeout: 15000 });
+  }
+  guidedContainers.add(name);
 }
 
 // spawn 前统一入口: 确保容器在 + tmux server 已引导, 返回容器名 (非隔离用户返回 null).
@@ -91,7 +104,11 @@ export function listWindowsRowsFromSandboxes(hub: string): string[][] {
     ], { encoding: 'utf8', timeout: 15000 });
     if (r.status !== 0) continue;
     for (const line of r.stdout.trim().split('\n')) {
-      if (line.trim()) rows.push(line.split('|'));
+      if (!line.trim()) continue;
+      const cols = line.split('|');
+      rows.push(cols);
+      // 顺带重建窗口归属表: 后端重启后 windowOwner 清空, 这里是窗口→容器映射的天然来源
+      if (cols[0] && cols[0] !== '_root') setWindowOwner(cols[0], entry.user);
     }
   }
   return rows;
