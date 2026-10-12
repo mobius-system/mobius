@@ -2,7 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { db } from '../../db';
+import { isWithin } from '../services/file-access';
 import {
+  HOME_WORKSPACE_ROOT,
+  LEGACY_LOCAL_WORKSPACE_ROOT,
+  LOCAL_WORKSPACE_ROOT,
+  WORKSPACE_ROOT,
   fallbackWorkDirFor,
   homeWorkDirFor,
   legacyFallbackWorkDirFor,
@@ -414,25 +419,86 @@ function canCreateUnder(p: string): boolean {
   }
 }
 
+const WORKSPACE_ROOTS = [WORKSPACE_ROOT, HOME_WORKSPACE_ROOT, LOCAL_WORKSPACE_ROOT, LEGACY_LOCAL_WORKSPACE_ROOT]
+  .map((p) => normalizePath(p))
+  .filter(Boolean);
+
+function otherActiveWorkDirs(userId: string): string[] {
+  const rows = db.prepare(`
+    SELECT work_dir FROM users
+    WHERE id <> ? AND work_dir <> '' AND ${ACTIVE_USER_SQL}
+  `).all(userId) as Array<{ work_dir: string }>;
+  return rows.map((row) => normalizePath(row.work_dir)).filter(Boolean);
+}
+
+/*
+ * 把某个账号的工作目录指向 p 会撞到什么? null = 可以用.
+ * 两条硬规则:
+ *   1) 已有内容的目录不能拿来当工作目录 —— 那多半是别人的数据, 一旦挂上去新账号
+ *      就能直接读写它 (Landlock 会把"自己的工作目录"整棵授权).
+ *   2) 不能等于、也不能包含别的账号的工作目录 —— 否则等于把别人的工作区划进自己的地盘.
+ * 返回错误文案, 由调用方决定抛错还是换个候选.
+ * Why a non-empty directory is refused: the work dir is granted wholesale to the agent
+ * that owns it, so pointing a fresh account at someone else's populated tree hands over
+ * their files. A work dir may also never equal or contain another account's work dir.
+ */
+function workDirConflict(userId: string, p: string): string | null {
+  const target = normalizePath(p);
+  if (!target) return '工作目录不能为空';
+  try {
+    if (fs.statSync(target).isDirectory()) {
+      let entries: string[];
+      try { entries = fs.readdirSync(target); } catch { return `目录 ${target} 不可读取, 不能作为工作目录`; }
+      if (entries.length) return `目录 ${target} 已有内容, 请选一个空目录或不存在的路径`;
+    }
+  } catch {
+    // 不存在 / 不可 stat: 交给创建流程去建或报错
+  }
+  // 工作区根 / 它的祖先不能当某个账号的工作目录: 那里是所有账号工作目录的公共父目录.
+  for (const root of WORKSPACE_ROOTS) {
+    if (isWithin(target, root)) return `${target} 是工作区根目录所在位置, 不能作为账号工作目录`;
+  }
+  for (const dir of otherActiveWorkDirs(userId)) {
+    if (dir === target) return `${target} 已是其他账号的工作目录`;
+    if (isWithin(target, dir)) return `${target} 包含其他账号的工作目录, 不能作为工作目录`;
+  }
+  return null;
+}
+
+/*
+ * 新增/编辑员工时的工作目录校验. 原值回填 (目标就是该账号当前记录的工作目录) 放行,
+ * 否则按 workDirConflict 判定. 抛出的错误带 status=400, 由路由回给管理端.
+ */
+export function assertWorkDirAssignable(userId: string, p: string): void {
+  const target = normalizePath(p);
+  if (!target) throw repoError('工作目录不能为空');
+  const row = db.prepare('SELECT work_dir FROM users WHERE id = ?').get(userId) as { work_dir?: string } | undefined;
+  if (row?.work_dir && normalizePath(row.work_dir) === target) return;
+  const conflict = workDirConflict(userId, target);
+  if (conflict) throw repoError(conflict);
+}
+
 /*
  * 预览新建账号会拿到的工作目录. 候选链与 ensureUsableWorkDir 对新账号的判定一致
- * (先 homeWorkDirFor, 建不出来再 fallbackWorkDirFor), 但不创建任何目录.
- * 管理端表单的 "默认 …" 占位符用它, 免得前端自己猜路径.
+ * (先 homeWorkDirFor, 建不出来再 fallbackWorkDirFor), 但不创建任何目录, 且跳过
+ * 会被 workDirConflict 拒绝的候选 —— 占位符不能显示一个建号时必然报错的路径.
+ * 全不可用时返回空路径, 前端回落到"留空则由系统按 ID 分配".
  * Preview of the work dir a brand-new account would get: same candidate order as
- * ensureUsableWorkDir, without touching the filesystem.
+ * ensureUsableWorkDir, but without touching the filesystem and skipping candidates the
+ * create flow would reject.
  */
-export function previewDefaultWorkDir(userId: string): { work_dir: string; source: 'home' | 'fallback' } {
+export function previewDefaultWorkDir(userId: string): { work_dir: string; source: 'home' | 'fallback' | 'none' } {
   const candidates: Array<{ p: string; source: 'home' | 'fallback' }> = [
     { p: homeWorkDirFor(userId), source: 'home' },
     { p: fallbackWorkDirFor(userId), source: 'fallback' },
   ];
   for (const candidate of candidates) {
     const resolved = normalizePath(candidate.p);
-    if (resolved && canCreateUnder(resolved)) return { work_dir: resolved, source: candidate.source };
+    if (resolved && canCreateUnder(resolved) && !workDirConflict(userId, resolved)) {
+      return { work_dir: resolved, source: candidate.source };
+    }
   }
-  // 两个候选都建不出来时, 真实创建流程会保留 payload 里的 home 路径并给出警告,
-  // 预览跟着保留 home, 不假装 fallback 可用.
-  return { work_dir: normalizePath(homeWorkDirFor(userId)), source: 'home' };
+  return { work_dir: '', source: 'none' };
 }
 
 function ensureUsableWorkDir<T extends { id: string; work_dir?: string | null } | null | undefined>(user: T): T {

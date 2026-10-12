@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { adminAuth, auth } from '../middleware/auth';
-import { Users, previewDefaultWorkDir } from '../repositories/users';
+import { Users, assertWorkDirAssignable, previewDefaultWorkDir } from '../repositories/users';
 import { Sessions } from '../repositories/sessions';
 import { Messages } from '../repositories/messages';
 // @ts-ignore — bridge instance 仍是 .js
@@ -186,6 +186,8 @@ function tryCreateWorkDir(workDir: string): string | null {
 
 function createEmployeeAccount(input: EmployeeInput | null | undefined): any {
   const payload = normalizeEmployeePayload(input);
+  // 先把工作目录审一遍再建号: 指向已有内容的目录 / 别人的工作目录一律拒绝.
+  assertWorkDirAssignable(payload.id, payload.work_dir);
   const result = Users.createOrRestore({
     id: payload.id,
     display_name: payload.display_name,
@@ -748,7 +750,10 @@ router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Respon
     }
     if (hasField('work_dir', 'workDir')) {
       const wd = normalizeEmployeeWorkDir(body.work_dir ?? body.workDir);
-      if (wd) Users.updateWorkDir(id, wd);
+      if (wd) {
+        assertWorkDirAssignable(id, wd);
+        Users.updateWorkDir(id, wd);
+      }
     }
     const pwd = body.password ?? body.newPassword;
     if (typeof pwd === 'string' && pwd.length > 0) {
