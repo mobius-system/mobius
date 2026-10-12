@@ -57,6 +57,7 @@ const { MOBIUS_DATA_PATH, TOKEN_PROXY_BASE_URL } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 const { encodeProxyToken } = require('../token-proxy/encoding')
+const { ensureTempRoot } = require('../services/file-access')
 
 let Database: any = null
 try { Database = require('better-sqlite3') } catch {}
@@ -1680,6 +1681,9 @@ class TmuxCodexBackend extends AgentBackend {
       ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
       ['MOBIUS_SESSION_ID', sessionId],
       ['MOBIUS_USER_ID', userId || ''],
+      // 本人的 per-user temp 根: agent 产物要落在权限表放行的位置 (同 file-access.tempRootFor)
+      // The subject's per-user temp root, so agent artifacts land where the permission table allows
+      ['TMPDIR', ensureTempRoot(userId)],
     ]
     const runtimeArgs = windowEnvEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // Create the background tmux window under the hub session and run bash -lc cmd in cwd.

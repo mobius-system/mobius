@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { db } from '../../db';
+import { isWithin, tempRootFor } from './file-access';
 
 const DRIVER = path.join(__dirname, '..', 'agents', 'mobius-landlock');
 let cached: boolean | null = null;
@@ -29,9 +30,9 @@ export function assertUserSandboxAvailable(user: any): void {
 }
 
 function inside(root: string, target: string): boolean {
-  const r = path.resolve(root);
-  const t = path.resolve(target);
-  return t === r || t.startsWith(r + path.sep);
+  // 越界判断统一走 file-access.isWithin, 不再手写 startsWith
+  // Containment goes through file-access.isWithin instead of a local check
+  return isWithin(root, target);
 }
 
 function exceptionPathsFor(userId: string, projectId: string | null): string[] {
@@ -63,8 +64,15 @@ export function writeSandboxPolicy({ userId, projectId, workDir }: { userId: str
   if (user?.role === 'admin') return null;
   const exceptions = exceptionPathsFor(userId, projectId || null);
   const deny: string[] = [];
-  const others = db.prepare("SELECT work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '') AND work_dir <> ''").all(userId) as Array<{ work_dir: string }>;
+  const others = db.prepare("SELECT id, work_dir FROM users WHERE id <> ? AND (deleted_at IS NULL OR deleted_at = '')").all(userId) as Array<{ id: string; work_dir: string }>;
   for (const row of others) {
+    // 别人的 per-user temp 目录也不许碰 (与 file-access 的 temp 规则同口径)。
+    // 不存在的路径会被驱动跳过, 所以这里不用先探测存在性。
+    // Other users' per-user temp dirs are off limits too, matching file-access;
+    // non-existent paths are skipped by the driver, so no existence probe needed here.
+    const otherTemp = tempRootFor(row.id);
+    if (otherTemp !== tempRootFor(userId)) deny.push(otherTemp);
+    if (!row.work_dir) continue;
     let root: string;
     try { root = fs.realpathSync(path.resolve(row.work_dir)); } catch { root = path.resolve(row.work_dir); }
     if (exceptions.some((p) => inside(root, p))) compileDeniedChildren(root, exceptions, deny);

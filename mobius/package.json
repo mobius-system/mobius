@@ -18,6 +18,7 @@
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:agent-history-store": "node --require tsx/cjs tests/agent-history-store.js",
     "test:code-server-workspace": "node --require tsx/cjs tests/code-server-workspace.js",
+    "test:file-access": "node --require tsx/cjs tests/file-access.js",
     "test:native-file-menu": "node --require tsx/cjs tests/native-file-menu.js",
     "test:designer-eye-locator": "node --require tsx/cjs tests/designer-eye-locator.js",
     "test:designer-eye-extension-loader": "node --require tsx/cjs tests/designer-eye-extension-loader.js",

@@ -53,6 +53,7 @@ const { MOBIUS_DATA_PATH } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 const { ensureSessionWithProxy } = require('../services/model-access')
+const { ensureTempRoot } = require('../services/file-access')
 import { sandboxCommand } from '../services/agent-sandbox'
 
 // ── Constants ───────────────────────────────────────────
@@ -1859,6 +1860,11 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       // 向会话内 CLI 暴露最小身份上下文，用于本机 API 签发用户 JWT
       // Expose minimal Session identity so in-agent CLIs can obtain a user-scoped localhost JWT
       `export MOBIUS_SESSION_ID=${shellQuote(sessionId)} MOBIUS_USER_ID=${shellQuote(userId || '')}`,
+      // 临时目录指向本人的 per-user temp 根, agent 产物 (截图/录屏) 才会落在
+      // 权限表放行的位置; 与 file-access.tempRootFor 同口径, 别写死路径
+      // Point TMPDIR at the subject's per-user temp root so agent artifacts land
+      // where the permission table expects them; same source as file-access.tempRootFor
+      `export TMPDIR=${shellQuote(ensureTempRoot(userId))}`,
       // 每轮检查点就刷转录，原来是异步攒批约100ms
       // Flush the transcript at turn checkpoints instead of async batching
       `export CLAUDE_CODE_EAGER_FLUSH=1`,

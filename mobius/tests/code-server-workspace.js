@@ -7,6 +7,7 @@ const {
   resolveCodeServerWorkspace,
   validateCodeServerPayload,
 } = require('../backend/services/code-server-workspace');
+const { tempRootFor } = require('../backend/services/file-access');
 
 function payloadFor(filePath) {
   return JSON.stringify([['openFile', `vscode-remote://localhost${filePath}`]]);
@@ -54,24 +55,39 @@ try {
     false,
   );
 
-  // /tmp 全放行: 即使完全不在 bind_path / 工作区内, /tmp 及其子目录的目录和文件都允许打开
-  const tmpDir = fs.mkdtempSync('/tmp/cs-allow-');
-  const tmpFile = path.join(tmpDir, 'note.md');
+  // temp 根收紧为本人 per-user 目录 (/tmp/mobius/mobius-<uid>/, 见 file-access.tempRootFor).
+  // 即使完全不在 bind_path 内, 本人 temp 下的目录与文件都允许打开; 裸 /tmp 与别人的
+  // temp 一律拒绝.
+  const myTemp = tempRootFor('u1');
+  const otherTemp = tempRootFor('u2');
+  fs.mkdirSync(myTemp, { recursive: true });
+  const tmpFile = path.join(myTemp, 'note.md');
   fs.writeFileSync(tmpFile, 'x');
   try {
-    assert.strictEqual(resolveCodeServerWorkspace(project, tmpDir).workspacePath, tmpDir);
-    assert.strictEqual(resolveCodeServerWorkspace(project, '/tmp').workspacePath, '/tmp');
+    assert.strictEqual(resolveCodeServerWorkspace(project, myTemp, 'u1').workspacePath, myTemp);
     assert.strictEqual(
-      validateCodeServerPayload(project, payloadFor(tmpFile), bindPath).ok,
+      validateCodeServerPayload(project, payloadFor(tmpFile), bindPath, 'u1').ok,
       true,
     );
-    // 不存在的 /tmp 文件也放行 (放行只看路径, 不校验存在性)
+    // 不存在的 temp 文件也放行 (放行只看路径, 不校验存在性)
     assert.strictEqual(
-      validateCodeServerPayload(project, payloadFor('/tmp/nonexistent-anywhere-123.md'), bindPath).ok,
+      validateCodeServerPayload(project, payloadFor(path.join(myTemp, 'nope.md')), bindPath, 'u1').ok,
       true,
+    );
+    // 裸 /tmp: 不再是合法工作区, 其下的文件也不再放行
+    assert.strictEqual(resolveCodeServerWorkspace(project, '/tmp', 'u1').code, 'BIND_PATH_DENIED');
+    assert.strictEqual(
+      validateCodeServerPayload(project, payloadFor('/tmp/loose.md'), bindPath, 'u1').ok,
+      false,
+    );
+    // 别人的 temp: 目录与文件都拒绝
+    assert.strictEqual(resolveCodeServerWorkspace(project, otherTemp, 'u1').code, 'BIND_PATH_DENIED');
+    assert.strictEqual(
+      validateCodeServerPayload(project, payloadFor(path.join(otherTemp, 'note.md')), bindPath, 'u1').ok,
+      false,
     );
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(myTemp, { recursive: true, force: true });
   }
 
   console.log('code-server workspace tests passed');

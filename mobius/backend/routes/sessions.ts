@@ -25,6 +25,7 @@ import { useProxyForSession, withSessionProxyState } from '../services/session-p
 // @ts-ignore — service 仍是 .js
 import * as agents from '../agents';
 import { computeSessionRuntimeStatus, syncAgentStatusIfChanged } from '../utils/session-runtime-status';
+import { withLiveAgentStatus } from '../services/session-live-status';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
 // @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
@@ -1959,7 +1960,9 @@ issueScoped.get('/', auth, (req: express.Request, res: express.Response) => {
     }
     return { ...withSessionProxyState(s), job_accomplished, job_failed };
   });
-  res.json(enriched);
+  // 状态点按需实时重算: 库里的 agent_status 最老 60s (syncer 周期), 侧栏等不起.
+  // Recompute status on demand: the stored column can be 60s old, too slow for the sidebar.
+  res.json(withLiveAgentStatus(enriched, () => root));
 });
 
 issueScoped.post('/', auth, async (req: express.Request, res: express.Response) => {

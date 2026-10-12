@@ -119,13 +119,13 @@ interface WorkspaceResult {
   code?: string;
 }
 
-function pickWorkspace(project: any, rawUrl: string, k: string): WorkspaceResult {
+function pickWorkspace(project: any, rawUrl: string, k: string, userId: string): WorkspaceResult {
   const hasFolder = hasQueryParam(rawUrl, 'folder');
   if (!hasFolder) {
     const existing = liveEntry(k);
     if (existing?.bindPath) return { workspacePath: existing.bindPath, hasFolder };
   }
-  const resolved: any = resolveCodeServerWorkspace(project, queryParam(rawUrl, 'folder'));
+  const resolved: any = resolveCodeServerWorkspace(project, queryParam(rawUrl, 'folder'), userId);
   return { ...resolved, hasFolder };
 }
 
@@ -201,7 +201,7 @@ router.use(async (req: express.Request, res: express.Response, next: express.Nex
     return;
   }
 
-  const workspace = pickWorkspace(acc.project, req.originalUrl, parsed.key);
+  const workspace = pickWorkspace(acc.project, req.originalUrl, parsed.key, String(user.id));
   if (workspace.error) {
     if (workspace.code === 'BIND_PATH_DENIED') {
       res.status(403).send(workspace.error);
@@ -210,7 +210,7 @@ router.use(async (req: express.Request, res: express.Response, next: express.Nex
     res.status(404).send(workspace.error);
     return;
   }
-  const payloadCheck: any = validateCodeServerPayload(acc.project, queryParam(req.originalUrl, 'payload'), workspace.workspacePath);
+  const payloadCheck: any = validateCodeServerPayload(acc.project, queryParam(req.originalUrl, 'payload'), workspace.workspacePath, String(user.id));
   if (!payloadCheck.ok) {
     res.status(403).send(payloadCheck.error);
     return;
@@ -258,7 +258,7 @@ async function handleUpgrade(req: any, socket: any, head: Buffer): Promise<void>
   const acc = checkProjectAccess(user, parsed.projectId);
   if (!acc.ok) { socket.destroy(); return; }
 
-  const workspace = pickWorkspace(acc.project, req.url, parsed.key);
+  const workspace = pickWorkspace(acc.project, req.url, parsed.key, String(user.id));
   if (workspace.error) { socket.destroy(); return; }
 
   let entry: { port: number; [k: string]: any };

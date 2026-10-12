@@ -26,6 +26,7 @@ const {
 } = require('../utils/session-flags')
 const { recordPromptPaste } = require('../services/agent-prompt-events')
 const { MOBIUS_DATA_PATH } = require('../config')
+const { ensureTempRoot } = require('../services/file-access')
 import { DRIVER as LANDLOCK_DRIVER } from '../services/agent-sandbox'
 
 const RUNTIME_FILE = path.join(MOBIUS_DATA_PATH, 'deepseek-harness-runtime.json')
@@ -259,6 +260,9 @@ class DeepSeekHarnessBackend extends AgentBackend {
       DSH_SYSTEM_PROMPT: String(opts.systemPrompt || 'You are a coding agent operating inside Mobius.'),
       MOBIUS_SESSION_ID: sessionId,
       MOBIUS_USER_ID: String(opts.userId || ''),
+      // 本人的 per-user temp 根: agent 产物要落在权限表放行的位置 (同 file-access.tempRootFor)
+      // The subject's per-user temp root, so agent artifacts land where the permission table allows
+      TMPDIR: ensureTempRoot(opts.userId),
     }
     const sandboxPolicy = (optsRaw as any).sandboxPolicy;
     const child = sandboxPolicy

@@ -1,6 +1,5 @@
 import express from 'express';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 // @ts-ignore — multer 没有 TS 类型声明
 import multer from 'multer';
@@ -9,12 +8,8 @@ import { Projects } from '../repositories/projects';
 // @ts-ignore — service 仍是 .js
 import { canReadProject, projectAllowsReaderWrite } from '../services/access-control';
 import { proxyMediaHandler } from '../services/proxy-media';
-import {
-  APP_DIR,
-  UPLOAD_DIR,
-  EXTENSION_DATA_ROOT,
-  HIDDEN_FOLDER_NAME,
-} from '../config';
+import { canDownloadPath, joinWithin, normalizePath } from '../services/file-access';
+import { UPLOAD_DIR, HIDDEN_FOLDER_NAME } from '../config';
 
 const router = express.Router();
 const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 50 * 1024 * 1024 } });
@@ -33,59 +28,13 @@ type ResolveResult =
 // 解析 path query 到绝对路径并做 root 越界检查 (限制在用户 work_dir 内)
 function resolveScopedPath(req: express.Request, rawPath: string = '/'): ResolveResult {
   const user = (req as any).user as ScopedUser;
-  const root = path.resolve(user.work_dir);
+  const root = normalizePath(user.work_dir);
   const relPath = String(rawPath || '/').replace(/\.\./g, '');
-  const absPath = path.resolve(root, relPath.replace(/^\//, ''));
-  if (absPath !== root && !absPath.startsWith(root + path.sep)) {
-    return { error: 'Access denied' };
-  }
+  // ✨ 越界判断统一走 file-access.joinWithin, 不再手写 startsWith
+  // Containment goes through file-access.joinWithin instead of a local check
+  const absPath = joinWithin(root, relPath.replace(/^\//, ''));
+  if (!absPath) return { error: 'Access denied' };
   return { root, relPath, absPath };
-}
-
-function isExtensionUserDataPath(absPath: string, userId: string | number): boolean {
-  const resolved = path.resolve(absPath);
-  const root = path.resolve(EXTENSION_DATA_ROOT);
-  const rel = path.relative(root, resolved);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
-  const parts = rel.split(path.sep);
-  return parts.length >= 4 && parts[1] === 'users' && parts[2] === String(userId);
-}
-
-function isMobiusUploadPath(absPath: string): boolean {
-  const resolved = path.resolve(absPath);
-  const root = path.resolve(APP_DIR, HIDDEN_FOLDER_NAME, 'upload');
-  return resolved === root || resolved.startsWith(root + path.sep);
-}
-
-function isSystemTempPath(absPath: string): boolean {
-  const resolved = path.resolve(absPath);
-  const tmpRoot = path.resolve(os.tmpdir());
-  return resolved === tmpRoot || resolved.startsWith(tmpRoot + path.sep);
-}
-
-// 会话里 AI 产出的文件 (如 display_images 展示的图片) 常落在项目绑定路径下,
-// 而不在请求者 work_dir 内. 放行"用户可读项目"的 bind_path 内路径;
-// git worktree 恒在 bind_path 之下, 一并覆盖.
-function isReadableProjectPath(req: express.Request, absPath: string): boolean {
-  const user = (req as any).user as ScopedUser;
-  if (!user?.id) return false;
-  for (const project of Projects.listAll()) {
-    const bindPath = path.resolve(String(project?.bind_path || ''));
-    if (!bindPath || (absPath !== bindPath && !absPath.startsWith(bindPath + path.sep))) continue;
-    if (canReadProject(user, project)) return true;
-  }
-  return false;
-}
-
-function canDownloadPath(req: express.Request, absPath: string): boolean {
-  const user = (req as any).user as ScopedUser;
-  const userRoot = path.resolve(user.work_dir);
-  return absPath === userRoot
-    || absPath.startsWith(userRoot + path.sep)
-    || isExtensionUserDataPath(absPath, user.id)
-    || isMobiusUploadPath(absPath)
-    || isSystemTempPath(absPath)
-    || isReadableProjectPath(req, absPath);
 }
 
 router.post('/upload', auth, upload.single('file'), (req: express.Request, res: express.Response) => {
@@ -134,8 +83,8 @@ router.get('/download', downloadAuth, (req: express.Request, res: express.Respon
     res.status(400).json({ error: 'Path required' });
     return;
   }
-  const absPath = path.resolve(filePath);
-  if (!canDownloadPath(req, absPath)) {
+  const absPath = normalizePath(filePath);
+  if (!canDownloadPath((req as any).user, absPath)) {
     res.status(403).json({ error: 'Access denied' });
     return;
   }
@@ -152,8 +101,8 @@ router.get('/files/download', downloadAuth, (req: express.Request, res: express.
     res.status(400).json({ error: 'Path required' });
     return;
   }
-  const absPath = path.resolve(filePath);
-  if (!canDownloadPath(req, absPath)) {
+  const absPath = normalizePath(filePath);
+  if (!canDownloadPath((req as any).user, absPath)) {
     res.status(403).json({ error: 'Access denied' });
     return;
   }

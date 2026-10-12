@@ -240,9 +240,18 @@ export default function IssuePage() {
     }).catch(() => {})
   }, [issueId, setSessionsMap])
 
-  // 周期刷新 sessions 列表, 让侧栏其它 (非当前) session 的状态点也能实时更新, 而不是只有
-  // 点进去后才变. 后端 agent-status-syncer 每 60s 重算 agent_status 写库, 这里 10s 拉一次
-  // 列表即可及时拿到. 仅页面可见时轮询, 切走/最小化时停.
+  // 列表接口已按需实时重算 agent_status (见 backend/services/session-live-status.ts), 所以
+  // 这里的轮询间隔就是侧栏状态点的唯一迟滞来源. 自适应: 有会话在跑就 3s 拉, 全空闲回落 10s —
+  // 忙时跟得上, 闲时不空转. 仅页面可见时轮询, 切走/最小化时停.
+  // The list API now recomputes agent_status on demand, so this interval alone bounds the sidebar
+  // lag. Adaptive: 3s while anything runs, back to 10s when everything is idle.
+  const anySessionRunning = useMemo(() => (
+    sessions.some((s: any) => s.agent_status === 'running')
+    || currentSession?.agent_status === 'running'
+  ), [sessions, currentSession?.agent_status])
+  const anySessionRunningRef = useRef(anySessionRunning)
+  anySessionRunningRef.current = anySessionRunning
+
   useEffect(() => {
     if (!issueId) return
     let cancelled = false
@@ -250,7 +259,7 @@ export default function IssuePage() {
     const tick = () => {
       if (cancelled) return
       if (document.visibilityState === 'visible') refreshSessions()
-      timer = setTimeout(tick, 10000)
+      timer = setTimeout(tick, anySessionRunningRef.current ? 3000 : 10000)
     }
     const onVis = () => {
       if (cancelled || document.visibilityState !== 'visible') return

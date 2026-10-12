@@ -40,6 +40,7 @@ import {
   contentTypeFor,
 } from '../services/project-file-ops';
 import { resolveProjectPath } from '../services/project-path';
+import { isWithin } from '../services/file-access';
 import * as aimuxRemote from '../services/aimux-remote';
 import { aimuxRemoteNameFromMeta, parsePcClientMetadata } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
@@ -331,7 +332,7 @@ function fileIncludes(absPath: string, marker: string): boolean {
 }
 
 function removePathIfExists(absPath: string, root: string, removed: string[]): void {
-  if (!absPath || absPath === root || !absPath.startsWith(root + path.sep)) return;
+  if (!absPath || !isWithin(root, absPath)) return;
   if (!fs.existsSync(absPath)) return;
   fs.rmSync(absPath, { recursive: true, force: true });
   removed.push('/' + path.relative(root, absPath).replace(/\\/g, '/'));
@@ -392,13 +393,13 @@ function resolveBindPath(rawPath: unknown, userWorkDir: unknown, options: Resolv
   const createIfMissing = !!options.createIfMissing;
   const userRoot = path.resolve(String(userWorkDir));
   let abs: string;
-  if (path.isAbsolute(rawPath) && (rawPath === userRoot || rawPath.startsWith(userRoot + path.sep))) {
+  if (path.isAbsolute(rawPath) && isWithin(userRoot, rawPath)) {
     abs = path.resolve(rawPath);
   } else {
     // 相对路径或相对家目录的伪绝对路径 (e.g. "/imac-test")
     abs = path.resolve(userRoot, rawPath.replace(/^\//, ''));
   }
-  if (abs !== userRoot && !abs.startsWith(userRoot + path.sep)) throw new Error('绑定路径必须位于您的工作目录下');
+  if (!isWithin(userRoot, abs)) throw new Error('绑定路径必须位于您的工作目录下');
   if (!fs.existsSync(abs)) {
     if (!createIfMissing) throw new Error('路径不存在');
     try {
@@ -3493,11 +3494,24 @@ router.post('/:id/remote-file', auth, async (req: express.Request, res: express.
   }
 });
 
+// 项目内文件读写的符号链接护栏: 逐段 lstat, 任一环是链接即拒 (防止链接把真实路径引出项目根).
+// 路径不存在时返回 false, 交由调用方后续 stat 给出 404, 保持原有响应语义。
+async function rejectIfSymlinked(res: express.Response, root: string, absPath: string, message: string): Promise<boolean> {
+  try {
+    await assertNoSymlink(root, absPath);
+    return false;
+  } catch (e) {
+    if ((e as FileOpError)?.code === 'NOT_FOUND') return false;
+    res.status(403).json({ error: message });
+    return true;
+  }
+}
+
 // 读取项目 bind_path 下单个文件内容 (代码对话 v2 的"代码浏览"用).
 // 复用 resolveProjectPath 做路径穿越防护; 限制: 必须是文件, ≤ 1.5MB (超出截断 + truncated:true),
 // 含 NUL 字节视为二进制不返回内容. 只读, 不写.
 const FILE_READ_MAX_BYTES = 1.5 * 1024 * 1024;
-router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
+router.get('/:id/file', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
@@ -3505,7 +3519,8 @@ router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
   const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
-  try { assertNoSymlink(resolved.root, absPath); } catch { return res.status(403).json({ error: '不支持读取符号链接' }); }
+  // assertNoSymlink 是异步的: 必须 await, 否则拒绝变成未处理的 rejection 而被静默跳过。
+  if (await rejectIfSymlinked(res, resolved.root, absPath, '不支持读取符号链接')) return;
   let stat: fs.Stats;
   try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
   if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
@@ -3530,7 +3545,7 @@ router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
 // 复用 resolveProjectPath 防穿越; 限制: 必须是已存在文件 (不新建, 避免任意路径写),
 // content 为字符串且 ≤ 5MB, 同步覆盖写. 不处理并发冲突 (last-write-wins, 编辑器场景可接受).
 const FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
-router.post('/:id/file', auth, (req: express.Request, res: express.Response) => {
+router.post('/:id/file', auth, async (req: express.Request, res: express.Response) => {
   const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
@@ -3538,6 +3553,8 @@ router.post('/:id/file', auth, (req: express.Request, res: express.Response) => 
   const resolved = resolveProjectPath(project.bind_path, req.body?.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
+  // 与 GET 对称: 读写都不许经过符号链接, 否则写会顺着链接落到项目根之外。
+  if (await rejectIfSymlinked(res, resolved.root, absPath, '不支持写入符号链接')) return;
   let stat: fs.Stats;
   try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
   if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
@@ -3789,7 +3806,7 @@ router.post('/:id/files/move', auth, async (req: express.Request, res: express.R
     }
     const baseName = path.basename(srcAbs);
     const dstAbs = path.join(tgtAbs, baseName);
-    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+    if (!isWithin(root, dstAbs)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     // 已在目标目录 (源父目录 === 目标): 空操作, 视为成功 (与复制语义对齐, 避免误报).
@@ -3840,7 +3857,7 @@ router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.
       return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
     }
     const dstAbs = path.join(parentAbs, name);
-    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+    if (!isWithin(root, dstAbs)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
@@ -3885,7 +3902,7 @@ router.post('/:id/files/create', auth, async (req: express.Request, res: express
       return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
     }
     const dstAbs = path.join(parentAbs, name);
-    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
+    if (!isWithin(root, dstAbs)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
@@ -3928,7 +3945,7 @@ router.post('/:id/files/rename', auth, async (req: express.Request, res: express
     const parentAbs = path.dirname(absPath);
     const newAbs = path.join(parentAbs, newName);
     // newName 已确保无分隔符, 父目录在根内, 新路径必在根内; 仍防御性校验。
-    if (newAbs !== root && !newAbs.startsWith(root + path.sep)) {
+    if (!isWithin(root, newAbs)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
