@@ -69,7 +69,8 @@ export function timeAgoPrecise(date: string) {
     const diffMs = now.getTime() - d.getTime()
     if (diffMs < 60 * 1000) return '刚刚'
     const diffMin = Math.floor(diffMs / 60000)
-    if (diffMin < 60) return `${diffMin}分钟前 ${hhmm}`
+    // 「N分钟前」已经足够精确, 不再尾随挂一个绝对时刻 (25分钟前 18:23 → 25分钟前)
+    if (diffMin < 60) return `${diffMin}分钟前`
     return `今天 ${hhmm}`
   }
   const yesterday = new Date(now)
