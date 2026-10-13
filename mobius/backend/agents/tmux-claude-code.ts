@@ -856,25 +856,6 @@ function resolveAimuxBin() {
   return 'aimux'
 }
 
-/*
- * Build the guling live-trading MCP (HTTP / streamable-http) server entry from env, so the Xiaomo
- * assistant session can read funds/positions (mcp__guling__position / balance) directly without
- * going through Hermes. The bearer token is a credential and must live in .env
- * (MOBIUS_GULING_MCP_URL / MOBIUS_GULING_MCP_TOKEN), never in source. The returned
- * { type:'http', url, headers } object drops straight into the per-session --mcp-config
- * mcpServers; null makes the caller's injection a no-op.
- */
-function resolveGulingMcp() {
-  // 先补空串再 trim，纯空白的环境变量也算未配置
-  // Default to empty before trimming, so a whitespace-only value counts as unset
-  const url = (process.env.MOBIUS_GULING_MCP_URL || '').trim()
-  const token = (process.env.MOBIUS_GULING_MCP_TOKEN || '').trim()
-  // URL 和 token 缺一不可，不做半配置调用
-  // Both halves are required — no anonymous or half-configured call
-  if (!url || !token) return null
-  return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } }
-}
-
 
 // Runtime entry: the live state of one tmux window + claude TUI per mobius session.
 interface ClaudeRuntimeEntry {
@@ -912,7 +893,6 @@ interface ClaudeDispatchOpts {
   aimuxRemoteName?: string
   /** GUI(computer-use) authorization for the bound remote — adds the remote_gui_* toolset. */
   aimuxGuiAuthorized?: boolean
-  enableGulingMcp?: boolean
   modelLaunchOptions?: Record<string, unknown>
   model?: string | null
   useProxy?: boolean
@@ -1476,7 +1456,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * the else-branch below can do nothing.
    */
   async _createImpl(opts: ClaudeDispatchOpts) {
-    const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
+    const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
     const { model, useProxy, proxyMode, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
@@ -1485,7 +1465,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 窗口还活着就复用，重启后不重复拉起
     // A live window is reused, so a restart never spawns a duplicate
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp, sandboxPolicy: (opts as any).sandboxPolicy })
+      await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, displayName, agentSessionId, settingsPath, captureStream, forceNoProxy, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy: (opts as any).sandboxPolicy })
     } else {
       // 重启后窗口还在但runtime可能为空，补建一条
       // The window is live but may have no runtime row; rebuild one
@@ -1533,7 +1513,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * path to touch it.
    */
   async _queueImpl(opts: ClaudeDispatchOpts) {
-    const { sessionId, userId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false } = opts
+    const { sessionId, userId, prompt, cwd, flagRoot, displayName, agentSessionId, isInitialContextPrompt = false, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
     let { model, useProxy, proxyMode: proxyModeArg, settingsPath, forceNoProxy, captureStream } = unpackLaunch(opts)
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
@@ -1567,7 +1547,6 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         agentSessionId: finalAgentSid ?? undefined,
         aimuxRemoteName,
         aimuxGuiAuthorized,
-        enableGulingMcp,
         sandboxPolicy: (opts as any).sandboxPolicy || null,
       })
     }
@@ -1721,7 +1700,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * need a second press. A TUI that never becomes ready has its window killed rather than left
    * behind, and the timeout is thrown with the cwd.
    */
-  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, enableGulingMcp = false, sandboxPolicy = null }: ClaudeDispatchOpts) {
+  async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy = null }: ClaudeDispatchOpts) {
     // 入参可为null，此处归一为非空，兜底在调用方
     // Nullable args become non-null here; the persisted fallback is the caller's
     if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
@@ -1817,20 +1796,6 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       }
       mcpServers.aimux = { command: rewriteAimuxBin(userId, resolveAimuxBin()), args: aimuxArgs }
     }
-    // 小莫会话注入guling实盘MCP，直接读资金和持仓
-    // Xiaomo sessions get the guling trading MCP to read funds and positions
-    // token只从env取，没配就返回null跳过注入
-    // The token comes from env only; unset means no injection
-    if (enableGulingMcp) {
-      const guling = resolveGulingMcp()
-      if (guling) {
-        mcpServers.guling = guling
-        // 只禁实盘下单工具，读类查询保留，AI无法真下单
-        // Only the order-placing tools are banned, so the AI cannot trade for real
-        disallowedTools.push('mcp__guling__buy', 'mcp__guling__sell', 'mcp__guling__cancel', 'mcp__guling__switch_account')
-      }
-    }
-
     // 拼接交给claude CLI的参数表
     // Assemble the argument list handed to the claude CLI
     const claudeArgs = [

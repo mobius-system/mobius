@@ -1222,9 +1222,6 @@ async function startAssistantSession(req: express.Request, session: any, questio
       mobiusPromptRecord,
       aimuxRemoteName: aimuxRemoteNameFromMeta(session?.pc_client_metadata),
       aimuxGuiAuthorized: aimuxGuiAuthorizedFromMeta(session?.pc_client_metadata),
-      // 小莫 assistant 注入 guling 实盘 MCP (HTTP), 让 claude 直接读资金/持仓.
-      // resolveGulingMcp() 未配置 env 时返回 null, 这里恒传 true 是安全 no-op.
-      enableGulingMcp: true,
     });
 
     const runtimeInfo = backend.listSessions().find((item: any) => item.sessionId === session.session_id);
