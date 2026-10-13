@@ -22,6 +22,7 @@ export { runSelfCheck, selfCheckResult, selfCheckGate } from './selfcheck';
 import { db } from '../../../db';
 import { isDockerIsolation } from './config';
 import { selfCheckGate } from './selfcheck';
+import { isolationActiveFor } from './docker-sandbox';
 import { landlockAvailable } from '../agent-sandbox';
 import { resolveWindowContainer } from './exec-router';
 
@@ -94,6 +95,39 @@ export const ASSISTANT_NORMAL_USER_BLOCKED = true;
 export function assistantAllowedFor(user: any): boolean {
   if (!ASSISTANT_NORMAL_USER_BLOCKED) return true;
   return user?.role === 'admin';
+}
+
+// ── 心跳制生命周期入口 (auth 中间件每个带 JWT 的请求调用) ─────────────────
+// 语义 (2026-10-13 方案 A): 任意鉴权请求 = 心跳; 容器不在则创建 (异步, 不拖慢请求);
+// 超过 SBX_IDLE_DESTROY_MS(3h) 无心跳由定时器销毁, 容器内 agent 是否在跑不构成豁免.
+const hbInFlight = new Set<string>();
+const HB_PERSIST_MS = 30_000; // registry 落盘节流
+
+export function onAuthedRequest(user: any): void {
+  try {
+    const userId = String(user?.id || '');
+    if (!userId) return;
+    if (!isolationActiveFor(userId)) return;
+    const { ensureSandbox, isContainerProvisioned } = require('./docker-sandbox');
+    const now = Date.now();
+    // lastActiveAt = 最后鉴权请求时刻 (节流落盘; 内存即时)
+    const { getEntry, touchEntry } = require('./registry');
+    if (now - (getEntry(userId)?.lastActiveAt || 0) > HB_PERSIST_MS) touchEntry(userId);
+    else getEntry(userId) && (getEntry(userId)!.lastActiveAt = now); // 内存视图即时, 不等落盘
+    // 容器不在 → 异步创建 (去重; agent spawn 路径的 prepareSpawn 仍有同步 ensure 兜底)
+    if (!isContainerProvisioned(userId) && !hbInFlight.has(userId)) {
+      hbInFlight.add(userId);
+      setImmediate(() => {
+        try {
+          ensureSandbox(userId); // 幂等: 不在则建, 在则 touch + 挂载集比对(权限变更兜底)
+        } catch (e) {
+          console.warn(`[user-isolation] 心跳建容器失败 (下次请求重试): ${(e as Error).message}`);
+        } finally {
+          hbInFlight.delete(userId);
+        }
+      });
+    }
+  } catch (e) { console.warn(`[user-isolation] 心跳异常: ${(e as Error).message}`); }
 }
 
 // 后端启动钩子: reconcile + 定时器 (server 启动时调用一次).

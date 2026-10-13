@@ -35,12 +35,16 @@ function isOwnWorkDirPath(userId: string | undefined, target: string): boolean {
  * A path is an allowed VSCode workspace when it sits inside the project bind
  * root, is the bind root's direct parent (so sibling projects stay editable),
  * is the caller's own temp dir, or (in docker isolation) lives anywhere under
- * the caller's own work dir.
+ * the caller's own work dir. Admins run code-server on the host outside any
+ * sandbox, so the workspace allowlist never applies to them — any real path is
+ * openable.
  */
-function isAllowedWorkspacePath(project: any, targetPath: any, userId?: string): boolean {
+function isAllowedWorkspacePath(project: any, targetPath: any, userId?: string, isAdmin?: boolean): boolean {
   const rawTarget = normalizePath(targetPath);
+  if (!rawTarget) return false;
+  if (isAdmin) return true;
   const rawRoot = normalizePath(project?.bind_path);
-  if (!rawRoot || !rawTarget) return false;
+  if (!rawRoot) return false;
   let target = rawTarget;
   let bindRoot = rawRoot;
   try {
@@ -56,10 +60,10 @@ function isAllowedWorkspacePath(project: any, targetPath: any, userId?: string):
   return isSystemTempPath(target, userId);
 }
 
-function payloadRootForWorkspace(project: any, workspacePath: any, userId?: string): string {
+function payloadRootForWorkspace(project: any, workspacePath: any, userId?: string, isAdmin?: boolean): string {
   const bindRoot = normalizePath(project?.bind_path);
   const workspaceRoot = normalizePath(workspacePath);
-  if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot, userId)) return workspaceRoot;
+  if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot, userId, isAdmin)) return workspaceRoot;
   return bindRoot;
 }
 
@@ -89,6 +93,7 @@ function resolveCodeServerWorkspace(
   project: any,
   requestedFolder: any,
   userId?: string,
+  isAdmin?: boolean,
 ): { error: string; code: string } | { workspacePath: string } {
   const bindRoot = normalizePath(project?.bind_path);
   if (!bindRoot) {
@@ -99,7 +104,7 @@ function resolveCodeServerWorkspace(
   if (!candidate) {
     return { error: 'VSCode 打开路径为空', code: 'BIND_PATH_INVALID' };
   }
-  if (!isAllowedWorkspacePath(project, candidate, userId)) {
+  if (!isAllowedWorkspacePath(project, candidate, userId, isAdmin)) {
     return { error: 'VSCode 打开路径不在项目绑定路径或其上一级目录内', code: 'BIND_PATH_DENIED' };
   }
   if (!fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) {
@@ -136,11 +141,15 @@ function validateCodeServerPayload(
   payloadValue: any,
   workspacePath: any,
   userId?: string,
+  isAdmin?: boolean,
 ): { ok: boolean; error?: string; code?: string } {
+  // 管理员不受工作区约束: 打开的文件同样不设限
+  // Admins are unrestricted, so files they open are too
+  if (isAdmin) return { ok: true };
   const filePath = extractPayloadPath(payloadValue);
   if (!filePath) return { ok: true };
   const target = normalizePath(filePath);
-  const allowedRoot = payloadRootForWorkspace(project, workspacePath, userId);
+  const allowedRoot = payloadRootForWorkspace(project, workspacePath, userId, isAdmin);
   if (!allowedRoot || !target) {
     return { ok: false, error: 'VSCode 打开文件不在当前允许的工作区内', code: 'BIND_PATH_DENIED' };
   }

@@ -294,8 +294,12 @@ async function ensure(user: any, projectId: string, bindPath: string): Promise<{
   if (!fs.existsSync(bindPath) || !fs.statSync(bindPath).isDirectory()) {
     throw Object.assign(new Error(`bind_path 不存在或不是目录: ${bindPath}`), { code: 'BIND_PATH_INVALID' });
   }
-  try { fs.accessSync(bindPath, fs.constants.W_OK); }
-  catch { throw Object.assign(new Error(`bind_path 对当前进程不可写: ${bindPath} (请联系管理员调权限)`), { code: 'BIND_PATH_RO' }); }
+  // 管理员不受写权限约束: 只读目录 (如 /etc) 也能在 VSCode 里打开查看.
+  // Admins are not blocked by a read-only workspace — VSCode opens it fine.
+  if (user.role !== 'admin') {
+    try { fs.accessSync(bindPath, fs.constants.W_OK); }
+    catch { throw Object.assign(new Error(`bind_path 对当前进程不可写: ${bindPath} (请联系管理员调权限)`), { code: 'BIND_PATH_RO' }); }
+  }
 
   const k = key(user.id, projectId);
   const existing = pool.get(k);

@@ -30,6 +30,9 @@ export const SBX_IP_LAST = 254;
 export const SBX_MEMORY = '2g';
 export const SBX_CPUS = '4';
 export const SBX_PIDS_LIMIT = 512;
+// 心跳制生命周期 (2026-10-13 用户拍板方案 A): 任意带 JWT 的鉴权请求 = 心跳,
+// 超过该时长无心跳即销毁容器 (纯时长判据, 不看 agent 是否仍在运行).
+export const SBX_IDLE_DESTROY_MS = 3 * 60 * 60 * 1000;
 
 // 容器 HOME 落在本人 work_dir 内 (数据保留边界 = 工作路径 + 一切 --volume, 2026-10-13 用户规则).
 export const SBX_HOME_DIRNAME = '.sbx-home';

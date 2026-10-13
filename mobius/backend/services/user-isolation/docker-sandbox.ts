@@ -14,7 +14,7 @@ import { spawnSync } from 'child_process';
 import { db } from '../../../db';
 import {
   SBX_NETWORK, SBX_SUBNET, SBX_GATEWAY_IP, SBX_MEMORY, SBX_CPUS, SBX_PIDS_LIMIT,
-  SBX_HOME_DIRNAME, isDockerIsolation, dockerSandboxAvailable, sandboxImageRef,
+  SBX_HOME_DIRNAME, SBX_IDLE_DESTROY_MS, isDockerIsolation, dockerSandboxAvailable, sandboxImageRef,
   containerNameFor,
 } from './config';
 import { exceptionPathsFor } from '../agent-sandbox';
@@ -152,6 +152,7 @@ export function ensureSandbox(userId: string): void {
   ensureNetwork();
   const name = containerNameFor(userId);
   if (containerAlive(userId)) {
+    knownAlive.add(String(userId));
     registry.touchEntry(userId);
     // 脏容器兜底: 期望挂载集与实际不一致 → 立即换容器 (权限变更钩子的兜底路径)
     if (!mountsMatch(userId)) {
@@ -194,6 +195,7 @@ export function ensureSandbox(userId: string): void {
     createdAt: Date.now(), lastActiveAt: Date.now(), services: {},
     refs: { agents: 0, codeServer: 0, terminals: 0, bridgeClients: 0 },
   });
+  knownAlive.add(String(userId));
   console.log(`[user-isolation] started ${name} ip=${ip} mounts=${mounts.length}`);
 }
 
@@ -201,6 +203,7 @@ export function destroySandbox(userId: string): void {
   const name = containerNameFor(userId);
   docker(['rm', '-f', name], 60000);
   registry.removeEntry(userId);
+  knownAlive.delete(String(userId));
 }
 
 // 权限变更 → 立即杀旧起新 (rm 成功 run 失败 → fail-closed, 下次 ensure 重试).
@@ -219,37 +222,29 @@ export function rebuildNow(userIds: Array<string | null | undefined>): void {
   }
 }
 
-// ── agent 活跃判定 + 全灭即删 ───────────────────────────────────────────────
-function userHasActiveAgent(userId: string): boolean {
-  const name = containerNameFor(userId);
-  // tmux 两个 hub 任一有存活 agent 窗口 = 活跃 (_root 是引导占位窗口, 不算)
-  for (const hub of ['imac_claude_code_agent_hub', 'imac_codex_agent_hub']) {
-    const r = docker(['exec', name, 'tmux', '-L', 'mobius-agent', 'list-windows', '-t', hub, '-F', '#{window_name}'], 15000);
-    if (r.status === 0) {
-      const agentWindows = r.stdout.trim().split('\n').filter((w) => w.trim() && w.trim() !== '_root');
-      if (agentWindows.length > 0) return true;
-    }
-  }
-  // deepseek-harness: dsh-jsonrpc-agent 进程存活 = 活跃
-  const dsh = docker(['exec', name, 'pgrep', '-f', 'dsh-jsonrpc-agent'], 15000);
-  if (dsh.status === 0 && dsh.stdout.trim()) return true;
-  return false;
+// ── 心跳制生命周期 (2026-10-13 方案 A) ──────────────────────────────────────
+// 判据只有一个: registry.lastActiveAt = 该用户最后一个带 JWT 的鉴权请求时刻;
+// 超过 SBX_IDLE_DESTROY_MS(3h) 无心跳即销毁, 容器内 agent 是否仍在运行不构成豁免.
+
+// 已建容器的内存快查 (auth 心跳是热路径, 不每请求 docker inspect).
+const knownAlive = new Set<string>();
+export function isContainerProvisioned(userId: string): boolean {
+  return knownAlive.has(String(userId));
 }
 
 function reapIdleSandboxes(): void {
   for (const entry of registry.allEntries()) {
-    if (!containerAlive(entry.user)) { registry.removeEntry(entry.user); continue; }
+    if (!containerAlive(entry.user)) { registry.removeEntry(entry.user); knownAlive.delete(entry.user); continue; }
     if (!isolationActiveFor(entry.user)) continue; // 模式切回/降为 admin: 不动, 交 admin 面
-    let active = false;
-    try { active = userHasActiveAgent(entry.user); } catch { continue; }
-    if (!active) {
-      console.log(`[user-isolation] agent 全灭, 删除容器 ${entry.containerName}`);
+    const lastSeen = entry.lastActiveAt || entry.createdAt;
+    if (Date.now() - lastSeen > SBX_IDLE_DESTROY_MS) {
+      console.log(`[user-isolation] ${Math.round((Date.now() - lastSeen) / 60000)}min 无鉴权请求, 删除容器 ${entry.containerName}`);
       destroySandbox(entry.user);
     }
   }
 }
 
-// 定时器: 60s 全灭扫描 (事件丢失的兜底) + reconcile 收编.
+// 定时器: 60s 心跳超时扫描 (3h 无鉴权请求销毁) + reconcile 收编.
 let timerStarted = false;
 export function startBackgroundTimers(): void {
   if (timerStarted) return;

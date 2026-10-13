@@ -511,7 +511,7 @@ function AdminSandboxesPanel() {
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
-            <span>活跃 agent: {String(sb.refs?.agents ?? '—')}</span>
+            <span>最后请求: {sb.lastActiveAt ? new Date(Number(sb.lastActiveAt)).toLocaleString() : '—'}</span>
             <span>code-server: {String(sb.services?.codeServer?.length ?? 0)}</span>
             <span>创建: {sb.createdAt ? new Date(Number(sb.createdAt)).toLocaleString() : '—'}</span>
           </div>

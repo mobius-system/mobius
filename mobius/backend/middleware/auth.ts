@@ -20,6 +20,14 @@ function extractToken(req: Request): string | undefined {
   return fromHeader || undefined;
 }
 
+// docker 隔离的心跳: 任意带 JWT 的鉴权请求都会续命/创建该用户的沙箱容器 (方案 A, 2026-10-13).
+function touchIsolationHeartbeat(dbUser: unknown): void {
+  try {
+    const ui = require('../services/user-isolation') as typeof import('../services/user-isolation');
+    ui.onAuthedRequest?.(dbUser);
+  } catch { /* 心跳失败不影响鉴权 */ }
+}
+
 function auth(req: Request, res: Response, next: NextFunction): void {
   const token = extractToken(req);
   if (!token) {
@@ -33,6 +41,7 @@ function auth(req: Request, res: Response, next: NextFunction): void {
       return;
     }
     (req as any).user = dbUser;
+    touchIsolationHeartbeat(dbUser);
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -64,6 +73,7 @@ function downloadAuth(req: Request, res: Response, next: NextFunction): void {
       return;
     }
     (req as any).user = dbUser;
+    touchIsolationHeartbeat(dbUser);
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -83,6 +93,7 @@ function authOrQuery(req: Request, res: Response, next: NextFunction): void {
       return;
     }
     (req as any).user = dbUser;
+    touchIsolationHeartbeat(dbUser);
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
