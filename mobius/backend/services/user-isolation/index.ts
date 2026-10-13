@@ -32,29 +32,10 @@ tmuxOpLog.setWindowRouteResolver((args: string[]) => {
   try { return resolveWindowContainer(args); } catch { return null; }
 });
 
-// ── 临时措施 (2026-10-13, 用户决策) ──────────────────────────────────────────
-// 暂时屏蔽普通用户对小莫的全部访问 (登录 / 后端接口 / Agent / 前端入口).
-// 起因: 原生文件编辑器存在已实证的越权读取 — 普通用户可经拓展项目 (bind_path = APP_DIR)
-//   GET /api/projects/ext_<name>/file?path=/.env 读到部署根目录的 .env (含 JWT_SECRET /
-//   GITHUB_TOKEN_DESKTOP 等密钥), 并可列 / 整个部署根. 正式修复上线前先整体切断普通用户入口.
-// 恢复办法: 把 NORMAL_USER_ACCESS_BLOCKED 改回 false 并重新部署 (python3 start.py).
-export const NORMAL_USER_ACCESS_BLOCKED = true;
-
-// 该用户此刻是否被临时封禁 (admin 永不受影响).
-export function normalUserAccessBlockedFor(user: any): boolean {
-  return NORMAL_USER_ACCESS_BLOCKED && !!user && user.role !== 'admin';
-}
-
 // 登录/发消息闸门 (替代 agent-sandbox.assertUserSandboxAvailable 的调用点语义):
 // admin 恒通; landlock 模式 = 原判定; docker 模式 = docker 自检.
 export function assertUserIsolationAvailable(user: any): void {
   if (user?.role === 'admin') return;
-  if (normalUserAccessBlockedFor(user)) {
-    const e = new Error('普通用户访问已暂时关闭，请稍后再试') as Error & { status?: number; code?: string };
-    e.status = 503;
-    e.code = 'NORMAL_USER_ACCESS_DISABLED';
-    throw e;
-  }
   if (isDockerIsolation()) {
     if (!selfCheckGate()) {
       const e = new Error('当前服务器 docker 沙箱不可用，普通用户暂时不能登录或使用 Agent') as Error & { status?: number };

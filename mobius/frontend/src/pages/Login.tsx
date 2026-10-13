@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Lock } from 'lucide-react'
 import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
 import { THEME_NAMES } from '../theme'
-import { setNormalUserAccessBlocked, useNormalUserAccessBlocked } from '../services/normal-user-access'
 
 function readSafeNextPath() {
   const raw = new URLSearchParams(window.location.search).get('next') || ''
@@ -26,26 +24,16 @@ export default function Login() {
   const [mounted, setMounted] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [passwordRequired, setPasswordRequired] = useState(false)
-  // 临时措施 (2026-10-13): 普通用户全站封禁 — 登录口默认收起, 只留一个「管理员登录」小入口.
-  const [adminLoginVisible, setAdminLoginVisible] = useState(false)
   const { setAuth, theme, backgroundFlowEnabled, branding } = useStore()
-  const normalUserAccessBlocked = useNormalUserAccessBlocked()
   const usernameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setMounted(true)
     setTimeout(() => usernameRef.current?.focus(), 400)
     api('/api/auth/config')
-      .then((r: { password_required?: boolean; normal_user_access_blocked?: boolean }) => {
-        setPasswordRequired(!!r.password_required)
-        setNormalUserAccessBlocked(!!r.normal_user_access_blocked)
-      })
+      .then((r: { password_required?: boolean }) => setPasswordRequired(!!r.password_required))
       .catch(() => setPasswordRequired(false))
   }, [])
-
-  useEffect(() => {
-    if (adminLoginVisible) setTimeout(() => usernameRef.current?.focus(), 200)
-  }, [adminLoginVisible])
 
   // Apply theme to document
   useEffect(() => {
@@ -80,10 +68,6 @@ export default function Login() {
     }
   }
 
-  // 临时措施 (2026-10-13) 生效时, 登录界面只留封禁说明: 普通用户入口整体隐藏,
-  // 只保留一个低调的「管理员登录」链接给管理员复核使用.
-  const showBlockedNotice = normalUserAccessBlocked && !adminLoginVisible
-
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden select-none"
       style={{ background: 'var(--bg-secondary)' }}>
@@ -114,47 +98,6 @@ export default function Login() {
             </p>
           )}
         </div>
-
-        {showBlockedNotice ? (
-          <div className="rounded-2xl border px-6 py-7 text-center"
-            style={{
-              background: theme !== 'light' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-              borderColor: theme !== 'light' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-            }}>
-            <span className="mb-4 inline-grid h-11 w-11 place-items-center rounded-xl"
-              style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa' }}>
-              <Lock className="h-5 w-5" />
-            </span>
-            <h2 className="text-[length:var(--fs-2xl)] font-semibold mb-2"
-              style={{ color: theme !== 'light' ? '#ffffff' : '#1e293b' }}>
-              普通用户访问已暂时关闭
-            </h2>
-            <p className="text-[length:var(--fs-lg)] leading-6 mb-1"
-              style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
-              {branding.systemNameZh || branding.systemNameEn || '小莫'} 正在做一次安全加固，期间普通用户暂时无法登录和使用。
-            </p>
-            <p className="text-[length:var(--fs-md)] leading-5"
-              style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}>
-              这是临时措施，恢复后会立即放开，无需你做任何操作。
-            </p>
-            <button
-              type="button"
-              onClick={() => setAdminLoginVisible(true)}
-              className="mt-6 text-[length:var(--fs-md)] underline-offset-4 hover:underline transition-colors"
-              style={{ color: theme !== 'light' ? '#6b7280' : '#94a3b8' }}
-            >
-              管理员登录
-            </button>
-          </div>
-        ) : (
-        <>
-
-        {normalUserAccessBlocked && (
-          <div className="mb-4 px-4 py-2.5 rounded-xl text-[length:var(--fs-md)] text-center"
-            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', color: '#fbbf24' }}>
-            临时措施生效中：普通用户访问已关闭，此处仅限管理员登录
-          </div>
-        )}
 
         {/* 输入区域 */}
         <div className="space-y-3 mb-5">
@@ -261,8 +204,6 @@ export default function Login() {
               {[branding.systemNameEn, branding.systemNameZh].filter(Boolean).join(' · ')}
             </p>
           </div>
-        )}
-        </>
         )}
       </div>
 
