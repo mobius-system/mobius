@@ -4,13 +4,17 @@ import bcrypt from 'bcryptjs';
 import { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING, HIDDEN_FOLDER_NAME, APP_DIR } from '../config';
 import { auth } from '../middleware/auth';
 import { Users } from '../repositories/users';
-import { assertUserIsolationAvailable } from '../services/user-isolation';
+import { assertUserIsolationAvailable, NORMAL_USER_ACCESS_BLOCKED } from '../services/user-isolation';
 import { searchDirectory, resolveDirectoryIds } from '../services/user-directory';
 
 const router = express.Router();
 
 router.get('/config', (_req: express.Request, res: express.Response) => {
-  res.json({ password_required: ENABLE_PASSWORD_LOGIN });
+  res.json({
+    password_required: ENABLE_PASSWORD_LOGIN,
+    // 临时措施开关 (见 services/user-isolation): 前端登录页据此展示封禁提示并隐藏普通用户入口.
+    normal_user_access_blocked: NORMAL_USER_ACCESS_BLOCKED,
+  });
 });
 
 // 全站品牌显示配置 (顶部 Logo / 系统名称 / Tab 标题). 由 .env 注入, 任何客户端
@@ -46,7 +50,10 @@ router.post('/login', (req: express.Request, res: express.Response) => {
     return;
   }
   try { assertUserIsolationAvailable(user); } catch (e) {
-    return res.status((e as any).status || 503).json({ error: (e as Error).message, code: 'AGENT_SANDBOX_UNAVAILABLE' });
+    return res.status((e as any).status || 503).json({
+      error: (e as Error).message,
+      code: (e as any).code || 'AGENT_SANDBOX_UNAVAILABLE',
+    });
   }
   if (ENABLE_PASSWORD_LOGIN && !bcrypt.compareSync(password || '', user.password_hash)) {
     res.status(401).json({ error: 'Wrong password' });

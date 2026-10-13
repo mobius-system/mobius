@@ -76,6 +76,14 @@ app.use((req, res, next) => {
 const apiGzip = require('./backend/middleware/api-gzip').apiGzip;
 app.use(apiGzip);
 
+// ── 临时措施 (2026-10-13, 用户决策): 普通用户全站封禁 ───────────────────────────
+// 原生文件编辑器存在已实证的越权读取 (普通用户经拓展项目可读到部署根 .env 的 JWT_SECRET 等).
+// 正式修复前, 带有效 token 的普通用户对所有后端接口一律 401 (前端据此清 token 回登录页);
+// admin 不受影响. 开关在 backend/services/user-isolation/index.ts: NORMAL_USER_ACCESS_BLOCKED.
+const { blockNormalUsersWhileLocked } = require('./backend/middleware/auth');
+app.use('/api', blockNormalUsersWhileLocked);
+app.use('/aimux_bridge', blockNormalUsersWhileLocked);
+
 // ── mount v1 backend/routes (auth/projects/issues/skills/memories/files/health) ──
 // 这些路由读 users/projects/issues 等共享表, 不动 sessions, 完全可复用.
 const authRoutes = require('./backend/routes/auth');

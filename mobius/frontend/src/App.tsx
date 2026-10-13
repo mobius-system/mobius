@@ -13,6 +13,8 @@ import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services
 import { useLayoutMode } from './services/layout-mode'
 import { buildEasyModeUrlFromContext } from './services/easy-route-state'
 import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
+import { NormalUserAccessBlocked } from './components/normal-user-access-blocked'
+import { refreshNormalUserAccessBlocked, useNormalUserAccessBlocked } from './services/normal-user-access'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
@@ -501,6 +503,12 @@ function AuthenticatedApp() {
 
 export default function App() {
   const { token, user, authChecking, theme, backgroundFlowEnabled, logout } = useStore()
+  // 临时措施开关 (后端 NORMAL_USER_ACCESS_BLOCKED): 普通用户全站封禁时收起整个应用.
+  const normalUserAccessBlocked = useNormalUserAccessBlocked()
+
+  useEffect(() => {
+    refreshNormalUserAccessBlocked()
+  }, [])
 
   // 浏览器本地品牌覆盖: 自定义 logo 同步到浏览器标签页图标, 自定义系统名称重算 branding
   // (Tab 标题/登录页等所有读 branding.systemName* 的地方随之更新). 两者都跟随其他标签页改动.
@@ -557,6 +565,12 @@ export default function App() {
   // 有 token 但会话尚在校验: 显示加载态, 而不是登录页(消除弱网下闪现登录页).
   if (token && authChecking && !user) {
     return <RouteFallback />
+  }
+
+  // 临时措施 (2026-10-13): 普通用户全站封禁 — 角色非 admin 时一个应用界面都不渲染.
+  // 正常路径上普通用户根本走不到这里 (登录 / /api/auth/me 已被后端 401), 这里是兜底.
+  if (user && user.role !== 'admin' && normalUserAccessBlocked) {
+    return <NormalUserAccessBlocked />
   }
 
   if (!token || !user) {
