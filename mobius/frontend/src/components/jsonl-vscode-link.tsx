@@ -16,11 +16,14 @@ import { buildVscodeUrl } from './project-files'
 // =====================================================================
 export type VSCodeOpenContextValue = {
   openLocalPath: (absPath: string) => string | null
+  // 无 code-server 权限 (landlock 隔离下的普通用户) 时: 不跳 VSCode, 改为在原生文件编辑器打开.
+  codeServerAllowed: boolean
+  projectId?: string | null
 }
 
 export const VSCodeOpenContext = createContext<VSCodeOpenContextValue | null>(null)
 
-type ProjectMeta = { bind_path?: string; vscode_web_url?: string; vscode_workspace_path?: string }
+type ProjectMeta = { bind_path?: string; vscode_web_url?: string; vscode_workspace_path?: string; codeServerAllowed: boolean }
 
 function normalizeFsPath(value?: string): string {
   const trimmed = (value || '').trim()
@@ -73,6 +76,7 @@ export function VSCodeOpenProvider({ projectId, children }: { projectId?: string
           bind_path: data?.bind_path || '',
           vscode_web_url: data?.vscode_web_url || '',
           vscode_workspace_path: data?.vscode_workspace_path || data?.bind_path || '',
+          codeServerAllowed: data?.code_server_allowed !== false,
         }
         metaRef.current = meta
         pendingRef.current = null
@@ -103,7 +107,11 @@ export function VSCodeOpenProvider({ projectId, children }: { projectId?: string
   // the very first link click resolves synchronously.
   if (projectId && !metaRef.current && !pendingRef.current) loadMeta()
 
-  const value = useMemo(() => ({ openLocalPath }), [openLocalPath])
+  const allowed = metaRef.current ? metaRef.current.codeServerAllowed : true
+  const value = useMemo(
+    () => ({ openLocalPath, codeServerAllowed: allowed, projectId }),
+    [openLocalPath, projectId, allowed],
+  )
   return <VSCodeOpenContext.Provider value={value}>{children}</VSCodeOpenContext.Provider>
 }
 

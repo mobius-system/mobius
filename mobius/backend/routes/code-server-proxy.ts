@@ -23,6 +23,7 @@ import { canReadProject, projectAllowsReaderWrite } from '../services/access-con
 // @ts-ignore — service 仍是 .js
 import * as pool from '../services/code-server-pool';
 import { proxyTargetHost } from '../services/user-isolation/code-server';
+import { codeServerAllowedFor } from '../services/user-isolation';
 // @ts-ignore — service 仍是 .js
 import { resolveCodeServerWorkspace, validateCodeServerPayload } from '../services/code-server-workspace';
 
@@ -186,6 +187,12 @@ router.use(async (req: express.Request, res: express.Response, next: express.Nex
     return;
   }
 
+  // landlock 隔离模式下普通用户禁止一切 code-server 访问 (逃逸面, 2026-10-13 用户决策).
+  if (!codeServerAllowedFor(user)) {
+    res.status(403).send('code-server 在 landlock 隔离模式下仅管理员可用');
+    return;
+  }
+
   const acc = checkProjectAccess(user, parsed.projectId);
   if (!acc.ok) {
     res.status(acc.status).send(acc.msg);
@@ -255,6 +262,8 @@ async function handleUpgrade(req: any, socket: any, head: Buffer): Promise<void>
   if (!found) { socket.destroy(); return; }
   const user = verifyJwt(found.token);
   if (!user || user.id !== parsed.userId) { socket.destroy(); return; }
+  // 同 HTTP 分支: landlock 模式下普通用户禁止一切 code-server 访问.
+  if (!codeServerAllowedFor(user)) { socket.destroy(); return; }
 
   const acc = checkProjectAccess(user, parsed.projectId);
   if (!acc.ok) { socket.destroy(); return; }

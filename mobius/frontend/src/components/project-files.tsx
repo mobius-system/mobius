@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
-import { api, HIDDEN_FOLDER_NAME } from '../store'
+import { api, HIDDEN_FOLDER_NAME, useStore } from '../store'
 import { UnifiedButton } from './unified-button-group'
 
 // =====================================================================
@@ -214,6 +214,8 @@ export function OpenInVSCodeButton({
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
+  // landlock 隔离下普通用户无 code-server: 按钮改为激活原生文件编辑器.
+  const [codeServerAllowed, setCodeServerAllowed] = useState(true)
   const [showPathPicker, setShowPathPicker] = useState(false)
 
   useEffect(() => {
@@ -221,12 +223,14 @@ export function OpenInVSCodeButton({
       setBindPath('')
       setVscodeWorkspacePath('')
       setVscodeWebUrl('')
+      setCodeServerAllowed(true)
       setShowPathPicker(false)
       return
     }
     setBindPath('')
     setVscodeWorkspacePath('')
     setVscodeWebUrl('')
+    setCodeServerAllowed(true)
     setShowPathPicker(false)
     let cancelled = false
     api(`/api/projects/${projectId}/files?path=/`).then((data) => {
@@ -234,6 +238,7 @@ export function OpenInVSCodeButton({
       setBindPath(data?.bind_path || '')
       setVscodeWorkspacePath(data?.vscode_workspace_path || data?.bind_path || '')
       setVscodeWebUrl(data?.vscode_web_url || '')
+      setCodeServerAllowed(data?.code_server_allowed !== false)
     }).catch(() => { /* 静默, 按钮自然不渲染 */ })
     return () => { cancelled = true }
   }, [projectId])
@@ -267,15 +272,25 @@ export function OpenInVSCodeButton({
     setShowPathPicker(false)
   }
 
+  // landlock 隔离下普通用户无 code-server: 「代码」按钮改为激活原生文件编辑器.
+  const openNativeFileEditor = useStore(s => s.openNativeFileEditor)
+  const openEntry = () => {
+    if (!codeServerAllowed) { openNativeFileEditor(); return }
+    if (mode === 'direct') openFolder(defaultFolder)
+    else setShowPathPicker(true)
+  }
+
   if (!ready) return null
 
   return (
     <>
       <button
         type="button"
-        onClick={() => mode === 'direct' ? openFolder(defaultFolder) : setShowPathPicker(true)}
+        onClick={openEntry}
         data-tour="vscode-open-button"
-        title={mode === 'direct' ? '在 VSCode Web 打开项目目录' : '选择 VSCode Web 打开路径'}
+        title={!codeServerAllowed
+          ? '在右侧原生文件编辑器中打开'
+          : mode === 'direct' ? '在 VSCode Web 打开项目目录' : '选择 VSCode Web 打开路径'}
         className={effectiveClassName}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -770,6 +785,9 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   const [bindPath, setBindPath] = useState('')
   const [vscodeWorkspacePath, setVscodeWorkspacePath] = useState('')
   const [vscodeWebUrl, setVscodeWebUrl] = useState('')
+  // landlock 隔离下普通用户无 code-server: 文件点击 / 「在 VSCode 中打开」改为激活原生文件编辑器.
+  const [codeServerAllowed, setCodeServerAllowed] = useState(true)
+  const openNativeFileEditor = useStore(s => s.openNativeFileEditor)
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
   const [rootLoaded, setRootLoaded] = useState(false)
@@ -785,6 +803,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
         setBindPath(data.bind_path || '')
         setVscodeWorkspacePath(data.vscode_workspace_path || data.bind_path || '')
         setVscodeWebUrl(data.vscode_web_url || '')
+        setCodeServerAllowed(data.code_server_allowed !== false)
         setRootLoaded(true)
         if (!data.bind_path) setRootError('项目未绑定路径')
       }
@@ -817,12 +836,20 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
   }
 
   const openFile = (entry: Entry) => {
+    if (!codeServerAllowed) {
+      // 在右侧原生文件编辑器里打开该文件 (复用 display-files 卡片同一事件通道).
+      window.dispatchEvent(new CustomEvent('mobius:request-open-file-in-sidebar', {
+        detail: { projectId, path: entry.abs_path },
+      }))
+      return
+    }
     const url = buildVscodeUrl(vscodeWebUrl, bindPath, entry.abs_path)
     if (!url) return
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const openProject = () => {
+    if (!codeServerAllowed) { openNativeFileEditor(); return }
     const url = buildVscodeUrl(vscodeWebUrl, vscodeWorkspacePath || bindPath)
     if (!url) return
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -908,11 +935,12 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
         {vscodeReady && (
           <button onClick={openProject}
             data-tour="project-files-vscode-open"
+            title={codeServerAllowed ? '在 VSCode Web 中打开项目目录' : '在右侧原生文件编辑器中打开'}
             className="h-7 px-3 text-[length:var(--fs-sm)] rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/20 transition-colors flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-            在 VSCode 中打开
+            {codeServerAllowed ? '在 VSCode 中打开' : '在原生文件编辑器中打开'}
           </button>
         )}
         {isWebClient() && (
@@ -951,6 +979,7 @@ export function ProjectFilesCard({ projectId }: { projectId: string }) {
             onToggleDir={toggleDir}
             onOpenFile={openFile}
             vscodeReady={vscodeReady}
+            fileActionLabel={codeServerAllowed ? undefined : '在文件编辑器中打开'}
             onContextMenu={openNodeMenu}
             onBlankContextMenu={openDirMenu}
           />

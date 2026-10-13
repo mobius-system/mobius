@@ -71,6 +71,18 @@ export function webTerminalAllowedFor(user: any): boolean {
   return user?.role === 'admin';
 }
 
+// code-server (VSCode Web) 可用性 (2026-10-13 用户决策):
+//   - admin 恒可用.
+//   - docker 模式: 普通用户的 code-server 跑在沙箱容器内 (隔离边界内), 可用.
+//   - landlock 模式: 普通用户的 code-server 直接跑在宿主机上, 不套 landlock 策略 = 逃逸面,
+//     故禁止一切访问 (HTTP + WS 反代层统一 403). 前端把「代码 / 在 VSCode 中打开」改为激活
+//     原生文件编辑器 (文件访问走 file-access 的鉴权 + 隔离).
+export function codeServerAllowedFor(user: any): boolean {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return isDockerIsolation();
+}
+
 // 后端启动钩子: reconcile + 定时器 (server 启动时调用一次).
 export function onBackendStart(): void {
   if (!isDockerIsolation()) return;

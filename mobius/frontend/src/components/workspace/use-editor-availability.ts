@@ -13,10 +13,12 @@ import { api } from '../../store'
 export type EditorAvailability = {
   bindPath: string
   vscodeWebUrl: string
+  // code-server 对本用户是否可用 (landlock 隔离下普通用户为 false). 缺省视为可用 (旧后端兼容).
+  codeServerAllowed: boolean
   loading: boolean
 }
 
-type EditorMeta = { bindPath: string; vscodeWebUrl: string }
+type EditorMeta = { bindPath: string; vscodeWebUrl: string; codeServerAllowed: boolean }
 const metaCache = new Map<string, EditorMeta>()
 const inflight = new Map<string, Promise<EditorMeta>>()
 
@@ -29,7 +31,11 @@ function fetchEditorMeta(projectId: string): Promise<EditorMeta> {
 
   const promise = api(`/api/projects/${projectId}/files?path=/`)
     .then((data: any) => {
-      const meta: EditorMeta = { bindPath: data?.bind_path || '', vscodeWebUrl: data?.vscode_web_url || '' }
+      const meta: EditorMeta = {
+        bindPath: data?.bind_path || '',
+        vscodeWebUrl: data?.vscode_web_url || '',
+        codeServerAllowed: data?.code_server_allowed !== false,
+      }
       metaCache.set(projectId, meta)
       return meta
     })
@@ -65,6 +71,7 @@ export function useEditorAvailability(projectId: string | undefined | null, enab
   return {
     bindPath: meta?.bindPath || '',
     vscodeWebUrl: meta?.vscodeWebUrl || '',
+    codeServerAllowed: meta ? meta.codeServerAllowed : true,
     loading,
   }
 }

@@ -96,6 +96,8 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MAX,
   HIDDEN_FOLDER_NAME,
 } from '../config';
+// @ts-ignore — user-isolation 统一出口 (TS)
+import { codeServerAllowedFor } from '../services/user-isolation';
 
 const router = express.Router();
 const GIT_SOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -3328,6 +3330,7 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
       bind_path: '', vscode_web_url: '', vscode_web_url_legacy: VSCODE_WEB_URL || '',
       vscode_workspace_path: '',
       bind_path_writable: false, cs_url_token_required: true,
+      code_server_allowed: codeServerAllowedFor(user),
       path: '/', entries: [],
     });
   }
@@ -3366,6 +3369,8 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
       vscode_workspace_path: vscodeWorkspacePath,
       bind_path_writable: writable,
       cs_url_token_required: true,
+      // landlock 模式下普通用户为 false: 前端据此把「代码 / 在 VSCode 中打开」改为激活原生文件编辑器.
+      code_server_allowed: codeServerAllowedFor(user),
       path: relPath,
       entries,
     });

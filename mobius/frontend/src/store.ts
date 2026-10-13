@@ -409,6 +409,9 @@ interface AppState {
   applySessionWorkspaceLayout: (sessionId: string | null | undefined) => void
   // 开合常规模式右侧文件编辑栏 (顶栏「原生文件编辑器」入口与 display-files 卡片共用).
   setFileEditorOpen: (open: boolean) => void
+  // 激活「原生文件编辑器」: 退出继承的 code-server 全页布局, 并打开右侧文件编辑栏.
+  // 供无 code-server 权限的普通用户 (landlock 隔离) 的「代码 / 在 VSCode 中打开」入口复用.
+  openNativeFileEditor: () => void
   setIssues: (issues: Issue[]) => void
   setIssuesMap: (projectId: string, issues: Issue[]) => void
   setCurrentIssue: (issue: Issue | null) => void
@@ -504,6 +507,12 @@ export const useStore = create<AppState>((set) => ({
     set((s) => (s.workspaceLayoutMode === next ? s : { workspaceLayoutMode: next }))
   },
   setFileEditorOpen: (open) => set({ fileEditorOpen: !!open }),
+  openNativeFileEditor: () => {
+    // 'editor-chat' 是 code-server 全页布局 (普通用户无权限); 切到 session 再开右侧文件编辑栏.
+    const s = useStore.getState()
+    if (s.workspaceLayoutMode !== 'session') s.setWorkspaceLayoutMode('session')
+    s.setFileEditorOpen(true)
+  },
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),

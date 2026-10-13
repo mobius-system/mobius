@@ -8,6 +8,14 @@ function MarkdownAnchor({ href, children }: { href?: string; children?: ReactNod
   const ctx = useContext(VSCodeOpenContext)
   const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (!href || !ctx || !isLikelyFilesystemPath(href)) return
+    // 无 code-server 权限 (landlock 隔离下的普通用户): 在原生文件编辑器打开, 不跳 VSCode.
+    if (ctx.codeServerAllowed === false) {
+      e.preventDefault()
+      window.dispatchEvent(new CustomEvent('mobius:request-open-file-in-sidebar', {
+        detail: { projectId: ctx.projectId || '', path: href },
+      }))
+      return
+    }
     const url = ctx.openLocalPath(href)
     if (!url) return // meta not ready yet → let default happen this once
     e.preventDefault()

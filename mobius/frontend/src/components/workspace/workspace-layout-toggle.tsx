@@ -40,7 +40,7 @@ export function WorkspaceLayoutToggle() {
 
   const onIssueOrResearch = !!(params.issue || params.research)
   // 只在可能用到时才查询 (顶栏全局渲染, 避免无关页面发请求).
-  const { bindPath, vscodeWebUrl } = useEditorAvailability(currentProject?.id, onIssueOrResearch && !!currentSession)
+  const { bindPath, vscodeWebUrl, codeServerAllowed } = useEditorAvailability(currentProject?.id, onIssueOrResearch && !!currentSession)
 
   const [open, setOpen] = useState(false)
 
@@ -68,7 +68,9 @@ export function WorkspaceLayoutToggle() {
   // UserPage / ProjectPage / 移动端不显示.
   if (!onIssueOrResearch || isMobile) return null
 
-  const vscodeAvailable = !!bindPath && !!vscodeWebUrl
+  // landlock 隔离下普通用户无 code-server (codeServerAllowed=false): 不显示 VSCode 入口,
+  // 保持菜单为「高效会话模式 / 原生文件编辑器」两项 — 后者就是用户要的原生文件编辑器.
+  const vscodeAvailable = !!bindPath && !!vscodeWebUrl && codeServerAllowed
   const fileEditorAvailable = !!currentSession && !!bindPath
 
   const options: ViewOption[] = [

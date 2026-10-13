@@ -39,9 +39,10 @@ export default function ResearchPage() {
   // Research Agent 与 Issue Session 共用同一套三种工作区布局。此前顶栏能写入
   // workspaceLayoutMode，但 ResearchPage 从未消费该状态，因此三个菜单项点击后均无视觉变化。
   const isMobile = useIsMobile()
-  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl } = useEditorAvailability(projectId, !!currentSession)
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl, codeServerAllowed: editorCodeServerAllowed } = useEditorAvailability(projectId, !!currentSession)
   const workspaceViewActive = !!currentSession && !showGraph && !showBlackboard
-  const editorAvailable = workspaceViewActive && !!editorBindPath && !!editorVscodeUrl
+  // code-server 全页布局 (editor-chat) 对无权限用户 (landlock 隔离下普通用户) 不提供.
+  const editorAvailable = workspaceViewActive && !!editorBindPath && !!editorVscodeUrl && editorCodeServerAllowed
   const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
   const codeConversationAvailable = workspaceViewActive && !!editorBindPath && !isMobile
   const useCodeConversation = workspaceLayoutMode === 'code-conversation' && codeConversationAvailable

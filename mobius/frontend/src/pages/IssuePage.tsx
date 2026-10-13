@@ -56,8 +56,9 @@ export default function IssuePage() {
   // ===== 「代码对话」模式: 左 code-server 编辑器 + 右 Session 对话 =====
   const isMobile = useIsMobile()
   // 有 currentSession 时才查询 (顶栏按钮也查同一缓存), 拿到 bind_path + VSCODE_WEB_URL.
-  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl } = useEditorAvailability(projectId, !!currentSession)
-  const editorAvailable = !!currentSession && !!editorBindPath && !!editorVscodeUrl
+  const { bindPath: editorBindPath, vscodeWebUrl: editorVscodeUrl, codeServerAllowed: editorCodeServerAllowed } = useEditorAvailability(projectId, !!currentSession)
+  // code-server 全页布局 (editor-chat) 对无权限用户 (landlock 隔离下普通用户) 不提供.
+  const editorAvailable = !!currentSession && !!editorBindPath && !!editorVscodeUrl && editorCodeServerAllowed
   // v1 代码对话仅桌面端; 移动端强制走会话模式 (避免 ResizablePanel side=left 在窄屏变抽屉).
   const useEditorChat = workspaceLayoutMode === 'editor-chat' && editorAvailable && !isMobile
   // v2 代码对话: 左原生文件浏览器 + 中代码浏览 + 右对话. 只需 bind_path, 不依赖 code-server.
