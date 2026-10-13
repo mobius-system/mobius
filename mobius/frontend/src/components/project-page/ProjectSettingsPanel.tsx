@@ -10,6 +10,7 @@ import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
 import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
 import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
+import { assistantAllowedFor } from '../../services/assistant-availability'
 import { ProjectPackagePanel } from './ProjectPackagePanel'
 import { ProjectTodosPanel } from './ProjectTodosPanel'
 import { ProjectTeamPanel } from './ProjectTeamPanel'
@@ -778,9 +779,10 @@ export function ProjectSettingsPanel({
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     )
-    if (assistantProject) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
+    // 小莫助手临时关闭期间, 项目里的「小莫预设」页也不对普通用户展示 (见 services/assistant-availability).
+    if (assistantProject && assistantAllowedFor(user)) arr.push({ key: 'assistant', label: '小莫预设', active: activePane === 'assistant' })
     return arr
-  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind])
+  }, [activePane, gitTrackingAvailable, gitTrackingTitle, assistantProject, project.kind, user])
 
   // 把当前 settingsTabs 上抛给父层 (设计师之眼侧边栏渲染用). settingsTabs 是 useMemo 产物,
   // 仅在其依赖变化时换身份, 故不会造成父子间渲染抖动.
@@ -826,7 +828,7 @@ export function ProjectSettingsPanel({
 
       <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
 
-        {activePane === 'assistant' && assistantProject ? (
+        {activePane === 'assistant' && assistantProject && assistantAllowedFor(user) ? (
           <div className="p-3 w-full">
             <ProjectAssistantPresetPanel projectId={project.id} />
           </div>

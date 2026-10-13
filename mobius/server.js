@@ -108,7 +108,18 @@ app.use('/api/auth', authRoutes);
 // 微信式群聊: 用户列表 + 群(conversations). tsx 即时转译 .ts, 无同名 .js 故 require 解析到 .ts.
 app.use('/api/users', require('./backend/routes/users'));
 app.use('/api/conversations', require('./backend/routes/conversations'));
-app.use('/api/assistant', assistantRoutes);
+// 小莫助理 (「小莫光点」) 闸门 —— 临时措施 (2026-10-13 用户要求): 仅 admin 可用,
+// 普通用户对 /api/assistant/* 的一切访问 403. 开关见 backend/services/user-isolation
+// 的 ASSISTANT_NORMAL_USER_BLOCKED. 前端入口由 assistant-availability.ts 同步隐藏.
+function assistantAccessGuard(req, res, next) {
+  // 例外: 语音转文字是普通会话输入框也在用的通用能力 (frontend/src/components/chat.tsx),
+  // 不属于「小莫」本体, 不随这次临时屏蔽一起关掉.
+  const p = req.path || '';
+  if (p === '/transcribe' || p.startsWith('/transcribe/')) return next();
+  if (require('./backend/services/user-isolation').assistantAllowedFor(req.user)) return next();
+  res.status(403).json({ error: '小莫助理暂时不可用', code: 'ASSISTANT_DISABLED' });
+}
+app.use('/api/assistant', require('./backend/middleware/auth').auth, assistantAccessGuard, assistantRoutes);
 // 用户个人维度偏好: GET/POST /api/profile/tour-first-login-seen (普通 auth, 跨设备生效).
 app.use('/api/profile', profileRoutes);
 app.use('/api/tasks', tasksRoutes);

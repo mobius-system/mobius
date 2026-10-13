@@ -18,6 +18,7 @@ import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 import { TopNavActionElement } from './top-nav-action'
 import { RecentSessionGroupList } from './recent-session-group-list'
 import { setLayoutMode, useLayoutMode } from '../services/layout-mode'
+import { assistantAllowedFor } from '../services/assistant-availability'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { projectHref } from '../services/project-url'
@@ -1336,6 +1337,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     />
                   </span>
                 </button>
+                {/* 小莫助手临时关闭期间不对普通用户展示这个入口 (见 assistant-availability). */}
+                {assistantAllowedFor(user) && (
                 <button
                   type="button"
                   role="switch"
@@ -1369,6 +1372,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                     />
                   </span>
                 </button>
+                )}
                 <button
                   type="button"
                   role="switch"

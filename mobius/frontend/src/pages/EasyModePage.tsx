@@ -46,6 +46,7 @@ import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 import { MobiusLogo } from '../components/mobius-logo'
 import { appendAttachmentsToDesc, newAttId, uploadAttachmentFile, type Attachment } from '../components/attachments'
+import { assistantAllowedFor } from '../services/assistant-availability'
 
 const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
 
@@ -994,7 +995,10 @@ export default function EasyModePage() {
           </div>
 
           <div className="easy-sidebar-footer" aria-label="快捷入口">
+            {/* 小莫助手临时关闭期间隐藏这个快捷入口 (见 services/assistant-availability). */}
+            {assistantAllowedFor(user) && (
             <button type="button" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><Bot className="h-[17px] w-[17px]" /></button>
+            )}
             <button type="button" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Settings className="h-[17px] w-[17px]" /></button>
             <button type="button" className={activePanel === 'context' ? 'is-active' : ''} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><BrainCircuit className="h-[17px] w-[17px]" /></button>
           </div>

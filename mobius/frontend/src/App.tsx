@@ -13,6 +13,7 @@ import { lazyWithRetry, isStaleChunkError, triggerStaleReload } from './services
 import { useLayoutMode } from './services/layout-mode'
 import { buildEasyModeUrlFromContext } from './services/easy-route-state'
 import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
+import { assistantAllowedFor } from './services/assistant-availability'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
@@ -341,6 +342,8 @@ function AssistantTaskDoneToast() {
   }, [notifyInBackground])
 
   if (!entry || !user) return null
+  // 小莫助手临时关闭期间, 连同「小莫任务已完成」提醒一起不显示 (见 assistant-availability).
+  if (!assistantAllowedFor(user)) return null
 
   // 深链到该会话: 极简模式下跳极简工作台 (research → research 区带 agent, 其余带 session);
   // 普通模式维持 issue 走 /i/:issue, research 走 /r/:research, 都带 ?session= 选中它。
@@ -487,7 +490,7 @@ function AuthenticatedApp() {
           <TourController />
         </Suspense>
       ) : null}
-      {idleReady && assistantBubbleEnabled ? (
+      {idleReady && assistantBubbleEnabled && assistantAllowedFor(user) ? (
         <Suspense fallback={null}>
           <AssistantChat />
         </Suspense>
