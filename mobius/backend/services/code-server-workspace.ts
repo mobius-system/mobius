@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { APP_DIR, EXTENSION_ROOT } from '../config';
+import { db } from '../../db';
 import { isWithin, normalizePath, tempRootFor } from './file-access';
+import { isolationActiveFor } from './user-isolation/docker-sandbox';
 
 function isSystemTempPath(targetPath: any, userId?: string): boolean {
   const target = normalizePath(targetPath);
@@ -13,9 +15,27 @@ function isSystemTempPath(targetPath: any, userId?: string): boolean {
 }
 
 /*
+ * Docker isolation: the sandbox container sees exactly the owner's work dir
+ * (its HOME is <work_dir>/.sbx-home, same bind mount), so every path under it is
+ * reachable inside the container and belongs to the same user. code-server (which
+ * runs in that container) may therefore open any of them; the bind root's parent
+ * rule below is far too narrow — it rejects .sbx-home, a direct child of work_dir.
+ */
+function isOwnWorkDirPath(userId: string | undefined, target: string): boolean {
+  if (!userId || !isolationActiveFor(userId)) return false;
+  const row = db.prepare('SELECT work_dir FROM users WHERE id = ?').get(String(userId)) as { work_dir?: string } | undefined;
+  const workDir = normalizePath(row?.work_dir);
+  if (!workDir) return false;
+  let root = workDir;
+  try { if (fs.existsSync(workDir)) root = fs.realpathSync(workDir); } catch { /* 保持字面路径 */ }
+  return isWithin(root, target);
+}
+
+/*
  * A path is an allowed VSCode workspace when it sits inside the project bind
  * root, is the bind root's direct parent (so sibling projects stay editable),
- * or is the caller's own temp dir.
+ * is the caller's own temp dir, or (in docker isolation) lives anywhere under
+ * the caller's own work dir.
  */
 function isAllowedWorkspacePath(project: any, targetPath: any, userId?: string): boolean {
   const rawTarget = normalizePath(targetPath);
@@ -32,13 +52,14 @@ function isAllowedWorkspacePath(project: any, targetPath: any, userId?: string):
   // 但不允许父目录下的任意兄弟目录作为独立入口。
   const parent = path.dirname(bindRoot);
   if (isWithin(bindRoot, target) || target === parent) return true;
+  if (isOwnWorkDirPath(userId, target)) return true;
   return isSystemTempPath(target, userId);
 }
 
-function payloadRootForWorkspace(project: any, workspacePath: any): string {
+function payloadRootForWorkspace(project: any, workspacePath: any, userId?: string): string {
   const bindRoot = normalizePath(project?.bind_path);
   const workspaceRoot = normalizePath(workspacePath);
-  if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot)) return workspaceRoot;
+  if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot, userId)) return workspaceRoot;
   return bindRoot;
 }
 
@@ -119,7 +140,7 @@ function validateCodeServerPayload(
   const filePath = extractPayloadPath(payloadValue);
   if (!filePath) return { ok: true };
   const target = normalizePath(filePath);
-  const allowedRoot = payloadRootForWorkspace(project, workspacePath);
+  const allowedRoot = payloadRootForWorkspace(project, workspacePath, userId);
   if (!allowedRoot || !target) {
     return { ok: false, error: 'VSCode 打开文件不在当前允许的工作区内', code: 'BIND_PATH_DENIED' };
   }
