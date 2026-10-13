@@ -2300,6 +2300,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   // The standard-mode file pane open-state lives in the store so the top-bar entry and cards share one source.
   const displayFilesOpen = useStore(s => s.fileEditorOpen)
   const setDisplayFilesOpen = useStore(s => s.setFileEditorOpen)
+  // web 终端仅 admin 可用 (见后端 webTerminalAllowedFor): 普通用户隐藏入口与显示设置项.
+  const isAdminUser = useStore(s => s.user?.role === 'admin')
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
   // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
   const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)
@@ -4138,6 +4140,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {(jsonlEntryCount) => (
         <AdvancedSessionActions
           variant={variant}
+          showTerminal={isAdminUser}
           sessionId={currentSession?.session_id || sessionId}
           projectId={currentProjectId}
           issueId={currentIssueId}
@@ -4174,6 +4177,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   // 会话工具按钮组只有这一份定义: 标准布局挂在输入侧栏, 简易模式收进 EasySessionToolBar 浮层,
   // 避免入口/禁用条件/显示开关两处漂移 (按钮本体由 AdvancedSessionActions 定义).
+  const sessionToolVisibilityOptions = useMemo(
+    () => (isAdminUser ? SESSION_TOOL_VISIBILITY_OPTIONS : SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => option.id !== 'terminal')),
+    [isAdminUser],
+  )
   const renderSessionToolGroup = (opts: { variant: 'default' | 'compact' | 'menu'; className: string; initialPanel: null | 'memory'; persistActivePanel?: boolean }) => (
     <UnifiedButtonGroup
       className={opts.className}
@@ -4190,7 +4197,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         vscodeSubPath={currentVscodeSubPath}
         onRequestRunProject={sendRunProjectPortPrompt}
         onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-        visibilityOptions={SESSION_TOOL_VISIBILITY_OPTIONS}
+        visibilityOptions={sessionToolVisibilityOptions}
       />
     </UnifiedButtonGroup>
   )

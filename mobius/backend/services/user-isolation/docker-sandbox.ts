@@ -170,10 +170,8 @@ export function ensureSandbox(userId: string): void {
   const ip = registry.allocateIp();
   const args = [
     'run', '-d', '--name', name,
-    // ⚠️ 临时: 本机 docker 29.1.3 + runc 1.3.4 的默认 seccomp profile 会让容器 init
-    // 进程起不来 ("can't get final child's PID from pipe: EOF", 已实测 unconfined 可绕过).
-    // 升级 runc >= 1.3.5 或修复 daemon 后必须移除本行, 恢复默认 seccomp 防护.
-    '--security-opt', 'seccomp=unconfined',
+    // 默认 seccomp profile 生效 (2026-10-13 曾因 runc 1.3.4 bug 临时 seccomp=unconfined,
+    // docker daemon 重启后已恢复, 绕过行已移除).
     '--network', SBX_NETWORK, '--ip', ip,
     '--memory', SBX_MEMORY, '--cpus', SBX_CPUS, '--pids-limit', String(SBX_PIDS_LIMIT),
     '--init', '--stop-timeout', '30',

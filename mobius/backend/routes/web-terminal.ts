@@ -130,9 +130,9 @@ function resolveSessionTerminal(sid: string, userId: string): { cwd: string; den
 export function handleUpgrade(req: any, socket: any, head: Buffer): void {
   const user = verifyUser(extractToken(req));
   if (!user) { socket.destroy(); return; }
-  // docker 隔离模式: 普通用户的 web 终端不再支持 (code-server 有内置终端), 节省一个端口
+  // web 终端仅 admin 可用: 普通用户在任何隔离模式下都拒绝 (landlock 模式下终端不套策略 = 越权逃逸).
   if (!webTerminalAllowedFor(user)) {
-    try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\nweb terminal disabled in docker isolation mode\n'); } catch {}
+    try { socket.write('HTTP/1.1 403 Forbidden\r\n\r\nweb terminal is admin-only\n'); } catch {}
     socket.destroy();
     return;
   }

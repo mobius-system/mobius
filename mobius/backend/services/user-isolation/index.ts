@@ -63,10 +63,12 @@ export function sandboxPolicyFor(user: any, opts: { userId: string; projectId?: 
   return writeSandboxPolicy(opts);
 }
 
-// web 终端可用性 (docker 模式普通用户不支持, 2026-10-13 用户决策: 用 code-server 内置终端).
+// web 终端可用性: 仅 admin. 普通用户在任何隔离模式下都禁用 (2026-10-13 用户决策).
+//   - landlock 模式: web 终端直接 spawn 宿主原始 shell, 不套 landlock 策略 = 越权逃逸隔离,
+//     故普通用户必须拒绝 (此前 landlock 模式默认放行, 是本轮收紧点).
+//   - docker 模式: 普通用户改用容器内 code-server 自带终端, 本来已禁用.
 export function webTerminalAllowedFor(user: any): boolean {
-  if (user?.role === 'admin') return true;
-  return !isDockerIsolation();
+  return user?.role === 'admin';
 }
 
 // 后端启动钩子: reconcile + 定时器 (server 启动时调用一次).

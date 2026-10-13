@@ -11,6 +11,9 @@ type AdvancedSessionActionsProps = {
   showJsonlMeta: boolean
   connectionReady: boolean
   projectKnowledgeSending: boolean
+  // 是否展示「打开终端」入口. web 终端仅 admin 可用 (普通用户在 landlock/docker 模式下都会被后端 403),
+  // 普通用户直接隐藏该按钮, 避免点了才报错的死入口.
+  showTerminal?: boolean
   variant?: 'default' | 'compact' | 'menu'
   onOpenFileChanges: () => void
   onOpenBashCommands: () => void
@@ -42,6 +45,7 @@ export function AdvancedSessionActions({
   showJsonlMeta,
   connectionReady,
   projectKnowledgeSending,
+  showTerminal = true,
   variant = 'default',
   onOpenFileChanges,
   onOpenBashCommands,
@@ -118,18 +122,20 @@ export function AdvancedSessionActions({
         className={`${showJsonlMeta ? 'bg-blue-500/15' : ''} ${controlClassName || ''}`}
         icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
       />
-      <UnifiedButton
-        kind="modal"
-        buttonId="terminal"
-        onClick={onOpenTerminal}
-        disabled={!hasSession}
-        label="打开终端"
-        tooltip="打开当前会话终端"
-        accent="emerald"
-        displayLabel={displayLabel}
-        className={controlClassName}
-        icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
-      />
+      {showTerminal && (
+        <UnifiedButton
+          kind="modal"
+          buttonId="terminal"
+          onClick={onOpenTerminal}
+          disabled={!hasSession}
+          label="打开终端"
+          tooltip="打开当前会话终端"
+          accent="emerald"
+          displayLabel={displayLabel}
+          className={controlClassName}
+          icon={<Terminal className="h-4 w-4" strokeWidth={1.9} />}
+        />
+      )}
       <UnifiedButton
         kind="modal"
         buttonId="cooperable-pc"

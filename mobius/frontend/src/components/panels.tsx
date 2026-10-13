@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -50,6 +50,7 @@ import {
   UserPlus,
   Users as UsersIcon,
   WandSparkles,
+  Container,
 } from 'lucide-react'
 import { SERVER_BRAND_NAME, api, friendlyApiError, useStore } from '../store'
 import {
@@ -407,6 +408,96 @@ function useErrorToast() {
       />
     ) : null,
   }
+}
+
+// ── 容器管理 (docker 用户隔离模式专属) ─────────────────────────────────────
+// 列出全部用户沙箱容器, 管理员可手动 重启 / 关闭; 附宿主侧 attach 命令,
+// 让管理员能直接进容器内 tmux 查看 agent (对应后端 /api/admin/sandboxes).
+function AdminSandboxesPanel() {
+  const [data, setData] = useState<{ method?: string; image?: string; sandboxes?: Array<Record<string, any>> } | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    try {
+      setError('')
+      setData(await api('/api/admin/sandboxes'))
+    } catch (e) {
+      setError(friendlyApiError(e))
+    }
+  }, [])
+  useEffect(() => {
+    void load()
+    const t = setInterval(() => void load(), 30_000)
+    return () => clearInterval(t)
+  }, [load])
+  const act = async (userId: string, op: 'rebuild' | 'stop') => {
+    const tip = op === 'stop'
+      ? `确定关闭 ${userId} 的沙箱容器？其中运行中的任务会一并终止。`
+      : `确定重启 ${userId} 的沙箱容器？（杀旧起新，运行中的任务会终止）`
+    if (!window.confirm(tip)) return
+    setBusy(`${userId}:${op}`)
+    setNotice('')
+    try {
+      await api(`/api/admin/sandboxes/${encodeURIComponent(userId)}/${op}`, { method: 'POST' })
+      setNotice(op === 'stop' ? `已关闭 ${userId} 的沙箱容器` : `已重启 ${userId} 的沙箱容器`)
+      void load()
+    } catch (e) {
+      setError(friendlyApiError(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+  const copy = (text: string) => { void navigator.clipboard?.writeText(text).catch(() => {}) }
+  const rows = data?.sandboxes || []
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+        <span>隔离方式: <span className="text-[var(--text-primary)]">{data?.method || '…'}</span></span>
+        <span>镜像: <span className="text-[var(--text-primary)]">{data?.image || '—'}</span></span>
+        <span>共 {rows.length} 个容器</span>
+        <button type="button" onClick={() => void load()} className="rounded border border-[var(--border-color)] px-2 py-0.5 hover:bg-[var(--bg-hover)]">刷新</button>
+      </div>
+      {notice && <div className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs">{notice}</div>}
+      {error && <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs">{error}</div>}
+      {rows.length === 0 && (
+        <div className="rounded border border-[var(--border-color)] px-3 py-6 text-center text-xs text-[var(--text-secondary)]">
+          当前没有运行中的沙箱容器（普通用户发起第一个任务时会自动创建）
+        </div>
+      )}
+      {rows.map((sb) => (
+        <div key={String(sb.user)} className="rounded-lg border border-[var(--border-color)] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-[var(--text-primary)]">{String(sb.user)}</span>
+              <span className={`rounded px-1.5 py-0.5 text-[10px] ${sb.alive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>{sb.alive ? '运行中' : '已停止'}</span>
+              <span className="text-xs text-[var(--text-secondary)]">{String(sb.containerName)} · {String(sb.ip || '无IP')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={!!busy} onClick={() => void act(String(sb.user), 'rebuild')}
+                className="rounded border border-[var(--border-color)] px-2.5 py-1 text-xs hover:bg-[var(--bg-hover)] disabled:opacity-50">
+                {busy === `${sb.user}:rebuild` ? '重启中…' : '重启'}
+              </button>
+              <button type="button" disabled={!!busy} onClick={() => void act(String(sb.user), 'stop')}
+                className="rounded border border-red-500/40 px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                {busy === `${sb.user}:stop` ? '关闭中…' : '关闭'}
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
+            <span>活跃 agent: {String(sb.refs?.agents ?? '—')}</span>
+            <span>code-server: {String(sb.services?.codeServer?.length ?? 0)}</span>
+            <span>创建: {sb.createdAt ? new Date(Number(sb.createdAt)).toLocaleString() : '—'}</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+            <code className="truncate rounded bg-[var(--bg-hover)] px-1.5 py-0.5">docker exec -it {String(sb.containerName)} tmux -L mobius-agent attach -t imac_claude_code_agent_hub</code>
+            <button type="button" onClick={() => copy(`docker exec -it ${String(sb.containerName)} tmux -L mobius-agent attach -t imac_claude_code_agent_hub`)}
+              className="shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 hover:bg-[var(--bg-hover)]">复制 attach 命令</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function AdminUsersPanel() {
@@ -8411,7 +8502,7 @@ function AdminProjectPermissionsPanel() {
   )
 }
 
-export type AdminPanelTab = 'users' | 'project-permissions' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'migration'
+export type AdminPanelTab = 'users' | 'project-permissions' | 'runtime' | 'others' | 'settings' | 'assistant' | 'models' | 'migration' | 'sandboxes'
 
 const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[] = [
   { key: 'users', label: '用户管理', icon: <UsersIcon className="h-3.5 w-3.5" /> },
@@ -8422,6 +8513,7 @@ const ADMIN_PANEL_TABS: { key: AdminPanelTab; label: string; icon: ReactNode }[]
   { key: 'migration', label: 'Skill与Memory管理', icon: <Package className="h-3.5 w-3.5" /> },
   { key: 'assistant', label: '管理员小莫配置', icon: <Sparkles className="h-3.5 w-3.5" /> },
   { key: 'others', label: '其他设置', icon: <SlidersHorizontal className="h-3.5 w-3.5" /> },
+  { key: 'sandboxes', label: '容器管理', icon: <Container className="h-3.5 w-3.5" /> },
 ]
 
 // 普通用户能进的 tab: 「Skill与Memory管理」只管自己的用户级条目与自己做主的项目,
@@ -8431,9 +8523,20 @@ const NON_ADMIN_PANEL_TAB_KEYS: readonly AdminPanelTab[] = ['migration', 'others
 
 export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initialTab?: AdminPanelTab }) {
   const isAdmin = useStore((s) => s.user?.role === 'admin')
+  // docker 用户隔离才显示「容器管理」tab: 挂载时探一次 method (landlock 模式静默隐藏)
+  const [sbxDocker, setSbxDocker] = useState(false)
+  useEffect(() => {
+    if (!isAdmin) return
+    let alive = true
+    api('/api/admin/sandboxes').then((d: { method?: string }) => { if (alive) setSbxDocker(d?.method === 'docker') }).catch(() => {})
+    return () => { alive = false }
+  }, [isAdmin])
   const tabs = useMemo(
-    () => (isAdmin ? ADMIN_PANEL_TABS : ADMIN_PANEL_TABS.filter((tab) => NON_ADMIN_PANEL_TAB_KEYS.includes(tab.key))),
-    [isAdmin],
+    () => {
+      const base = isAdmin ? ADMIN_PANEL_TABS : ADMIN_PANEL_TABS.filter((tab) => NON_ADMIN_PANEL_TAB_KEYS.includes(tab.key))
+      return isAdmin && !sbxDocker ? base.filter((tab) => tab.key !== 'sandboxes') : base
+    },
+    [isAdmin, sbxDocker],
   )
   // 初次渲染时取 initialTab (外部 openAdminOverlay(tab) 传入, 通常用于「监控」按钮直接落在「运行监控」tab);
   // 普通用户拿到不可达的 initialTab (如引导脚本传 'runtime') 时回落到自己的首个 tab.
@@ -8615,6 +8718,7 @@ export function AdminPanel({ onClose, initialTab }: { onClose: () => void; initi
           )}
 
           {activeTab === 'migration' && <SkillMemoryMigrationPanel />}
+          {activeTab === 'sandboxes' && <AdminSandboxesPanel />}
 
           {activeTab === 'runtime' && error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 py-3 text-[length:var(--fs-lg)] text-red-400">
