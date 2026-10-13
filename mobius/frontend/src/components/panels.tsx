@@ -414,14 +414,14 @@ function useErrorToast() {
 // 列出全部用户沙箱容器, 管理员可手动 重启 / 关闭; 附宿主侧 attach 命令,
 // 让管理员能直接进容器内 tmux 查看 agent (对应后端 /api/admin/sandboxes).
 function AdminSandboxesPanel() {
-  const [data, setData] = useState<{ method?: string; image?: string; sandboxes?: Array<Record<string, any>> } | null>(null)
+  const [data, setData] = useState<{ method?: string; image?: string; sandboxes?: Array<Record<string, any>>; selfCheck?: { ok: boolean; ranAt: number; steps: Array<{ name: string; ok: boolean; detail: string }> } | null } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     try {
       setError('')
-      setData(await api('/api/admin/sandboxes'))
+      setData(await api(`/api/admin/sandboxes${refresh ? '?refresh=1' : ''}`))
     } catch (e) {
       setError(friendlyApiError(e))
     }
@@ -458,6 +458,32 @@ function AdminSandboxesPanel() {
         <span>共 {rows.length} 个容器</span>
         <button type="button" onClick={() => void load()} className="rounded border border-[var(--border-color)] px-2 py-0.5 hover:bg-[var(--bg-hover)]">刷新</button>
       </div>
+      {data?.selfCheck && (
+        <div className="rounded-lg border border-[var(--border-color)] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-medium text-[var(--text-primary)]">
+              隔离自检 {data.selfCheck.ok ? '✅ 通过' : '❌ 未通过'}
+              <span className="ml-2 font-normal text-[var(--text-secondary)]">
+                {new Date(data.selfCheck.ranAt).toLocaleString()}
+              </span>
+            </span>
+            <button type="button" disabled={!!busy} onClick={() => void load(true)}
+              className="rounded border border-[var(--border-color)] px-2 py-0.5 text-xs hover:bg-[var(--bg-hover)] disabled:opacity-50">重新自检</button>
+          </div>
+          <div className="mt-2 grid gap-1">
+            {data.selfCheck.steps.map((st) => (
+              <div key={st.name} className="flex items-center gap-2 text-xs">
+                <span className={st.ok ? 'text-emerald-400' : 'text-red-400'}>{st.ok ? '✓' : '✗'}</span>
+                <span className="text-[var(--text-primary)]">{st.name}</span>
+                <span className="truncate text-[var(--text-secondary)]">{st.detail}</span>
+              </div>
+            ))}
+          </div>
+          {!data.selfCheck.ok && (
+            <div className="mt-2 text-xs text-red-400">自检未通过期间，普通用户的登录 / 建号 / Agent 将被拒绝（fail-closed）</div>
+          )}
+        </div>
+      )}
       {notice && <div className="rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs">{notice}</div>}
       {error && <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs">{error}</div>}
       {rows.length === 0 && (

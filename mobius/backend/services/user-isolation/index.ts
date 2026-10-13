@@ -17,9 +17,11 @@ export {
 export { dockerCodeServerActive, ensureDocker, killDocker, proxyTargetHost, listDocker } from './code-server';
 export { bridgeRoutedFor, ensureBroker, bridgeTargetFor } from './bridge';
 export * as sandboxRegistry from './registry';
+export { runSelfCheck, selfCheckResult, selfCheckGate } from './selfcheck';
 
 import { db } from '../../../db';
-import { isDockerIsolation, dockerSandboxAvailable } from './config';
+import { isDockerIsolation } from './config';
+import { selfCheckGate } from './selfcheck';
 import { landlockAvailable } from '../agent-sandbox';
 import { resolveWindowContainer } from './exec-router';
 
@@ -35,7 +37,7 @@ tmuxOpLog.setWindowRouteResolver((args: string[]) => {
 export function assertUserIsolationAvailable(user: any): void {
   if (user?.role === 'admin') return;
   if (isDockerIsolation()) {
-    if (!dockerSandboxAvailable()) {
+    if (!selfCheckGate()) {
       const e = new Error('当前服务器 docker 沙箱不可用，普通用户暂时不能登录或使用 Agent') as Error & { status?: number };
       e.status = 503;
       throw e;
@@ -51,7 +53,7 @@ export function assertUserIsolationAvailable(user: any): void {
 
 // 建号/改号闸门 (admin.ts 三处 landlockAvailable() 的等价替代): 能否创建普通用户.
 export function isolationAllowsNormalUsers(): boolean {
-  if (isDockerIsolation()) return dockerSandboxAvailable();
+  if (isDockerIsolation()) return selfCheckGate();
   return landlockAvailable();
 }
 
@@ -89,4 +91,7 @@ export function onBackendStart(): void {
   const { reconcileSandboxes, startBackgroundTimers } = require('./docker-sandbox');
   try { reconcileSandboxes(); } catch (e) { console.warn(`[user-isolation] reconcile 失败: ${(e as Error).message}`); }
   startBackgroundTimers();
+  // 自检预热 (四步: daemon/镜像/挂卷/端口), 结果缓存供闸门与「容器管理」面板
+  const { runSelfCheck } = require('./selfcheck');
+  runSelfCheck().catch((e: Error) => console.warn(`[user-isolation] 自检失败: ${e.message}`));
 }

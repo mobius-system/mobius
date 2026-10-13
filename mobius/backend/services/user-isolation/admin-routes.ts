@@ -9,16 +9,19 @@ import { rebuildNow, containerAlive, destroySandbox } from './docker-sandbox';
 
 const router = express.Router();
 
-router.get('/', (_req, res) => {
+router.get('/', async (req, res) => {
   if (!isDockerIsolation()) {
-    res.json({ method: 'landlock', sandboxes: [] });
+    res.json({ method: 'landlock', sandboxes: [], selfCheck: null });
     return;
   }
+  const { runSelfCheck, selfCheckResult } = require('./selfcheck');
+  // ?refresh=1 强制重跑四步自检 (daemon/镜像/挂卷/端口)
+  const selfCheck = String(req.query.refresh) === '1' ? await runSelfCheck(true) : (selfCheckResult() || await runSelfCheck());
   const sandboxes = registry.allEntries().map((e) => ({
     ...e,
     alive: containerAlive(e.user),
   }));
-  res.json({ method: 'docker', image: USER_ISOLATION_DOCKER_IMAGE, sandboxes });
+  res.json({ method: 'docker', image: USER_ISOLATION_DOCKER_IMAGE, sandboxes, selfCheck });
 });
 
 router.post('/:userId/rebuild', (req, res) => {
