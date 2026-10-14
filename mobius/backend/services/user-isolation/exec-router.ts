@@ -84,6 +84,11 @@ export function ensureContainerTmuxServer(userId: string): void {
   guidedContainers.add(name);
 }
 
+// 容器销毁后清缓存: 重建的新容器同名, 不清会跳过 hub session 预建 (docker-sandbox.destroySandbox 调用).
+export function forgetContainerGuidance(name: string): void {
+  guidedContainers.delete(name);
+}
+
 // spawn 前统一入口: 确保容器在 + tmux server 已引导, 返回容器名 (非隔离用户返回 null).
 export function prepareSpawn(userId: string | null | undefined, sessionId: string | null | undefined): string | null {
   if (!isolationActiveFor(userId)) return null;

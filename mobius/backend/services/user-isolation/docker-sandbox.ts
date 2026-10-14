@@ -121,8 +121,34 @@ export function ensureNetwork(): void {
 }
 
 // ── 容器存在性 / 期望挂载集比对 ─────────────────────────────────────────────
+// "活着" = 存在且 Running. 只查存在性会把 Created/Exited 误判为活:
+// 2026-10-14 事故 — runc 间歇性失败把 mobius-sbx-normal-test 卡在 Created,
+// 之后每次 docker exec 都报 "container is not running" 且无自愈路径.
 export function containerAlive(userId: string): boolean {
+  const r = docker(['inspect', containerNameFor(userId), '--format', '{{.State.Running}}']);
+  return r.status === 0 && r.stdout.trim() === 'true';
+}
+
+function containerExists(userId: string): boolean {
   return docker(['inspect', containerNameFor(userId), '--format', '{{.Id}}']).status === 0;
+}
+
+// 从实际容器收编 registry 条目 (后端重启/条目丢失时). 挂载集取 inspect 实际值,
+// 避免空 mounts 触发挂载集比对误判而白白重建.
+function adoptEntry(userId: string): void {
+  const name = containerNameFor(String(userId));
+  const prev = registry.getEntry(String(userId));
+  registry.putEntry({
+    user: String(userId), containerName: name,
+    containerId: (docker(['inspect', name, '--format', '{{.Id}}']).stdout.trim() || '').slice(0, 12),
+    ip: docker(['inspect', name, '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}']).stdout.trim(),
+    image: sandboxImageRef(),
+    mounts: inspectMounts(String(userId)),
+    createdAt: prev?.createdAt || Date.now(),
+    lastActiveAt: Date.now(),
+    services: prev?.services || {},
+    refs: prev?.refs || { agents: 0, codeServer: 0, terminals: 0, bridgeClients: 0 },
+  });
 }
 
 function inspectMounts(userId: string): string[] {
@@ -151,9 +177,24 @@ export function ensureSandbox(userId: string): void {
   }
   ensureNetwork();
   const name = containerNameFor(userId);
+  // 自愈: 容器存在但不在运行 (runc 间歇性失败留下的 Created / 宿主 docker 重启后的
+  // Exited) → docker start 按原配置拉起 (配置未变, 不构成脏容器); start 失败则抛错,
+  // 保留容器本体待下次请求重试 (daemon 恢复后即收敛).
+  if (!containerAlive(userId) && containerExists(userId)) {
+    const st = docker(['start', name], 60000);
+    if (st.status !== 0) {
+      const e = new Error(`沙箱容器无法启动 (docker start ${name}): ${st.stderr || st.error?.message || 'unknown'}`) as Error & { status?: number };
+      e.status = 503;
+      throw e;
+    }
+    console.log(`[user-isolation] ${name} 此前处于非运行状态, 已重新拉起`);
+  }
   if (containerAlive(userId)) {
     knownAlive.add(String(userId));
-    registry.touchEntry(userId);
+    // registry 条目丢失/不完整 (后端重启、历史事故) → 从实际容器收编
+    const entry = registry.getEntry(String(userId));
+    if (!entry || entry.mounts.length === 0) adoptEntry(userId);
+    else registry.touchEntry(userId);
     // 脏容器兜底: 期望挂载集与实际不一致 → 立即换容器 (权限变更钩子的兜底路径)
     if (!mountsMatch(userId)) {
       console.log(`[user-isolation] ${name} 挂载集与权限不一致, 立即重建`);
@@ -204,6 +245,8 @@ export function destroySandbox(userId: string): void {
   docker(['rm', '-f', name], 60000);
   registry.removeEntry(userId);
   knownAlive.delete(String(userId));
+  // 重建后的新容器同名: 清掉 tmux 引导缓存, 下次 prepareSpawn 重新预建容器内 hub session
+  try { (require('./exec-router') as typeof import('./exec-router')).forgetContainerGuidance(name); } catch { /* best-effort */ }
   // 会话配置随容器生灭 (2026-10-13: 配置只在启动会话瞬间复制到 per-user temp 的 sbx-session/ 下)
   try {
     const fsx = require('fs');
@@ -249,12 +292,14 @@ function reapIdleSandboxes(): void {
   }
 }
 
-// 定时器: 60s 心跳超时扫描 (3h 无鉴权请求销毁) + reconcile 收编.
+// 定时器: 60s 一轮 = reconcile 收编 (registry 自愈, docker ps 里未登记的容器补条目)
+// + 心跳超时扫描 (3h 无鉴权请求销毁). 收编必须持续跑: registry 只是缓存, 只在启动时
+// 收编一次的话, 一次写丢失就会让窗口列表/端口寻址长期残废.
 let timerStarted = false;
 export function startBackgroundTimers(): void {
   if (timerStarted) return;
   timerStarted = true;
-  setInterval(() => { try { reapIdleSandboxes(); } catch { /* 单轮失败不影响下轮 */ } }, 60_000).unref();
+  setInterval(() => { try { reconcileSandboxes(); } catch { /* 单轮失败不影响下轮 */ } }, 60_000).unref();
 }
 
 // 后端重启 reconcile: docker ps 按 label 收编存量容器 (registry 缺条目则重建条目).
@@ -263,15 +308,10 @@ export function reconcileSandboxes(): void {
   const r = docker(['ps', '--filter', `label=mobius.sandbox.user`, '--format', '{{.Names}}\t{{.ID}}\t{{.Label "mobius.sandbox.user"}}']);
   if (r.status !== 0) return;
   for (const line of r.stdout.split('\n')) {
-    const [name, id, userId] = line.trim().split('\t');
+    const [name, , userId] = line.trim().split('\t');
     if (!name || !userId) continue;
     if (!registry.getEntry(userId)) {
-      const ip = docker(['inspect', name, '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}']).stdout.trim();
-      registry.putEntry({
-        user: userId, containerName: name, containerId: (id || '').slice(0, 12), ip: ip || '',
-        image: sandboxImageRef(), mounts: [], createdAt: Date.now(), lastActiveAt: Date.now(),
-        services: {}, refs: { agents: 0, codeServer: 0, terminals: 0, bridgeClients: 0 },
-      });
+      adoptEntry(userId);
       console.log(`[user-isolation] reconcile 收编 ${name}`);
     }
   }
