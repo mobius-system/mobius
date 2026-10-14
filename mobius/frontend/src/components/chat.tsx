@@ -545,7 +545,7 @@ function SessionTitle({ name, theme }: { name?: string | null; theme: string }) 
   const full = String(name || '')
   return (
     <h2
-      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-xl)]"
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-lg)]"
       style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
       title={full || undefined}
     >

@@ -17,6 +17,7 @@ import {
   SBX_GATEWAY_IP, SBX_AIMUX_BIN, SBX_NODE22, isDockerIsolation,
 } from './config';
 import { isolationActiveFor, sbxHomeFor, ensureSandbox, containerAlive } from './docker-sandbox';
+import { ensureTempRoot } from '../file-access';
 import * as registry from './registry';
 
 const HOME = os.homedir();
@@ -149,15 +150,26 @@ export function rewriteHostPath(userId: string | null | undefined, p: string): s
   return p;
 }
 
+// 会话级配置临时目录: 宿主 = 本人 per-user temp 下, 容器内 = /tmp/sbx-session/<sid>/ (同一挂载).
+// 语义 (2026-10-13 用户决策): docker 模式的会话配置在"启动会话的瞬间"复制到临时路径,
+// 随容器生灭 (reaper 删容器时顺手清理), 不在 .sbx-home 里堆积.
+export function sessionConfigDir(userId: string, sessionId: string): string {
+  return path.join(ensureTempRoot(userId), 'sbx-session', String(sessionId || 'adhoc'));
+}
+
+export function removeSessionConfigs(userId: string, sessionId: string): void {
+  try { fs.rmSync(sessionConfigDir(userId, sessionId), { recursive: true, force: true }); } catch { /* best-effort */ }
+}
+
 // 容器版 settings 物化: 读宿主 settings (含 withproxy 副本), 把 127.0.0.1 换成
-// 沙箱网关 IP 后落到容器 HOME (.sbx-home/.claude/<basename>), 返回容器内路径.
+// 沙箱网关 IP 后复制到会话临时目录, 返回容器内同路径 (/tmp/sbx-session/<sid>/<basename>).
 // 非隔离用户返回 null (调用方保留原路径).
-export function materializeSettingsForSbx(userId: string | null | undefined, settingsPath: string | null): string | null {
+export function materializeSettingsForSbx(userId: string | null | undefined, sessionId: string | null | undefined, settingsPath: string | null): string | null {
   if (!isolationActiveFor(userId) || !settingsPath) return null;
   try {
     const text = fs.readFileSync(settingsPath, 'utf-8')
       .replace(/127\.0\.0\.1/g, SBX_GATEWAY_IP);
-    const containerPath = rewriteHostPath(userId, settingsPath);
+    const containerPath = path.join(sessionConfigDir(String(userId), String(sessionId || 'adhoc')), path.basename(settingsPath));
     fs.mkdirSync(path.dirname(containerPath), { recursive: true });
     fs.writeFileSync(containerPath, text);
     return containerPath;

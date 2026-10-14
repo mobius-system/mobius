@@ -32,6 +32,8 @@ export function RecentSessionRow({
 }) {
   const isResearch = session.scope_type === 'research'
   const status = recentSessionStatusPill(session)
+  // 会话类型徽章与状态徽章合并为一枚 (如「会话 · 执行中」), 只保留右端状态位.
+  const typeLabel = isResearch ? '智能体' : '会话'
   const relationLabel = isResearch ? 'Research 会话' : 'Issue 会话'
   if (variant === 'mention') {
     const active = session.agent_status === 'running'
@@ -88,7 +90,6 @@ export function RecentSessionRow({
       <span className="absolute -left-2 top-1/2 w-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} aria-hidden="true" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1">
-          <span className="flex-shrink-0 rounded px-1 py-0.5 text-[length:var(--fs-2xs)] font-medium leading-3" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{isResearch ? '智能体' : '会话'}</span>
           <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)] font-medium leading-4" style={{ color: 'var(--text-primary)' }}>{session.name || session.session_id}</span>
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--fs-2xs)] leading-3" style={{ color: 'var(--text-muted)' }}>
@@ -96,7 +97,7 @@ export function RecentSessionRow({
           <span className="inline-flex items-center gap-0.5"><MessageSquare className="h-2.5 w-2.5" />{session.message_count || 0}</span>
         </span>
       </span>
-      <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[length:var(--fs-2xs)] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{status.label}</span>
+      <span className="flex-shrink-0 rounded-full px-1 py-0.5 text-[length:var(--fs-2xs)] font-medium leading-3" style={{ color: status.color, background: status.bg }}>{typeLabel} · {status.label}</span>
     </button>
   )
 }

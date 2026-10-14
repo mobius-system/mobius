@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, sessionConfigDir } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -336,6 +336,9 @@ function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settings
 // Digital-rain codex per-session withproxy: base_url→token-proxy, api_key→mpx1 token (wire=openai).
 function codexWithProxyPathFor(profileKey: string, sessionId: string, userId?: string | null): string {
   const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')
+  // docker 隔离: 会话配置在启动会话瞬间复制到临时路径 (容器内 /tmp/sbx-session/<sid>/),
+  // 随容器生灭; landlock/admin 仍写 CODEX_HOME (现状).
+  if (userId) return path.join(sessionConfigDir(userId, sessionId), `${profileKey}.withproxy.${safe}.config.toml`)
   return path.join(codexHomeFor(userId), `${profileKey}.withproxy.${safe}.config.toml`)
 }
 

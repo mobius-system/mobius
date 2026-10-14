@@ -1736,7 +1736,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       throw new Error(`Claude Code settings 文件不存在: ${finalSettingsPath}`)
     }
     // 隔离用户: settings 物化到容器 HOME (token-proxy 地址改沙箱网关), 容器内读容器版
-    const sbxSettings = materializeSettingsForSbx(userId, finalSettingsPath)
+    const sbxSettings = materializeSettingsForSbx(userId, sessionId, finalSettingsPath)
     if (sbxSettings) finalSettingsPath = sbxSettings
     // 代理档位与settings互相独立，代理分支一样要传--settings
     // Proxy tier and settings are independent; the proxy branch passes settings too

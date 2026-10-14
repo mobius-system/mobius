@@ -204,6 +204,11 @@ export function destroySandbox(userId: string): void {
   docker(['rm', '-f', name], 60000);
   registry.removeEntry(userId);
   knownAlive.delete(String(userId));
+  // 会话配置随容器生灭 (2026-10-13: 配置只在启动会话瞬间复制到 per-user temp 的 sbx-session/ 下)
+  try {
+    const fsx = require('fs');
+    fsx.rmSync(path.join(ensureTempRoot(String(userId)), 'sbx-session'), { recursive: true, force: true });
+  } catch { /* best-effort */ }
 }
 
 // 权限变更 → 立即杀旧起新 (rm 成功 run 失败 → fail-closed, 下次 ensure 重试).
