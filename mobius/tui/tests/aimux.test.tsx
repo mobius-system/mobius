@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, versionAtLeast, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, ensureAimux, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, alignTarget, fetchServerAimuxVersion, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
 import { parseElevatedGroups } from '../src/lib/windows-admin.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -459,16 +459,15 @@ function testGuiModeAvailability() {
   ok(effectiveGuiMode('elevate', false, 'darwin') === 'elevate', 'macOS is unaffected')
 }
 
-function testVersionAtLeast() {
-  console.log('\n[AIMUX 6e] aimux pin is a floor, not an exact match')
-  // /upgrade 装的是 PyPI 最新版，通常比 pin 新；不能被 pin 校验判成"没装好"又拽回去。
-  ok(versionAtLeast('0.3.62', '0.3.61'), 'newer aimux satisfies the pinned floor')
-  ok(versionAtLeast('0.3.61', '0.3.61'), 'exactly the pinned version satisfies the floor')
-  ok(versionAtLeast('0.4.0', '0.3.61'), 'a newer minor satisfies the floor')
-  ok(!versionAtLeast('0.3.60', '0.3.61'), 'an older aimux is still reinstalled')
-  ok(!versionAtLeast('0.1.40', '0.3.61'), 'the old 0.1.x line is still reinstalled')
-  ok(versionAtLeast('0.3.61.1', '0.3.61'), 'a longer version string compares by segment')
-  ok(!versionAtLeast('garbage', '0.3.61'), 'an unparseable version is treated as not-ready')
+function testAlignTarget() {
+  console.log('\n[AIMUX 6e] connect-time version target: the server wins, in both directions')
+  // 连接时读服务端 broker 的 aimux 版本，本地跟它对齐 —— 比 pin 新就升，比 pin 老就降。
+  ok(alignTarget('0.3.72', '0.3.61') === '0.3.72', 'a server newer than the pin is the target (upgrade)')
+  ok(alignTarget('0.3.60', '0.3.61') === '0.3.60', 'a server older than the pin is the target too (downgrade)')
+  ok(alignTarget(null) === AIMUX_VERSION, 'an unknown server version falls back to the pin')
+  ok(alignTarget(undefined) === AIMUX_VERSION, 'a missing server version falls back to the pin')
+  ok(alignTarget('   ') === AIMUX_VERSION, 'a blank server version falls back to the pin')
+  ok(alignTarget('0.3.71', '0.3.71') === '0.3.71', 'an exact match targets that same version (no swap happens)')
 }
 
 function testAimuxIdentifierScopesWorkspace() {
@@ -486,8 +485,88 @@ function testBundleHealthCheck() {
   const win = bundleHealthCheckCode('win32')
   const linux = bundleHealthCheckCode('linux')
   ok(win.includes('aimux.bridge_client') && win.includes('win32_setctime'), 'Windows bundle probe imports the real bridge path and its platform dependency')
-  ok(win.includes(`aimux.__version__ == '${AIMUX_VERSION}'`), 'bundle probe rejects stale AIMUX versions')
+  ok(win.includes(`aimux.__version__ == '${AIMUX_VERSION}'`), 'bundle probe pins the expected AIMUX version by default')
+  ok(!bundleHealthCheckCode('linux', null).includes('__version__'), 'a null expectation only asks the bundle to import aimux (the swap happens through pip)')
   ok(!linux.includes('win32_setctime'), 'non-Windows bundle probe does not require the Windows-only package')
+}
+
+async function testFetchServerAimuxVersion() {
+  console.log('\n[AIMUX 6f] the broker reports the aimux version it runs')
+  const realFetch = globalThis.fetch
+  const seen: Array<{ url: string; auth: string }> = []
+  const respond = (body: unknown, status = 200) => (async (url: any, init: any) => {
+    seen.push({ url: String(url), auth: String(init?.headers?.Authorization ?? '') })
+    return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  }) as typeof fetch
+  try {
+    globalThis.fetch = respond({ ok: true, version: '0.3.61' })
+    ok(await fetchServerAimuxVersion('https://mobius.test/', 'jwt-token') === '0.3.61', 'the version comes from /aimux_bridge/api/health')
+    ok(seen[0].url === 'https://mobius.test/aimux_bridge/api/health', 'a trailing slash on the server URL is not doubled')
+    ok(seen[0].auth === 'Bearer jwt-token', 'the probe sends the caller token')
+    globalThis.fetch = respond({ ok: true })
+    ok(await fetchServerAimuxVersion('https://mobius.test', 'jwt-token') === null, 'an older broker without a version field reads as unknown')
+    globalThis.fetch = respond('gateway said no', 502)
+    ok(await fetchServerAimuxVersion('https://mobius.test', 'jwt-token') === null, 'a gateway error reads as unknown instead of throwing')
+    globalThis.fetch = (async () => { throw new Error('offline') }) as typeof fetch
+    ok(await fetchServerAimuxVersion('https://mobius.test', 'jwt-token') === null, 'a network failure reads as unknown instead of throwing')
+  } finally { globalThis.fetch = realFetch }
+}
+
+/** 假 venv：`python -c import aimux` 读版本文件，`python -m pip install aimux==X` 改它。 */
+async function fakeVenv(home: string, version: string | null, failInstall = false) {
+  const bin = path.join(home, 'aimux-venv', 'bin')
+  await fs.mkdir(bin, { recursive: true })
+  const state = path.join(home, 'aimux-version')
+  await fs.writeFile(state, version ?? '', 'utf8')
+  const script = [
+    '#!/bin/sh',
+    'state="' + state + '"',
+    'case "$*" in',
+    '  *"import aimux"*) [ -s "$state" ] && cat "$state" || exit 1 ;;',
+    '  *"pip install"*)',
+    failInstall ? '    echo "ERROR: no matching distribution" >&2; exit 1 ;;' :
+      '    for a in "$@"; do case "$a" in aimux==*) printf "%s" "${a#aimux==}" > "$state" ;; esac; done; echo "Successfully installed aimux" ;;',
+    '  *) exit 0 ;;',
+    'esac',
+  ].join('\n') + '\n'
+  await fs.writeFile(path.join(bin, 'python'), script, { mode: 0o755 })
+  await fs.writeFile(path.join(bin, 'aimux'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  return { version: () => fs.readFile(state, 'utf8').then(v => v.trim()) }
+}
+
+async function testEnsureAimuxVersionSwap() {
+  console.log('\n[AIMUX 6g] connecting swaps the local aimux to the server version')
+  for (const [installed, target, what] of [['0.3.60', '0.3.71', 'upgrade'], ['0.3.72', '0.3.71', 'downgrade']] as const) {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-swap-'))
+    const savedHome = process.env.MOBIUS_TUI_HOME
+    process.env.MOBIUS_TUI_HOME = home
+    try {
+      const fake = await fakeVenv(home, installed)
+      const r = await ensureAimux(undefined, target)
+      ok(r.ok && r.version === target, `${what}: ensureAimux(${target}) over ${installed} reports the new version`)
+      ok(await fake.version() === target, `${what}: pip install aimux==${target} actually ran`)
+      ok(!r.versionWarning, `${what}: no warning when the swap succeeds`)
+    } finally { if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome; await fs.rm(home, { recursive: true, force: true }) }
+  }
+
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mobius-tui-swap-'))
+  const savedHome = process.env.MOBIUS_TUI_HOME
+  process.env.MOBIUS_TUI_HOME = home
+  try {
+    // 版本已经对上 → 不跑 pip。
+    const same = await fakeVenv(home, '0.3.71')
+    const r = await ensureAimux(undefined, '0.3.71')
+    ok(r.ok && r.version === '0.3.71', 'an exact match is reused as-is')
+    ok(!r.versionWarning, 'an exact match needs no warning')
+    await fs.rm(path.join(home, 'aimux-venv'), { recursive: true, force: true })
+    // 换不动（PyPI 上没这个版本 / 断网）→ 按现有版本继续，只记一条 warning。
+    const failing = await fakeVenv(home, '0.3.70', true)
+    const bad = await ensureAimux(undefined, '0.3.99')
+    ok(bad.ok && bad.version === '0.3.70', 'a failed swap keeps the installed version and still connects')
+    ok(!!bad.versionWarning && bad.versionWarning.includes('0.3.99'), 'a failed swap reports what could not be aligned')
+    ok(await failing.version() === '0.3.70', 'a failed swap leaves the installed version untouched')
+    void same
+  } finally { if (savedHome === undefined) delete process.env.MOBIUS_TUI_HOME; else process.env.MOBIUS_TUI_HOME = savedHome; await fs.rm(home, { recursive: true, force: true }) }
 }
 
 async function testEnsureFromBundleReady() {
@@ -550,7 +629,9 @@ async function main() {
   await testGuiModes()
   testElevationDetection()
   testGuiModeAvailability()
-  testVersionAtLeast()
+  testAlignTarget()
+  await testFetchServerAimuxVersion()
+  await testEnsureAimuxVersionSwap()
   testAimuxIdentifierScopesWorkspace()
   testBundleHealthCheck()
   await testEnsureFromBundleReady()

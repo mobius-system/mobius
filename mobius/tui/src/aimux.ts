@@ -33,8 +33,11 @@ export type AimuxLauncher =
   | { kind: 'exe'; path: string }
   | { kind: 'module'; python: string }
 
-const AIMUX_TARGET_VERSION = '0.3.71'
-const AIMUX_PACKAGE = `aimux==${AIMUX_TARGET_VERSION}`
+/**
+ * 兜底 pin：只在读不到服务端版本时用（老 broker / 网络不通），**不是**"最低可用版本"。
+ * 正常情况下连接时会读服务端 broker 的 aimux 版本，本地跟它对齐（升级、降级都一样）。
+ */
+const AIMUX_TARGET_VERSION = '0.3.72'
 const WIN = process.platform === 'win32'
 const venvDir = () => path.join(mobiusHome(), 'aimux-venv')
 const venvPython = () => WIN ? path.join(venvDir(), 'Scripts', 'python.exe') : path.join(venvDir(), 'bin', 'python')
@@ -135,17 +138,25 @@ export function bundleArch(): string | null {
 export const bundleBaseUrl = () => (process.env.MOBIUS_TUI_PYTHON_BUNDLE_URL || 'https://serve.nutshellai.cn/publish/auto/mobius-tui').replace(/\/$/, '')
 export const bundleUrl = (arch: string) => `${bundleBaseUrl()}/mobius-python-${arch}-v${BUNDLE_VER}.zip`
 
-export function bundleHealthCheckCode(platform: NodeJS.Platform = process.platform): string {
+/**
+ * 内置运行时校验脚本。`expected` 非 null 时额外断言 aimux 版本——版本对不上就重下整包
+ * （老行为，pin 与包版本一致时用）。传 null 表示"只要求能 import"：服务端要求另一个
+ * 版本时靠 pip 就地换，而不是重下几百 MB 的包。
+ */
+export function bundleHealthCheckCode(
+  platform: NodeJS.Platform = process.platform,
+  expected: string | null = BUNDLE_AIMUX_VERSION,
+): string {
   const imports = platform === 'win32'
     ? 'import aimux, aimux.bridge_client, win32_setctime'
     : 'import aimux, aimux.bridge_client'
-  return `${imports}; assert aimux.__version__ == '${BUNDLE_AIMUX_VERSION}'`
+  return expected ? `${imports}; assert aimux.__version__ == '${expected}'` : imports
 }
 
-function bundleReady(): boolean {
+function bundleReady(expected: string | null = BUNDLE_AIMUX_VERSION): boolean {
   return existsSync(bundlePython()) && spawnSync(
     bundlePython(),
-    ['-c', bundleHealthCheckCode()],
+    ['-c', bundleHealthCheckCode(process.platform, expected)],
     { stdio: 'ignore', windowsHide: true },
   ).status === 0
 }
@@ -226,14 +237,14 @@ async function extractBundle(zipPath: string, onProgress?: (p: InstallProgress) 
 
 /** 解压后校验内置 python 能 import aimux。用 spawn（非阻塞 spawnSync）避免冻结 Ink 渲染；
  *  60s 上限强杀（首次 import 在慢盘上可能慢，但不会无限）；stderr(traceback) 落日志，让"解压完仍卡"可诊断。 */
-async function verifyBundle(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
+async function verifyBundle(onProgress?: (p: InstallProgress) => void, expected: string | null = BUNDLE_AIMUX_VERSION): Promise<{ ok: boolean; error?: string }> {
   onProgress?.({ phase: 'install', detail: '校验内置运行时（首次 import aimux，可能耗时）…' })
   const py = bundlePython()
-  logInstall(`  verify start: ${py} -c "import aimux…" (expect v${BUNDLE_AIMUX_VERSION})\n`)
+  logInstall(`  verify start: ${py} -c "import aimux…" (expect ${expected ? `v${expected}` : 'any version'})\n`)
   const startedAt = Date.now()
   return new Promise(resolve => {
     let child: ChildProcess
-    try { child = spawn(py, ['-c', bundleHealthCheckCode()], { windowsHide: true }) }
+    try { child = spawn(py, ['-c', bundleHealthCheckCode(process.platform, expected)], { windowsHide: true }) }
     catch (e: any) { resolve({ ok: false, error: `校验失败: ${e?.message ?? e}` }); return }
     let stderr = ''
     const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch {}; resolve({ ok: false, error: `校验超时（60s 未完成 import aimux，疑似慢盘）· 日志: ${aimuxLogPath()}` }) }, 60_000)
@@ -249,8 +260,8 @@ async function verifyBundle(onProgress?: (p: InstallProgress) => void): Promise<
   })
 }
 
-export async function ensureFromBundle(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
-  if (bundleReady()) { logInstall(`bundle fast-path: python-bundle already ready\n`); return { ok: true, launcher: { kind: 'module', python: bundlePython() } } }
+export async function ensureFromBundle(onProgress?: (p: InstallProgress) => void, expected: string | null = BUNDLE_AIMUX_VERSION): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
+  if (bundleReady(expected)) { logInstall(`bundle fast-path: python-bundle already ready\n`); return { ok: true, launcher: { kind: 'module', python: bundlePython() } } }
   const arch = bundleArch()
   if (!arch) return { ok: false, error: `当前平台无内置运行时 (platform=${process.platform} arch=${process.arch})` }
   logInstall(`bundle install begin: arch=${arch} platform=${process.platform} home=${mobiusHome()}\n`)
@@ -261,7 +272,7 @@ export async function ensureFromBundle(onProgress?: (p: InstallProgress) => void
   const ex = await extractBundle(dl.zipPath, onProgress)
   try { await fs.unlink(dl.zipPath) } catch {}
   if (!ex.ok) return { ok: false, error: ex.error }
-  const v = await verifyBundle(onProgress)
+  const v = await verifyBundle(onProgress, expected)
   if (!v.ok) return { ok: false, error: v.error ?? '内置运行时解压后仍无法 import aimux' }
   logInstall(`bundle install OK\n`)
   return { ok: true, launcher: { kind: 'module', python: bundlePython() } }
@@ -290,22 +301,10 @@ function spawnDetachedDaemon(launcher: AimuxLauncher, args: string[]): ChildProc
 /** test-only 导出: 暴露内部 downloadBundle 以便单测 mock fetch 验证流式下载+进度。 */
 export const downloadBundleForTest = downloadBundle
 
-/** `a >= b`（点分数字）。非数字段一律判 false，宁可重装也不要用一个看不懂的版本。 */
-export function versionAtLeast(a: string, b: string): boolean {
-  const pa = a.split('.'), pb = b.split('.')
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = Number(pa[i] ?? 0), y = Number(pb[i] ?? 0)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return false
-    if (x !== y) return x > y
-  }
-  return true
-}
-
-/** venv 里现成的 aimux 版本（跑不起来时 null）。 */
-function installedAimuxVersion(): string | null {
-  if (!existsSync(aimuxExe()) || !existsSync(venvPython())) return null
+/** 某个 python 环境里的 aimux 版本（跑不起来时 null）。 */
+function pythonAimuxVersion(python: string): string | null {
   try {
-    const r = spawnSync(venvPython(), ['-c', 'import aimux; print(aimux.__version__)'], { encoding: 'utf8', windowsHide: true })
+    const r = spawnSync(python, ['-c', 'import aimux; print(aimux.__version__)'], { encoding: 'utf8', windowsHide: true })
     if (r.status !== 0) return null
     const v = (r.stdout ?? '').trim().split(/\s+/).pop()
     return v || null
@@ -314,21 +313,102 @@ function installedAimuxVersion(): string | null {
   }
 }
 
-/**
- * pin 是**最低可用版本**，不是精确版本：比它新的直接沿用。
- * 否则用户 `/upgrade` 到 PyPI 最新版后，下一次连接（乃至下次启动）会被拽回 pin，
- * 升级看着"没生效"。
- */
-function venvReady(): boolean {
-  const installed = installedAimuxVersion()
-  return installed !== null && versionAtLeast(installed, AIMUX_TARGET_VERSION)
+/** venv 里现成的 aimux 版本（跑不起来时 null）。 */
+function installedAimuxVersion(): string | null {
+  if (!existsSync(aimuxExe()) || !existsSync(venvPython())) return null
+  return pythonAimuxVersion(venvPython())
 }
 
-export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string; launcher?: AimuxLauncher }> {
-  // Fast-path：venv 里已有 aimux 可执行 → 直接用。
-  const existing = venvReady() ? installedAimuxVersion() : null
-  if (existing) { logInstall(`ensureAimux fast-path: venv aimux ${existing} present (pin ${AIMUX_TARGET_VERSION})\n`); onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
+/**
+ * 连接前要装的版本：**服务端 broker 跑的那个版本**。
+ *
+ * 服务端版本读不到（老 broker 没有 /api/health 的 version 字段、或网络不通）时退回 pin——
+ * 宁可不动，也不要凭猜测给用户换一个版本。
+ */
+export function alignTarget(serverVersion: string | null | undefined, pin = AIMUX_TARGET_VERSION): string {
+  const v = typeof serverVersion === 'string' ? serverVersion.trim() : ''
+  return v || pin
+}
+
+/**
+ * 读服务端 broker 的 aimux 版本（`GET <server>/aimux_bridge/api/health`）。
+ * 经 mobius 代理转发：这里带的 token 是登录 JWT，代理会换成 broker token。
+ * 任何失败都返回 null —— 读不到就按"未知"处理，绝不猜。
+ */
+export async function fetchServerAimuxVersion(server: string, token: string, timeoutMs = 8_000): Promise<string | null> {
+  const url = `${server.replace(/\/$/, '')}/aimux_bridge/api/health`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+    if (!res.ok) { logInstall(`server aimux version probe: HTTP ${res.status} (${url})\n`); return null }
+    const body: any = await res.json().catch(() => null)
+    const v = typeof body?.version === 'string' ? body.version.trim() : ''
+    if (!v) logInstall(`server aimux version probe: no version field (${url})\n`)
+    return v || null
+  } catch (e: any) {
+    logInstall(`server aimux version probe failed (${url}): ${e?.name === 'AbortError' ? 'timeout' : e?.message ?? e}\n`)
+    return null
+  } finally { clearTimeout(timer) }
+}
+
+/**
+ * 把某个 python 环境里的 aimux 换成指定版本。pip 装 `aimux==X` 自己会卸掉当前版本，
+ * 所以**升级和降级是同一条命令**，不需要先卸载、更不需要重建 venv。
+ */
+async function swapAimuxVersion(python: string, target: string, current: string, onProgress?: (p: InstallProgress) => void): Promise<{ ok: boolean; error?: string }> {
+  logInstall(`aimux version swap ${current} → ${target} via ${python}\n`)
+  onProgress?.({ phase: 'install', detail: `切换 AIMUX ${current} → ${target}…` })
+  const r = await run(python, [
+    '-m', 'pip', 'install', '--no-input', '--disable-pip-version-check', `aimux==${target}`,
+  ], line => {
+    if (/downloading|collecting|installing|uninstalling|using cached|%\s*\d|━|─/i.test(line)) onProgress?.({ phase: 'install', detail: line.slice(0, 120) })
+  })
+  if (r.code !== 0) return { ok: false, error: `pip install 失败: ${(r.stderr || r.stdout).slice(-300)}` }
+  const after = pythonAimuxVersion(python)
+  if (after !== target) return { ok: false, error: `装完仍是 ${after ?? '(无法读取版本)'}` }
+  logInstall(`aimux version swap OK → ${after}\n`)
+  return { ok: true }
+}
+
+/** ensureAimux 的结果；`versionWarning` = 想对齐但没成，已按现有版本继续。 */
+export interface AimuxReady {
+  ok: boolean
+  error?: string
+  launcher?: AimuxLauncher
+  /** 实际会用上的版本。 */
+  version?: string
+  versionWarning?: string
+}
+
+/**
+ * 保证本地有一个能跑的 aimux，且版本恰好是 `target`。
+ *
+ * `target` 默认是 pin；连接时上层传的是**服务端 broker 的版本**（见 alignTarget），
+ * 所以本地比服务端新也会被换下去——版本不匹配本身就会让 bridge 出各种怪问题。
+ * 换版本失败不阻断连接：记一条 `versionWarning`，按现有版本继续。
+ */
+export async function ensureAimux(onProgress?: (p: InstallProgress) => void, target = AIMUX_TARGET_VERSION): Promise<AimuxReady> {
+  // Fast-path：版本正好对上 → 直接用。
+  const existing = installedAimuxVersion()
+  if (existing === target) {
+    logInstall(`ensureAimux fast-path: venv aimux ${existing} == target ${target}\n`)
+    onProgress?.({ phase: 'ready' })
+    return { ok: true, launcher: { kind: 'exe', path: aimuxExe() }, version: existing }
+  }
+  // 手上已经有 venv，只是版本不对 → 原地换版本（升级/降级同一条路）。
+  if (existing !== null) {
+    const swap = await swapAimuxVersion(venvPython(), target, existing, onProgress)
+    if (swap.ok) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() }, version: target } }
+    logInstall(`########## ensureAimux version swap failed: ${swap.error}；按现有 ${existing} 继续 ##########\n`)
+    onProgress?.({ phase: 'ready' })
+    return {
+      ok: true, launcher: { kind: 'exe', path: aimuxExe() }, version: existing,
+      versionWarning: `AIMUX 版本未对齐：本地 ${existing}／目标 ${target}（${swap.error}）`,
+    }
+  }
   logInstall(`\n########## ensureAimux install begin ${new Date().toISOString()} platform=${process.platform} arch=${process.arch} home=${mobiusHome()} ##########\n`)
+  const pkg = `aimux==${target}`
   const py = await pythonForAimux(onProgress)
   logInstall(`  pythonForAimux → ${py ?? '(null: no system python)'}\n`)
   let venvError = '未找到 Python。请先安装 Python 3.10+（或安装 uv 后重试）。'
@@ -337,11 +417,11 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
     let r = await run(py, ['-m', 'venv', venvDir()])
     if (r.code !== 0 && py === 'py') r = await run(py, ['-3', '-m', 'venv', venvDir()])
     if (r.code === 0) {
-      onProgress?.({ phase: 'install', detail: `下载并安装 ${AIMUX_PACKAGE}…` })
-      r = await run(venvPython(), ['-m', 'pip', 'install', '--no-input', '--disable-pip-version-check', AIMUX_PACKAGE], line => {
-        if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) onProgress?.({ phase: 'install', detail: line.slice(0, 120) })
+      onProgress?.({ phase: 'install', detail: `下载并安装 ${pkg}…` })
+      r = await run(venvPython(), ['-m', 'pip', 'install', '--no-input', '--disable-pip-version-check', pkg], line => {
+        if (/downloading|collecting|installing|uninstalling|using cached|%\s*\d|━|─/i.test(line)) onProgress?.({ phase: 'install', detail: line.slice(0, 120) })
       })
-      if (r.code === 0 && existsSync(aimuxExe())) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() } } }
+      if (r.code === 0 && existsSync(aimuxExe())) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: { kind: 'exe', path: aimuxExe() }, version: pythonAimuxVersion(venvPython()) ?? target } }
       venvError = r.code === 0 ? `aimux 可执行未生成: ${aimuxExe()}` : `pip install 失败: ${r.stderr || r.stdout}`
     } else {
       venvError = `venv 创建失败: ${r.stderr || r.stdout}`
@@ -350,8 +430,24 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void): Pr
   // ── Plan B 兜底：本地 python/venv 不可用 → 下载内置 python+aimux 运行时 ──
   logInstall(`  venv path failed (${venvError || ''}) → falling back to bundle\n`)
   onProgress?.({ phase: 'install', detail: '本地 Python 不可用，改用内置运行时…' })
-  const bundle = await ensureFromBundle(onProgress)
-  if (bundle.ok && bundle.launcher) { onProgress?.({ phase: 'ready' }); return { ok: true, launcher: bundle.launcher } }
+  // 目标就是 pin 时仍按老规矩校验包内版本（版本不对就重下整包）；目标是服务端版本时
+  // 只要求包能 import，随后用 pip 就地换成目标版本——否则每次都得重下整包还会校验失败。
+  const expected = target === AIMUX_TARGET_VERSION ? BUNDLE_AIMUX_VERSION : null
+  const bundle = await ensureFromBundle(onProgress, expected)
+  if (bundle.ok && bundle.launcher) {
+    const py2 = bundle.launcher.kind === 'module' ? bundle.launcher.python : null
+    const bundled = py2 ? pythonAimuxVersion(py2) : null
+    if (py2 && bundled !== null && bundled !== target) {
+      const swap = await swapAimuxVersion(py2, target, bundled, onProgress)
+      if (!swap.ok) {
+        logInstall(`########## bundle version swap failed: ${swap.error}；按现有 ${bundled} 继续 ##########\n`)
+        onProgress?.({ phase: 'ready' })
+        return { ok: true, launcher: bundle.launcher, version: bundled, versionWarning: `内置运行时 AIMUX 未对齐：本地 ${bundled}／目标 ${target}（${swap.error}）` }
+      }
+    }
+    onProgress?.({ phase: 'ready' })
+    return { ok: true, launcher: bundle.launcher, version: py2 ? pythonAimuxVersion(py2) ?? undefined : undefined }
+  }
   logInstall(`########## ensureAimux FAILED: ${venvError}；内置运行时也失败: ${bundle.error} ##########\n`)
   return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
@@ -923,6 +1019,14 @@ let supervisor: AimuxSupervisor | null = null
 let installing: Promise<void> | null = null
 /** 上一次 startAimuxConnection 的参数，供 `/upgrade` 重装后原地重连。 */
 let lastStartOpts: StartOptions | null = null
+/**
+ * `/upgrade` 显式装了 PyPI 最新版之后，跳过**下一次**连接时的版本对齐。
+ * 否则刚升级完的那次重连会立刻把它拽回服务端版本，用户看到的是"升级没生效"。
+ * 只跳过一次：下次启动 TUI 仍然对齐。
+ */
+let skipAutoAlignOnce = false
+/** 实际装着的 aimux 版本，供状态行显示（自动对齐后可能和 pin 不同）。 */
+let runtimeAimuxVersion: string | null = null
 
 interface StartOptions {
   server: string
@@ -1002,12 +1106,30 @@ export async function startAimuxConnection(opts: StartOptions): Promise<void> {
   lastStartOpts = opts
   installing = (async () => {
     onStatus({ state: 'starting', phase: 'python', detail: '检查 Python 与 AIMUX 运行环境…' })
+    // 连接前先读服务端 broker 的 aimux 版本：不一致就把本地换成同一个版本（升、降都算）。
+    // 读不到服务端版本时退回 pin —— 见 alignTarget。
+    const skipAlign = skipAutoAlignOnce
+    skipAutoAlignOnce = false
+    const installedBefore = installedAimuxVersion()
+    const serverVersion = skipAlign ? null : await fetchServerAimuxVersion(opts.server, opts.token)
+    const target = skipAlign ? (installedBefore ?? AIMUX_TARGET_VERSION) : alignTarget(serverVersion)
+    logInstall(`aimux target=${target} server=${serverVersion ?? '(unknown)'} pin=${AIMUX_TARGET_VERSION} installed=${installedBefore ?? '(none)'}${skipAlign ? ' (auto-align skipped once after /upgrade)' : ''}\n`)
     const ready = await ensureAimux(p => onStatus({
       state: 'starting',
       phase: p.phase === 'ready' ? 'connecting' : p.phase,
       detail: p.detail || (p.phase === 'ready' ? 'AIMUX 已就绪，准备连接…' : p.phase),
-    }))
+    }), target)
     if (!ready.ok || !ready.launcher) { logInstall(`startAimuxConnection giving up: ${ready.error}\n`); onStatus({ state: 'failed', phase: 'idle', detail: `${ready.error} · 日志: ${aimuxLogPath()}` }); return }
+    if (ready.versionWarning) { logInstall(`########## ${ready.versionWarning} ##########\n`); onStatus({ state: 'starting', phase: 'connecting', detail: ready.versionWarning }) }
+    // 状态行显示的版本跟实际装的一致（自动对齐后可能和 pin 不同）。
+    runtimeAimuxVersion = ready.version ?? null
+    const emit = (s: AimuxStatus): void => onStatus({ ...s, version: s.version ?? runtimeAimuxVersion ?? undefined })
+    // 版本被换过 → 上次探测到的命令行开关不再可信，且旧的守护进程还跑着老版本。
+    if (installedBefore !== null && ready.version !== undefined && ready.version !== installedBefore) {
+      logInstall(`aimux ${installedBefore} → ${ready.version}: re-probing flags and dropping the old daemon\n`)
+      cachedSilentFlag = undefined; cachedEnableGui = undefined; cachedGuiNoElevate = undefined
+      await stopDaemonFromRuntime()
+    }
     const identifier = tuiAimuxIdentifier()
     const launcher = ready.launcher
     // Windows only: ask the installed aimux which console-hiding flag it accepts
@@ -1030,7 +1152,7 @@ export async function startAimuxConnection(opts: StartOptions): Promise<void> {
     const gui = resolvedGuiArgs()
     logInstall(`GUI mode ${tuiGuiMode()} → ${gui.enableGui ? (gui.guiNoElevate ? '--enable-gui --gui-no-elevate (no UAC)' : '--enable-gui (UAC on Windows)') : 'no GUI flags'}\n`)
     supervisor = new AimuxSupervisor({
-      server: opts.server, token: opts.token, identifier, onStatus, refreshToken: opts.refreshToken,
+      server: opts.server, token: opts.token, identifier, onStatus: emit, refreshToken: opts.refreshToken,
       spawnProcess: token => spawnDetachedDaemon(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag, runtimePath(aimuxWorkspaceHash()), gui.enableGui, gui.guiNoElevate)),
     })
     await supervisor.start()
@@ -1135,6 +1257,8 @@ export async function upgradeAimuxRuntime(): Promise<{ ok: boolean; version?: st
     return { ok: false, error: installed.error }
   }
   onStatus({ state: 'starting', phase: 'connecting', detail: `AIMUX ${installed.version ?? '最新版'} 已安装，正在重新连接…` })
+  // 这次重连不把刚升上去的版本又对齐回服务端版本（见 skipAutoAlignOnce）。
+  skipAutoAlignOnce = true
   await startAimuxConnection(opts)
   return { ok: true, version: installed.version }
 }
