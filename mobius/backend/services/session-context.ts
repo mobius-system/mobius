@@ -315,8 +315,6 @@ function listBuiltinContextSkills(user: any, projectId: any): any {
   );
 }
 
-const ARCHITECTURE_ISSUE_TITLE = '项目结构绘制';
-const ARCHITECTURE_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-architecture-draw';
 const ASSISTANT_ISSUE_TITLE = '小莫对话';
 const ASSISTANT_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-assistant';
 // 拓展项目 (project.kind === 'extension') 的所有 Session 强制必选 mobius-extension skill,
@@ -333,7 +331,6 @@ const PC_TASK_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-aimux';
 
 function forcedIssueSkillIds(issue: any, project: any): Set<string> {
   const ids = new Set<string>();
-  if (issue?.title === ARCHITECTURE_ISSUE_TITLE) ids.add(ARCHITECTURE_REQUIRED_BUILTIN_SKILL_ID);
   if (issue?.title === ASSISTANT_ISSUE_TITLE) ids.add(ASSISTANT_REQUIRED_BUILTIN_SKILL_ID);
   if (project?.kind === 'extension') ids.add(EXTENSION_REQUIRED_BUILTIN_SKILL_ID);
   if (issue?.is_planning) ids.add(PLANNING_REQUIRED_BUILTIN_SKILL_ID);

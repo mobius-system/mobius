@@ -10,9 +10,9 @@ import {
 } from '../components/modals'
 import { NewProjectModal } from '../components/new-project-modal'
 import {
-  Boxes,
   Brain,
   ClipboardList,
+  DraftingCompass,
   FlaskConical,
   GitBranch,
   ListTodo,
@@ -152,8 +152,10 @@ export default function ProjectPage() {
   // 这里接管 settingsPane (受控). 键名与 ProjectSettingsPanel 内部 localStorage 完全一致, 保持兼容.
   const SettingsPaneKey = `mobius:project:pane:${projectId || ''}`
   const settingsPaneInit = (): SettingsPane => {
-    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(SettingsPaneKey) : null
-    return v && (['settings', 'context', 'versions', 'architecture', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
+    let v = typeof localStorage !== 'undefined' ? localStorage.getItem(SettingsPaneKey) : null
+    // 旧「系统剖析」(architecture) 记忆迁移为「项目蓝图」(blueprints).
+    if (v === 'architecture') v = 'blueprints'
+    return v && (['settings', 'context', 'versions', 'blueprints', 'todos', 'members', 'package', 'assistant'] as const).includes(v as SettingsPane)
       ? v as SettingsPane
       : 'settings'
   }
@@ -173,7 +175,7 @@ export default function ProjectPage() {
     context: { label: '记忆技能', icon: <Brain className="w-4 h-4" strokeWidth={1.8} /> },
     members: { label: '项目成员', icon: <Users className="w-4 h-4" strokeWidth={1.8} /> },
     versions: { label: '版本追踪', icon: <GitBranch className="w-4 h-4" strokeWidth={1.8} /> },
-    architecture: { label: '系统剖析', icon: <Boxes className="w-4 h-4" strokeWidth={1.8} /> },
+    blueprints: { label: '项目蓝图', icon: <DraftingCompass className="w-4 h-4" strokeWidth={1.8} /> },
     todos: { label: '项目待办', icon: <ClipboardList className="w-4 h-4" strokeWidth={1.8} /> },
     package: { label: '打包下载', icon: <Package className="w-4 h-4" strokeWidth={1.8} /> },
   }
@@ -465,13 +467,6 @@ export default function ProjectPage() {
     return () => window.removeEventListener('mobius:planning-issue-created', onIssueCreated as EventListener)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
-
-  const handleArchitectureSessionCreated = (issue: any, _session: any) => {
-    refreshIssues()
-    if (issue?.id) {
-      api(`/api/issues/${issue.id}/sessions`).then((ss: any) => setSessionsMap(issue.id, ss)).catch(() => {})
-    }
-  }
 
   const openNewIssue = () => {
     if (!canCreateIssue) return
@@ -871,7 +866,6 @@ export default function ProjectPage() {
                   metaDirty={metaDirty}
                   onDeleteProject={() => setShowDelete(true)}
                   onOpenPathPicker={() => setPickerOpen(true)}
-                  onArchitectureSessionCreated={handleArchitectureSessionCreated}
                   controlledActivePane={settingsPane}
                   onSelectPane={setSettingsPane}
                   onExposeTabs={setExposedSettingsTabs}

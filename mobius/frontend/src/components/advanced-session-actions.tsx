@@ -14,6 +14,9 @@ type AdvancedSessionActionsProps = {
   // 是否展示「打开终端」入口. web 终端仅 admin 可用 (普通用户在 landlock/docker 模式下都会被后端 403),
   // 普通用户直接隐藏该按钮, 避免点了才报错的死入口.
   showTerminal?: boolean
+  // 非简易布局的 chat 头部已有 … 菜单 (原始 JSONL 数据 / 回车自动加急 / 显示时间与序号),
+  // 该开关不再在按钮组里重复出一个按钮.
+  omitJsonlMetaButton?: boolean
   variant?: 'default' | 'compact' | 'menu'
   onOpenFileChanges: () => void
   onOpenBashCommands: () => void
@@ -46,6 +49,7 @@ export function AdvancedSessionActions({
   connectionReady,
   projectKnowledgeSending,
   showTerminal = true,
+  omitJsonlMetaButton = false,
   variant = 'default',
   onOpenFileChanges,
   onOpenBashCommands,
@@ -110,18 +114,20 @@ export function AdvancedSessionActions({
         className={controlClassName}
         icon={<RotateCcw className="h-4 w-4" strokeWidth={1.9} />}
       />
-      <UnifiedButton
-        kind="normal"
-        buttonId="jsonl-meta"
-        onClick={onToggleJsonlMeta}
-        disabled={jsonlEntryCount === 0}
-        label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
-        tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
-        accent="blue"
-        displayLabel={displayLabel}
-        className={`${showJsonlMeta ? 'bg-blue-500/15' : ''} ${controlClassName || ''}`}
-        icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
-      />
+      {!omitJsonlMetaButton && (
+        <UnifiedButton
+          kind="normal"
+          buttonId="jsonl-meta"
+          onClick={onToggleJsonlMeta}
+          disabled={jsonlEntryCount === 0}
+          label={showJsonlMeta ? '隐藏时间与序号' : '显示时间与序号'}
+          tooltip={showJsonlMeta ? '隐藏 JSONL 卡片标题里的序号与时间前缀' : '在 JSONL 卡片标题里显示 #序号 与 MM-DD HH:MM:SS 时间前缀'}
+          accent="blue"
+          displayLabel={displayLabel}
+          className={`${showJsonlMeta ? 'bg-blue-500/15' : ''} ${controlClassName || ''}`}
+          icon={<Clock className="h-4 w-4" strokeWidth={1.9} />}
+        />
+      )}
       {showTerminal && (
         <UnifiedButton
           kind="modal"

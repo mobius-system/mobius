@@ -1,9 +1,9 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
-import { api } from '../../store'
+import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import { ResizablePanel } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -54,6 +54,9 @@ type CodeConversationPaneProps = {
   // variant='sidebar': 嵌入窄容器 (简易模式右侧文件栏). 宽度记忆与 page 模式分开,
   // 编辑器列改 flex-1 占满剩余宽度 (拖拽由外层侧栏承担), 文件树范围收窄一档.
   variant?: 'page' | 'sidebar'
+  // ★ 蓝图变体 (mode='blueprint'): 文件树根锁定 <HIDDEN_FOLDER_NAME>/blueprints、仅中枢源、
+  // 空目录引导初始化、一级目录自动展开。项目设置的「项目蓝图」页复用本组件的树+编辑器+HTML 预览。
+  mode?: 'workspace' | 'blueprint'
   // Optional durable request supplied by the chat shell while this lazy pane mounts.
   openFileRequest?: OpenFileRequest
 }
@@ -186,11 +189,15 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', openFileRequest }: CodeConversationPaneProps) {
+export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
   const compact = variant === 'sidebar'
+  const blueprint = mode === 'blueprint'
+  // 蓝图变体的树根: <HIDDEN_FOLDER_NAME>/blueprints (相对 bind_path); 工作区模式仍为项目根.
+  const treeRoot = blueprint ? `/${HIDDEN_FOLDER_NAME}/blueprints` : '/'
   const desktop = getDesktopBridge()
   const isDesktop = !!desktop?.isDesktop
-  const [source, setSourceState] = useState<FileSource>(() => loadFileSource(projectId))
+  // 蓝图只存在于中枢 bind_path 下, 忽略 localStorage 里保存的本地/远程选择, 强制中枢源.
+  const [source, setSourceState] = useState<FileSource>(() => blueprint ? 'hub' : loadFileSource(projectId))
   const [localBindPath, setLocalBindPath] = useState('')
   const [localPathBusy, setLocalPathBusy] = useState(false)
   const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
@@ -226,10 +233,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const cc = CODE_SKINS[skin]
   // ----- 文件树状态 (复用 ProjectFilesCard 的 loadDir/toggleDir 逻辑) -----
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
+  const [expanded, setExpanded] = useState<Set<string>>(new Set([treeRoot]))
   const [rootLoaded, setRootLoaded] = useState(false)
   const [rootError, setRootError] = useState('')
   const treeLoadKeyRef = useRef('')
+  // 蓝图变体: 初始加载只自动打开第一张蓝图一次 (树重建/目录初始化后复位).
+  const blueprintAutoOpenedRef = useRef(false)
   const [filter, setFilter] = useState('')
   const [showFileFilter, setShowFileFilter] = useState(false)
 
@@ -287,6 +296,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   )
 
   useEffect(() => {
+    // 蓝图变体固定中枢源, 不拉远程算力清单.
+    if (blueprint) return
     let cancelled = false
     setRemoteSourcesLoaded(false)
     setRemoteSourcesError('')
@@ -330,7 +341,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         setRemoteSourcesLoaded(true)
       })
     return () => { cancelled = true }
-  }, [projectId, remoteSourcesVersion, sessionId])
+  }, [projectId, remoteSourcesVersion, sessionId, blueprint])
 
   // 切换远程机器时换用该机器记住的根目录覆盖值 (按 项目+机器 隔离), 并退出编辑态。
   // Switching remote machines swaps in that machine's remembered root and leaves edit mode
@@ -374,7 +385,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           ? await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(relPath)}${remoteRootParam}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`)
           : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本地文件失败')
-      if (relPath === '/') {
+      if (relPath === treeRoot) {
         setRootLoaded(true)
         if (source === 'local') {
           setLocalBindPath(data?.bind_path || '')
@@ -394,9 +405,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, entries: data.entries || [] } }))
     } catch (e: any) {
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
-      if (relPath === '/') { setRootLoaded(true); setRootError(e?.message || '加载失败') }
+      if (relPath === treeRoot) { setRootLoaded(true); setRootError(e?.message || '加载失败') }
     }
-  }, [desktop, projectId, remoteName, remoteRootParam, source, sessionId])
+  }, [desktop, projectId, remoteName, remoteRootParam, source, sessionId, treeRoot])
 
   useEffect(() => {
     let cancelled = false
@@ -417,28 +428,47 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   useEffect(() => {
     if (source === 'remote' && !remoteSourcesLoaded) return
     const treeLoadKey = source === 'remote'
-      ? `${projectId}\0${source}\0${remoteName}\0${remoteRoot}\0${remoteSourcesError}`
-      : `${projectId}\0${source}`
+      ? `${projectId}\0${source}\0${remoteName}\0${remoteRoot}\0${remoteSourcesError}\0${treeRoot}`
+      : `${projectId}\0${source}\0${treeRoot}`
     // 远程清单加载等旁路状态不应重建当前文件树，否则会清掉刚由文件卡片打开的 Tab
     // Side-state such as remote inventory loading must not rebuild the active tree and erase a card-opened tab
     if (treeLoadKeyRef.current === treeLoadKey) return
     treeLoadKeyRef.current = treeLoadKey
+    blueprintAutoOpenedRef.current = false
     if (source === 'remote' && (!remoteName || remoteSourcesError)) {
       setDirs({})
-      setExpanded(new Set(['/']))
+      setExpanded(new Set([treeRoot]))
       setRootLoaded(true)
       setRootError(remoteSourcesError || '当前项目未注册远程算力')
       clearEditorState()
       return
     }
     setDirs({})
-    setExpanded(new Set(['/']))
+    setExpanded(new Set([treeRoot]))
     setRootLoaded(false)
     setRootError('')
     setFilter('')
     clearEditorState()
-    loadDir('/')
-  }, [loadDir, clearEditorState, remoteName, remoteSourcesError, remoteSourcesLoaded, source])
+    loadDir(treeRoot)
+  }, [loadDir, clearEditorState, remoteName, remoteSourcesError, remoteSourcesLoaded, source, treeRoot])
+
+  // 蓝图变体: 根目录就绪后自动展开并加载全部一级目录 (module 层), 二级树一屏即完整清单.
+  // Blueprint variant: auto-expand every first-level dir once the root loads
+  useEffect(() => {
+    if (!blueprint) return
+    const entries = dirs[treeRoot]?.entries
+    if (!entries) return
+    const children = entries
+      .filter(e => e.type === 'dir')
+      .map(e => treeRoot === '/' ? `/${e.name}` : `${treeRoot}/${e.name}`)
+    setExpanded(prev => {
+      let changed = false
+      const next = new Set(prev)
+      for (const p of children) { if (!next.has(p)) { next.add(p); changed = true } }
+      return changed ? next : prev
+    })
+    for (const p of children) { if (!dirs[p]) loadDir(p) }
+  }, [blueprint, treeRoot, dirs, loadDir])
 
   const toggleDir = (relPath: string) => {
     setExpanded(prev => {
@@ -540,6 +570,20 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     }
   }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab])
 
+  // 蓝图变体: 仅初始加载时自动打开第一张蓝图 (根下直连 .html 优先, 否则第一个 module 的首张),
+  // 打开即有内容, 消除右侧大片空白; 用户手动关掉全部 Tab 后不再强开.
+  // Blueprint variant: open the first blueprint once on initial load so the reader never lands on a blank pane
+  useEffect(() => {
+    if (!blueprint || blueprintAutoOpenedRef.current || tabsRef.current.length > 0) return
+    const rootEntries = dirs[treeRoot]?.entries
+    if (!rootEntries) return
+    const isHtml = (e: Entry | undefined | null): e is Entry => !!e && e.type === 'file' && /\.html?$/i.test(e.name)
+    const children = rootEntries.filter(e => e.type === 'dir').map(e => `${treeRoot}/${e.name}`)
+    const target = rootEntries.find(isHtml)
+      || children.map(p => (dirs[p]?.entries || []).find(isHtml)).find(Boolean)
+    if (target) { blueprintAutoOpenedRef.current = true; void onSelectFile(target) }
+  }, [blueprint, treeRoot, dirs, onSelectFile])
+
   useEffect(() => {
     const onOpen = (event: Event) => {
       const request = (event as CustomEvent<OpenFileRequest>).detail
@@ -557,6 +601,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
 
   useEffect(() => {
     if (!openRequest || openRequest.projectId !== projectId || (openRequest.sessionId && openRequest.sessionId !== sessionId)) return
+    // 蓝图变体只认中枢蓝图文件, 远程打开请求直接丢弃.
+    if (blueprint && openRequest.remote) { setOpenRequest(null); return }
     const nextSource: FileSource = openRequest.remote ? 'remote' : 'hub'
     const targetRemote = openRequest.remote || ''
     const needsSourceChange = nextSource !== source || (nextSource === 'remote' && targetRemote !== remoteName)
@@ -607,7 +653,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       ...(nextSource === 'remote' ? { rel_path: `/${path}` } : {}),
     }
     void onSelectFile(entry)
-  }, [openRequest, projectId, sessionId, anyDirty, source, remoteName, remoteRoot, rootLoaded, bindPath, onSelectFile, clearEditorState])
+  }, [openRequest, projectId, sessionId, anyDirty, source, remoteName, remoteRoot, rootLoaded, bindPath, onSelectFile, clearEditorState, blueprint])
 
   // 关闭 Tab: 有未保存修改先确认; 关闭的是当前 Tab 时激活右侧相邻 (无则左侧) Tab.
   const closeTab = useCallback((key: string) => {
@@ -760,9 +806,39 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const refreshDir = useCallback(async (relPath: string) => { await loadDir(relPath) }, [loadDir])
   const refreshTree = useCallback(async () => {
     const paths = Array.from(expanded)
-    if (!paths.includes('/')) paths.unshift('/')
+    if (!paths.includes(treeRoot)) paths.unshift(treeRoot)
     await Promise.all(paths.map(path => loadDir(path)))
-  }, [expanded, loadDir])
+  }, [expanded, loadDir, treeRoot])
+
+  // ── 蓝图变体: 蓝图目录不存在时的「初始化蓝图目录」(mkdir 单层, 逐级创建, 409=已存在视为成功) ──
+  const [blueprintInitBusy, setBlueprintInitBusy] = useState(false)
+  const [blueprintInitError, setBlueprintInitError] = useState('')
+  const initBlueprintRoot = useCallback(async () => {
+    if (blueprintInitBusy) return
+    setBlueprintInitBusy(true)
+    setBlueprintInitError('')
+    const mkdirIgnoreConflict = async (parentPath: string, name: string) => {
+      try {
+        await api(`/api/projects/${projectId}/files/mkdir`, { method: 'POST', body: JSON.stringify({ parentPath, name }) })
+      } catch (e: any) {
+        if (!String(e?.message || '').includes('已存在')) throw e
+      }
+    }
+    try {
+      await mkdirIgnoreConflict('/', HIDDEN_FOLDER_NAME)
+      await mkdirIgnoreConflict(`/${HIDDEN_FOLDER_NAME}`, 'blueprints')
+      setDirs({})
+      setExpanded(new Set([treeRoot]))
+      setRootLoaded(false)
+      setRootError('')
+      blueprintAutoOpenedRef.current = false
+      loadDir(treeRoot)
+    } catch (e: any) {
+      setBlueprintInitError(e?.message || '初始化蓝图目录失败')
+    } finally {
+      setBlueprintInitBusy(false)
+    }
+  }, [blueprintInitBusy, projectId, treeRoot, loadDir])
 
   // 切换项目/数据源立即清空菜单/重命名/内部剪贴板 (设计文档 §9)。
   useEffect(() => {
@@ -1061,7 +1137,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     <div className="contents">
       {/* ===== 左: 文件浏览器 ===== */}
       <ResizablePanel
-        storageKey={`mobius:ui:${compact ? 'easy-files-tree' : 'split:cc-files'}:${projectId}`}
+        storageKey={`mobius:ui:${blueprint ? 'blueprint-tree' : (compact ? 'easy-files-tree' : 'split:cc-files')}:${projectId}`}
         defaultWidth={compact ? 190 : filesDefaultWidth}
         minWidth={compact ? 140 : 160}
         maxWidth={compact ? 300 : 360}
@@ -1071,7 +1147,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
           <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
-            {source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${remoteName}` : ''}` : '中枢文件')}
+            {blueprint ? '项目蓝图' : (source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${remoteName}` : ''}` : '中枢文件'))}
           </span>
           <div className="flex-1" />
           <button
@@ -1097,6 +1173,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
             <RefreshCw className={`h-3.5 w-3.5 ${dirs['/']?.loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
           </button>
         </div>
+        {/* 蓝图变体隐藏位置选择 (固定中枢源), 改显蓝图路径提示 */}
+        {!blueprint && (
         <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }} data-tour="workspace-file-source-tabs">
             {/* 文件位置统一入口: 中枢 / 本地(桌面) / 远程机器 合并在同一个下拉框 (原 tab 行已并入) */}
             <div className="flex items-center gap-1.5">
@@ -1194,6 +1272,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               <div className="mt-1 text-[length:var(--fs-xs)] text-red-400">{remoteRootError}</div>
             )}
           </div>
+        )}
+        {blueprint && !rootError && (
+          <div className="flex-shrink-0 border-b px-2.5 py-1.5 text-[length:var(--fs-xs)] leading-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            {`${HIDDEN_FOLDER_NAME}/blueprints · 会话内让智能体「制作蓝图」或右键新建`}
+          </div>
+        )}
         {/* 文件名搜索过滤 (仅覆盖已展开加载过的目录) */}
         {showFileFilter && (
           <div className="flex-shrink-0 border-b px-2 py-1.5" style={{ borderColor: 'var(--border-color)' }}>
@@ -1222,6 +1306,42 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           {!rootLoaded ? (
             <div className="text-[length:var(--fs-md)] py-4 text-center" style={{ color: 'var(--text-muted)' }}>加载中...</div>
           ) : rootError ? (
+            blueprint ? (
+              /* 蓝图目录缺失/加载失败的专属空态: 引导初始化目录或交给智能体生成 */
+              <div className="flex flex-col items-center justify-center gap-2 px-5 py-10 text-center" style={{ color: 'var(--text-muted)' }}>
+                <DraftingCompass className="w-8 h-8" strokeWidth={1.5} />
+                <div className="text-[length:var(--fs-lg)]" style={{ color: 'var(--text-primary)' }}>暂无项目蓝图</div>
+                <div className="text-[length:var(--fs-sm)] leading-5 max-w-[300px]">
+                  {`蓝图是给人类快速阅读的项目设计文稿，存放于 ${HIDDEN_FOLDER_NAME}/blueprints/<模块>/<名称>.html。在会话中让智能体「制作 XX 蓝图」即可生成，也可初始化目录后手动创建。`}
+                </div>
+                {blueprintInitError && (
+                  <div className="text-[length:var(--fs-sm)] text-red-400">{blueprintInitError}</div>
+                )}
+                {rootError && rootError !== 'Not found' && (
+                  <div className="text-[length:var(--fs-sm)] text-amber-400">{rootError}</div>
+                )}
+                <div className="mt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={initBlueprintRoot}
+                    disabled={blueprintInitBusy}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-500 px-3 text-[length:var(--fs-md)] text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
+                  >
+                    {blueprintInitBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                    初始化蓝图目录
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadDir(treeRoot)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    重试
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="px-2 py-4 text-center">
               <div className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{rootError}</div>
               {source === 'local' && isDesktop && (
@@ -1237,6 +1357,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 </button>
               )}
             </div>
+            )
           ) : (
             <FilteredFileTree
               dirs={dirs}
@@ -1245,6 +1366,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               onSelectFile={onSelectFile}
               selectedAbsPath={selected?.abs_path}
               filter={filter}
+              rootRelPath={treeRoot}
               onContextMenu={(e, target) => openTreeContextMenu(e, target)}
               onBlankContextMenu={(e, relPath) => openTreeContextMenu(e, null, relPath)}
               renamingRelPath={rename?.target.relPath}
@@ -1262,7 +1384,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                      宽度记忆与 page 模式分开, 互不污染. ===== */}
       <ResizablePanel
         fill={compact}
-        storageKey={`mobius:ui:${compact ? 'easy-files-editor' : 'split:cc-editor'}:${projectId}`}
+        storageKey={`mobius:ui:${blueprint ? 'blueprint-editor' : (compact ? 'easy-files-editor' : 'split:cc-editor')}:${projectId}`}
         defaultWidth={compact ? 0 : codeEditorDefaultWidth}
         minWidth={compact ? 0 : codeEditorMinWidth}
         maxWidth={compact ? 0 : codeEditorMaxWidth}
@@ -1377,7 +1499,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 style={{ color: cc.muted }}>
                 {skin === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>
-              {source === 'hub' && vscodeWebUrl && (
+              {source === 'hub' && vscodeWebUrl && !blueprint && (
                 <button type="button" onClick={openInVscode} title="在 VSCode 中打开"
                   className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${cc.hover}`}
                   style={{ color: cc.muted }}>
@@ -1393,11 +1515,22 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         {/* 编辑器/占位区: 每个打开的 Tab 一份内容常驻挂载 (仅激活 Tab 可见) — 切换 Tab 保留撤销栈与滚动位置 */}
         <div className="relative flex-1 min-h-0 overflow-hidden" style={{ background: cc.bg }}>
           {tabs.length === 0 ? (
+            blueprint ? (
+              /* 蓝图空阅读区: 用全局主题配色 (不随代码区固定明暗), 与左侧空态同一气质 */
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center" style={{ color: 'var(--text-muted)' }}>
+                <DraftingCompass className="w-10 h-10" strokeWidth={1.2} />
+                <div className="text-[length:var(--fs-xl)]" style={{ color: 'var(--text-primary)' }}>从左侧选择一张蓝图开始阅读</div>
+                <div className="max-w-[420px] text-[length:var(--fs-sm)] leading-6">
+                  蓝图是随项目演进不断更新的设计文稿；可切「源码」直接编辑保存，也可在会话中让智能体随时生成新的蓝图。
+                </div>
+              </div>
+            ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
               <FileCode2 className="w-8 h-8" />
               <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>从左侧选择一个文件</div>
               <div className="text-[length:var(--fs-sm)]">语法高亮 + 可编辑，Ctrl+S 保存 · 可同时打开多个文件</div>
             </div>
+            )
           ) : tabs.map(tab => {
             const isActive = tab.key === activeKey
             const tabMd = /\.(md|markdown)$/i.test(tab.entry.name) && !!tab.fileData && !tab.fileData.binary && !tab.fileData.truncated
@@ -1592,13 +1725,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
 // 注意: 过滤只覆盖已加载进 dirs 的目录 (懒加载, 未展开过的目录不参与),
 // 避免递归拉全树打爆大仓库; 用户先展开感兴趣的目录再过滤.
 // =====================================================================
-function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
+function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedAbsPath, filter, rootRelPath = '/', onContextMenu, onBlankContextMenu, renamingRelPath, renderRenameInput, onMoveEntry }: {
   dirs: Record<string, DirState>
   expanded: Set<string>
   onToggleDir: (relPath: string) => void
   onSelectFile: (entry: Entry) => void
   selectedAbsPath?: string
   filter: string
+  // 树根相对路径 (工作区 '/', 蓝图变体为 <HIDDEN>/blueprints); 过滤扁平列表展示时剥掉该前缀.
+  rootRelPath?: string
   onContextMenu?: (event: React.MouseEvent, target: FileTreeTarget) => void
   onBlankContextMenu?: (event: React.MouseEvent, relPath: string) => void
   renamingRelPath?: string
@@ -1606,10 +1741,12 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
   onMoveEntry?: (source: FileTreeTarget, targetDir: string) => void
 }) {
   const q = filter.trim().toLowerCase()
+  // 相对树根的显示路径 (剥掉树根前缀, 蓝图列表更干净).
+  const displayRel = (relPath: string) => relPath === rootRelPath ? '' : (rootRelPath !== '/' && relPath.startsWith(rootRelPath + '/') ? relPath.slice(rootRelPath.length) : relPath)
   if (!q) {
     return (
       <FileTreeLevel
-        relPath="/"
+        relPath={rootRelPath}
         depth={0}
         dirs={dirs}
         expanded={expanded}
@@ -1632,7 +1769,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
     if (!state.entries) continue
     for (const e of state.entries) {
       if (e.type === 'file' && e.name.toLowerCase().includes(q)) {
-        hits.push({ ...e, name: `${relPath === '/' ? '' : relPath}/${e.name}`.replace(/^\//, '') })
+        hits.push({ ...e, name: `${displayRel(relPath)}/${e.name}`.replace(/^\//, '') })
       }
     }
   }

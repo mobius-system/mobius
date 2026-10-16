@@ -4141,6 +4141,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         <AdvancedSessionActions
           variant={variant}
           showTerminal={isAdminUser}
+          // 简易布局没有 chat 头部, 也就没有承载它的 … 菜单, 开关保留在工具浮层里.
+          omitJsonlMetaButton={layout !== 'easy'}
           sessionId={currentSession?.session_id || sessionId}
           projectId={currentProjectId}
           issueId={currentIssueId}
@@ -4178,8 +4180,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   // 会话工具按钮组只有这一份定义: 标准布局挂在输入侧栏, 简易模式收进 EasySessionToolBar 浮层,
   // 避免入口/禁用条件/显示开关两处漂移 (按钮本体由 AdvancedSessionActions 定义).
   const sessionToolVisibilityOptions = useMemo(
-    () => (isAdminUser ? SESSION_TOOL_VISIBILITY_OPTIONS : SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => option.id !== 'terminal')),
-    [isAdminUser],
+    () => SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => {
+      if (option.id === 'terminal' && !isAdminUser) return false
+      // 非简易布局的「显示时间与序号」已并进 chat 头部的 … 菜单, 按钮组里不再有这个按钮,
+      // 显示设置里也就不该留一个拨不动任何东西的开关.
+      if (option.id === 'jsonl-meta' && layout !== 'easy') return false
+      return true
+    }),
+    [isAdminUser, layout],
   )
   const renderSessionToolGroup = (opts: { variant: 'default' | 'compact' | 'menu'; className: string; initialPanel: null | 'memory'; persistActivePanel?: boolean }) => (
     <UnifiedButtonGroup

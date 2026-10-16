@@ -8,7 +8,7 @@ import { OpenInVSCodeButton } from '../project-files'
 import { SkillsManager } from '../skills'
 import { timeAgo } from '../shell'
 import { api, useStore } from '../../store'
-import { ProjectArchitecturePanel } from './ProjectArchitecturePanel'
+import { ProjectBlueprintPanel } from './ProjectBlueprintPanel'
 import { ProjectAssistantPresetPanel } from './ProjectAssistantPresetPanel'
 import { assistantAllowedFor } from '../../services/assistant-availability'
 import { ProjectPackagePanel } from './ProjectPackagePanel'
@@ -76,7 +76,6 @@ type ProjectSettingsPanelProps = {
   metaDirty: boolean
   onDeleteProject: () => void
   onOpenPathPicker: () => void
-  onArchitectureSessionCreated: (issue: any, session: any) => void
   // 设计师之眼布局: 把顶部 settings tab 条外移到 ProjectPage 左侧边栏时,
   // 由父层接管 activePane (受控) 并把 settingsTabs 上抛给父层渲染;
   // hideHeaderTabs=true 时不再在面板内部渲染那条横向 tab 条 (移动端仍保留).
@@ -86,7 +85,7 @@ type ProjectSettingsPanelProps = {
   hideHeaderTabs?: boolean
 }
 
-export type SettingsPane = 'settings' | 'context' | 'versions' | 'architecture' | 'todos' | 'members' | 'package' | 'assistant'
+export type SettingsPane = 'settings' | 'context' | 'versions' | 'blueprints' | 'todos' | 'members' | 'package' | 'assistant'
 
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: 'private' | 'public'; label: string; description: string }> = [
   { value: 'private', label: '私有', description: '只有项目成员（含创建者）能看到本项目。' },
@@ -516,7 +515,6 @@ export function ProjectSettingsPanel({
   metaDirty,
   onDeleteProject,
   onOpenPathPicker,
-  onArchitectureSessionCreated,
   controlledActivePane,
   onSelectPane,
   onExposeTabs,
@@ -565,8 +563,10 @@ export function ProjectSettingsPanel({
 
   const PaneKey = `mobius:project:pane:${project?.id || ''}`
   const paneInit = (): SettingsPane => {
-    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
-    return v && (['settings','context','versions','architecture','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
+    let v = typeof localStorage !== 'undefined' ? localStorage.getItem(PaneKey) : null
+    // 旧「系统剖析」(architecture) 记忆迁移为「项目蓝图」(blueprints).
+    if (v === 'architecture') v = 'blueprints'
+    return v && (['settings','context','versions','blueprints','todos','members','package','assistant'] as const).includes(v as SettingsPane) ? v as SettingsPane : 'settings'
   }
   // 受控模式 (设计师之眼侧边栏): 父层接管 activePane; 否则维持原有内部状态.
   const [internalPane, setInternalPane] = useState<SettingsPane>(paneInit)
@@ -775,7 +775,7 @@ export function ProjectSettingsPanel({
     arr.push({ key: 'members', label: '项目成员', active: activePane === 'members' })
     arr.push(
       { key: 'versions', label: '版本追踪', active: activePane === 'versions', disabled: !gitTrackingAvailable, title: gitTrackingTitle },
-      { key: 'architecture', label: '系统剖析', active: activePane === 'architecture' },
+      { key: 'blueprints', label: '项目蓝图', active: activePane === 'blueprints' },
       { key: 'todos', label: '项目待办', active: activePane === 'todos' },
       { key: 'package', label: '打包下载', active: activePane === 'package' },
     )
@@ -832,12 +832,9 @@ export function ProjectSettingsPanel({
           <div className="p-3 w-full">
             <ProjectAssistantPresetPanel projectId={project.id} />
           </div>
-        ) : activePane === 'architecture' ? (
+        ) : activePane === 'blueprints' ? (
           <div className="p-3 w-full">
-            <ProjectArchitecturePanel
-              projectId={project.id}
-              onSessionCreated={onArchitectureSessionCreated}
-            />
+            <ProjectBlueprintPanel projectId={project.id} />
           </div>
         ) : activePane === 'todos' ? (
           <div className="p-3 w-full">

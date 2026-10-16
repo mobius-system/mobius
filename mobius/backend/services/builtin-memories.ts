@@ -17,7 +17,10 @@ export const BUILTIN_MEMORIES: BuiltinMemory[] = [
     name: '会话内展示和编辑文件',
     description: '用 display-files 让会话文件浏览器展示项目文件或 aimux 远程文件。',
     body: [
-      '`display-files` 是供 Mobius 前端扫描的标记命令。只要是你希望用户看到的源码、HTML、Markdown、README 文件，尤其是核心产物性质、总结性质的文件，都建议使用这个命令把这个文件呈现给用户（所谓呈现，意思是在前端显示文件卡片，点击卡片会在当前会话的简易文件侧栏打开文件；支持的远程文本文件可以直接编辑并保存）。',
+      '`display-files` 是一个与人类交互的命令。',
+      '对于你希望用户看到的源码、HTML、Markdown、README 文件，尤其是核心产物性质、总结性质的文件，都使用这个命令把这个文件呈现给用户',
+      '所谓**呈现**，意思是在前端显示文件卡片，点击卡片会在当前会话的简易文件侧栏打开文件；而且支持的远程文本文件可以直接编辑并保存。',
+      '对于中枢文件，虽然你也可以直接在回复中直接告诉用户产物的路径，但这需要用户自己手动复制路径，容易给入门用户造成困扰。建议使用 ``',
       '项目中枢文件可传项目绑定目录内的绝对路径，也可传相对路径；绝对路径必须位于绑定目录内。支持预览文本、源码、HTML 和 README。',
       '远程文件使用 `display-files --remote <remote-name> [--root <remote-root>] <relative-path>...`。路径相对于 `--root`；未提供 root 时使用项目为该 remote 配置的路径。远程文件路径不能以 `/` 开头，也不能包含 `..`。',
       '示例：`display-files --remote gptac-zs-dev --root /workspace/app src/main.py README.md`',
