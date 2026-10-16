@@ -3,7 +3,7 @@
  */
 import express from 'express';
 import { spawnSync } from 'child_process';
-import { isDockerIsolation, USER_ISOLATION_DOCKER_IMAGE } from './config';
+import { isDockerIsolation, USER_ISOLATION_DOCKER_IMAGE, SBX_IDLE_DESTROY_MS } from './config';
 import * as registry from './registry';
 import { rebuildNow, containerAlive, destroySandbox } from './docker-sandbox';
 
@@ -21,7 +21,8 @@ router.get('/', async (req, res) => {
     ...e,
     alive: containerAlive(e.user),
   }));
-  res.json({ method: 'docker', image: USER_ISOLATION_DOCKER_IMAGE, sandboxes, selfCheck });
+  // idleDestroyMs 下发给前端算"销毁倒计时" (心跳制: lastActiveAt + idleDestroyMs 被 reaper 回收)
+  res.json({ method: 'docker', image: USER_ISOLATION_DOCKER_IMAGE, idleDestroyMs: SBX_IDLE_DESTROY_MS, sandboxes, selfCheck });
 });
 
 router.post('/:userId/rebuild', (req, res) => {

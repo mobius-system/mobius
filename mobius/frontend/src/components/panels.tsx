@@ -414,10 +414,16 @@ function useErrorToast() {
 // 列出全部用户沙箱容器, 管理员可手动 重启 / 关闭; 附宿主侧 attach 命令,
 // 让管理员能直接进容器内 tmux 查看 agent (对应后端 /api/admin/sandboxes).
 function AdminSandboxesPanel() {
-  const [data, setData] = useState<{ method?: string; image?: string; sandboxes?: Array<Record<string, any>>; selfCheck?: { ok: boolean; ranAt: number; steps: Array<{ name: string; ok: boolean; detail: string }> } | null } | null>(null)
+  const [data, setData] = useState<{ method?: string; image?: string; idleDestroyMs?: number; sandboxes?: Array<Record<string, any>>; selfCheck?: { ok: boolean; ranAt: number; steps: Array<{ name: string; ok: boolean; detail: string }> } | null } | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  // 倒计时用本地时钟每秒跳 (数据本身 30s 拉一次; lastActiveAt 是锚点, 无需高频请求)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
   const load = useCallback(async (refresh = false) => {
     try {
       setError('')
@@ -450,12 +456,26 @@ function AdminSandboxesPanel() {
   }
   const copy = (text: string) => { void navigator.clipboard?.writeText(text).catch(() => {}) }
   const rows = data?.sandboxes || []
+  const idleMs = Number(data?.idleDestroyMs) || 3 * 60 * 60 * 1000
+  // 距上次活跃的相对时间
+  const relActive = (ts: number) => {
+    const d = Math.max(0, now - ts)
+    if (d < 60_000) return `${Math.floor(d / 1000)} 秒前`
+    if (d < 3_600_000) return `${Math.floor(d / 60_000)} 分钟前`
+    if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} 小时 ${Math.floor((d % 3_600_000) / 60_000)} 分前`
+    return `${Math.floor(d / 86_400_000)} 天前`
+  }
+  const fmtCountdown = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000))
+    return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+  }
   return (
     <div className="space-y-3 text-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
         <span>隔离方式: <span className="text-[var(--text-primary)]">{data?.method || '…'}</span></span>
         <span>镜像: <span className="text-[var(--text-primary)]">{data?.image || '—'}</span></span>
         <span>共 {rows.length} 个容器</span>
+        <span>空闲 {Math.round(idleMs / 3_600_000)} 小时无鉴权请求即销毁</span>
         <button type="button" onClick={() => void load()} className="rounded border border-[var(--border-color)] px-2 py-0.5 hover:bg-[var(--bg-hover)]">刷新</button>
       </div>
       {data?.selfCheck && (
@@ -511,7 +531,22 @@ function AdminSandboxesPanel() {
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
-            <span>最后请求: {sb.lastActiveAt ? new Date(Number(sb.lastActiveAt)).toLocaleString() : '—'}</span>
+            <span>
+              上次活跃: {sb.lastActiveAt
+                ? <span title={new Date(Number(sb.lastActiveAt)).toLocaleString()}>{relActive(Number(sb.lastActiveAt))} ({new Date(Number(sb.lastActiveAt)).toLocaleTimeString()})</span>
+                : '—'}
+            </span>
+            {sb.alive && sb.lastActiveAt && (() => {
+              const remain = Number(sb.lastActiveAt) + idleMs - now
+              const color = remain <= 0 ? 'text-red-400' : remain <= 5 * 60_000 ? 'text-red-400' : remain <= 30 * 60_000 ? 'text-amber-400' : 'text-[var(--text-primary)]'
+              return (
+                <span className={color}>
+                  {remain > 0
+                    ? <>销毁倒计时 <span className="font-mono tabular-nums">{fmtCountdown(remain)}</span></>
+                    : <>已到空闲时限，等待回收（60s 扫描）</>}
+                </span>
+              )
+            })()}
             <span>code-server: {String(sb.services?.codeServer?.length ?? 0)}</span>
             <span>创建: {sb.createdAt ? new Date(Number(sb.createdAt)).toLocaleString() : '—'}</span>
           </div>
