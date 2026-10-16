@@ -84,7 +84,7 @@ MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
   「症状 → 根因 → 解法」三列表格收纳。
 - **排版要素**：`.box info/ok` 信息框、`.tag` 标签、斑马纹表格、
   `pre.mono-result` 等距结果框（key-value 对齐）。
-- 现成范例见项目隐藏目录下 `blueprints/{system,frontend,backend}/*.html`。
+- 现成范例见项目隐藏目录下 `blueprints/{aimux,sandbox,system,frontend,backend}/*.html`。
 
 蓝图对样板的**两处覆盖**（蓝图必须自包含、且在沙箱里运行）：
 
@@ -95,6 +95,10 @@ MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
    （`location.origin === "null"`），`localStorage` / `sessionStorage` 会抛
    `SecurityError` —— 访问一律 `try/catch` 兜底（代价是主题选择在预览里不
    持久化，下次按系统偏好重来）。脚本只做折叠 / 主题这类轻交互，不访问网络。
+3. **图示不许交给联网渲染库**：`<div class="mermaid">` + 从 jsdelivr `import`
+   的写法在 Mobius 环境里拉不到包（实测 `net::ERR_CONNECTION_RESET`），预览
+   会退化成一大段 `flowchart TD ...` 源码文本。图一律画成内联 SVG 或
+   HTML/CSS 框线（仓内已有先例）。
 
 ## 完成动作
 
