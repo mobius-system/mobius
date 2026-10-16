@@ -804,7 +804,13 @@ export function ProjectSettingsPanel({
   return (
     <section
       data-tour="project-settings-panel"
-      className={`w-full min-w-0 ${desktopWorkspace ? 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : 'overflow-hidden'}`}
+      // 项目蓝图面板自己就是「填满父容器」的阅读器: 这一层不给内边距/滚动, 否则四周会露出缝隙
+      // Blueprint pane fills its parent: no padding/scroll here, otherwise gaps show around the card
+      className={`w-full min-w-0 ${desktopWorkspace
+        ? (activePane === 'blueprints'
+          ? 'h-full min-h-0 flex-1 overflow-hidden flex flex-col'
+          : 'h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6')
+        : 'overflow-hidden'}`}
       style={{ borderColor: 'var(--border-color)' }}>
       {!hideHeaderTabs && (
         <div className="flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
@@ -827,14 +833,15 @@ export function ProjectSettingsPanel({
       )}
 
       {/* 外层不再套边框: 内部 SettingsCard / 各面板自带单层边框, 套壳会形成双重边框 + 空壳撑高 */}
-      <div className="mt-3">
+      <div className={activePane === 'blueprints' && desktopWorkspace ? 'min-h-0 flex-1' : 'mt-3'}>
 
         {activePane === 'assistant' && assistantProject && assistantAllowedFor(user) ? (
           <div className="p-3 w-full">
             <ProjectAssistantPresetPanel projectId={project.id} />
           </div>
         ) : activePane === 'blueprints' ? (
-          <div className="p-3 w-full">
+          // 桌面工位: 撑满父容器; 移动端抽屉里没有确定高度, 给个固定高度兜底
+          <div className={desktopWorkspace ? 'flex h-full min-h-0 w-full flex-col' : 'p-3 w-full h-[70vh]'}>
             <ProjectBlueprintPanel projectId={project.id} />
           </div>
         ) : activePane === 'todos' ? (

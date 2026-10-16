@@ -1,16 +1,25 @@
 ---
 name: mobius-blueprint
 description: 为 Mobius 项目编写/更新「项目蓝图」——保存到项目隐藏目录
-  <HIDDEN_FOLDER_NAME>/blueprints/<module>/<blueprint_name>.html 的自包含 HTML
-  设计文稿，供人类快速理解项目逻辑并做出决策。
+  <MOBIUS_HIDDEN_FOLDER_NAME>/blueprints/<module>/<blueprint_name>.html 的自包含 HTML
+  设计文稿，供人类快速理解项目逻辑并做出决策。也适用于编写可托管的
+  HTML 操作部署文档（亮/暗双主题、等距字体对齐、TL;DR 正向化）。
 ---
 
-# Mobius 项目蓝图 (Project Blueprint)
+# Mobius 项目蓝图 (Project Blueprint) + HTML 写作规范
 
 这是 Mobius 内置 Skill。不要让用户安装或调用 Codex / Claude Code 自身的
 Skill / Memory 系统，只使用当前 Session 注入的 Mobius 上下文与项目文件。
 
-## 蓝图是什么
+本文档分两部分：**一、蓝图规范**（项目设计文稿）；**二、通用 HTML 写作规范**
+（操作部署文档等，含双主题、等距字体、CDN 托管）。两类场景侧重点不同，
+按实际任务取用相应规则。
+
+MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
+
+---
+
+## 一、蓝图是什么
 
 蓝图是**给人类看的**项目设计文稿：精妙排版的文字、图像、系统设计图。
 目标是让人类在几分钟内理解某个模块/机制的设计逻辑，做出更快的决策。
@@ -39,7 +48,7 @@ Skill / Memory 系统，只使用当前 Session 注入的 Mobius 上下文与项
 - 用户在「项目蓝图」Tab（项目设置内）即可阅读：左侧按 module 分组的二级
   清单，右侧默认渲染 HTML 预览，也能切源码编辑。
 
-## HTML 硬性规范
+## 蓝图 HTML 硬性规范
 
 - 单文件自包含：所有 CSS 内联（`<style>`），图示用内联 SVG 或 HTML/CSS 绘制。
 - **禁止任何外部依赖**：不引用 CDN、远程字体（包括 Google Fonts）、远程
@@ -61,7 +70,238 @@ Skill / Memory 系统，只使用当前 Session 注入的 Mobius 上下文与项
 - 引用真实路径与符号名（`file.ts:function`），不凭记忆编造；讲不清的
   地方如实标注「未核实」。
 
+## 视觉与结构规范（活样板：`blueprint_example_for_manual.html`）
+
+同目录的 `blueprint_example_for_manual.html` 是排版的活样板，蓝图取用其中
+与「自包含」不冲突的部分：
+
+- **亮/暗双色板**：CSS 变量 + `:root[data-theme="dark"|"light"]`，默认跟随
+  `prefers-color-scheme`，右下角悬浮圆形按钮切换（日/月图标）。
+- **骨架**：`h1` + `.meta` 元信息行 + `.box ok` 的 TL;DR + `.toc` 锚点目录
+  （`columns: 2`）+ 带 `id` 的编号 `h2` 章节 + `.footer` 页脚。
+- **写作**：TL;DR 只写「做了什么」（正向）；主体章节只写正向陈述，负面经验
+  （坑、失败模式、边界限制）集中到文末独立的「附录：避坑大全」，用
+  「症状 → 根因 → 解法」三列表格收纳。
+- **排版要素**：`.box info/ok` 信息框、`.tag` 标签、斑马纹表格、
+  `pre.mono-result` 等距结果框（key-value 对齐）。
+- 现成范例见项目隐藏目录下 `blueprints/{system,frontend,backend}/*.html`。
+
+蓝图对样板的**两处覆盖**（蓝图必须自包含、且在沙箱里运行）：
+
+1. **不嵌 `@font-face`、不引 CDN / 远程字体**（Part 二 允许，蓝图不允许）。
+   等宽场景走系统等宽栈；`pre.mono-result` 只把 ASCII 放在列首、中文只出现在
+   行尾，换任何字体都不串列。
+2. **脚本必须沙箱安全**：预览 iframe 是 `sandbox="allow-scripts"` 独立源
+   （`location.origin === "null"`），`localStorage` / `sessionStorage` 会抛
+   `SecurityError` —— 访问一律 `try/catch` 兜底（代价是主题选择在预览里不
+   持久化，下次按系统偏好重来）。脚本只做折叠 / 主题这类轻交互，不访问网络。
+
 ## 完成动作
 
 写完文件后，在回复里给出蓝图相对路径，并提醒用户可在项目的
 「设置 → 项目蓝图」Tab 查看。不要把 HTML 全文贴进对话。
+
+---
+
+## 二、通用 HTML 写作规范（操作部署文档等）
+
+适用于「操作手册 / 部署文档 / 运维 SOP」类 HTML（会托管到 CDN 供团队查阅，
+与上述「项目蓝图」预览沙箱场景不同，因此**允许自托管 Web Font 和 CDN 资源**）。
+这类文档的目标是产出一篇结构清晰、可长期复用、读起来像操作手册而非踩坑
+流水账的文档。
+
+### 核心原则（三条，缺一不可）
+
+#### 1. TL;DR 只写「做了什么」，正向陈述
+
+文档开头的 TL;DR（一句话摘要）只描述**完成了什么、达成了什么**。
+- ✅ 只写：部署了什么模型、用了什么配置、验证结果如何
+- ❌ 不写：遇到了什么坑、不要怎么做、什么会失败
+- ❌ 不写：背景里的负面约束（如「跨节点不可靠所以不用 X」——这种归附录）
+
+> TL;DR 的读者只想 3 秒判断「这篇讲的是不是我需要的」。负面信息在这里是噪声。
+
+#### 2. 主体章节零负面陷阱
+
+正文每一章都是**正向操作指南**：该做什么、参数是什么、怎么验证。
+- 涉及「不要做 X / 否则会 Y / 某某不可靠」的内容，**全部移到末尾的「避坑附录」**
+- 主体里只出现「采用 X」「配置为 Y」这类肯定句
+- 即便是出于解释一个选择（如「为什么用方案 B」），主体里只一句话点明选择，**失败模式的细节进附录**
+- 操作性提示（如「IP 会变，每次现探」）不算负面陷阱，可保留，但用中性语气、不挂警告框
+
+> 主体是给人照着做的；附录是给人排错时翻的。混在一起会让照做的人一直被「会出错」打断。
+
+#### 3. 避坑集中收录在末尾附录
+
+文末设一个独立附录章（如「避坑大全 / 故障排查」），用「症状 → 根因 → 解法」
+三列表格收纳所有负面经验。
+- 主体里被移走的警告框、失败解释、「3 个坑」类内容，统一汇到这里
+- 附录可以长、可以全，因为它只在出问题时被检索
+- 主体章节用锚点链接到附录相关条目（可选），保持主体干净
+
+### 视觉与交互规范
+
+#### 主题：亮色 / 暗色双模式 + 悬浮切换按钮
+
+- 默认跟随系统 `prefers-color-scheme`，用户切换后用 `localStorage` 记住
+- 悬浮按钮固定在右下角（`position: fixed`），小圆形，显示日/月图标
+- 用 CSS 变量定义两套色板，`[data-theme="dark|light"]` 在 `<html>` 上切换
+
+```css
+:root[data-theme="dark"]  { --bg:#0d1117; --text:#e6edf3; ... }
+:root[data-theme="light"] { --bg:#fff;    --text:#1f2328; ... }
+```
+
+```js
+var html = document.documentElement;
+var saved = localStorage.getItem('theme');
+if (!saved) saved = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+html.dataset.theme = saved;
+document.getElementById('themeBtn').onclick = function(){
+  var t = html.dataset.theme === 'dark' ? 'light' : 'dark';
+  html.dataset.theme = t; localStorage.setItem('theme', t);
+};
+```
+
+### 排版要素
+
+| 要素 | 用途 |
+|------|------|
+| **代码块 `<pre>`** | 命令、配置、脚本。等宽字体 + 横向滚动 |
+| **行内 `<code>`** | 路径、参数名、IP |
+| **表格** | 参数清单、节点清单、症状-根因-解法 |
+| **彩色信息框** | 主体仅用「正向提示框」（如验证结果 ✅）；警告/危险框只在附录 |
+| **可折叠 `<details>`** | 长脚本展开查看，避免刷屏 |
+| **目录锚点** | 顶部 TOC，每章带 `id`，可跳转 |
+| **等距结果框 `pre.mono-result`** | 验证结果、分发统计等「key-value 对齐」或「数字列对齐」的内容 |
+
+### 等距字体对齐规则（中文 2 格、英文 1 格）
+
+验证结果框、统计输出这类内容需要严格列对齐。中英文混合时，必须确保 CJK
+字符占 2 倍英文字符宽度，否则 `finish_reason:` 和 `tool_calls:` 这种 key 列
+会错位。
+
+#### 方案：自托管 Web Font（访客无需本地字体）
+
+光在 CSS `font-family` 里写字体名是**不够的**——访客机器大概率没装 Ubuntu
+Mono / Inconsolata / Noto Sans Mono CJK，会 fallback 到系统比例字体，
+`font-variant-east-asian: full-width` 对 fallback 字体不保证生效，结果就是
+「自己看是对的、别人看是歪的」。**必须嵌入 Web Font 并自托管到 CDN。**
+
+**第一步：下载 woff2 字体文件**（连外网用 proxychains）：
+
+```bash
+# Inconsolata（英文等宽，~17KB）—— 作者实测认可的 2:1 等宽字体之一
+proxychains4 -q curl -sL \
+  "https://cdn.jsdelivr.net/npm/@fontsource/inconsolata/files/inconsolata-latin-400-normal.woff2" \
+  -o Inconsolata-Regular.woff2
+# Noto Sans SC（中文，~1.1MB）—— 配 full-width 强制中文全宽
+proxychains4 -q curl -sL \
+  "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2" \
+  -o NotoSansSC-Regular.woff2
+file *.woff2   # 确认是 "Web Open Font Format (Version 2)"，若返回 HTML 说明被墙，需 proxychains
+```
+
+> ⚠️ `curl` 直连 jsDelivr / Google Fonts 在国内沙箱会返回 HTML 重定向页（几十
+> 字节），不是字体。**必须 proxychains4**。`file` 命令验证是 woff2 再进行下一步。
+
+**第二步：上传字体文件到 CDN**（自托管，国内访客加载快）：
+
+```bash
+python3 upload_to_cdn.py --folder webfonts --file Inconsolata-Regular.woff2 --filename Inconsolata-Regular.woff2
+python3 upload_to_cdn.py --folder webfonts --file NotoSansSC-Regular.woff2 --filename NotoSansSC-Regular.woff2
+```
+
+**第三步：HTML 里 `@font-face` + `unicode-range` 分流**（英文走 Inconsolata，
+中文走 NotoSC + full-width）：
+
+```css
+@font-face {
+  font-family: "Inconsolata";
+  src: url("https://serve.nutshellai.cn/publish/auto/webfonts/Inconsolata-Regular.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+  unicode-range: U+0000-007F, U+00A0-00FF, U+2000-206F;  /* 拉丁/标点 */
+}
+@font-face {
+  font-family: "NotoSC-Mono";
+  src: url("https://serve.nutshellai.cn/publish/auto/webfonts/NotoSansSC-Regular.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+  unicode-range: U+4E00-9FFF, U+3000-30FF;  /* CJK */
+}
+
+pre.mono-result {
+  font-family: "Inconsolata", "NotoSC-Mono", monospace;
+  font-variant-east-asian: full-width;   /* CJK 强制全宽（2 格） */
+  font-feature-settings: "fwid" 1;
+  white-space: pre;                       /* 不自动换行，保列对齐 */
+  letter-spacing: 0;                       /* 关闭字距微调 */
+}
+```
+
+要点：
+- **英文等宽字体首选 Ubuntu Mono 或 Inconsolata**（观感最好的 2:1 等宽字体，
+  作者实测认可的唯二）；不用 JetBrains Mono / Fira Code 等
+- **必须自托管 Web Font**：`font-family` 光写名字，访客没装就 fallback 到比例
+  字体，对齐全垮。字体文件上传 CDN，`@font-face` + `font-display: swap`
+- **用 `unicode-range` 分流**：英文走 Inconsolata（小，17KB），中文走
+  NotoSC-Mono（大，1.1MB），浏览器只按需加载对应子集
+- `font-variant-east-asian: full-width` 强制 CJK 走全宽（2 格）——前提是字体含
+  `fwid` 特性表（Noto Sans SC 有）
+- `white-space: pre` + `letter-spacing: 0` 避免自动换行和字距微调破坏对齐
+- 手动在源码里用空格补齐 key 列（如 `content:        ''`），配合等宽字体才能对齐
+
+#### ★ CDN 缓存坑（更新 HTML 不生效）
+
+serve.nutshellai.cn 前面是阿里云 CDN（Tengine），会缓存 HTML。改了 HTML 后
+即使源站文件已更新（md5 已变），公网 curl 拿到的还是旧的
+（`X-Cache: HIT TCP_MEM_HIT`），导致改了没效果。
+
+**解法：换文件名上传**（cache-busting）。如 `xxx.html` → `xxx-v2.html`，新 URL
+无缓存，立即生效。旧 URL 等缓存自然过期或联系运维刷新。
+
+诊断方法：
+```bash
+# 比较本地 md5 与 CDN 公网 md5
+md5sum local.html
+curl -s "https://serve.nutshellai.cn/.../local.html" | md5sum
+# 不一致 = CDN 缓存了旧版 → 换文件名
+curl -sI URL | grep -i 'x-cache\|age\|last-modified'   # HIT = 命中缓存
+```
+
+### HTML 转义（写代码块时最易出错）
+
+`<pre>` 里出现的 `<` `>` `&` 必须转义为 `&lt;` `&gt;` `&amp;`，否则被浏览器
+当成标签解析、内容被截断。尤其注意 shell 的 `&&`、重定向 `>`、JSON 的 `<`。
+
+### 章节骨架（操作文档推荐）
+
+```
+1. TL;DR                      ← 正向一句话（本文做了什么）
+2. 集群/环境信息              ← 节点、IP、版本（中性事实）
+3. 架构总览                   ← 图示 + 一句话点明方案选择（细节进附录）
+4. 前置检查                   ← source 环境 / 验证注册 / 互通
+5. 启动参数详解               ← 完整命令 + 逐参数表（只写「用什么」）
+6. 部署脚本                   ← 可折叠源码
+7. 启动流程                   ← 分发 → 启动 → 轮询就绪
+8. 负载均衡                   ← 配置 + 要点（正向）
+9. 验证                       ← 4 步 + 实测结果（✅）
+10. 功能验证（工具调用等）    ← 要点 + 命令 + 结果
+11. 运维命令
+12. 附录：避坑大全            ← 所有负面经验集中于此（症状-根因-解法表）
+```
+
+### 自检清单（写完逐条过）
+
+- [ ] TL;DR 是否只含「做了什么」，没有任何「不要 / 不可靠 / 会失败」？
+- [ ] 主体每章是否只有正向陈述？警告框是否都搬到了附录？
+- [ ] 末尾是否有独立的避坑附录？
+- [ ] 亮/暗主题是否都能正常显示，悬浮按钮是否切换并持久化？
+- [ ] `<pre>` 里的 `<` `>` `&` 是否都已转义？
+- [ ] 是否有目录锚点可跳转？
+- [ ] 长脚本是否用了 `<details>` 折叠？
+- [ ] 等距字体是否**自托管 Web Font**（不只写 font-family 名字）？`@font-face`
+      + `unicode-range` 分流 + CDN 自托管 woff2？
+- [ ] 验证结果框 / 统计输出是否用了 `pre.mono-result`，中英文列对齐正确
+      （中文 2 格英文 1 格）？
+- [ ] 更新 HTML 后是否**换了文件名**绕过 CDN 缓存？本地 md5 与公网 curl md5
+      是否一致？
