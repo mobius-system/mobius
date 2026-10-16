@@ -7,7 +7,7 @@
 export { USER_ISOLATION_METHOD, USER_ISOLATION_DOCKER_IMAGE, isDockerIsolation, dockerSandboxAvailable } from './config';
 export {
   isolationActiveFor, ensureSandbox, rebuildNow, destroySandbox,
-  reconcileSandboxes, startBackgroundTimers,
+  reconcileSandboxes, startBackgroundTimers, refreshSbxHomeInputs,
 } from './docker-sandbox';
 export {
   prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow,

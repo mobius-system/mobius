@@ -37,6 +37,12 @@ export function sbxHomeFor(workDir: string): string {
   return path.join(workDir, SBX_HOME_DIRNAME);
 }
 
+// 该用户的工作区路径 (空串 = 未配置, 调用方按需降级)
+export function workDirOfUser(userId: string): string {
+  const user = db.prepare('SELECT work_dir FROM users WHERE id = ?').get(String(userId)) as { work_dir?: string } | undefined;
+  return (user?.work_dir || '').trim();
+}
+
 function docker(args: string[], timeoutMs = 60000) {
   return spawnSync('docker', args, { encoding: 'utf8', timeout: timeoutMs });
 }
@@ -105,6 +111,55 @@ function seedSbxHome(workDir: string): void {
   } catch (e) {
     console.warn(`[user-isolation] seed sbx-home 失败: ${(e as Error).message}`);
   }
+}
+
+// ── 只读输入的保鲜 (每次 spawn 前) ───────────────────────────────────────────
+// seed 只发生在建容器那一刻: 宿主侧之后改动 (新增/修改 codex channel 配置、换代理配置) 时,
+// 还活着的容器里仍是旧副本 —— codex 会静默回落旧 profile (缺文件 = 空层, 不报错), proxychains
+// 档则直接起不来. 按 mtime 补一次; 列表里只放容器只读的文件 (config.toml 带容器侧写入的信任条目).
+// The seed runs once, at container creation: a later host-side change (a new/edited codex channel
+// config, rotated proxy files) leaves the live container on the stale copy — codex then silently
+// falls back to the old profile (a missing file is an empty layer, not an error) and the
+// proxychains tiers fail to start. Refresh by mtime; only files the container never writes are
+// listed here (config.toml carries container-side trust entries).
+const REFRESH_HOME_FILES = ['proxy_envs.conf', 'proxy_envs.bash', 'proxychains_config_for_llm_models.conf'];
+
+export function refreshSbxHomeInputs(userId: string): void {
+  const workDir = workDirOfUser(String(userId));
+  if (!workDir) return;
+  const sbxHome = sbxHomeFor(workDir);
+  const codexHome = process.env.CODEX_HOME || path.join(HOME, '.codex');
+  const pairs: Array<[string, string]> = REFRESH_HOME_FILES.map(
+    (name) => [path.join(HOME, name), path.join(sbxHome, name)] as [string, string],
+  );
+  try {
+    for (const name of fs.existsSync(codexHome) ? fs.readdirSync(codexHome) : []) {
+      if (name.endsWith('.config.toml')) {
+        pairs.push([path.join(codexHome, name), path.join(sbxHome, '.codex', name)]);
+      }
+    }
+  } catch { /* 宿主 codex 目录读不到就只刷新代理文件 */ }
+  for (const [src, dst] of pairs) {
+    try {
+      if (!fs.existsSync(src)) continue;
+      if (fs.existsSync(dst) && fs.statSync(dst).mtimeMs >= fs.statSync(src).mtimeMs) continue;
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+    } catch { /* best-effort: 保留旧副本, 下次 spawn 再试 */ }
+  }
+  // claude 默认 settings 与 seed 同款改写 (token-proxy 地址 → 沙箱网关), 一并保鲜:
+  // 普通会话的 --settings 每次由 materializeSettingsForSbx 现取现写, 吃这份副本的只有
+  // bash 链的兜底 `--settings "$HOME/.claude/mobiusdefault.settings.json"`.
+  // The claude default settings get the same seed-time rewrite (token-proxy → sandbox gateway) and
+  // the same refresh: only the bash-chain fallback --settings "$HOME/.claude/..." reads this copy.
+  try {
+    const src = path.join(HOME, '.claude', 'mobiusdefault.settings.json');
+    const dst = path.join(sbxHome, '.claude', 'mobiusdefault.settings.json');
+    if (fs.existsSync(src) && (!fs.existsSync(dst) || fs.statSync(dst).mtimeMs < fs.statSync(src).mtimeMs)) {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, fs.readFileSync(src, 'utf-8').replace(/127\.0\.0\.1/g, SBX_GATEWAY_IP));
+    }
+  } catch { /* best-effort */ }
 }
 
 // ── 网络 (幂等) ─────────────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, sessionConfigDir } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, isolationActiveFor } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -334,12 +334,32 @@ function unpackLaunch(opts: CodexDispatchOpts): { model: string | null; settings
 }
 
 // Digital-rain codex per-session withproxy: base_url→token-proxy, api_key→mpx1 token (wire=openai).
+// profile 名必须只含 [A-Za-z0-9_-]: codex 的 --profile 走 ProfileV2Name 校验 (点号会被直接拒绝,
+// 进程以 "invalid --profile value" 退出, TUI 永远不就绪). 故分隔符用下划线而不是点号.
+// The profile name must use only [A-Za-z0-9_-]: codex validates --profile as a ProfileV2Name and
+// rejects anything else (a dot makes the process exit with "invalid --profile value", so the TUI
+// never becomes ready). Hence an underscore separator, never a dot.
+const WITH_PROXY_SUFFIX_RE = /(?:\.withproxy\.|withproxy_)[A-Za-z0-9_-]*$/
+
+// 从 runtime 恢复出来的 profile key 可能是 withproxy 档的名字, 先剥回基础渠道名再用;
+// 渠道名只允许字母, 带后缀的名字过不了 normalizeCodexChannel (重启会话会直接失败).
+// A profile key restored from runtime may carry the withproxy suffix; strip it back to the base
+// channel first. Channels are letters-only, so a suffixed name fails normalizeCodexChannel and the
+// respawn would fail outright.
+function baseProfileKeyOf(key: unknown): string {
+  return String(key || '').trim().replace(WITH_PROXY_SUFFIX_RE, '')
+}
+
 function codexWithProxyPathFor(profileKey: string, sessionId: string, userId?: string | null): string {
   const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')
-  // docker 隔离: 会话配置在启动会话瞬间复制到临时路径 (容器内 /tmp/sbx-session/<sid>/),
-  // 随容器生灭; landlock/admin 仍写 CODEX_HOME (现状).
-  if (userId) return path.join(sessionConfigDir(userId, sessionId), `${profileKey}.withproxy.${safe}.config.toml`)
-  return path.join(codexHomeFor(userId), `${profileKey}.withproxy.${safe}.config.toml`)
+  // 必须落在 codex 的 HOME 里: --profile <name> 是按名字解析 $CODEX_HOME/<name>.config.toml 的,
+  // 隔离用户 = 容器内可见的 .sbx-home/.codex (宿主同路径; 启动时复制进容器, 停止时删除).
+  // 放过别的目录 (如会话临时目录) 会被静默忽略 —— 缺文件只是空层, codex 不报错, 代理配置静默失效.
+  // Must live in codex's own home: `--profile <name>` resolves $CODEX_HOME/<name>.config.toml by
+  // name. For isolated users that is the container-visible .sbx-home/.codex (same path on the
+  // host). Any other directory is silently ignored: a missing profile file is an empty layer,
+  // codex does not error, and the proxy config silently never applies.
+  return path.join(codexHomeFor(userId), `${profileKey}withproxy_${safe}.config.toml`)
 }
 
 // Copy the profile TOML with base_url/api_key rewritten to the token proxy; throws when either key is absent.
@@ -347,8 +367,14 @@ function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: str
   const raw = fs.readFileSync(srcPath, 'utf8')
   const proxyToken = encodeProxyToken(upstream)
   const outPath = codexWithProxyPathFor(profileKey, sessionId, userId)
-  // 隔离用户: token-proxy 地址换成沙箱网关 IP (容器内 127.0.0.1 不可达宿主服务)
-  const finalBaseUrl = userId ? TOKEN_PROXY_BASE_URL.replace(/127\.0\.0\.1/, require('../services/user-isolation').SBX_GATEWAY_IP) : TOKEN_PROXY_BASE_URL
+  // 隔离用户: token-proxy 地址换成沙箱网关 IP (容器内 127.0.0.1 不可达宿主服务).
+  // 判据必须是 isolationActiveFor 而不是 userId: admin 的会话同样带 userId, 但它跑在宿主上,
+  // 网关 IP 那路监听只在 docker 模式存在 (landlock 模式下 admin 会话会连到一个不存在的地址).
+  // Gate on isolationActiveFor, not on userId being present: admin sessions carry a userId too but
+  // run on the host, where the gateway-IP listener only exists in docker mode.
+  const finalBaseUrl = isolationActiveFor(userId)
+    ? TOKEN_PROXY_BASE_URL.replace(/127\.0\.0\.1/, require('../services/user-isolation').SBX_GATEWAY_IP)
+    : TOKEN_PROXY_BASE_URL
   const lines = raw.split(/\r?\n/)
   let baseUrlHit = false
   let apiKeyHit = false
@@ -1574,7 +1600,8 @@ class TmuxCodexBackend extends AgentBackend {
     // Fall back to the backend's default model when none is given.
     const finalModel = model || DEFAULT_MODEL
     // codexChannel first, legacy codexProfileKey second, normalized either way.
-    const profileKey = normalizeCodexChannel(codexChannel || codexProfileKey)
+    // 先剥 withproxy 后缀: 数字雨会话重启时 runtime 里存的就是那个名字.
+    const profileKey = normalizeCodexChannel(baseProfileKeyOf(codexChannel || codexProfileKey))
     // A Codex profile maps to $CODEX_HOME/<profile>.config.toml.
     const expectedConfigPath = path.join(CODEX_HOME, `${profileKey}.config.toml`)
     // The profile config must exist before launch.
@@ -1604,7 +1631,7 @@ class TmuxCodexBackend extends AgentBackend {
         if (!baseUrl || !authToken) throw new Error(`codex 缺 base_url/api_key (base_url=${!!baseUrl}, authToken=${!!authToken})`)
         const upstream = { wire: 'openai', baseUrl, authToken, model: finalModel, sessionId, agent: displayName || null }
         withProxyPath = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream, userId)
-        finalProfileKey = `${profileKey}.withproxy.${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        finalProfileKey = `${profileKey}withproxy_${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
       } catch (e: any) {
         console.warn(`[tmux-codex] per-session withproxy 生成失败, 回落原 profile (${sessionId}): ${e?.message || e}`)
         withProxyPath = null

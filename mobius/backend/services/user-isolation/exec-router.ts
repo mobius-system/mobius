@@ -16,7 +16,7 @@ import { db } from '../../../db';
 import {
   SBX_GATEWAY_IP, SBX_AIMUX_BIN, SBX_NODE22, isDockerIsolation,
 } from './config';
-import { isolationActiveFor, sbxHomeFor, ensureSandbox, containerAlive } from './docker-sandbox';
+import { isolationActiveFor, sbxHomeFor, ensureSandbox, containerAlive, refreshSbxHomeInputs } from './docker-sandbox';
 import { ensureTempRoot } from '../file-access';
 import * as registry from './registry';
 
@@ -93,6 +93,9 @@ export function forgetContainerGuidance(name: string): void {
 export function prepareSpawn(userId: string | null | undefined, sessionId: string | null | undefined): string | null {
   if (!isolationActiveFor(userId)) return null;
   ensureSandbox(String(userId));
+  // 只读输入的保鲜: seed 只在建容器时跑一次, 之后宿主侧新增/改动的 codex channel 配置,
+  // 代理文件都要按 mtime 补进容器可见的 .sbx-home (容器已在跑就一直是旧副本).
+  refreshSbxHomeInputs(String(userId));
   ensureContainerTmuxServer(String(userId));
   if (sessionId) setWindowOwner(sessionId, String(userId));
   return containerNameFor(String(userId));
@@ -179,8 +182,12 @@ export function materializeSettingsForSbx(userId: string | null | undefined, ses
     fs.writeFileSync(containerPath, text);
     return containerPath;
   } catch (e) {
-    console.warn(`[user-isolation] settings 物化失败 (沿用宿主路径): ${(e as Error).message}`);
-    return null;
+    // 隔离用户绝不回落宿主路径: 那个路径在容器里不存在, claude 会带着读不到的 --settings 起来,
+    // 表现为 TUI 迟迟不就绪 (25s 超时), 排查成本极高. 直接失败, 让会话带着明确原因报错.
+    // Never fall back to the host path for isolated users: it does not exist inside the container,
+    // so claude starts with an unreadable --settings and the TUI simply never becomes ready (a 25s
+    // timeout with no cause in the UI). Fail loudly instead.
+    throw new Error(`容器版 settings 物化失败 (容器内可见路径不可写): ${(e as Error).message}`);
   }
 }
 
