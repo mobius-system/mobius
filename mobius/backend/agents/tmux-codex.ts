@@ -363,7 +363,14 @@ function codexWithProxyPathFor(profileKey: string, sessionId: string, userId?: s
 }
 
 // Copy the profile TOML with base_url/api_key rewritten to the token proxy; throws when either key is absent.
-function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: string, upstream: any, userId?: string | null): string {
+// 返回值里的 proxyToken 是关键: codex 根本不读 TOML 的 api_key (ModelProviderInfo::api_key() 只认
+// env_key 指定的环境变量), 所以数字雨会话要把那个环境变量导出成 proxyToken, 不能导出真 key ——
+// 否则真 key 会被送到 token-proxy 上被 401 拒掉 (实测报 "not a mobius proxy token")。
+// The returned proxyToken matters: codex never reads the TOML `api_key`
+// (ModelProviderInfo::api_key() only accepts the env var named by env_key), so a digital-rain
+// session has to export that env var as the proxy token rather than the real key; otherwise the
+// real key reaches the token proxy and is rejected with 401.
+function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: string, upstream: any, userId?: string | null): { path: string; proxyToken: string } {
   const raw = fs.readFileSync(srcPath, 'utf8')
   const proxyToken = encodeProxyToken(upstream)
   const outPath = codexWithProxyPathFor(profileKey, sessionId, userId)
@@ -389,7 +396,7 @@ function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: str
   let next = outLines.join('\n')
   if (!next.endsWith('\n')) next += '\n'
   fs.writeFileSync(outPath, next, { mode: 0o600 })
-  return outPath
+  return { path: outPath, proxyToken }
 }
 
 // Codex --profile accepts letters only; a missing or malformed channel is a hard error.
@@ -1242,7 +1249,7 @@ class TmuxCodexBackend extends AgentBackend {
   // prompt, then bind the codex thread that the new rollout created.
   async _createImpl(opts: CodexDispatchOpts) {
     const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized } = opts
-    const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
+    const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, captureStream } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
@@ -1250,7 +1257,7 @@ class TmuxCodexBackend extends AgentBackend {
     let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
     if (!windowExists(sessionId)) {
-      spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy: (opts as any).sandboxPolicy || null })
+      spawnInfo = await this._spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy: (opts as any).sandboxPolicy || null })
     } else {
       await this._ensureRuntimeFromKnownThread({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey: codexChannel || codexProfileKey, codexConfigPath, codexSecretEnvKey, displayName, agentSessionId })
       allowUpdatedThreadFallback = true
@@ -1293,7 +1300,7 @@ class TmuxCodexBackend extends AgentBackend {
   async _queueImpl(opts: CodexDispatchOpts) {
     const { sessionId, userId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
     let { cwd, flagRoot, displayName } = opts
-    let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue } = unpackLaunch(opts)
+    let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue, captureStream } = unpackLaunch(opts)
     let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
@@ -1324,6 +1331,9 @@ class TmuxCodexBackend extends AgentBackend {
         codexSecretValue,
         displayName: displayName || persisted?.displayName,
         agentSessionId: finalAgentSid,
+        // 数字雨: 窗口重建时也要重放一次, 否则重建后的会话悄悄绕开 token 代理 (数字雨没雨滴).
+        // captureStream 走 runtime 里那条 (本进程重启后内存表由 hub-runtime.json 恢复).
+        captureStream: captureStream || (persisted?.captureStream ?? false),
         aimuxRemoteName,
         aimuxGuiAuthorized,
         sandboxPolicy: (opts as any).sandboxPolicy || null,
@@ -1624,17 +1634,21 @@ class TmuxCodexBackend extends AgentBackend {
     // Digital-rain captureStream: per-session codex withproxy toml (base_url→token-proxy, api_key→mpx1 token).
     let finalProfileKey = profileKey
     let withProxyPath: string | null = null
+    let withProxyToken: string | null = null
     if (captureStream) {
       try {
         const baseUrl = tomlStringValue(configText, 'base_url')
         const authToken = secretValue || resolveCodexConfigSecretValue(configText, codexSecretValue)
         if (!baseUrl || !authToken) throw new Error(`codex 缺 base_url/api_key (base_url=${!!baseUrl}, authToken=${!!authToken})`)
         const upstream = { wire: 'openai', baseUrl, authToken, model: finalModel, sessionId, agent: displayName || null }
-        withProxyPath = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream, userId)
+        const written = writeCodexWithProxy(expectedConfigPath, profileKey, sessionId, upstream, userId)
+        withProxyPath = written.path
+        withProxyToken = written.proxyToken
         finalProfileKey = `${profileKey}withproxy_${String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
       } catch (e: any) {
         console.warn(`[tmux-codex] per-session withproxy 生成失败, 回落原 profile (${sessionId}): ${e?.message || e}`)
         withProxyPath = null
+        withProxyToken = null
       }
     }
     // useProxy is fully decoupled from the profile: it only picks the network tier.
@@ -1737,8 +1751,12 @@ class TmuxCodexBackend extends AgentBackend {
 
     // The channel secret rides only on this window's environment: never embedded in the shell
     // command, never written to the backend runtime file.
+    // 数字雨: 环境变量改传 proxy token (codex 的鉴权只认这个变量, 不认 TOML 里的 api_key).
+    // Digital rain: hand over the proxy token instead of the real key, because codex authenticates
+    // solely from this env var.
+    const exportedSecret = withProxyToken || secretValue
     const windowEnvEntries = [
-      ...(secretEnvKey ? [[secretEnvKey, secretValue]] : []),
+      ...(secretEnvKey ? [[secretEnvKey, exportedSecret]] : []),
       ['MOBIUS_SESSION_ID', sessionId],
       ['MOBIUS_USER_ID', userId || ''],
       // 本人的 per-user temp 根: agent 产物要落在权限表放行的位置 (同 file-access.tempRootFor)
@@ -1754,7 +1772,7 @@ class TmuxCodexBackend extends AgentBackend {
     // Surface stderr on failure so command-level problems are diagnosable.
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)
     // Log the launch parameters: model, proxy, profile, secret env key and resume info.
-    log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} profile-v2=${profileKey} secret_env=${secretEnvKey} config=${codexConfigPath || expectedConfigPath}${useResume ? ` resume=${agentSessionId}` : ''}`)
+    log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} profile-v2=${finalProfileKey}${withProxyPath ? ' digital_rain=1' : ''} secret_env=${secretEnvKey} config=${codexConfigPath || expectedConfigPath}${useResume ? ` resume=${agentSessionId}` : ''}`)
 
     // Deadline for the TUI to become ready.
     const deadline = Date.now() + READY_TIMEOUT_MS
