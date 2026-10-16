@@ -31,8 +31,8 @@ export function ProjectBlueprintPanel({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="flex h-[calc(100vh-220px)] min-h-[440px] w-full overflow-hidden rounded-[7px]"
-      style={{ background: 'var(--bg-primary)' }}
+      className="flex h-[calc(100vh-220px)] min-h-[440px] w-full overflow-hidden rounded-xl border"
+      style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
     >
       <CodeConversationPane projectId={projectId} bindPath={bindPath} mode="blueprint" variant="page" />
     </div>

@@ -826,7 +826,8 @@ export function ProjectSettingsPanel({
         </div>
       )}
 
-      <div className="flex items-center gap-2 border rounded-lg mt-3" style={{background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+      {/* 外层不再套边框: 内部 SettingsCard / 各面板自带单层边框, 套壳会形成双重边框 + 空壳撑高 */}
+      <div className="mt-3">
 
         {activePane === 'assistant' && assistantProject && assistantAllowedFor(user) ? (
           <div className="p-3 w-full">
