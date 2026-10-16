@@ -5978,6 +5978,43 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* ======================================================================
+   中栏被挤窄时同样纵向堆叠, 判据换成中栏自身宽度 (JS 量出后挂 .mobius-chat-body--narrow).
+   上面那条断的是「视口」宽度 —— 左侧会话栏与右侧文件编辑栏 (原生文件编辑器) 都是从
+   中栏身上吃宽度: 视口 1914px 时中栏可能只剩 ~780px, 媒体查询不触发, 68/32 分栏就把
+   两栏压到各自 min-width (360 + 224) 以下并向右溢出, 被文件编辑栏盖住/裁掉 ——
+   就是「原生文件编辑器打开时, 中间的对话&输入很难正常转为上下布局」.
+   规则与 @media(max-width:900px) 完全同源 (堆叠后中栏只放得下输入框, 输入框下面的
+   操作按钮带与 skill/memory 编辑区一律隐藏).
+   该 class 只加在标准分栏上 (layout='default'), 简易模式与代码对话模式本就是纵向堆叠.
+   ====================================================================== */
+.mobius-chat-body.mobius-chat-body--narrow {
+  flex-direction: column;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-history {
+  width: 100% !important;
+  flex: 1 1 0%;
+  min-width: 0 !important;
+  min-height: 0;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  /* 只保留输入框贴底: 不 flex-grow, 让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
+  flex: 0 0 auto;
+  min-height: 0;
+  border-left: 0 !important;
+  border-top: 1px solid var(--border-color) !important;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-actions,
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-side {
+  display: none !important;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-split-handle {
+  display: none !important;
+}
+
+/* ======================================================================
    代码对话模式: 强制 ChatArea 纵向堆叠 (历史 jsonl 在上、输入在下), 与视口宽度无关.
    镜像上面 @media(max-width:900px) 的规则, 仅在 .mobius-chat-body--stacked 时生效;
    !important 用于覆盖 .mobius-chat-history/.mobius-chat-input 的 inline width (68%/32%).

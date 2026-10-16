@@ -12,7 +12,7 @@ import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, Sessi
 import { NewSessionModal } from './modals'
 import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
-import { ResizablePanel } from './resizable-panel'
+import { ResizablePanel, useNarrowContainer } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -65,6 +65,10 @@ const CHAT_INPUT_MIN_RATIO = 0.14
 const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
+// 会话体中栏窄于此宽度即转纵向堆叠 (历史在上, 输入在下). 与 index.css 里
+// @media(max-width:900px) 同一断点, 区别是这里量的是中栏自己的宽度: 左侧会话栏和
+// 右侧文件编辑栏 (原生文件编辑器) 都会占掉中栏宽度, 视口宽 ≠ 中栏宽.
+const CHAT_BODY_STACK_BREAKPOINT = 900
 // 「会话统一按钮组」的显示设置清单: 标准布局的侧栏与简易模式的工具浮层共用同一份,
 // 否则两处的显示开关会漂移 (存储 key 相同, 清单不同会互相隐藏对方的按钮).
 const SESSION_TOOL_VISIBILITY_OPTIONS: VisibilityOption[] = [
@@ -2048,6 +2052,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
+  // 中栏是否已被挤窄 (视口宽 ≠ 中栏宽: 左侧会话栏 + 右侧文件编辑栏都要占位).
+  // 只有标准分栏需要这个判据 —— 简易模式 (--easy) 与代码对话 (--stacked) 本就纵向堆叠.
+  const chatBodyWidthNarrow = useNarrowContainer(chatBodyRef, CHAT_BODY_STACK_BREAKPOINT)
+  const chatBodyNarrow = layout === 'default' && chatBodyWidthNarrow
   const chatInputRef = useRef<HTMLDivElement>(null)
   const chatSplitHandleRef = useRef<HTMLDivElement>(null)
   const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
@@ -4528,10 +4536,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
           窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式).
+          chatBodyNarrow (中栏自身 < 900px, 视口媒体查询管不到) 时附加 mobius-chat-body--narrow.
           easy + 文件栏打开时右 padding 收回 (空间让给文件栏, padding 平滑过渡避免内容跳动). */}
       <div
         ref={chatBodyRef}
-        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}${chatBodyNarrow ? ' mobius-chat-body--narrow' : ''}`}
         style={layout === 'easy' ? { paddingLeft: '10%', paddingRight: easyFilesOpen ? '0' : '10%', transition: 'padding .2s ease' } : undefined}
       >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。

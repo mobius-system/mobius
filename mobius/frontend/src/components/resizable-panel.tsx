@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
 import { useStore } from '../store'
@@ -41,6 +41,34 @@ export function useMobileNavBreakpoint(px: number) {
     setBreakpoint(px)
     return () => setBreakpoint(DEFAULT_MOBILE_BREAKPOINT)
   }, [px, setBreakpoint])
+}
+
+// 元素级断点: 元素自身宽度 < breakpoint 即算「窄容器」.
+// 与 useIsMobile 的视口断点互补 —— 侧栏 / 右侧文件编辑栏占位后, 元素拿到的是被挤剩的
+// 宽度, 视口很宽容器也可能很窄, 这时视口媒体查询不会触发.
+// 用 ResizeObserver 实测而非 CSS 容器查询: container-type 会附带 layout containment,
+// 把子树里的 fixed 弹层改成相对本元素定位 (会话区的知识/skill 弹窗就挂在树里).
+export function useNarrowContainer(ref: RefObject<HTMLElement | null>, breakpoint: number) {
+  const [narrow, setNarrow] = useState(false)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const apply = (width: number) => setNarrow(prev => {
+      const next = width < breakpoint
+      return prev === next ? prev : next
+    })
+    // 布局期先量一次: 首帧直接是窄态, 避免宽态跳窄态的闪动.
+    apply(element.getBoundingClientRect().width)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      const width = entry?.borderBoxSize?.[0]?.inlineSize ?? entry?.contentRect.width ?? element.getBoundingClientRect().width
+      apply(width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [ref, breakpoint])
+  return narrow
 }
 
 // 通用可拖拽宽度面板. 用法:
