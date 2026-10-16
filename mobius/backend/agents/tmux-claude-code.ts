@@ -56,7 +56,7 @@ const { ensureSessionWithProxy } = require('../services/model-access')
 const { ensureTempRoot } = require('../services/file-access')
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): spawn 前确保沙箱容器 + tmux server, HOME/路径按用户重定向
-const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, materializeSettingsForSbx, containerForWindow } = require('../services/user-isolation')
+const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, materializeSettingsForSbx, containerForWindow, isolationActiveFor, sessionConfigDir } = require('../services/user-isolation')
 
 // ── Constants ───────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -1813,7 +1813,14 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 有MCP要注入就写会话级配置文件，再用--mcp-config传进去
     // With MCP servers to inject, write the per-session config and pass it in
     if (Object.keys(mcpServers).length > 0) {
-      const mcpConfigPath = path.join(os.tmpdir(), `mobius-mcp-${sessionId}-${crypto.randomUUID().slice(0, 8)}.json`)
+      // 隔离用户: 必须落在容器内同路径可达的会话配置目录 (per-user temp 的 sbx-session/ 同路径挂载);
+      // 写宿主 /tmp 的话容器里看不见, claude 会以 "MCP config file not found" 直接退出, TUI 永远不就绪.
+      // Isolated users: the file must land where the container sees the same path (per-user temp
+      // root is bind-mounted at the identical path). Writing host /tmp makes claude exit with
+      // "MCP config file not found", so the TUI never becomes ready.
+      const mcpDir = isolationActiveFor(userId) ? sessionConfigDir(String(userId), sessionId) : os.tmpdir()
+      fs.mkdirSync(mcpDir, { recursive: true })
+      const mcpConfigPath = path.join(mcpDir, `mobius-mcp-${sessionId}-${crypto.randomUUID().slice(0, 8)}.json`)
       fs.writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }))
       claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
     }

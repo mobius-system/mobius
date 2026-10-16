@@ -5,7 +5,8 @@ import type { RecentSession } from '../services/recent-sessions'
 // 近期会话行 — Issue 侧栏「近期会话」与 @ 目标抽屉「近期会话」共享。
 // 行为 (侧栏=跳转路由 / 抽屉=选为 @ 目标) 由 onClick 注入, 视觉与状态徽章保持一致。
 export function recentSessionStatusPill(session: RecentSession): { label: string; color: string; bg: string } {
-  if (session.agent_status === 'running') return { label: '执行中', color: '#f59e0b', bg: 'rgba(245,158,11,.10)' }
+  // 执行中与标题栏状态 chip (session-status-chip 的 green tone) 同为绿, 全局只有一种"活跃"色.
+  if (session.agent_status === 'running') return { label: '执行中', color: '#4ade80', bg: 'rgba(74,222,128,.10)' }
   if (session.agent_status === 'pending') return { label: '启动中', color: '#fbbf24', bg: 'rgba(251,191,36,.10)' }
   if (session.agent_status === 'waiting') return { label: '待命中', color: '#38bdf8', bg: 'rgba(56,189,248,.10)' }
   if (session.agent_status === 'completed' || session.status === 'completed') return { label: '完成', color: 'var(--text-muted)', bg: 'var(--bg-card)' }

@@ -57,7 +57,7 @@ export const EMPTY_EASY_SESSION_SELECTION: EasySessionSelection = {
   projectName: '',
 }
 
-type ProjectLite = { id: string; name?: string; default_model?: string | null }
+type ProjectLite = { id: string; name?: string; default_model?: string | null; can_create_session?: boolean }
 
 /** 近期活跃任务的数据源: /api/tasks/recent 返回的会话行 */
 type RecentSessionLite = {
@@ -261,10 +261,16 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
       }))
   ), [projectId, projectIssues, recentTasks, selectedProjectName])
 
+  // 后端在每个项目上带 can_create_session (按项目成员角色判定): 只读项目选进去也建不了
+  // 会话, 会在提交时拿到 403「无权在此 Issue 创建 Session」, 所以这里直接置灰并说明原因,
+  // 让"能不能在这个项目里对话"在选之前就看得见.
   const projectOptions: DropdownOption[] = useMemo(() => projects.map(p => ({
     value: String(p.id),
     label: String(p.name || p.id),
-    description: p.default_model ? `默认模型 ${p.default_model}` : undefined,
+    description: p.can_create_session === false
+      ? '只读项目 · 无创建会话权限'
+      : (p.default_model ? `默认模型 ${p.default_model}` : undefined),
+    disabled: p.can_create_session === false,
   })), [projects])
 
   const modelSelectOptions: DropdownOption[] = useMemo(() => modelOptions.map(o => ({

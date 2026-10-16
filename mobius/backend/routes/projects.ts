@@ -1855,7 +1855,8 @@ function sendProjectSearch(req: express.Request, res: express.Response): void {
 
 function sendProjectHierarchySearch(req: express.Request, res: express.Response): void {
   const user = userOf(req);
-  const result = searchProjectHierarchy(req.query.q ?? req.query.search ?? '', user);
+  // ?project_id=: 限定在单个项目内搜索 (项目内页/搜索弹窗的范围切换); 缺省跨全部项目.
+  const result = searchProjectHierarchy(req.query.q ?? req.query.search ?? '', user, req.query.project_id);
   const projects = result.projects.map((group) => group.project);
   auditAdminProjectList(req, 'search_project_hierarchy', projects);
   res.json({

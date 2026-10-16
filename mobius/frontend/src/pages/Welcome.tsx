@@ -7,13 +7,13 @@
 // 页面 1 (menu): 欢迎语 + 6 个去向 + 本机信息 & mobius 连接信息小字。
 //   - 从上次结束处继续: 跳上次退出页 (首次运行隐藏)
 //   - 接入已有项目 / 创建全新项目 -> 页面 2 (项目创建菜单) -> 页面 3 (创建第一个任务)
-//   - 导入零散文件随便聊聊 -> 检查 let-us-chat 项目: 无则页面 2, 有则直进页面 3 (导入文件随便聊聊)
+//   - 导入零散文件随便聊聊 -> 检查兜底项目 (见 services/easy-mode-defaults.ts): 无则页面 2, 有则直进页面 3
 //   - 进入已创建项目 -> 项目列表 (星标 + 最近 session 排序), 选定进项目页
 // Explorer 未记录路径: 先选择“创建全新项目”或“复用已有项目”。创建时以文件夹名预填项目名；
 //   复用时选择已有项目，把当前路径精准绑定到该项目后直接进入，沿用项目 Skill / Memory。
 //
 // 页面 2 (project): 项目创建菜单。【下一步】= 同名项目检查 (有则跳项目页结束) -> 建项目 -> 绑本地路径 ->
-//   自动建 issue ([demo issue] / [a random chat]) -> 页面 3。
+//   自动建 issue (第一个任务 / 兜底任务) -> 页面 3。
 //   接入模式: 本地路径可见必填; 创建/导入模式: 本地路径折叠在高级选项。
 //
 // 页面 3 (session): 创建第一个任务 / 导入文件随便聊聊。session 目的复用新建 session 的附件上传/粘贴能力。
@@ -45,6 +45,14 @@ import { type Attachment, appendAttachmentsToDesc } from '../components/attachme
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { PROJECTS_SCOPE } from '../services/warm-create-lists'
 import { localFolderName } from '../services/local-path'
+import {
+  EASY_DEFAULT_PROJECT_NAME,
+  EASY_DEFAULT_ISSUE_TITLE,
+  EASY_NEW_PROJECT_ISSUE_TITLE,
+  EASY_DEFAULT_DESCRIPTION,
+  isEasyDefaultProjectName,
+  easyIssueTitleAliases,
+} from '../services/easy-mode-defaults'
 
 // --- 桌面端 bridge (preload 注入 window.mobiusDesktop) ---
 interface BootData {
@@ -103,10 +111,6 @@ function defaultLocalPath(desktopPath: string | undefined, name: string): string
   return `${desktopPath}/MobiusOS/${sanitizeName(name)}`
 }
 
-const LET_US_CHAT = 'let-us-chat'
-const RANDOM_CHAT = 'a random chat'
-const DEMO_ISSUE = 'demo issue'
-const NO_DESC = 'no description'
 
 // --- 流程配置: 三种模式共用页面 2/3, 仅标题/默认值/issue 标题不同 ---
 type FlowMode = 'connect' | 'new' | 'import'
@@ -123,17 +127,17 @@ const FLOW: Record<FlowMode, FlowConfig> = {
   connect: {
     mode: 'connect', page2Title: '接入一个已有项目', page3Title: '创建第一个任务',
     purposeDefault: '等待您的指令，请输入您的第一个任务，例如：扫描项目代码中的潜在 Bug。',
-    issueTitle: DEMO_ISSUE, nameDefault: '', localPathVisible: true,
+    issueTitle: EASY_NEW_PROJECT_ISSUE_TITLE, nameDefault: '', localPathVisible: true,
   },
   new: {
     mode: 'new', page2Title: '创建一个全新项目', page3Title: '创建第一个任务',
     purposeDefault: '等待您的指令，请输入您的第一个任务，例如：扫描项目代码中的潜在 Bug。',
-    issueTitle: DEMO_ISSUE, nameDefault: '', localPathVisible: false,
+    issueTitle: EASY_NEW_PROJECT_ISSUE_TITLE, nameDefault: '', localPathVisible: false,
   },
   import: {
-    mode: 'import', page2Title: '创建 let-us-chat 项目', page3Title: '导入一些文件，然后随便聊聊',
+    mode: 'import', page2Title: `创建「${EASY_DEFAULT_PROJECT_NAME}」项目`, page3Title: '导入一些文件，然后随便聊聊',
     purposeDefault: '等待您的指令和附件',
-    issueTitle: RANDOM_CHAT, nameDefault: LET_US_CHAT, localPathVisible: false,
+    issueTitle: EASY_DEFAULT_ISSUE_TITLE, nameDefault: EASY_DEFAULT_PROJECT_NAME, localPathVisible: false,
   },
 }
 
@@ -217,16 +221,16 @@ export default function Welcome() {
     }
   }
 
-  // import: 菜单点击时检查 let-us-chat 是否已存在
+  // import: 菜单点击时检查兜底项目是否已存在
   const startImport = async () => {
     setChecking(true); setCheckErr('')
     try {
       const r = await api('/api/projects') as any
       const list: any[] = Array.isArray(r) ? r : (r?.projects || [])
-      const existing = list.find(p => p?.created_by === user.id && String(p?.name || '').toLowerCase() === LET_US_CHAT)
+      const existing = list.find(p => p?.created_by === user.id && isEasyDefaultProjectName(p?.name))
       if (existing) {
-        // 直进页面 3: 先确保有 [a random chat] issue
-        const issueId = await ensureIssue(existing.id, RANDOM_CHAT)
+        // 直进页面 3: 先确保有兜底任务
+        const issueId = await ensureIssue(existing.id, EASY_DEFAULT_ISSUE_TITLE)
         if (!issueId) { setCheckErr('无法获取/创建会话任务'); setChecking(false); return }
         setSessionCtx({ projectId: existing.id, issueId, projectDefaultModel: existing.default_model })
         setFlow(FLOW.import)
@@ -480,11 +484,12 @@ async function ensureIssue(projectId: string, title: string): Promise<string | n
   try {
     const r = await api(`/api/projects/${projectId}/issues?status=active`) as any
     const list: any[] = Array.isArray(r) ? r : (r?.issues || [])
-    const found = list.find(i => String(i?.title || '') === title)
+    const aliases = easyIssueTitleAliases(title).map(alias => alias.trim().toLowerCase())
+    const found = list.find(i => aliases.includes(String(i?.title || '').trim().toLowerCase()))
     if (found) return found.id
   } catch { /* ignore, try create */ }
   try {
-    const iss = await api(`/api/projects/${projectId}/issues`, { method: 'POST', body: JSON.stringify({ title, description: NO_DESC, use_worktree: false, worktree_branch: '', visibility: 'private', is_planning: false }) })
+    const iss = await api(`/api/projects/${projectId}/issues`, { method: 'POST', body: JSON.stringify({ title, description: EASY_DEFAULT_DESCRIPTION, use_worktree: false, worktree_branch: '', visibility: 'private', is_planning: false }) })
     if (iss?.id) return iss.id
     return null
   } catch { return null }
@@ -729,7 +734,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
   const navigate = useNavigate()
   const { projectId, issueId, projectDefaultModel } = ctx
 
-  const [name, setName] = useState(RANDOM_CHAT)
+  const [name, setName] = useState(EASY_DEFAULT_ISSUE_TITLE)
   const [desc, setDesc] = useState(flow.purposeDefault)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [model, setModel] = useState<string>('codex')

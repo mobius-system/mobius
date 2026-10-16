@@ -7233,9 +7233,17 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   padding: 4px 0 4px 10px;
 }
 
+.display-files-card__row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
 .display-files-card__item {
   display: flex;
   min-width: 0;
+  flex: 1;
   align-items: center;
   gap: 9px;
   border: 1px solid var(--display-files-border);
@@ -7253,4 +7261,18 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 .display-files-card__meta strong { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__meta small { overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__size { display: inline-flex; min-width: 58px; justify-content: flex-end; color: var(--text-secondary); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.display-files-card__download {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--display-files-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+.display-files-card__download:hover { border-color: #38bdf8; background: var(--bg-hover); color: var(--text-primary); }
 .display-files-card--easy { margin-left: 8px; }

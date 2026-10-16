@@ -92,17 +92,18 @@ const Issues = {
     `).all(projectId, ...(statusFilter === 'active' || statusFilter === 'completed' ? [statusFilter] : [])) as IssueListRow[];
   },
 
-  searchMetadata: (rawQuery: string, limit: number = 1001): IssueRow[] => {
+  searchMetadata: (rawQuery: string, limit: number = 1001, projectId?: string): IssueRow[] => {
     const query = String(rawQuery || '').trim().toLowerCase();
     if (!query) return [];
+    const project = String(projectId || '').trim();
     return db.prepare(`
       SELECT i.*
       FROM issues i
-      WHERE instr(lower(COALESCE(i.title, '')), ?) > 0
-         OR instr(lower(COALESCE(i.description, '')), ?) > 0
+      WHERE ${project ? 'i.project_id = ? AND ' : ''}(instr(lower(COALESCE(i.title, '')), ?) > 0
+         OR instr(lower(COALESCE(i.description, '')), ?) > 0)
       ORDER BY i.last_active DESC
       LIMIT ?
-    `).all(query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))) as IssueRow[];
+    `).all(...(project ? [project, query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))] : [query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))])) as IssueRow[];
   },
 
   insert: ({ id, project_id, title, description, created_by, use_worktree, worktree_branch, visibility, is_planning }: IssueInsertArgs) => db.prepare(

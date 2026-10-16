@@ -20,6 +20,22 @@ import {
 import type { AimuxRemoteInventoryEntry, ProjectRow, ProjectRawRow } from '../types/rows';
 import { ProjectMemberships } from './project-memberships';
 
+// migration: 简易模式 / 桌面欢迎页的「兜底容器」改名
+// (旧: let-us-chat + a random chat → 新: 快捷任务 + 日常会话, 与前端
+// services/easy-mode-defaults.ts 的常量一致). 幂等: 跑过一次后没有匹配行.
+// 只改显示用的名字, 不动 bind_path —— 磁盘目录照旧, 已经跑起来的会话不受影响.
+(() => {
+  try {
+    const projects = db.prepare("UPDATE projects SET name = '快捷任务' WHERE LOWER(TRIM(name)) = 'let-us-chat'").run();
+    const issues = db.prepare("UPDATE issues SET title = '日常会话' WHERE LOWER(TRIM(title)) = 'a random chat'").run();
+    if (projects.changes || issues.changes) {
+      console.log(`[migration] easy-mode fallback container renamed: ${projects.changes} project(s), ${issues.changes} issue(s)`);
+    }
+  } catch (err) {
+    console.error('[migration] rename easy-mode fallback container failed:', err);
+  }
+})();
+
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist';
 const CARD_BORDER_THEME_IDS = new Set([
   'auto',

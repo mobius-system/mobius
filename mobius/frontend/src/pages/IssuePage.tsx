@@ -32,6 +32,12 @@ const SESSION_LIST_MODE_KEY = 'mobius:ui:sidebar:session-list-mode'
 
 type SessionListMode = 'issue' | 'recent'
 
+// Electron 桌面端 (window.mobiusDesktop 由 preload 注入) 与浏览器端打开链接的方式不同:
+// 桌面端只有单窗口原地跳转, Web 端可以新开标签页。全站判定统一走这里。
+function isDesktopShell() {
+  return typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
+}
+
 // =====================================================================
 // Issue 处理页 /u/:user/p/:project/i/:issue?session=<id>
 // 左侧 sidebar：当前 issue 元数据 + sessions 清单（顶部"+ 新会话"）
@@ -654,7 +660,7 @@ export default function IssuePage() {
                         </span>
                         <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
                           <span className="text-[length:var(--fs-2xs)] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
-                          <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                          <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#4ade80' : 'var(--text-muted)' }}>
                             {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
                           </span>
                         </span>
@@ -677,7 +683,15 @@ export default function IssuePage() {
                               session={session}
                               active={session.session_id === sessionParam}
                               disabled={!target}
-                              onClick={() => { if (target) navigate(target) }}
+                              onClick={() => {
+                                if (!target) return
+                                // 研究智能体: 浏览器端新开窗口打开, 不打断当前页面; 桌面端 (单窗口) 仍原地跳转.
+                                if (session.scope_type === 'research' && !isDesktopShell()) {
+                                  window.open(target, '_blank', 'noopener,noreferrer')
+                                  return
+                                }
+                                navigate(target)
+                              }}
                             />
                           )
                         })}

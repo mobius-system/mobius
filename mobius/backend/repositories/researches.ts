@@ -59,17 +59,18 @@ const Researches = {
     `).all(...params) as ResearchListRow[];
   },
 
-  searchMetadata: (rawQuery: string, limit: number = 1001): ResearchRow[] => {
+  searchMetadata: (rawQuery: string, limit: number = 1001, projectId?: string): ResearchRow[] => {
     const query = String(rawQuery || '').trim().toLowerCase();
     if (!query) return [];
+    const project = String(projectId || '').trim();
     return db.prepare(`
       SELECT r.*
       FROM researches r
-      WHERE instr(lower(COALESCE(r.title, '')), ?) > 0
-         OR instr(lower(COALESCE(r.description, '')), ?) > 0
+      WHERE ${project ? 'r.project_id = ? AND ' : ''}(instr(lower(COALESCE(r.title, '')), ?) > 0
+         OR instr(lower(COALESCE(r.description, '')), ?) > 0)
       ORDER BY r.last_active DESC
       LIMIT ?
-    `).all(query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))) as ResearchRow[];
+    `).all(...(project ? [project, query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))] : [query, query, Math.max(1, Math.min(Number(limit) || 1001, 5001))])) as ResearchRow[];
   },
 
   insert: ({ id, project_id, title, description, created_by, visibility }: InsertArgs) =>

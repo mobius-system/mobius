@@ -481,6 +481,14 @@ export const useStore = create<AppState>((set) => ({
   },
   logout: () => {
     localStorage.removeItem('cc-token')
+    // 「上次选择」这类按人记的本地 UI 状态必须跟着账号走: 简易模式把
+    // 「上次选的项目/任务」写在 mobius:easy-mode:* 下, 只清 cc-token 的话换账号后
+    // 旧选择还在, 会拿着上一个账号的项目 id 去建会话 (后端按成员关系判 403).
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith('mobius:easy-mode:'))
+        .forEach(key => localStorage.removeItem(key))
+    } catch {}
     set({ token: null, user: null, authChecking: false, projects: [], currentProject: null, issues: [], issuesMap: {}, currentIssue: null, researches: [], researchesMap: {}, currentResearch: null, sessions: [], sessionsMap: {}, currentSession: null, turns: [], tasks: [], currentTask: null, messages: [] })
   },
   setProjects: (projects) => set({ projects }),

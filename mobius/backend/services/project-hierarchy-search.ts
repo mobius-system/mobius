@@ -97,12 +97,16 @@ function emptyResult(query: string): ProjectHierarchySearchResult {
   return { query, project_count: 0, match_count: 0, projects: [], truncated: false };
 }
 
-export function searchProjectHierarchy(value: unknown, user: any): ProjectHierarchySearchResult {
+export function searchProjectHierarchy(value: unknown, user: any, projectId?: unknown): ProjectHierarchySearchResult {
   const query = normalizeProjectHierarchyQuery(value);
   if (!query || !user?.id) return emptyResult(query);
 
+  // 项目内搜索: 传入 project_id 时只在该项目内匹配 (issue/research/session 均带过滤,
+  // readableProjects 也收缩到该项目), 不传则保持跨项目搜索的旧行为.
+  const scopeProjectId = String(projectId || '').trim();
   const readableProjects = Projects.listAll(user.id)
-    .filter((project: any) => project && canReadProject(user, project)) as any[];
+    .filter((project: any) => project && canReadProject(user, project))
+    .filter((project: any) => !scopeProjectId || String(project.id) === scopeProjectId) as any[];
   const projectById = new Map(readableProjects.map((project: any) => [String(project.id), project]));
   const groups = new Map<string, ProjectHierarchyGroup>();
   let truncated = false;
@@ -132,7 +136,7 @@ export function searchProjectHierarchy(value: unknown, user: any): ProjectHierar
     if (info.fields.length) groupFor(project.id);
   }
 
-  const issueRows = Issues.searchMetadata(query, ISSUE_CANDIDATE_LIMIT + 1);
+  const issueRows = Issues.searchMetadata(query, ISSUE_CANDIDATE_LIMIT + 1, scopeProjectId || undefined);
   if (issueRows.length > ISSUE_CANDIDATE_LIMIT) truncated = true;
   for (const issue of issueRows.slice(0, ISSUE_CANDIDATE_LIMIT)) {
     if (!projectById.has(String(issue.project_id)) || !canReadIssue(user, issue)) continue;
@@ -149,7 +153,7 @@ export function searchProjectHierarchy(value: unknown, user: any): ProjectHierar
     group.score = Math.min(group.score, score);
   }
 
-  const researchRows = Researches.searchMetadata(query, RESEARCH_CANDIDATE_LIMIT + 1);
+  const researchRows = Researches.searchMetadata(query, RESEARCH_CANDIDATE_LIMIT + 1, scopeProjectId || undefined);
   if (researchRows.length > RESEARCH_CANDIDATE_LIMIT) truncated = true;
   for (const research of researchRows.slice(0, RESEARCH_CANDIDATE_LIMIT)) {
     if (!projectById.has(String(research.project_id)) || !canReadResearch(user, research)) continue;
@@ -168,7 +172,7 @@ export function searchProjectHierarchy(value: unknown, user: any): ProjectHierar
 
   const issueCache = new Map<string, any>();
   const researchCache = new Map<string, any>();
-  const sessionRows = Sessions.searchActiveMetadata(query, SESSION_CANDIDATE_LIMIT + 1);
+  const sessionRows = Sessions.searchActiveMetadata(query, SESSION_CANDIDATE_LIMIT + 1, scopeProjectId || undefined);
   if (sessionRows.length > SESSION_CANDIDATE_LIMIT) truncated = true;
   for (const session of sessionRows.slice(0, SESSION_CANDIDATE_LIMIT)) {
     const projectId = String(session.project_id || '');

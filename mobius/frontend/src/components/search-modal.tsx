@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, useStore } from '../store'
 import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
-  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy, Zap,
+  MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy, Zap, Globe,
 } from 'lucide-react'
 import { useLayoutMode } from '../services/layout-mode'
 import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
@@ -118,6 +118,7 @@ export function SearchModal({
   initialMode = 'deep',
   embedded = false,
   query,
+  projectId,
 }: {
   onClose?: () => void
   onNavigate: (path: string) => void
@@ -125,8 +126,11 @@ export function SearchModal({
   initialMode?: SearchMode
   embedded?: boolean
   query?: string
+  // 项目内搜索: 调用方传入当前路由所在项目 id (项目页顶栏 / 简易模式选中项目) 时,
+  // 弹窗默认限定在该项目内搜, 头部 pill 可一键切回全部项目.
+  projectId?: string | null
 }) {
-  const { theme, user } = useStore()
+  const { theme, user, projects } = useStore()
   const layoutMode = useLayoutMode()
   const dark = theme !== 'light'
   const [q, setQ] = useState(query ?? initialQuery)
@@ -139,6 +143,13 @@ export function SearchModal({
   const [meta, setMeta] = useState<{ scanned?: number; candidates?: number; truncated?: boolean } | null>(null)
   const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
   const [range, setRange] = useState<RangeKey>('7d')
+  // 搜索范围: scoped = 限定在传入的 projectId 内; all = 跨全部项目 (旧行为).
+  // 有 projectId 上下文时默认 scoped, 让「在项目内搜索」成为一键可达的默认动作。
+  const [scoped, setScoped] = useState(!!projectId)
+  const scopeProjectName = projectId
+    ? String(projects.find((p: any) => String(p?.id) === String(projectId))?.name || '')
+    : ''
+  const activeProjectId = scoped && projectId ? String(projectId) : null
   const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || '7天内'
   const reqId = useRef(0)
   const quickReqId = useRef(0)
@@ -155,6 +166,9 @@ export function SearchModal({
   // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
   const optsRef = useRef({ caseSensitive, wholeWord, range })
   optsRef.current = { caseSensitive, wholeWord, range }
+  // 搜索范围 (scoped/all) 的 ref: Enter 键立即搜索时读到最新值.
+  const activeProjectIdRef = useRef<string | null>(activeProjectId)
+  activeProjectIdRef.current = activeProjectId
   const isQuick = mode === 'quick'
   const isLoading = isQuick ? quickLoading : loading
 
@@ -183,6 +197,7 @@ export function SearchModal({
     abortRef.current = ctrl
     setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null)
     const params = new URLSearchParams({ q: t, limit: '50', range: rangeArg, stream: '1' })
+    if (activeProjectIdRef.current) params.set('project_id', activeProjectIdRef.current)
     if (cs) params.set('case', '1')
     if (ww) params.set('word', '1')
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cc-token') : null
@@ -256,7 +271,8 @@ export function SearchModal({
     setQuickLoading(true)
     setErr('')
     setSearched(true)
-    api(`/api/projects/hierarchy-search?q=${encodeURIComponent(t.slice(0, 200))}`, { signal: ctrl.signal })
+    const scopeQ = activeProjectIdRef.current ? `&project_id=${encodeURIComponent(activeProjectIdRef.current)}` : ''
+    api(`/api/projects/hierarchy-search?q=${encodeURIComponent(t.slice(0, 200))}${scopeQ}`, { signal: ctrl.signal })
       .then((payload: ProjectHierarchySearchResponse) => {
         if (id !== quickReqId.current) return
         setQuickResults(payload || EMPTY_PROJECT_HIERARCHY_SEARCH)
@@ -314,12 +330,13 @@ export function SearchModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
-  // 切换时间范围 / 大小写 / 全字: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
+  // 切换时间范围 / 大小写 / 全字 / 搜索范围: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
   useEffect(() => {
-    if (mode === 'quick' || q.trim().length < 2) return
-    runSearch(q)
+    if (q.trim().length < 2 && !(mode === 'quick' && q.trim())) return
+    if (mode === 'quick') runQuickSearch(q)
+    else runSearch(q)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, caseSensitive, wholeWord])
+  }, [range, caseSensitive, wholeWord, scoped])
 
   // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
@@ -395,8 +412,42 @@ export function SearchModal({
         style={embedded
           ? { background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }
           : { background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
-        {/* 头部: 关键词输入 + 搜索模式切换。模式在同一弹窗内切换，关键词保持不变。 */}
+        {/* 头部: 关键词输入 + 范围/模式/时间范围控件行。模式在同一弹窗内切换，关键词保持不变。 */}
         {!embedded && <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
+          {/* 控件行: 搜索范围 + 搜索模式 + 时间范围 同排 (范围区在左, 模式与时间范围靠右)。 */}
+          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+            {projectId && <>
+              <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>范围</span>
+              <div className="flex min-w-0 items-center gap-1 rounded-lg border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                <button type="button" onClick={() => setScoped(true)} title="只搜索当前项目"
+                  aria-pressed={scoped}
+                  data-search-scope="project"
+                  className={`flex min-w-0 max-w-[260px] items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] font-medium transition-colors ${scoped ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                  style={scoped ? undefined : { color: 'var(--text-muted)' }}>
+                  <Folder className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{scopeProjectName || '当前项目'}</span>
+                </button>
+                <button type="button" onClick={() => setScoped(false)} title="搜索全部项目"
+                  aria-pressed={!scoped}
+                  data-search-scope="all"
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] font-medium transition-colors ${!scoped ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+                  style={scoped ? { color: 'var(--text-muted)' } : undefined}>
+                  <Globe className="h-3 w-3 flex-shrink-0" />
+                  <span>全部项目</span>
+                </button>
+              </div>
+            </>}
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+              <SearchModeToggle mode={mode} onChange={setMode} />
+              {!isQuick && (
+                <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
+                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
+                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
+                  {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Search className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
             <input
@@ -405,12 +456,11 @@ export function SearchModal({
               onChange={e => onType(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); isQuick ? runQuickSearch(q) : runSearch(q) } }}
               placeholder={isQuick ? '快速搜索项目、任务或会话…' : '深度搜索所有会话内容…'}
-              className="min-w-0 flex-1 bg-transparent text-[length:var(--fs-lg)] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
+              className="min-w-0 flex-1 bg-transparent text-[length:var(--fs-sm)] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
               style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
             />
             {isLoading && <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
             <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
-              <SearchModeToggle mode={mode} onChange={setMode} />
               {!isQuick && <>
                 {/* 匹配选项: 大小写敏感 (Aa) / 全字匹配 (W). */}
                 <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
@@ -419,11 +469,6 @@ export function SearchModal({
                 <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
                   className="h-7 w-7 flex-shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
                   style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
-                <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
-                  {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
               </>}
             </div>
             {q && !isLoading && (
@@ -444,6 +489,16 @@ export function SearchModal({
             <span className="mr-auto min-w-0 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
               深度搜索会话内容
             </span>
+            {projectId && (
+              <button type="button" onClick={() => setScoped(v => !v)} title={scoped ? '当前限定在本项目内，点击改为全部项目' : '当前搜索全部项目，点击改为本项目'}
+                aria-pressed={scoped}
+                data-search-scope={scoped ? 'project' : 'all'}
+                className="flex min-w-0 max-w-[200px] items-center gap-1 rounded-md border px-2 py-1 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)]"
+                style={{ color: scoped ? '#60a5fa' : 'var(--text-muted)', borderColor: scoped ? 'rgba(96,165,250,0.45)' : 'var(--border-color)' }}>
+                {scoped ? <Folder className="h-3 w-3 flex-shrink-0" /> : <Globe className="h-3 w-3 flex-shrink-0" />}
+                <span className="truncate">{scoped ? (scopeProjectName || '本项目') : '全部项目'}</span>
+              </button>
+            )}
             {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
             <button type="button" onClick={() => setCaseSensitive(v => !v)} title="区分大小写" aria-pressed={caseSensitive}
               className="h-7 w-7 shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"

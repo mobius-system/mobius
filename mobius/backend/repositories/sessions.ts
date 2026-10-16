@@ -363,9 +363,10 @@ const Sessions = {
     `).all(...params, max) as any[];
   },
 
-  searchActiveMetadata: (rawQuery: string, limit: number = 2001): SessionWithJoinsRow[] => {
+  searchActiveMetadata: (rawQuery: string, limit: number = 2001, projectId?: string): SessionWithJoinsRow[] => {
     const query = String(rawQuery || '').trim().toLowerCase();
     if (!query) return [];
+    const project = String(projectId || '').trim();
     return db.prepare(`
       SELECT ${SESSION_LIST_COLUMNS},
         i.title as issue_title,
@@ -378,13 +379,14 @@ const Sessions = {
       WHERE s.status = 'active'
         AND s.deleted_at IS NULL
         AND s.scope_type IN ('issue', 'research')
+        ${project ? 'AND s.project_id = ?' : ''}
         AND (
           instr(lower(COALESCE(s.name, '')), ?) > 0
           OR instr(lower(COALESCE(s.description, '')), ?) > 0
         )
       ORDER BY s.last_active DESC
       LIMIT ?
-    `).all(query, query, Math.max(1, Math.min(Number(limit) || 2001, 10001))) as SessionWithJoinsRow[];
+    `).all(...(project ? [project, query, query, Math.max(1, Math.min(Number(limit) || 2001, 10001))] : [query, query, Math.max(1, Math.min(Number(limit) || 2001, 10001))])) as SessionWithJoinsRow[];
   },
 
   listActiveByIssue: (issueId: string): SessionRow[] => db.prepare("SELECT * FROM sessions_v2 WHERE issue_id = ? AND scope_type = 'issue' AND status = 'active'").all(issueId) as SessionRow[],

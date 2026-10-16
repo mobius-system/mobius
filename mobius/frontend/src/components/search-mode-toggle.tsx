@@ -1,5 +1,8 @@
+import { FileSearch, Zap } from 'lucide-react'
+
 export type SearchMode = 'deep' | 'quick'
 
+// 搜索模式切换: 与「搜索范围」同款的胶囊分段控件 (圆角描边容器 + 内嵌圆角按钮, 选中态蓝底蓝字)。
 export function SearchModeToggle({
   mode,
   onChange,
@@ -10,25 +13,25 @@ export function SearchModeToggle({
   compact?: boolean
 }) {
   const isQuick = mode === 'quick'
+  const seg = 'flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-sm)] font-medium transition-colors'
+  const label = `whitespace-nowrap ${compact ? 'hidden min-[520px]:inline' : ''}`
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={isQuick}
-      aria-label={`搜索模式：${isQuick ? '快速搜索' : '深度搜索'}`}
-      title="切换搜索模式"
-      onClick={() => onChange(isQuick ? 'deep' : 'quick')}
-      className={`inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 overflow-hidden rounded-full border text-[length:var(--fs-sm)] transition-colors ${compact ? 'px-2' : 'px-2.5'}`}
-      style={{
-        color: isQuick ? '#fbbf24' : 'var(--text-secondary)',
-        borderColor: isQuick ? 'rgba(251,191,36,0.5)' : 'var(--border-color)',
-        background: isQuick ? 'rgba(245,158,11,0.10)' : 'rgba(148,163,184,0.06)',
-      }}
-    >
-      <span className={`font-medium whitespace-nowrap ${compact ? 'hidden min-[520px]:inline' : ''}`}>{isQuick ? '快速搜索' : '深度搜索'}</span>
-      <span className={`relative h-3.5 w-6 shrink-0 overflow-hidden rounded-full transition-colors ${isQuick ? 'bg-amber-400/80' : 'bg-slate-500/60'}`}>
-        <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform ${isQuick ? 'translate-x-3' : 'translate-x-0.5'}`} />
-      </span>
-    </button>
+    <div className="flex min-w-0 shrink-0 items-center gap-1 rounded-lg border p-0.5"
+      style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+      <button type="button" onClick={() => onChange('quick')} title="快速搜索：仅匹配名称与描述"
+        aria-pressed={isQuick}
+        className={`${seg} ${isQuick ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+        style={isQuick ? undefined : { color: 'var(--text-muted)' }}>
+        <Zap className="h-3 w-3 flex-shrink-0" />
+        <span className={label}>快速搜索</span>
+      </button>
+      <button type="button" onClick={() => onChange('deep')} title="深度搜索：扫描会话内容"
+        aria-pressed={!isQuick}
+        className={`${seg} ${!isQuick ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
+        style={!isQuick ? undefined : { color: 'var(--text-muted)' }}>
+        <FileSearch className="h-3 w-3 flex-shrink-0" />
+        <span className={label}>深度搜索</span>
+      </button>
+    </div>
   )
 }

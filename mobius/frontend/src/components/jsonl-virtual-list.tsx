@@ -228,6 +228,10 @@ export function VirtualizedBlockList<TBlock extends VirtualListBlock>({
     if (!scrollToKey) return
     const root = scrollRootRef.current
     if (!root) return
+    // 精确条目定位 (下方 effect) 已能接管时必须停手: 两者目标不同 (轮次顶部 vs 条目居中), 且本
+    // effect 是 instant, 会把正在进行的 smooth 居中动画一把甩回轮次顶部; 滚动中内容高度持续变化,
+    // 两个 effect 反复互相打断 -> 页面"甩到顶又滑下来"的抽搐. 只在条目尚未挂载时用本 effect 预定位.
+    if (typeof scrollToEntryLineNo === 'number' && root.querySelector(`[data-jsonl-line-no="${scrollToEntryLineNo}"]`)) return
     const scrollParent = findScrollParent(root)
     if (!scrollParent) return
     const sel = `[data-block-key="${scrollToKey.replace(/["\\]/g, '\\$&')}"]`

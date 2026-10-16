@@ -684,7 +684,7 @@ function RecentSessionsPanel({
                     </span>
                     <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
                       <span className="text-[length:var(--fs-2xs)] font-medium" style={{ color: isResearch ? '#c084fc' : '#60a5fa' }}>{isResearch ? '研究' : '任务'}</span>
-                      <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#fbbf24' : 'var(--text-muted)' }}>
+                      <span className="text-[length:var(--fs-2xs)] tabular-nums" style={{ color: group.activeCount ? '#4ade80' : 'var(--text-muted)' }}>
                         {group.activeCount ? `${group.activeCount} 活跃` : `${group.sessions.length} ${isResearch ? '智能体' : '会话'}`}
                       </span>
                     </span>
@@ -1586,7 +1586,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
         {showFontSettings && <FontSettingsModal onClose={() => setShowFontSettings(false)} />}
         {showSearch && (
-          <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} />
+          <SearchModal onClose={() => setShowSearch(false)} onNavigate={navigate} projectId={projectParam} />
         )}
         {createKind && (
           <GlobalCreateRoot
