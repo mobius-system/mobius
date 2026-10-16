@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, isolationActiveFor } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, isolationActiveFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -380,7 +380,7 @@ function writeCodexWithProxy(srcPath: string, profileKey: string, sessionId: str
   // Gate on isolationActiveFor, not on userId being present: admin sessions carry a userId too but
   // run on the host, where the gateway-IP listener only exists in docker mode.
   const finalBaseUrl = isolationActiveFor(userId)
-    ? TOKEN_PROXY_BASE_URL.replace(/127\.0\.0\.1/, require('../services/user-isolation').SBX_GATEWAY_IP)
+    ? TOKEN_PROXY_BASE_URL.replace(/127\.0\.0\.1/, SBX_GATEWAY_IP)
     : TOKEN_PROXY_BASE_URL
   const lines = raw.split(/\r?\n/)
   let baseUrlHit = false

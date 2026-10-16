@@ -4,7 +4,7 @@
  * landlock 模式: 一切分派落到现有 agent-sandbox 行为, 零变化.
  * docker 模式: 普通用户的一切执行面进 mobius-sbx-<userId> 沙箱容器.
  */
-export { USER_ISOLATION_METHOD, USER_ISOLATION_DOCKER_IMAGE, isDockerIsolation, dockerSandboxAvailable } from './config';
+export { USER_ISOLATION_METHOD, USER_ISOLATION_DOCKER_IMAGE, isDockerIsolation, dockerSandboxAvailable, SBX_GATEWAY_IP } from './config';
 export {
   isolationActiveFor, ensureSandbox, rebuildNow, destroySandbox,
   reconcileSandboxes, startBackgroundTimers, refreshSbxHomeInputs,
