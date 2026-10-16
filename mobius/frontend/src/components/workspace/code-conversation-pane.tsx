@@ -275,6 +275,22 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const mdPreview = !!activeTab?.mdPreview
   const anyDirty = tabs.some(t => t.dirty)
 
+  // ── 蓝图阅读态: 预览 HTML 时改用文档流布局 (面板高度=内容, 页面滚动), 不再固定高度留大片空白 ──
+  const readingMode = blueprint && tabs.length > 0 && !!activeTab?.htmlPreview
+  // 每个预览 Tab 的文档实测高度 (iframe 内探针脚本 postMessage 上报; sandbox 无同源权限, 只能这样量).
+  const [previewHeights, setPreviewHeights] = useState<Record<string, number>>({})
+  useEffect(() => {
+    if (!blueprint) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { __mobiusBlueprintHeight?: unknown; __mobiusBlueprintKey?: unknown } | null
+      if (!data || typeof data.__mobiusBlueprintHeight !== 'number' || typeof data.__mobiusBlueprintKey !== 'string') return
+      const height = Math.min(Math.max(Math.round(data.__mobiusBlueprintHeight), 240), 60000)
+      setPreviewHeights(prev => (prev[data.__mobiusBlueprintKey as string] === height ? prev : { ...prev, [data.__mobiusBlueprintKey as string]: height }))
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [blueprint])
+
   // ----- 右键菜单 / 文件操作状态 (设计文档 §9) -----
   // writable: 数据源是否可写 (hub 用 bind_path_writable; local 默认 true, 写权限由主进程 W_OK 兜底)。
   const [writable, setWritable] = useState(true)
@@ -1134,7 +1150,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const htmlFile = !!selected && /\.html?$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
   return (
-    <div className="contents">
+    <div className={blueprint ? `flex w-full ${readingMode ? 'items-start' : 'h-[calc(100vh-220px)] min-h-[440px]'}` : 'contents'}>
       {/* ===== 左: 文件浏览器 ===== */}
       <ResizablePanel
         storageKey={`mobius:ui:${blueprint ? 'blueprint-tree' : (compact ? 'easy-files-tree' : 'split:cc-files')}:${projectId}`}
@@ -1142,8 +1158,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         minWidth={compact ? 140 : 160}
         maxWidth={compact ? 300 : 360}
         side="left"
-        className="border-r flex flex-col"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        className={`border-r flex flex-col${readingMode ? ' max-h-[calc(100vh-170px)]' : ''}`}
+        // 阅读态: 树粘在滚动容器顶部 (ResizablePanel 内联 position:relative, 类名 sticky 会被压掉)
+        // Reading: pin the tree to the scroller's top (the panel's inline relative beats a sticky class)
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', ...(readingMode ? { position: 'sticky' as const, top: 8 } : {}) }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
           <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
@@ -1390,15 +1408,17 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         maxWidth={compact ? 0 : codeEditorMaxWidth}
         side="left"
         className="flex flex-col"
-        style={{ background: cc.bg, color: cc.fg }}
+        // 蓝图变体: 预览区吃掉文件树之外的剩余宽度, 否则固定宽度会在卡片右侧留一条空带
+        // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip
+        style={{ background: cc.bg, color: cc.fg, ...(blueprint ? { flexGrow: 1, flexBasis: 0, maxWidth: 'none' } : {}) }}
       >
         {/* ★ 多 Tab 标签栏: 每个打开的文件一个 Tab; 点击切换, 中键或 × 关闭, 圆点 = 未保存 */}
         {tabs.length > 0 && (
           <div
             role="tablist"
             aria-label="打开的文件"
-            className="flex h-8 flex-shrink-0 items-stretch overflow-x-auto border-b"
-            style={{ borderColor: cc.border, background: skin === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}
+            className={`flex h-8 flex-shrink-0 items-stretch overflow-x-auto border-b${readingMode ? ' sticky top-0 z-10' : ''}`}
+            style={{ borderColor: cc.border, background: readingMode ? cc.bg : (skin === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)') }}
           >
             {tabs.map(tab => {
               const isActive = tab.key === activeKey
@@ -1440,7 +1460,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         )}
 
         {/* 头部工具栏 */}
-        <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: cc.border }}>
+        <div
+          className={`flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5${readingMode ? ' sticky top-8 z-10' : ''}`}
+          style={{ borderColor: cc.border, ...(readingMode ? { background: cc.bg } : {}) }}
+        >
           {selected ? (
             <>
               {/* 文件名已上移到 Tab 标签栏; 这里显示所在目录作定位提示 (根目录文件省略) */}
@@ -1512,8 +1535,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           )}
         </div>
 
-        {/* 编辑器/占位区: 每个打开的 Tab 一份内容常驻挂载 (仅激活 Tab 可见) — 切换 Tab 保留撤销栈与滚动位置 */}
-        <div className="relative flex-1 min-h-0 overflow-hidden" style={{ background: cc.bg }}>
+        {/* 编辑器/占位区: 每个打开的 Tab 一份内容常驻挂载 (仅激活 Tab 可见) — 切换 Tab 保留撤销栈与滚动位置.
+            蓝图阅读态改文档流: 容器随内容增高 (页面滚动), 不再固定高度. */}
+        <div className={readingMode ? 'relative min-h-[240px]' : 'relative flex-1 min-h-0 overflow-hidden'} style={{ background: cc.bg }}>
           {tabs.length === 0 ? (
             blueprint ? (
               /* 蓝图空阅读区: 用全局主题配色 (不随代码区固定明暗), 与左侧空态同一气质 */
@@ -1533,10 +1557,12 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
             )
           ) : tabs.map(tab => {
             const isActive = tab.key === activeKey
+            // 阅读态只挂载激活 Tab 的 iframe (探针量高需要真实布局; 隐藏 iframe 量出 0).
+            if (readingMode && !isActive) return null
             const tabMd = /\.(md|markdown)$/i.test(tab.entry.name) && !!tab.fileData && !tab.fileData.binary && !tab.fileData.truncated
             const onDocChange = (val: string) => patchTab(tab.key, t => ({ doc: val, dirty: val !== (t.fileData?.content || ''), saveOk: false }))
             return (
-              <div key={tab.key} className={isActive ? 'absolute inset-0' : 'hidden'}>
+              <div key={tab.key} className={isActive ? (readingMode ? 'relative' : 'absolute inset-0') : 'hidden'}>
                 {tab.loading ? (
                   <div className="flex h-full flex-col items-center justify-center gap-2" style={{ color: cc.muted }}>
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -1561,6 +1587,18 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   </div>
                 ) : tab.fileData ? (
                   /\.html?$/i.test(tab.entry.name) && tab.htmlPreview ? (
+                    blueprint ? (
+                      /* 蓝图阅读态: 注入高度探针, iframe 撑到内容高度 (页面滚动, 无内部滚动条) */
+                      <iframe
+                        key={`${tab.key}:${tab.doc}`}
+                        title={`HTML 预览: ${tab.entry.name}`}
+                        sandbox="allow-scripts"
+                        srcDoc={withBlueprintHeightProbe(tab.doc, tab.key)}
+                        referrerPolicy="no-referrer"
+                        className="block w-full border-0 bg-white"
+                        style={{ height: previewHeights[tab.key] || 600 }}
+                      />
+                    ) : (
                     <iframe
                       key={`${tab.key}:${tab.doc}`}
                       title={`HTML 预览: ${tab.entry.name}`}
@@ -1569,6 +1607,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                       referrerPolicy="no-referrer"
                       className="h-full w-full border-0 bg-white"
                     />
+                    )
                   ) : tabMd && tab.mdPreview ? (
                     <MarkdownWysiwygEditor value={tab.doc} skin={skin} onChange={onDocChange} />
                   ) : (
@@ -1802,6 +1841,17 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
 // abs 是否位于节点本身或其子树内 (兼容 / 与 \ 两种分隔符).
 function isUnderNodeAbs(abs: string, nodeAbs: string): boolean {
   return abs === nodeAbs || abs.startsWith(nodeAbs + '/') || abs.startsWith(nodeAbs + '\\')
+}
+
+/*
+ * 蓝图预览的文档高度探针: 预览 iframe 是 sandbox="allow-scripts" 的独立源, 父页面读不到
+ * contentDocument, 只能往 srcDoc 里注入一段脚本, 让文档自己量 scrollHeight 并 postMessage
+ * 上报; 父页面据此把 iframe 撑到内容高度, 消除固定高度带来的内部滚动条与下方空白帧.
+ */
+function withBlueprintHeightProbe(html: string, tabKey: string): string {
+  const script = `<script>(function(){var k=${JSON.stringify(tabKey)};function s(){try{var h=Math.max(document.documentElement?document.documentElement.scrollHeight:0,document.body?document.body.scrollHeight:0);parent.postMessage({__mobiusBlueprintHeight:h,__mobiusBlueprintKey:k},'*')}catch(e){}}window.addEventListener('load',s);window.addEventListener('resize',s);document.addEventListener('DOMContentLoaded',s);setTimeout(s,80);setTimeout(s,500);})()</script>`
+  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${script}</body>`)
+  return html + script
 }
 
 // abs_path 是绝对路径, 后端 resolveProjectPath 以 bind_path 为根做 path.resolve.

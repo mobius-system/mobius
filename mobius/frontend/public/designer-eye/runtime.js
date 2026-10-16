@@ -575,6 +575,27 @@ function isToggleHotkey(event) {
     && !event.altKey
 }
 
+// 设计师之眼是管理员专属的内部工具, 普通账号按下快捷键只弹一条错误提示
+// Designer Eye is an admin-only tool, so a non-admin hotkey press only gets an error toast
+const PERMISSION_DENIED_MESSAGE = '设计师之眼仅限管理员使用'
+
+/*
+ * Resolve the current account's role for the Designer Eye admin gate.
+ * The main app and every extension page share the same-origin cc-token; the
+ * role is always taken from the server response, never from the JWT payload.
+ */
+async function fetchCurrentUserRole() {
+  const token = localStorage.getItem('cc-token') || ''
+  if (!token) return ''
+  const response = await fetch('/api/auth/me', {
+    credentials: 'include',
+    headers: { authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) return ''
+  const user = await response.json().catch(() => null)
+  return user?.role || ''
+}
+
 function scrollContainerFor(element) {
   let current = element
   while (current && current !== document.body) {
@@ -622,6 +643,10 @@ export class DesignerEyeRuntime {
     this.bootstrapPromise = null
     this.startingSelfIteration = false
     this.lastCreatedSession = null
+    // null = 角色尚未确认; true/false = 已确认的管理员权限
+    this.permissionAdmin = null
+    this.permissionPromise = null
+    this.activating = false
     this.selfIteration = {
       loaded: false,
       projects: [],
@@ -660,6 +685,47 @@ export class DesignerEyeRuntime {
       this.modifierHeld = false
       this.applyInteractionState()
     })
+  }
+
+  /*
+   * Confirm admin permission once, lazily, on the first hotkey press.
+   * A failed request is deliberately not cached so a network hiccup cannot
+   * lock an admin out for the rest of the page's lifetime.
+   */
+  hasAdminPermission() {
+    if (this.permissionAdmin !== null) return Promise.resolve(this.permissionAdmin)
+    if (!this.permissionPromise) {
+      this.permissionPromise = fetchCurrentUserRole()
+        .then((role) => {
+          this.permissionAdmin = role === 'admin'
+          return this.permissionAdmin
+        })
+        .catch(() => {
+          this.permissionPromise = null
+          return false
+        })
+    }
+    return this.permissionPromise
+  }
+
+  // ✨ 普通账号的入口在这里被挡下: 只创建一个空壳来承载 toast, 不进选取模式.
+  denyAccess() {
+    this.ensureShell()
+    this.showToast(PERMISSION_DENIED_MESSAGE, true)
+  }
+
+  async requestActivate() {
+    if (this.activating) return
+    this.activating = true
+    try {
+      if (!await this.hasAdminPermission()) {
+        this.denyAccess()
+        return
+      }
+      this.activate()
+    } finally {
+      this.activating = false
+    }
   }
 
   ensureShell() {
@@ -763,7 +829,7 @@ export class DesignerEyeRuntime {
       event.stopImmediatePropagation()
       if (event.repeat) return
       if (this.active) this.deactivate()
-      else this.activate()
+      else void this.requestActivate()
       return
     }
     if (this.active) {
@@ -826,6 +892,12 @@ export class DesignerEyeRuntime {
   }
 
   activate() {
+    // 已确认无权限时直接挡回, 覆盖任何绕过快捷键的调用方
+    // Once the role is known to be non-admin, block even direct callers
+    if (this.permissionAdmin === false) {
+      this.denyAccess()
+      return
+    }
     this.ensureShell()
     this.active = true
     this.modalOpen = false

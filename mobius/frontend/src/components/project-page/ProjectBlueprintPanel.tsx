@@ -30,8 +30,10 @@ export function ProjectBlueprintPanel({ projectId }: { projectId: string }) {
   }
 
   return (
+    /* 高度策略在 CodeConversationPane 蓝图变体内: 预览=文档流自适应, 编辑=固定高;
+       这里不再包 overflow-hidden, 否则 sticky 树 (粘性滚动) 会被截断失效 */
     <div
-      className="flex h-[calc(100vh-220px)] min-h-[440px] w-full overflow-hidden rounded-xl border"
+      className="w-full rounded-xl border"
       style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
     >
       <CodeConversationPane projectId={projectId} bindPath={bindPath} mode="blueprint" variant="page" />
