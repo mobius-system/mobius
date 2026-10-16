@@ -166,6 +166,8 @@ export default function ProjectPage() {
   const [exposedSettingsTabs, setExposedSettingsTabs] = useState<OverflowTab[]>([])
   // 右侧不再并排展示「项目设置」与「任务列表」, 改由左侧边栏选中项决定右侧显示哪一个面板.
   const [rightView, setRightView] = useState<'items' | 'settings'>('items')
+  // 项目蓝图面板走全幅 (见下方容器): 文档阅读器被 max-w + 内边距框住会在宽屏两侧留空带.
+  const blueprintPane = !isMobile && rightView === 'settings' && settingsPane === 'blueprints'
 
   // 左侧导航按钮样式与用户主页统一 (图标 + 文案). settings tab 在此追加图标并改用更短的文案.
   const navCls = (active: boolean) =>
@@ -813,8 +815,9 @@ export default function ProjectPage() {
 
         <main className={`flex-1 min-h-0 ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} style={{ background: 'var(--bg-secondary)' }}>
           {/* 任务/研究列表是卡片网格, 在大屏放宽最大宽度让网格铺开更多列, 减少右侧留白;
-              项目设置表单仍保持 max-w-7xl 保证长表单可读性. */}
-          <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto p-3 sm:p-6 ${isMobile ? '' : 'h-full min-h-0'}`}>
+              项目设置表单仍保持 max-w-7xl 保证长表单可读性.
+              项目蓝图是文档阅读/编辑器, 直接占满右面板 — 不限宽、不留外边距, 否则宽屏两侧空带. */}
+          <div className={`${rightView === 'items' && !isMobile ? 'max-w-[1600px]' : (blueprintPane ? 'max-w-none' : 'max-w-7xl')} mx-auto ${blueprintPane ? '' : 'p-3 sm:p-6'} ${isMobile ? '' : 'h-full min-h-0'}`}>
             {(() => {
               const settingsPanel = (
                 <ProjectSettingsPanel

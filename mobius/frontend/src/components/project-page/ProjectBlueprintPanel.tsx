@@ -31,9 +31,10 @@ export function ProjectBlueprintPanel({ projectId }: { projectId: string }) {
 
   return (
     /* 高度策略在 CodeConversationPane 蓝图变体内: 预览=文档流自适应, 编辑=固定高;
-       这里不再包 overflow-hidden, 否则 sticky 树 (粘性滚动) 会被截断失效 */
+       这里不再包 overflow-hidden, 否则 sticky 树 (粘性滚动) 会被截断失效.
+       min-h-full: 蓝图比面板矮时也把面板铺满, 不在下方留空 */
     <div
-      className="w-full rounded-xl border"
+      className="min-h-full w-full rounded-xl border"
       style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
     >
       <CodeConversationPane projectId={projectId} bindPath={bindPath} mode="blueprint" variant="page" />
