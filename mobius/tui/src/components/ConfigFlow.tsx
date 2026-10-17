@@ -32,6 +32,7 @@ import {
   setTuiGuiMode, tuiAimuxIdentifier, tuiGuiAuthorized, tuiGuiMode, type GuiMode,
 } from '../aimux.js'
 import { windowsElevated } from '../lib/windows-admin.js'
+import { EASY_DEFAULT_ISSUE_TITLE, EASY_DEFAULT_PROJECT_NAME } from '../easy-mode-defaults.js'
 import type { Issue, Project, SessionModelOption } from '../types.js'
 
 export interface ConfigResult {
@@ -161,6 +162,10 @@ export function ReconfigFlow({ client, onDone, onCancel, platform = process.plat
   const [createMode, setCreateMode] = useState<'project' | 'issue' | null>(null)
   const doneRef = useRef(false)
   const thisCwd = cwd()
+  // 快捷任务/日常会话置顶, 不存在时选中即创建
+  // Pin the easy defaults on top; picking a missing one creates it on demand.
+  const pinnedProject = (projects ?? []).find(p => p.name === EASY_DEFAULT_PROJECT_NAME) ?? null
+  const pinnedIssue = (issues ?? []).find(i => i.title === EASY_DEFAULT_ISSUE_TITLE) ?? null
 
   function goBack() {
     // The focused TextInput owns Esc while a create form is open. Returning
@@ -376,10 +381,18 @@ export function ReconfigFlow({ client, onDone, onCancel, platform = process.plat
               : <Select
                   items={[
                     { label: '➕ 创建新项目', value: '__create__' },
-                    ...projects.map(p => ({ label: p.name, desc: p.description, value: p.id })),
+                    // 快捷任务固定第二行, 列表其余项目排在空行之后
+                    // The easy default sits on row 2; the remaining projects follow one blank row.
+                    { label: EASY_DEFAULT_PROJECT_NAME, desc: pinnedProject?.description || '一键创建并进入', value: pinnedProject?.id ?? '__easy_project__' },
+                    { label: '', value: '__sep__', disabled: true },
+                    ...projects.filter(p => p.id !== pinnedProject?.id).map(p => ({ label: p.name, desc: p.description, value: p.id })),
                   ]}
-                  initialActive={projects.length > 0 ? 1 : 0}
-                  onSelect={v => v === '__create__' ? setCreateMode('project') : pickProject(projects!.find(p => p.id === v)!)}
+                  initialActive={pinnedProject ? 1 : projects.length ? 2 : 1}
+                  onSelect={v => {
+                    if (v === '__create__') return setCreateMode('project')
+                    if (v === '__easy_project__') return void createProject(EASY_DEFAULT_PROJECT_NAME)
+                    return void pickProject(projects.find(p => p.id === v)!)
+                  }}
                 />}
           </Box>
           <Text color="gray">↑↓ 选择 · 回车确认 · Esc 取消</Text>
@@ -393,17 +406,21 @@ export function ReconfigFlow({ client, onDone, onCancel, platform = process.plat
           <Box marginTop={1}>
             {issues === null
               ? <Text color="cyan">加载任务列表…</Text>
-              : issues.length === 0
-                ? <Select
-                    items={[{ label: '➕ 创建新任务（尚无任务）', value: '__create__' }]}
-                    onSelect={() => setCreateMode('issue')} />
-                : <Select
-                    items={[
-                      { label: '➕ 创建新任务', value: '__create__' },
-                      ...issues.map(i => ({ label: i.title, desc: i.description, value: i.id })),
-                    ]}
-                    initialActive={1}
-                    onSelect={v => v === '__create__' ? setCreateMode('issue') : pickIssue(issues!.find(i => i.id === v)!)} />}
+              : <Select
+                  items={[
+                    { label: issues.length ? '➕ 创建新任务' : '➕ 创建新任务（尚无任务）', value: '__create__' },
+                    // 日常会话固定第二行, 列表其余任务排在空行之后
+                    // The easy default sits on row 2; the remaining tasks follow one blank row.
+                    { label: EASY_DEFAULT_ISSUE_TITLE, desc: pinnedIssue?.description || '一键创建并进入', value: pinnedIssue?.id ?? '__easy_issue__' },
+                    { label: '', value: '__sep__', disabled: true },
+                    ...issues.filter(i => i.id !== pinnedIssue?.id).map(i => ({ label: i.title, desc: i.description, value: i.id })),
+                  ]}
+                  initialActive={pinnedIssue ? 1 : issues.length ? 2 : 1}
+                  onSelect={v => {
+                    if (v === '__create__') return setCreateMode('issue')
+                    if (v === '__easy_issue__') return void createIssue(EASY_DEFAULT_ISSUE_TITLE)
+                    return void pickIssue(issues.find(i => i.id === v)!)
+                  }} />}
           </Box>
           <Text color="gray">↑↓ 选择 · 回车确认 · Esc 取消</Text>
         </Box>

@@ -393,13 +393,16 @@ async function testPrepRender() {
     // compact and show their names alone.
     ok(!frame.includes('已有项目A - 第一行') && !frame.includes('已有项目B - 单行描述'), 'unfocused project rows omit their descriptions')
     stdin.write('\x1b[B'); await delay(15) // move focus from search to the list
-    stdin.write('\x1b[B'); await delay(15) // highlight the first project
+    stdin.write('\x1b[B'); await delay(15) // highlight the pinned easy-default row
+    ok((lastFrame() ?? '').includes('快捷任务 - 一键创建并进入'), 'easy-default project is pinned above the list')
+    stdin.write('\x1b[B'); await delay(15) // step over the blank separator to the first project
     const selectedFrame = lastFrame() ?? ''
     ok(selectedFrame.includes('已有项目A - 第一行 ⏎ 第二行'), 'selected multi-line description stays on the main row')
     ok(!selectedFrame.includes('已有项目B - 单行描述'), 'unselected project description is omitted')
     ok(!frame.includes('\n    第一行') && !frame.includes('\n    单行描述'), 'project explanations do not render as an additional row')
     ok(!frame.includes('加载项目列表…'), 'completed project load does not leave a stale loading message')
 
+    stdin.write('\x1b[A'); await delay(15) // back to the easy-default row
     stdin.write('\x1b[A'); await delay(15) // return to the create row
     stdin.write('\r')
     await delay(30)
