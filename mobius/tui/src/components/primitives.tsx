@@ -538,8 +538,10 @@ export function Select(props: SelectProps) {
         return (
           <Box key={it.value}>
             <Text
+              // 高亮行用白字深蓝底, 避免旧配色看不清
+              // White on blue keeps the highlighted row readable on Windows consoles.
               color={disabled ? 'gray' : isActive ? 'white' : undefined}
-              backgroundColor={isActive ? 'cyan' : undefined}
+              backgroundColor={isActive ? 'blue' : undefined}
               bold={isActive}
               wrap="truncate-end"
             >
