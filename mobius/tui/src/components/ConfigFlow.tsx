@@ -32,7 +32,10 @@ import {
   setTuiGuiMode, tuiAimuxIdentifier, tuiGuiAuthorized, tuiGuiMode, type GuiMode,
 } from '../aimux.js'
 import { windowsElevated } from '../lib/windows-admin.js'
-import { EASY_DEFAULT_ISSUE_TITLE, EASY_DEFAULT_PROJECT_NAME } from '../easy-mode-defaults.js'
+import {
+  CREATE_ITEM_ICON, EASY_DEFAULT_ISSUE_TITLE, EASY_DEFAULT_PROJECT_NAME,
+  EASY_ISSUE_LABEL, EASY_PROJECT_LABEL, ISSUE_ITEM_ICON, PROJECT_ITEM_ICON,
+} from '../easy-mode-defaults.js'
 import type { Issue, Project, SessionModelOption } from '../types.js'
 
 export interface ConfigResult {
@@ -380,12 +383,12 @@ export function ReconfigFlow({ client, onDone, onCancel, platform = process.plat
               ? <Text color="cyan">加载项目列表…</Text>
               : <Select
                   items={[
-                    { label: '➕ 创建新项目', value: '__create__' },
+                    { label: `${CREATE_ITEM_ICON}创建新项目`, value: '__create__' },
                     // 快捷任务固定第二行, 列表其余项目排在空行之后
                     // The easy default sits on row 2; the remaining projects follow one blank row.
-                    { label: EASY_DEFAULT_PROJECT_NAME, desc: pinnedProject?.description || '一键创建并进入', value: pinnedProject?.id ?? '__easy_project__' },
+                    { label: EASY_PROJECT_LABEL, desc: pinnedProject?.description || '一键创建并进入', value: pinnedProject?.id ?? '__easy_project__' },
                     { label: '', value: '__sep__', disabled: true },
-                    ...projects.filter(p => p.id !== pinnedProject?.id).map(p => ({ label: p.name, desc: p.description, value: p.id })),
+                    ...projects.filter(p => p.id !== pinnedProject?.id).map(p => ({ label: `${PROJECT_ITEM_ICON}${p.name}`, desc: p.description, value: p.id })),
                   ]}
                   initialActive={pinnedProject ? 1 : projects.length ? 2 : 1}
                   onSelect={v => {
@@ -408,12 +411,12 @@ export function ReconfigFlow({ client, onDone, onCancel, platform = process.plat
               ? <Text color="cyan">加载任务列表…</Text>
               : <Select
                   items={[
-                    { label: issues.length ? '➕ 创建新任务' : '➕ 创建新任务（尚无任务）', value: '__create__' },
+                    { label: issues.length ? `${CREATE_ITEM_ICON}创建新任务` : `${CREATE_ITEM_ICON}创建新任务（尚无任务）`, value: '__create__' },
                     // 日常会话固定第二行, 列表其余任务排在空行之后
                     // The easy default sits on row 2; the remaining tasks follow one blank row.
-                    { label: EASY_DEFAULT_ISSUE_TITLE, desc: pinnedIssue?.description || '一键创建并进入', value: pinnedIssue?.id ?? '__easy_issue__' },
+                    { label: EASY_ISSUE_LABEL, desc: pinnedIssue?.description || '一键创建并进入', value: pinnedIssue?.id ?? '__easy_issue__' },
                     { label: '', value: '__sep__', disabled: true },
-                    ...issues.filter(i => i.id !== pinnedIssue?.id).map(i => ({ label: i.title, desc: i.description, value: i.id })),
+                    ...issues.filter(i => i.id !== pinnedIssue?.id).map(i => ({ label: `${ISSUE_ITEM_ICON}${i.title}`, desc: i.description, value: i.id })),
                   ]}
                   initialActive={pinnedIssue ? 1 : issues.length ? 2 : 1}
                   onSelect={v => {

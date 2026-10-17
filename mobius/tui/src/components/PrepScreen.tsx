@@ -17,7 +17,10 @@ import { Select, TextInput, type SelectItem } from './primitives.js'
 import { MobiusClient } from '../api.js'
 import { effectiveGuiMode, guiModeOptions, hasGuiSupport, restartAimuxConnectionForGuiChange, setTuiGuiMode, tuiGuiMode, type GuiMode } from '../aimux.js'
 import { windowsElevated } from '../lib/windows-admin.js'
-import { EASY_DEFAULT_ISSUE_TITLE, EASY_DEFAULT_PROJECT_NAME } from '../easy-mode-defaults.js'
+import {
+  CREATE_ITEM_ICON, EASY_DEFAULT_ISSUE_TITLE, EASY_DEFAULT_PROJECT_NAME,
+  EASY_ISSUE_LABEL, EASY_PROJECT_LABEL, ISSUE_ITEM_ICON, PROJECT_ITEM_ICON,
+} from '../easy-mode-defaults.js'
 import {
   bindCwdToProject, cwd, getCwdPreference, loadDir2Project, loadProjectsCache,
   saveProjectsCache, setCwdIssue, updateIssuePreference, type IssuePreference,
@@ -374,9 +377,9 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
   // Pin the easy default on top; picking it while missing creates it on demand.
   const pinned = projects.find(p => p.name === EASY_DEFAULT_PROJECT_NAME) ?? null
   const items: SelectItem[] = [
-    { label: EASY_DEFAULT_PROJECT_NAME, desc: pinned?.description || '一键创建并进入', value: pinned?.id ?? '__easy_project__' },
+    { label: EASY_PROJECT_LABEL, desc: pinned?.description || '一键创建并进入', value: pinned?.id ?? '__easy_project__' },
     { label: '', value: '__sep__', disabled: true },
-    ...projects.filter(p => p.id !== pinned?.id).map(p => ({ label: p.name, desc: p.description, value: p.id })),
+    ...projects.filter(p => p.id !== pinned?.id).map(p => ({ label: `${PROJECT_ITEM_ICON}${p.name}`, desc: p.description, value: p.id })),
   ]
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -385,7 +388,7 @@ function ProjectPicker({ cwd, projects, statusMsg, onPick, onCreate, onQuit }: {
         title="选择当前路径的绑定项目"
         placeholder="输入项目名或描述"
         items={items}
-        createItem={{ label: '➕ 创建新项目', value: '__create__', desc: '绑定到当前路径' }}
+        createItem={{ label: `${CREATE_ITEM_ICON}创建新项目`, value: '__create__', desc: '绑定到当前路径' }}
         onSelect={v => v === '__easy_project__' ? onCreate(EASY_DEFAULT_PROJECT_NAME, '') : onPick(projects.find(p => p.id === v)!)}
         onCreate={() => setMode('create')}
         onQuit={onQuit}
@@ -422,9 +425,9 @@ function IssuePicker({ issues, onPick, onCreate }: {
   // Pin the easy default on top; picking it while missing creates it on demand.
   const pinned = issues.find(i => i.title === EASY_DEFAULT_ISSUE_TITLE) ?? null
   const items: SelectItem[] = [
-    { label: EASY_DEFAULT_ISSUE_TITLE, desc: pinned?.description || '一键创建并进入', value: pinned?.id ?? '__easy_issue__' },
+    { label: EASY_ISSUE_LABEL, desc: pinned?.description || '一键创建并进入', value: pinned?.id ?? '__easy_issue__' },
     { label: '', value: '__sep__', disabled: true },
-    ...issues.filter(i => i.id !== pinned?.id).map(i => ({ label: i.title, desc: i.description, value: i.id })),
+    ...issues.filter(i => i.id !== pinned?.id).map(i => ({ label: `${ISSUE_ITEM_ICON}${i.title}`, desc: i.description, value: i.id })),
   ]
   return (
     <Box flexDirection="column">
@@ -434,7 +437,7 @@ function IssuePicker({ issues, onPick, onCreate }: {
           title="选择任务（Issue）"
           placeholder="输入任务标题或描述"
           items={items}
-          createItem={{ label: issues.length ? '➕ 创建新任务' : '➕ 创建新任务（尚无任务）', value: '__create__' }}
+          createItem={{ label: issues.length ? `${CREATE_ITEM_ICON}创建新任务` : `${CREATE_ITEM_ICON}创建新任务（尚无任务）`, value: '__create__' }}
           onSelect={v => v === '__easy_issue__' ? onCreate(EASY_DEFAULT_ISSUE_TITLE) : onPick(issues.find(i => i.id === v)!)}
           onCreate={() => setMode('create-name')}
         />

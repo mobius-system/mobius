@@ -538,7 +538,7 @@ export function Select(props: SelectProps) {
         return (
           <Box key={it.value}>
             <Text
-              color={disabled ? 'gray' : isActive ? 'black' : undefined}
+              color={disabled ? 'gray' : isActive ? 'white' : undefined}
               backgroundColor={isActive ? 'cyan' : undefined}
               bold={isActive}
               wrap="truncate-end"

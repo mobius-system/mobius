@@ -394,7 +394,7 @@ async function testPrepRender() {
     ok(!frame.includes('已有项目A - 第一行') && !frame.includes('已有项目B - 单行描述'), 'unfocused project rows omit their descriptions')
     stdin.write('\x1b[B'); await delay(15) // move focus from search to the list
     stdin.write('\x1b[B'); await delay(15) // highlight the pinned easy-default row
-    ok((lastFrame() ?? '').includes('快捷任务 - 一键创建并进入'), 'easy-default project is pinned above the list')
+    ok((lastFrame() ?? '').includes('🕊️不使用任何项目 - 一键创建并进入'), 'easy-default project is pinned above the list')
     stdin.write('\x1b[B'); await delay(15) // step over the blank separator to the first project
     const selectedFrame = lastFrame() ?? ''
     ok(selectedFrame.includes('已有项目A - 第一行 ⏎ 第二行'), 'selected multi-line description stays on the main row')
