@@ -4,11 +4,13 @@
   Completely uninstall the current-user Mobius TUI installation on Windows.
 .DESCRIPTION
   Removes the portable Node runtime, npm package, launchers, AIMUX/Python bundle,
-  saved login and preferences under ~/.mobius, user PATH entries, and both
-  Explorer "Open in Mobius" context-menu registrations. No administrator rights
-  are required. Unrelated system Node.js/Python/AIMUX installations are untouched.
+  saved login and preferences under ~/.mobius, user PATH entries, and the two
+  Explorer context-menu entries ("在Mobius终端中打开" and its administrator
+  variant) registered for both a folder and the folder background. No
+  administrator rights are required. Unrelated system Node.js/Python/AIMUX
+  installations are untouched.
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/uninstall-v11.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/uninstall-v12.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -33,7 +35,7 @@ function Invoke-MobiusUninstall {
     Write-Host ''
     Warn "将永久删除: $mobiusHome"
     Warn '包括登录信息、项目缓存、目录绑定、Issue 偏好、便携 Node、TUI 和 AIMUX/Python bundle。'
-    Warn '还会删除用户 PATH 中的 Mobius 项和两个“在 Mobius 中打开”右键菜单。'
+    Warn '还会删除用户 PATH 中的 Mobius 项和“在Mobius终端中打开”（含管理员权限）右键菜单。'
     Write-Host ''
 
     if ($env:MOBIUS_UNINSTALL_FORCE -ne '1') {
@@ -66,12 +68,14 @@ function Invoke-MobiusUninstall {
     Step '删除 Explorer 右键菜单...'
     $contextMenuKeys = @(
         'HKCU:\Software\Classes\Directory\shell\Mobius',
-        'HKCU:\Software\Classes\Directory\Background\shell\Mobius'
+        'HKCU:\Software\Classes\Directory\Background\shell\Mobius',
+        'HKCU:\Software\Classes\Directory\shell\MobiusAdmin',
+        'HKCU:\Software\Classes\Directory\Background\shell\MobiusAdmin'
     )
     foreach ($key in $contextMenuKeys) {
         if (Test-Path $key) { Remove-Item $key -Recurse -Force }
     }
-    Ok '文件夹本身和文件夹空白处的右键菜单已删除。'
+    Ok '文件夹本身和文件夹空白处的右键菜单已删除（含管理员权限入口）。'
 
     Step '从当前用户 PATH 删除 Mobius 目录...'
     $removeEntries = @($mobiusBin, $npmGlobal, $npmGlobalBin) |
@@ -121,6 +125,7 @@ function Invoke-MobiusUninstall {
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v13-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v14-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-install-v15-error.log') -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $env:TEMP 'mobius-install-v16-error.log') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $env:TEMP 'mobius-uninstall-v11-error.log') -Force -ErrorAction SilentlyContinue
     Ok '临时安装文件已清理。'
 

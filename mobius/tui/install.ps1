@@ -6,10 +6,11 @@
   下载 portable Node win-x64 zip 解压到 ~/.mobius/node-portable/ → 用 node.exe 直跑 npm-cli.js
   装 @mobius-os/mobius 到 ~/.mobius/npm-global/ → 自建 mobius.cmd 启动器(绝对路径指向便携 node)
   → 加 ~/.mobius/bin 到用户 PATH (无需 admin)。
-  npm 安装和 mobius 启动均直接使用 node.exe/tsx；安装完成后同时注册两个
-  Explorer 右键入口：“在 Mobius 中打开”（文件夹本身 + 文件夹空白处）。
+  npm 安装和 mobius 启动均直接使用 node.exe/tsx；安装完成后在文件夹本身和
+  文件夹空白处注册两个 Explorer 右键入口：“在Mobius终端中打开”与
+  “在Mobius终端中打开（管理员权限）”。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v15.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v16.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -206,9 +207,10 @@ if ($userPath -notlike "*$binDir*") {
 }
 
 # --- 5. Explorer 右键菜单 (当前用户，无需 admin) ----------------------------
-# 两个入口必须同时注册：
+# 两套入口，各注册两个位置：
 #   Directory\shell\Mobius            = 右键文件夹本身，目标参数 %1
 #   Directory\Background\shell\Mobius = 右键文件夹空白处，目标参数 %V
+#   ...\MobiusAdmin                   = 同样的两处，UAC 提权后启动(管理员权限)
 # 使用 .cmd 辅助启动器，避免右键动作依赖 PowerShell ExecutionPolicy。
 $openHereCmd = Join-Path $binDir "mobius-open-here.cmd"
 $openHereLines = @(
@@ -222,19 +224,40 @@ $openHereLines = @(
 )
 Set-Content -Path $openHereCmd -Value $openHereLines -Encoding ASCII
 
+# 管理员入口: Explorer 直接跑这个脚本, 由它用 UAC 提权拉起同一个启动器.
+# -Encoding UTF8 在 Windows PowerShell 5.1 会写入 BOM, -File 才能正确读中文/引号.
+$openHereAdminPs1 = Join-Path $binDir "mobius-open-here-admin.ps1"
+$openHereAdminLines = @(
+    'param([string]$Target)',
+    '# 右键文件夹时 Explorer 会传路径, 兜底用当前目录.',
+    'if (-not $Target) { $Target = (Get-Location).Path }',
+    'Start-Process -FilePath (Join-Path $PSScriptRoot ''mobius-open-here.cmd'') -ArgumentList (''"{0}"'' -f $Target) -Verb RunAs'
+)
+Set-Content -Path $openHereAdminPs1 -Value $openHereAdminLines -Encoding UTF8
+
 $classes = "HKCU:\Software\Classes"
 $folderMenu = Join-Path $classes "Directory\shell\Mobius"
 $folderCommand = Join-Path $folderMenu "command"
 $backgroundMenu = Join-Path $classes "Directory\Background\shell\Mobius"
 $backgroundCommand = Join-Path $backgroundMenu "command"
+$folderAdminMenu = Join-Path $classes "Directory\shell\MobiusAdmin"
+$folderAdminCommand = Join-Path $folderAdminMenu "command"
+$backgroundAdminMenu = Join-Path $classes "Directory\Background\shell\MobiusAdmin"
+$backgroundAdminCommand = Join-Path $backgroundAdminMenu "command"
 
-foreach ($key in @($folderCommand, $backgroundCommand)) {
+foreach ($key in @($folderCommand, $backgroundCommand, $folderAdminCommand, $backgroundAdminCommand)) {
     New-Item -Path $key -Force | Out-Null
 }
 
 foreach ($menu in @($folderMenu, $backgroundMenu)) {
-    Set-ItemProperty -Path $menu -Name "MUIVerb" -Value "在 Mobius 中打开"
+    Set-ItemProperty -Path $menu -Name "MUIVerb" -Value "在Mobius终端中打开"
     Set-ItemProperty -Path $menu -Name "Icon" -Value "$env:SystemRoot\System32\cmd.exe,0"
+}
+foreach ($menu in @($folderAdminMenu, $backgroundAdminMenu)) {
+    Set-ItemProperty -Path $menu -Name "MUIVerb" -Value "在Mobius终端中打开（管理员权限）"
+    Set-ItemProperty -Path $menu -Name "Icon" -Value "$env:SystemRoot\System32\cmd.exe,0"
+    # 空字符串的 HasLUAShield 让 Explorer 在菜单项旁边显示 UAC 盾牌.
+    Set-ItemProperty -Path $menu -Name "HasLUAShield" -Value ""
 }
 
 # Explorer command quoting: cmd /c ""helper.cmd" "%1"".
@@ -242,18 +265,24 @@ $folderCommandValue = '"{0}" /d /s /c ""{1}" "%1""' -f $env:ComSpec, $openHereCm
 $backgroundCommandValue = '"{0}" /d /s /c ""{1}" "%V""' -f $env:ComSpec, $openHereCmd
 Set-Item -Path $folderCommand -Value $folderCommandValue
 Set-Item -Path $backgroundCommand -Value $backgroundCommandValue
-Ok "右键菜单已添加: 在 Mobius 中打开 (文件夹 + 空白处)"
+
+# 管理员入口: 隐藏中间窗口跑 .ps1, 提权后的终端窗口由 Start-Process 拉起.
+$folderAdminCommandValue = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" "%1"' -f $openHereAdminPs1
+$backgroundAdminCommandValue = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" "%V"' -f $openHereAdminPs1
+Set-Item -Path $folderAdminCommand -Value $folderAdminCommandValue
+Set-Item -Path $backgroundAdminCommand -Value $backgroundAdminCommandValue
+Ok "右键菜单已添加: 在Mobius终端中打开 + 在Mobius终端中打开（管理员权限）(文件夹 + 空白处)"
 
 Write-Host ""
 Write-Host "=== 完成! 重开 PowerShell 后运行:  mobius ===" -ForegroundColor Green
 Write-Host "(或直接运行: $mobiusCmd)" -ForegroundColor Gray
-Write-Host "右键文件夹或文件夹空白处，可选择: 在 Mobius 中打开" -ForegroundColor Gray
+Write-Host "右键文件夹或文件夹空白处，可选择: 在Mobius终端中打开 / 在Mobius终端中打开（管理员权限）" -ForegroundColor Gray
 }
 
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v15-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-v16-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""
