@@ -3326,7 +3326,7 @@ const TERMINAL_INSTALL_OPTIONS = [
     id: 'windows',
     label: 'Windows',
     sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
-    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v17.ps1 | iex',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v18.ps1 | iex',
     note: '安装后重新打开 PowerShell 并运行 mobius；同时在文件夹和文件夹空白处添加“在Mobius终端中打开”与“在Mobius终端中打开（管理员权限）”右键菜单。',
   },
 ] as const

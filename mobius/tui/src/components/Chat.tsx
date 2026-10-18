@@ -1121,7 +1121,10 @@ function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDispl
     ? `${ready.project.name} › ${ready.issue.title}${sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}`
     : ''
   const left = truncateDisplay(leftRaw, rightRaw ? Math.floor(columns * 0.45) : columns - 2)
-  const right = rightRaw ? truncateDisplay(rightRaw, columns - left.length - 5) : ''
+  // 宽度按显示列算, 不能用 .length: 中文/表情占两列, 按字符数会多给出预算.
+  // Measure display columns, not UTF-16 units, or wide chars push the row over.
+  const leftShown = copyNotice ?? left
+  const right = rightRaw ? truncateDisplay(rightRaw, columns - displayWidth(leftShown) - 5) : ''
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box justifyContent="space-between">
@@ -1173,10 +1176,21 @@ function compactPath(path: string): string {
   return path.startsWith(`${home}/`) ? `~/${path.slice(home.length + 1)}` : path
 }
 
-function truncateDisplay(value: string, maxLength: number): string {
-  const limit = Math.max(1, Math.floor(maxLength))
-  if (value.length <= limit) return value
-  return limit <= 1 ? '…' : `${value.slice(0, limit - 1)}…`
+function truncateDisplay(value: string, maxWidth: number): string {
+  const limit = Math.max(1, Math.floor(maxWidth))
+  if (displayWidth(value) <= limit) return value
+  if (limit <= 1) return '…'
+  // 按显示列切, 不把一个双列字符劈成两半.
+  // Cut on display columns so a double-width char is never split in half.
+  let out = ''
+  let width = 0
+  for (const ch of Array.from(value)) {
+    const w = displayWidth(ch)
+    if (width + w > limit - 1) break
+    out += ch
+    width += w
+  }
+  return `${out}…`
 }
 
 function buildWebUrl(server: string, webUserId: string, ready: ReadyState, sessionId: string | null): string {
