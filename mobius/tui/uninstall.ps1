@@ -119,14 +119,10 @@ function Invoke-MobiusUninstall {
     Step '删除临时安装器和旧错误日志...'
     Get-ChildItem $env:TEMP -Filter 'mobius-install-v*.ps1' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v10-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v11-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v12-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v13-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v14-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v15-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-install-v16-error.log') -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $env:TEMP 'mobius-uninstall-v11-error.log') -Force -ErrorAction SilentlyContinue
+    Get-ChildItem $env:TEMP -Filter 'mobius-install-v*-error.log' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem $env:TEMP -Filter 'mobius-uninstall-v*-error.log' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
     Ok '临时安装文件已清理。'
 
     Write-Host ''

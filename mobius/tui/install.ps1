@@ -10,7 +10,7 @@
   文件夹空白处注册两个 Explorer 右键入口：“在Mobius终端中打开”与
   “在Mobius终端中打开（管理员权限）”。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v16.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v17.ps1 | iex
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -212,6 +212,9 @@ if ($userPath -notlike "*$binDir*") {
 #   Directory\Background\shell\Mobius = 右键文件夹空白处，目标参数 %V
 #   ...\MobiusAdmin                   = 同样的两处，UAC 提权后启动(管理员权限)
 # 使用 .cmd 辅助启动器，避免右键动作依赖 PowerShell ExecutionPolicy。
+$logsDir = Join-Path $MHOME "logs"
+New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+
 $openHereCmd = Join-Path $binDir "mobius-open-here.cmd"
 $openHereLines = @(
     '@echo off',
@@ -219,19 +222,38 @@ $openHereLines = @(
     'set "MOBIUS_TARGET=%~1"',
     'if not defined MOBIUS_TARGET set "MOBIUS_TARGET=%CD%"',
     'cd /d "%MOBIUS_TARGET%"',
+    '> "%USERPROFILE%\.mobius\logs\launcher.log" echo %DATE% %TIME% start target=%MOBIUS_TARGET%',
     'call "%~dp0mobius.cmd"',
+    '>> "%USERPROFILE%\.mobius\logs\launcher.log" echo %DATE% %TIME% exit=%ERRORLEVEL%',
     'endlocal'
 )
 Set-Content -Path $openHereCmd -Value $openHereLines -Encoding ASCII
 
 # 管理员入口: Explorer 直接跑这个脚本, 由它用 UAC 提权拉起同一个启动器.
 # -Encoding UTF8 在 Windows PowerShell 5.1 会写入 BOM, -File 才能正确读中文/引号.
+# 用 ShellExecute 而不是 Start-Process: 后者会继承隐藏父窗口的状态, 提权后的控制台窗口也跟着隐藏.
+# Use ShellExecute instead of Start-Process: the latter inherits a hidden parent's state and the elevated console stays hidden.
 $openHereAdminPs1 = Join-Path $binDir "mobius-open-here-admin.ps1"
 $openHereAdminLines = @(
     'param([string]$Target)',
+    '# 每次启动覆盖写诊断日志, 闪退时可以直接看原因.',
+    '# Overwrite a diagnostic log on every launch so a flash-and-close can be explained later.',
+    '$log = Join-Path $env:USERPROFILE ".mobius\logs\admin-launch.log"',
+    'try {',
+    '    New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null',
     '# 右键文件夹时 Explorer 会传路径, 兜底用当前目录.',
-    'if (-not $Target) { $Target = (Get-Location).Path }',
-    'Start-Process -FilePath (Join-Path $PSScriptRoot ''mobius-open-here.cmd'') -ArgumentList (''"{0}"'' -f $Target) -Verb RunAs'
+    '# Explorer passes the folder path; fall back to the current directory.',
+    '    if (-not $Target) { $Target = (Get-Location).Path }',
+    '    $launcher = Join-Path $PSScriptRoot "mobius-open-here.cmd"',
+    '    $commandLine = ''/d /s /c ""{0}" "{1}""'' -f $launcher, $Target',
+    '# 第五个参数 1 是 SW_SHOWNORMAL, 强制提权后的窗口可见.',
+    '# The fifth argument is SW_SHOWNORMAL, forcing the elevated window to be visible.',
+    '    $shell = New-Object -ComObject Shell.Application',
+    '    $shell.ShellExecute($env:ComSpec, $commandLine, $PSScriptRoot, "runas", 1)',
+    '    "$(Get-Date -Format o) launched target=$Target launcher=$launcher" | Set-Content -Path $log',
+    '} catch {',
+    '    "$(Get-Date -Format o) failed: $($_.Exception.Message)" | Set-Content -Path $log',
+    '}'
 )
 Set-Content -Path $openHereAdminPs1 -Value $openHereAdminLines -Encoding UTF8
 
@@ -282,7 +304,7 @@ Write-Host "右键文件夹或文件夹空白处，可选择: 在Mobius终端中
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v16-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-v17-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""
