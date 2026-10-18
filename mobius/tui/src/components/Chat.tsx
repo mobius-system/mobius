@@ -22,6 +22,7 @@ import {
   type RowAnchor,
 } from '../lib/transcript-viewport.js'
 import type { ReadyState } from './PrepScreen.js'
+import { IS_CONHOST, hostText } from '../lib/host-text.js'
 import type { AnyEntry } from '../types.js'
 import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
 import { AIMUX_VERSION, type AimuxStatus } from '../aimux.js'
@@ -518,7 +519,7 @@ function MetaRow({ label, value, hint, labelWidth }: { label: string; value: str
 }
 
 function CompactHeader({ ready, sessionId, columns }: { ready: ReadyState; sessionId: string | null; columns: number }) {
-  const context = `${ready.project.name} › ${ready.issue.title}${sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}`
+  const context = hostText(`${ready.project.name} › ${ready.issue.title}${sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}`)
   return (
     <Box justifyContent="space-between">
       <Text bold><Text dimColor>{'>_ '}</Text>Mobius</Text>
@@ -1012,8 +1013,8 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
           {confirmQuit
             ? <Text color="yellowBright" bold>请再次按下Ctrl+C退出</Text>
             : <Text dimColor>
-                {hasPending ? <Text color="yellowBright">空回车插队 · </Text> : null}
-                {(stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行'}
+                {hasPending ? <Text color="yellowBright">{hostText('空回车插队 · ')}</Text> : null}
+                {hostText((stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行')}
               </Text>}
           <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
         </Box>
@@ -1114,12 +1115,12 @@ function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDispl
   const model = modelDisplay
   const language = ready.prefs.language === 'en' ? 'English' : '中文'
   const cwd = compactPath(process.cwd())
-  const leftRaw = columns >= 100
+  const leftRaw = hostText(columns >= 100
     ? `${model} · ${language} · ${cwd}`
-    : `${model} · ${ready.project.name}`
-  const rightRaw = columns >= 72
+    : `${model} · ${ready.project.name}`)
+  const rightRaw = hostText(columns >= 72
     ? `${ready.project.name} › ${ready.issue.title}${sessionId ? ` · ${sessionId.slice(0, 8)}` : ''}`
-    : ''
+    : '')
   const left = truncateDisplay(leftRaw, rightRaw ? Math.floor(columns * 0.45) : columns - 2)
   // 宽度按显示列算, 不能用 .length: 中文/表情占两列, 按字符数会多给出预算.
   // Measure display columns, not UTF-16 units, or wide chars push the row over.
@@ -1149,12 +1150,15 @@ function ConnectivityRow({ aimuxStatus, webUrl, columns }: { aimuxStatus?: Aimux
   // No AIMUX status → web URL keeps the whole row (unchanged from before).
   // Otherwise leave room for the AIMUX block + 'web · ' prefix + a safety gap
   // (the gap also absorbs ambiguous-width chars like box-drawing in the detail).
+  // conhost 下 '·' 按两列渲染, 改用 ASCII 前缀.
+  // Under conhost '·' renders two cells wide, so use the ASCII prefix.
+  const prefix = hostText(WEB_PREFIX)
   const urlBudget = aimuxWidth
-    ? Math.max(8, columns - 2 - aimuxWidth - WEB_PREFIX.length - 6)
+    ? Math.max(8, columns - 2 - aimuxWidth - prefix.length - 6)
     : undefined
   const web = (
     <Text>
-      <Text dimColor>{WEB_PREFIX}</Text>
+      <Text dimColor>{prefix}</Text>
       <Text color="cyan" underline>{clickableUrl(webUrl, urlBudget)}</Text>
     </Text>
   )
@@ -1177,20 +1181,23 @@ function compactPath(path: string): string {
 }
 
 function truncateDisplay(value: string, maxWidth: number): string {
+  // conhost 下用 ASCII 省略号, 避免 … 按两列渲染又溢出一列.
+  // Use an ASCII ellipsis under conhost: … renders two cells there while Ink counts one.
+  const ellipsis = IS_CONHOST ? '...' : '…'
   const limit = Math.max(1, Math.floor(maxWidth))
   if (displayWidth(value) <= limit) return value
-  if (limit <= 1) return '…'
+  if (limit <= displayWidth(ellipsis)) return ellipsis
   // 按显示列切, 不把一个双列字符劈成两半.
   // Cut on display columns so a double-width char is never split in half.
   let out = ''
   let width = 0
   for (const ch of Array.from(value)) {
     const w = displayWidth(ch)
-    if (width + w > limit - 1) break
+    if (width + w > limit - displayWidth(ellipsis)) break
     out += ch
     width += w
   }
-  return `${out}…`
+  return `${out}${ellipsis}`
 }
 
 function buildWebUrl(server: string, webUserId: string, ready: ReadyState, sessionId: string | null): string {

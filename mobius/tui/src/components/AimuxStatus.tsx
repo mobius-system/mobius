@@ -1,6 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import type { AimuxStatus } from '../aimux.js'
+import { hostText } from '../lib/host-text.js'
 
 const STYLE: Record<AimuxStatus['state'], { icon: string; color: 'green' | 'yellow' | 'red' | 'gray' }> = {
   connected: { icon: '●', color: 'green' },
@@ -15,14 +16,16 @@ const STYLE: Record<AimuxStatus['state'], { icon: string; color: 'green' | 'yell
 export function aimuxStatusText(status: AimuxStatus, compact = false): string {
   const phase = status.phase && !['idle', 'connected'].includes(status.phase) ? ` · ${phaseLabel(status.phase)}` : ''
   const detail = status.detail || stateLabel(status.state)
-  return `AIMUX${phase} · ${compact ? compactDetail(detail) : detail}`
+  // conhost 把 · 等歧义字符画成两列, Ink 只算一列 → 右侧内容溢出.
+  // conhost draws ambiguous glyphs two cells wide while Ink counts one.
+  return hostText(`AIMUX${phase} · ${compact ? compactDetail(detail) : detail}`)
 }
 
 export function AimuxStatusLine({ status, compact = false }: { status: AimuxStatus; compact?: boolean }) {
   const style = STYLE[status.state]
   return (
     <Box>
-      <Text color={style.color}>{style.icon}</Text>
+      <Text color={style.color}>{hostText(style.icon)}</Text>
       <Text dimColor={status.state === 'disabled' || status.state === 'stopped'}>
         {' ' + aimuxStatusText(status, compact)}
       </Text>
