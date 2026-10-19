@@ -2761,15 +2761,20 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
+    // 必须在 effect 内同步读取草稿: 若放进 setDrafts 的更新函数, React 会延迟到下一次渲染才执行,
+    // 那时下方的持久化 effect 已经用初始空值把 localStorage 里的草稿删掉了
+    // Read the draft synchronously here: inside the setDrafts updater React defers it to the next render,
+    // by which time the persist effect below has already deleted the saved draft with the initial empty value
+    const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
+    if (!saved?.input) return
     setDrafts(prev => {
       if (Object.prototype.hasOwnProperty.call(prev, sessionId)) return prev
-      const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
-      if (!saved?.input) return prev
-      return { ...prev, [sessionId]: saved.input }
+      return { ...prev, [sessionId]: saved.input as string }
     })
   }, [sessionId])
 
   const input = drafts[sessionId] || ''
+  const hasDraftEntry = Object.prototype.hasOwnProperty.call(drafts, sessionId)
   const setInput = (val: string | ((prev: string) => string)) => {
     if (!sessionId) return
     setDrafts(prev => {
@@ -2784,8 +2789,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
+    // 草稿水合完成前不写 localStorage, 否则初始空值会覆盖刚保存的内容
+    // Skip persisting until the draft is hydrated in state, otherwise the initial empty value wipes the saved draft
+    if (!hasDraftEntry) return
     draftSave(`session-input:${sessionId}`, { input }, { minChars: 1 })
-  }, [sessionId, input])
+  }, [sessionId, input, hasDraftEntry])
 
   // F6: 规划编辑器 3s 静止后, 预填一条"通知 Agent 已更新规划"的草稿, 避免用户来回切换.
   // 仅在事件 detail.sessionId === 当前 session 时生效, 防止跨 session 串扰.
