@@ -2,9 +2,9 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DraftingCompass, Loader2, X } from 'lucide-react'
 
-// 与 .mobius-drawer 的 transform 过渡时长对齐 (0.26s), 关闭后留一点余量再卸载.
-// Match the .mobius-drawer transform transition (0.26s) and unmount slightly after it.
-const DRAWER_EXIT_MS = 300
+// 关闭时优先等 transform 过渡结束再卸载; 定时器只做兜底 (过渡未触发/标签页不可见).
+// Prefer unmounting on transitionend; the timer is only a fallback.
+const DRAWER_EXIT_FALLBACK_MS = 900
 
 /*
  * ProjectBlueprintDrawer — full-screen drawer hosting the project blueprint pane.
@@ -33,7 +33,7 @@ export function ProjectBlueprintDrawer({
   useEffect(() => {
     if (!open || !projectId) {
       setVisible(false)
-      const timer = setTimeout(() => setMounted(false), DRAWER_EXIT_MS)
+      const timer = setTimeout(() => setMounted(false), DRAWER_EXIT_FALLBACK_MS)
       return () => clearTimeout(timer)
     }
     setMounted(true)
@@ -74,13 +74,18 @@ export function ProjectBlueprintDrawer({
         className="mobius-drawer-backdrop"
         onClick={onClose}
         aria-hidden="true"
-        style={{ opacity: visible ? 1 : 0, transition: `opacity ${DRAWER_EXIT_MS}ms ease`, animation: 'none' }}
+        style={{ opacity: visible ? 1 : 0, transition: 'opacity 300ms ease', animation: 'none' }}
       />
       <aside
         className={`mobius-drawer mobius-drawer--right mobius-drawer--full${visible ? ' mobius-drawer--open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label="项目蓝图"
+        onTransitionEnd={(e) => {
+          // 滑出过渡结束后立刻卸载, 避免动画被兜底定时器截断或空占 DOM.
+          // Unmount as soon as the slide-out finishes so the exit is never cut short.
+          if (!visible && e.target === e.currentTarget && e.propertyName === 'transform') setMounted(false)
+        }}
       >
         {/* ✨ 抽屉头: 标题 + 关闭按钮 */}
         {/* ✨ Drawer header: title and close button */}
