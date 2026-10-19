@@ -73,7 +73,15 @@ export function FileTreeContextMenu({ x, y, items, onClose }: Props) {
     const onPointerDown = (e: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose()
     }
-    const onScroll = () => onClose()
+    // 只响应菜单所属面板内的滚动: 全局捕获会在会话区 LIVE 卡输出自动滚底时
+    // 把文件树右键菜单一起关掉 (表现为"菜单刚出现就消失")。
+    // Only react to scrolls inside the menu's owning pane: a global capture listener
+    // closes the file-tree menu as soon as the chat auto-scrolls for LIVE output.
+    const onScroll = (e: Event) => {
+      const root = menuRef.current?.parentElement
+      if (!root || !(e.target instanceof Node)) return
+      if (root === e.target || root.contains(e.target)) onClose()
+    }
     const onResize = () => onClose()
     document.addEventListener('pointerdown', onPointerDown, true)
     window.addEventListener('scroll', onScroll, true)
