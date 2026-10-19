@@ -21,6 +21,7 @@ interface PcClientMeta {
   local_path?: string
   is_tui?: boolean
   add_remote_aimux_mcp?: boolean
+  gui_authorized?: boolean
 }
 
 /** pc_client_metadata 在 DB 是 JSON 字符串, 详情端点返回字符串, 列表端点补列后也是字符串。 */
@@ -38,6 +39,19 @@ function parsePcMeta(raw: unknown): PcClientMeta | null {
 export function isPcClientSession(session: unknown): boolean {
   const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
   return !!meta?.aimux_id
+}
+
+/** 从会话元数据提取「继续会话」表单预填的设备信息; 元数据是 JSON 字符串或对象都能解析。 */
+/* Extracts the device info prefilled into the "continue session" form; accepts both the raw JSON string and an object. */
+export function continuationDevice(session: unknown): { aimuxId: string | null; guiAuthorized: boolean; requiresAimux: boolean } {
+  const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
+  // 后端 pc_client_metadata 存的是 TEXT, 列表/详情端点原样返回字符串; 直接取 .aimux_id 恒为 undefined.
+  // The backend stores pc_client_metadata as TEXT and returns it verbatim, so reading .aimux_id off it is always undefined.
+  return {
+    aimuxId: meta?.aimux_id || null,
+    guiAuthorized: meta?.gui_authorized === true,
+    requiresAimux: meta?.work_mode === 'pc' || meta?.work_mode === 'dual',
+  }
 }
 
 function getDesktopBridge(): {

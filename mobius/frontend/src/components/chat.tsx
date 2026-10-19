@@ -12,6 +12,7 @@ import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, Sessi
 import { NewSessionModal } from './modals'
 import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
+import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
 import { ResizablePanel, useNarrowContainer } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
@@ -20,7 +21,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, continuationDevice } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -1517,6 +1518,7 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
+  onOpenBlueprint, canOpenBlueprint,
 }: {
   jsonlCount: number
   onOpenRaw: () => void
@@ -1526,6 +1528,8 @@ function ChatHeaderOverflowMenu({
   onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
+  onOpenBlueprint: () => void
+  canOpenBlueprint: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1564,6 +1568,10 @@ function ChatHeaderOverflowMenu({
             disabled={!canStop}
             onClick={() => { setOpen(false); onStop() }}>
             <span>终止当前操作</span>
+          </button>
+          <button className={itemClass} disabled={!canOpenBlueprint}
+            onClick={() => { setOpen(false); onOpenBlueprint() }}>
+            <span>查看项目蓝图</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
@@ -2245,6 +2253,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const [easyLoadingAll, setEasyLoadingAll] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
+  // 项目蓝图全屏抽屉 (从 chat 头部 … 菜单打开).
+  // Full-screen project blueprint drawer, opened from the chat header overflow menu.
+  const [projectBlueprintOpen, setProjectBlueprintOpen] = useState(false)
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [rawJsonlDownloading, setRawJsonlDownloading] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
@@ -4472,6 +4483,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
                 onStop={handleStopSession}
                 canStop={!!sessionId}
+                onOpenBlueprint={() => setProjectBlueprintOpen(true)}
+                canOpenBlueprint={!!currentProjectId}
               />
             )}
           </JsonlCountSlot>
@@ -5137,11 +5150,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           initialName={continueSessionName(currentSession)}
           initialDescription={(currentSession as any).description || ''}
           initialIssueTitle={(currentIssue as any)?.title || (currentTask as any)?.title}
-          initialDevice={{
-            aimuxId: (currentSession as any).pc_client_metadata?.aimux_id || null,
-            guiAuthorized: (currentSession as any).pc_client_metadata?.gui_authorized === true,
-            requiresAimux: ['pc', 'dual'].includes((currentSession as any).pc_client_metadata?.work_mode),
-          }}
+          initialDevice={continuationDevice(currentSession)}
         />
       )}
       {continueModalOpen && currentSession?.session_id && !currentIssueId && (currentSession as any)?.research_id && (
@@ -5223,6 +5232,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           </div>
         </div>
       )}
+
+      {/* 项目蓝图: 全屏抽屉, 内容复用项目设置里的同名面板 */}
+      {/* Project blueprint: full-screen drawer wrapping the same panel used in project settings */}
+      <ProjectBlueprintDrawer
+        open={projectBlueprintOpen}
+        projectId={currentProjectId}
+        onClose={() => setProjectBlueprintOpen(false)}
+      />
 
       {terminalOpen && (
         <WebTerminalModal

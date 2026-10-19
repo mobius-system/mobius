@@ -56,7 +56,7 @@ const { ensureSessionWithProxy } = require('../services/model-access')
 const { ensureTempRoot } = require('../services/file-access')
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): spawn 前确保沙箱容器 + tmux server, HOME/路径按用户重定向
-const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, materializeSettingsForSbx, containerForWindow, isolationActiveFor, sessionConfigDir } = require('../services/user-isolation')
+const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, materializeSettingsForSbx, containerForWindow, isolationActiveFor, sessionConfigDir } = require('../services/user-isolation')
 
 // ── Constants ───────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -496,8 +496,8 @@ function listWindowsRowsCached() {
   const rows = r.status === 0
     ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
-  // docker 隔离: 各沙箱容器内的窗口行并入 (窗口级操作由 tmux() 自动路由回各自容器)
-  const allRows = [...rows, ...listWindowsRowsFromSandboxes(HUB)]
+  // docker 隔离: 各沙箱容器内的窗口行并入 (状态查询读异步快照, 不走阻塞的同步探测)
+  const allRows = [...rows, ...listWindowsRowsForStatus(HUB)]
   _listWindowsCache = { ts: now, rows: allRows }
   return allRows
 }

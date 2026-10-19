@@ -11,7 +11,7 @@ export {
 } from './docker-sandbox';
 export {
   prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow,
-  listWindowsRowsFromSandboxes, claudeHomeFor, codexHomeFor,
+  listWindowsRowsFromSandboxes, listWindowsRowsForStatus, claudeHomeFor, codexHomeFor,
   rewriteHostPath, rewriteEnvUrls, rewriteAimuxBin, spawnHarnessChild, materializeSettingsForSbx,
   sessionConfigDir, removeSessionConfigs,
 } from './exec-router';

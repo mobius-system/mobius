@@ -5875,6 +5875,21 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
+/* 全屏抽屉变体: 从右侧滑入后铺满整个视口 (会话头部「查看项目蓝图」). */
+/* Full-screen variant: slides in from the right and covers the whole viewport. */
+.mobius-drawer--full {
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100%;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  transform: translateX(100%);
+}
+.mobius-drawer--full.mobius-drawer--open {
+  transform: translateX(0);
+}
+
 /* 抽屉关闭按钮: 浮在右上角 */
 .mobius-drawer-close {
   position: absolute;

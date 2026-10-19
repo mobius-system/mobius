@@ -123,6 +123,79 @@ export function listWindowsRowsFromSandboxes(hub: string): string[][] {
   return rows;
 }
 
+// ── 状态查询路径的沙箱窗口行快照 (异步刷新) ──────────────────────────────────
+// listWindowsRowsFromSandboxes 一次遍历要给每个沙箱 spawnSync 一条 docker inspect + 一条
+// docker exec (8 个沙箱 ≈ 16 个子进程 ≈ 1.8s), 全程阻塞 Node 事件循环. 它挂在
+// isAlive → listWindowsRowsCached 上, 而 agent-status-syncer 每分钟把这套探测跑过 2000+
+// 个会话: 3s 缓存一过期就再冻 1.8s, 事件循环被占满 → 整个 HTTP 服务只接连接不回应.
+// (2026-10-16 事故: /api/v2/health 连续 000, 暂停取样栈顶正是这里的 spawnSync.)
+// 故状态路径改读异步刷新的快照 (容忍 SBX_ROWS_TTL_MS 陈旧, 与原来的 3s 缓存同性质);
+// 控制流 (windowExists / 建窗口 / 杀窗口) 仍走实时同步版, 那里必须看到真值.
+const SBX_ROWS_TTL_MS = 5000;
+const SBX_HUBS = ['imac_claude_code_agent_hub', 'imac_codex_agent_hub'];
+
+let sbxRowsCache: { ts: number; byHub: Map<string, string[][]> } | null = null;
+let sbxRowsRefreshInFlight = false;
+let sbxRowsLastSyncFallbackTs = 0;
+
+// 异步版的单容器 list-windows: 成功返回行, 失败 (容器不在 / 无 tmux server) 返回 null.
+function dockerTmuxListWindows(container: string, hub: string): Promise<string[][] | null> {
+  return new Promise((resolve) => {
+    let out = '';
+    const child = spawn('docker', ['exec', container, 'tmux', '-L', 'mobius-agent',
+      'list-windows', '-t', hub,
+      '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}',
+    ], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* 已退出 */ } resolve(null); }, 15000);
+    child.stdout.on('data', (d) => { out += d.toString(); });
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) { resolve(null); return; }
+      resolve(out.trim().split('\n').filter(Boolean).map((l) => l.split('|')));
+    });
+  });
+}
+
+// 后台刷新一轮: 与同步版同源, 顺带重建窗口归属表 (后端重启后 windowOwner 为空时靠它).
+function scheduleSandboxRowsRefresh(): void {
+  if (sbxRowsRefreshInFlight) return;
+  sbxRowsRefreshInFlight = true;
+  const entries = registry.allEntries().filter((e) => isolationActiveFor(e.user));
+  const byHub = new Map<string, string[][]>();
+  const jobs: Promise<void>[] = [];
+  for (const entry of entries) {
+    for (const hub of SBX_HUBS) {
+      jobs.push(dockerTmuxListWindows(entry.containerName, hub).then((rows) => {
+        if (!rows) return;
+        const acc = byHub.get(hub) || [];
+        for (const cols of rows) {
+          acc.push(cols);
+          if (cols[0] && cols[0] !== '_root') setWindowOwner(cols[0], entry.user);
+        }
+        byHub.set(hub, acc);
+      }));
+    }
+  }
+  Promise.all(jobs).then(() => {
+    // ts 取刷新完成时刻: 原实现在 spawnSync 之前取 now, 一次 1.8s 的慢刷新会把 TTL 直接
+    // 吃掉一半以上, 缓存形同虚设.
+    sbxRowsCache = { ts: Date.now(), byHub };
+  }).catch(() => { /* 单容器失败已在上面吞掉 */ }).finally(() => { sbxRowsRefreshInFlight = false; });
+}
+
+// 状态查询入口: 读快照, 不阻塞事件循环. 冷启动 (首轮刷新未回来) 才允许同步兜底,
+// 且 10s 内最多一次 — 防止"刷新一直失败 → 每次调用都卡 1.8s"把事故重演一遍.
+export function listWindowsRowsForStatus(hub: string): string[][] {
+  if (!isDockerIsolation()) return [];
+  if (!sbxRowsCache || Date.now() - sbxRowsCache.ts > SBX_ROWS_TTL_MS) scheduleSandboxRowsRefresh();
+  if (sbxRowsCache) return sbxRowsCache.byHub.get(hub) || [];
+  const now = Date.now();
+  if (now - sbxRowsLastSyncFallbackTs < 10000) return [];
+  sbxRowsLastSyncFallbackTs = now;
+  return listWindowsRowsFromSandboxes(hub);
+}
+
 // ── 宿主路径 → 沙箱路径 (仅 HOME / CODEX_HOME 两族; 其余挂载同路径) ────────────
 function workDirOf(userId: string): string {
   const u = db.prepare('SELECT work_dir FROM users WHERE id = ?').get(String(userId)) as { work_dir?: string } | undefined;

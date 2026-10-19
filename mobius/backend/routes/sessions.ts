@@ -33,6 +33,8 @@ import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
 // @ts-ignore — service 仍是 .js
 import { syncSkillsToWorkspace } from '../services/session-skills-sync';
+// @ts-ignore — service 仍是 .js (合成记忆「本任务知识」的同一解析入口)
+import { readIssueKnowledgeShape, ISSUE_KNOWLEDGE_ID_PREFIX } from '../services/project-knowledge';
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 // @ts-ignore — service 仍是 .js
@@ -1699,6 +1701,41 @@ function stripBodies(snapshot: any) {
   };
 }
 
+// 面板可点击列表 (all_skills / all_memories) 的可用性过滤:
+//   这两个列表是会话创建时冻结的快照, 而「强调 / 追加」按 id 实时重解析 — skill/memory 被
+//   改名或删除后, 快照里的旧 id 就成了"点了必报错"的死行 (用户报的 "skill 不存在或无权访问"
+//   正是它: 内置 skill 目录改名后, 老会话快照仍指向旧 dirName). 这里用与 emphasize 完全同源的
+//   解析口径把不可解析的行剔掉, 让列表与点击行为一致. 已注入清单 (skills / memories) 保持快照
+//   原样, 那是历史展示, 不可点击.
+function pruneUnresolvableContextItems(snapshot: any, user: AnyUser, session: AnySession) {
+  const src = snapshot && typeof snapshot === 'object' ? { ...snapshot } : {};
+  const issue = session?.issue_id ? (Issues.findById(session.issue_id) as any) : null;
+  const project = issue?.project_id ? (Projects.findById(issue.project_id) as any) : null;
+  const issueKnowledgeLive = !!(issue && project && readIssueKnowledgeShape(project, issue));
+  const skillAlive = (s: any) => {
+    try {
+      const live = s?.id ? (Skills.findById(s.id) as any) : null;
+      return !!live && canReadContextItem(user, 'skill', live);
+    } catch { return false; }
+  };
+  const memoryAlive = (m: any) => {
+    const id = String(m?.id || '');
+    if (!id) return false;
+    // 合成记忆「本任务知识」不入记忆库, 按文件在不在判.
+    if (id.startsWith(ISSUE_KNOWLEDGE_ID_PREFIX)) return issueKnowledgeLive && !!issue && canReadIssue(user, issue);
+    try {
+      const live = Memories.findById(id) as any;
+      return !!live && canReadContextItem(user, 'memory', live);
+    } catch { return false; }
+  };
+  if (Array.isArray(src.all_skills)) src.all_skills = src.all_skills.filter(skillAlive);
+  if (Array.isArray(src.all_memories)) src.all_memories = src.all_memories.filter(memoryAlive);
+  // 无 all_* 的老快照, 前端回落把 skills / memories 当可点击列表用 → 同样过滤.
+  if (!Array.isArray(src.all_skills) && Array.isArray(src.skills)) src.skills = src.skills.filter(skillAlive);
+  if (!Array.isArray(src.all_memories) && Array.isArray(src.memories)) src.memories = src.memories.filter(memoryAlive);
+  return src;
+}
+
 // 在已存在的会话内新装/新加 skill|memory 后, 用当前 live 数据 + 该会话现存的勾选状态
 // 重建并持久化 selection snapshot. 会话快照在创建时一次性冻结, 不刷新则新装的条目
 // 既不进入会话面板列表、也不会在后续对话回合被注入.
@@ -1716,7 +1753,7 @@ router.post('/:id/refresh-selection-snapshot', auth, (req: express.Request, res:
   Sessions.updateSelectionSnapshot(id, JSON.stringify(snapshot));
   const reread = Sessions.getSelectionSnapshot(id) as any;
   res.json({
-    snapshot: stripBodies(snapshot),
+    snapshot: stripBodies(pruneUnresolvableContextItems(snapshot, user, session)),
     snapshot_at: reread?.session_selection_snapshot_at || null,
     source: 'refreshed',
     legacy: false,
@@ -1734,7 +1771,7 @@ router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.
   if (stored?.session_selection_snapshot) {
     try {
       res.json({
-        snapshot: stripBodies(JSON.parse(stored.session_selection_snapshot)),
+        snapshot: stripBodies(pruneUnresolvableContextItems(JSON.parse(stored.session_selection_snapshot), user, session)),
         snapshot_at: stored.session_selection_snapshot_at || null,
         source: 'created',
         legacy: false,
@@ -1750,11 +1787,11 @@ router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.
     try {
       const sources = JSON.parse(snap.context_snapshot_sources);
       res.json({
-        snapshot: stripBodies({
+        snapshot: stripBodies(pruneUnresolvableContextItems({
           skills: sources?.skills || [],
           memories: sources?.memories || [],
           totals: { skills: (sources?.skills || []).length, memories: (sources?.memories || []).length },
-        }),
+        }, user, session)),
         snapshot_at: snap.context_snapshot_at || null,
         source: 'context',
         legacy: true,
@@ -1887,16 +1924,37 @@ router.post('/:id/emphasize', auth, async (req: express.Request, res: express.Re
   let relPath: string | null = null;
   if (kind === 'skill') {
     const skill = Skills.findById(id) as any;
-    if (!skill || !canReadContextItem(user, 'skill', skill)) { res.status(404).json({ error: 'skill 不存在或无权访问' }); return; }
+    if (!skill) { res.status(404).json({ error: 'skill 已被删除或重命名，请刷新会话面板' }); return; }
+    if (!canReadContextItem(user, 'skill', skill)) { res.status(403).json({ error: 'skill 不存在或无权访问' }); return; }
     const syncResults = syncSkillsToWorkspace(workDir as string, [{ id: skill.id }]);
     const hit = syncResults.find((r: any) => r.id === skill.id && r.ok);
     if (!hit) { res.status(500).json({ error: '复制 skill 到 session 工作目录失败' }); return; }
     relPath = hit.relPath;
     messageContent = `用户要求你重视 ${relPath} 文件中的 skill`;
   } else {
+    // 记忆库条目 (user: / project: 前缀) 走库解析.
     const memory = Memories.findById(id) as any;
-    if (!memory || !canReadContextItem(user, 'memory', memory)) { res.status(404).json({ error: 'memory 不存在或无权访问' }); return; }
-    const memoryBody = typeof memory.body === 'string' ? memory.body : '';
+    let memoryBody: string | null = memory && canReadContextItem(user, 'memory', memory)
+      ? (typeof memory.body === 'string' ? memory.body : '')
+      : null;
+    if (memory && memoryBody === null) { res.status(403).json({ error: 'memory 不存在或无权访问' }); return; }
+    if (memoryBody === null) {
+      // 合成记忆「本任务知识」(scope='issue', id=issue-knowledge:<issueId>): 它不入记忆库,
+      // 由 gatherIssueSources 按 session 的 project+issue 即时读文件拼装, 因此
+      // Memories.findById 永远找不到 — 这里必须用同一条路径重读, 否则面板上每一项点
+      // 「强调」都会 404.
+      if (!id.startsWith(ISSUE_KNOWLEDGE_ID_PREFIX)) {
+        res.status(404).json({ error: 'memory 已被删除或重命名，请刷新会话面板' });
+        return;
+      }
+      const issue = session.issue_id ? (Issues.findById(session.issue_id) as any) : null;
+      if (!issue) { res.status(404).json({ error: 'memory 已被删除或重命名，请刷新会话面板' }); return; }
+      if (!canReadIssue(user, issue)) { res.status(403).json({ error: 'memory 不存在或无权访问' }); return; }
+      const project = issue.project_id ? (Projects.findById(issue.project_id) as any) : null;
+      const shape = project ? readIssueKnowledgeShape(project, issue) : null;
+      if (!shape) { res.status(404).json({ error: '本任务知识文件不存在，请刷新会话面板' }); return; }
+      memoryBody = typeof shape.body === 'string' ? shape.body : '';
+    }
     messageContent = `用户要求你重视一下记忆：\n\n${memoryBody}`;
   }
 

@@ -31,7 +31,7 @@ import { CheckCircle2, ChevronDown, History, Loader2 } from 'lucide-react'
 import {
   CreateModalShell, Footer, SectionLabel, TextInput, SelectShell, LabelWithRefresh,
   DropdownSelect, DescriptionWithAttachments, SkillMemoryPicker, LanguageSelect,
-  useAsyncList, CreateIssueForm, type PickItem, type SessionLanguage, type DropdownOption,
+  useAsyncList, CreateIssueForm, bulkExclude, type PickItem, type SessionLanguage, type DropdownOption,
 } from './global-create'
 
 // 「预览」按钮直入的传统第 2 步菜单, 按需加载 (见文件头注释)
@@ -632,6 +632,15 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                     options={[
                       // 桌面端默认绑定的是本机标识, web 端没有"本机"概念 → 同一个默认项按平台措辞
                       { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '中枢', description: aimuxId ? `当前: ${aimuxId}` : '只在莫比乌斯中枢上工作' },
+                      // 继续会话时设备由旧会话继承且不可改; 若它还没出现在 bridge 列表里 (未加载/离线), 补一条占位项,
+                      // 否则触发器会回落成「中枢」——与实际继承的设备不符.
+                      // A continued session inherits its device read-only; seed a placeholder while it is absent from the
+                      // bridge list (not loaded yet / offline) so the trigger does not fall back to the hub label.
+                      ...(deviceOverride && !bridgeDevices.some(d => d.name === deviceOverride) ? [{
+                        value: guiAuthorized ? DEVICE_GUI_PREFIX + deviceOverride : deviceOverride,
+                        label: guiAuthorized ? `${deviceOverride} (授权操作图形界面)` : deviceOverride,
+                        description: '继承自原会话',
+                      }] : []),
                       // 离线设备仍可选 (与头部切换设备一致: 断开时仍可依托中枢继续执行任务), 只标状态不置灰
                       // Offline devices stay selectable — they are flagged, not disabled, matching the header switcher
                       ...bridgeDevices.flatMap(d => {
@@ -679,6 +688,10 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                   excludedMemories={excludedMemories}
                   onToggleSkill={id => { toggle(excludedSkills, id, setExcludedSkills); setSelectionReady(true) }}
                   onToggleMemory={id => { toggle(excludedMemories, id, setExcludedMemories); setSelectionReady(true) }}
+                  onBulkToggle={(kind, ids, excluded) => {
+                    bulkExclude(kind === 'skill' ? setExcludedSkills : setExcludedMemories, ids, excluded)
+                    setSelectionReady(true)
+                  }}
                   skillLockedOf={skillLockedOf}
                   disabled={!issueId}
                   dark={dark}

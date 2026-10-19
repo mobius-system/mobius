@@ -286,6 +286,17 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     emit({ ...latest, [key]: list.includes(id) ? list.filter(x => x !== id) : [...list, id] })
   }
 
+  // 全选 / 全不选: 一次性 emit 整批, 循环里连调 toggleExcluded 会因 ref 未及时更新而互相覆盖.
+  // Select-all / select-none emits the whole batch at once; a loop of toggleExcluded would
+  // clobber itself because latestRef only refreshes on the next render.
+  const bulkExcluded = (kind: 'skill' | 'memory', ids: string[], excluded: boolean) => {
+    const { selection: latest, onChange: emit } = latestRef.current
+    const key = kind === 'skill' ? 'excludedSkills' : 'excludedMemories'
+    const next = new Set(latest[key])
+    for (const id of ids) { if (excluded) next.add(id); else next.delete(id) }
+    emit({ ...latest, [key]: Array.from(next) })
+  }
+
   return (
     <>
       {createProject ? (
@@ -400,6 +411,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         excludedMemories={new Set(selection.excludedMemories)}
         onToggleSkill={id => toggleExcluded('skill', id)}
         onToggleMemory={id => toggleExcluded('memory', id)}
+        onBulkToggle={bulkExcluded}
         disabled={!createProject && !issueId}
         emptySkillText={createProject ? '暂无用户级或内置 Skill' : '该任务未启用 Skill'}
       />

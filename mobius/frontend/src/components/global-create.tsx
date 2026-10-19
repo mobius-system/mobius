@@ -11,7 +11,7 @@
 //
 // 新建项目统一走 NewProjectModal (见 new-project-modal.tsx, 含压缩包导入).
 // =====================================================================
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
@@ -494,10 +494,23 @@ export function DescriptionWithAttachments({ value, onValueChange, placeholder, 
 // lockedOf(id) → 主Skill 关联锁定, 强制勾选不可取消
 // mutexOf(id)  → 冲突类, 置灰不可选 (互斥禁用)
 // accentOf(id) → 返回 '主Skill' | '互斥' 等角标文字 (仅 Research 用, Session 不传)
+
+// 全选 / 全不选的一次性写回: 调用方的 onToggleX 是「按闭包里那一份集合取反」的写法,
+// 循环里连调多次会被 React 批处理成只生效最后一次, 所以批量必须走这里用函数式更新.
+// Bulk write-back for select-all / select-none: callers' onToggleX flips a captured set,
+// so a loop of calls collapses into the last one; functional update avoids that.
+export function bulkExclude(setter: Dispatch<SetStateAction<Set<string>>>, ids: string[], excluded: boolean) {
+  setter(prev => {
+    const next = new Set(prev)
+    for (const id of ids) { if (excluded) next.add(id); else next.delete(id) }
+    return next
+  })
+}
+
 export function SkillMemoryPicker({
   skills, memories,
   excludedSkills, excludedMemories,
-  onToggleSkill, onToggleMemory,
+  onToggleSkill, onToggleMemory, onBulkToggle,
   skillLockedOf, skillMutexOf, skillAccentOf,
   disabled, dark,
   singleTrigger = false,
@@ -511,6 +524,8 @@ export function SkillMemoryPicker({
   excludedMemories: Set<string>
   onToggleSkill: (id: string) => void
   onToggleMemory: (id: string) => void
+  /** 批量勾选/取消 (全选 / 全不选); 未传则不显示这两个按钮. excluded=true 表示移出勾选 */
+  onBulkToggle?: (kind: 'skill' | 'memory', ids: string[], excluded: boolean) => void
   skillLockedOf?: (id: string) => boolean
   skillMutexOf?: (id: string) => boolean
   skillAccentOf?: (id: string) => string | undefined
@@ -538,6 +553,17 @@ export function SkillMemoryPicker({
     if (!kw) return items
     return items.filter(it => `${it.name} ${it.description || ''}`.toLowerCase().includes(kw))
   }, [items, q])
+
+  // 全选 / 全不选: 只作用于当前列表 (搜索过滤后看到的那批), 锁定(主Skill)与互斥项不参与.
+  // Select-all / select-none acts on the visible (filtered) rows; locked and mutex rows are skipped.
+  const bulkSet = (enable: boolean) => {
+    const isSkill = panel === 'skill'
+    const ids = filtered
+      .filter(it => !(isSkill && (skillLockedOf?.(it.id) || skillMutexOf?.(it.id))))
+      .map(it => it.id)
+    if (ids.length === 0) return
+    onBulkToggle?.(isSkill ? 'skill' : 'memory', ids, !enable)
+  }
 
   const close = () => { setPanel(null); setQ('') }
 
@@ -621,12 +647,22 @@ export function SkillMemoryPicker({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="px-3 pt-3">
-              <div className="flex items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
+            <div className="px-3 pt-3 flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 h-8" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
                 <Search className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜索名称或描述…" autoFocus
                   className="flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none" style={{ color: dark ? '#f1f5f9' : '#1e293b' }} />
               </div>
+              {onBulkToggle && (items.length > 0) && (
+                <div className="flex flex-shrink-0 items-center gap-1.5">
+                  <button type="button" onClick={() => bulkSet(true)} data-bulk-select="all"
+                    className="h-8 rounded-lg border px-2.5 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
+                    style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>全选</button>
+                  <button type="button" onClick={() => bulkSet(false)} data-bulk-select="none"
+                    className="h-8 rounded-lg border px-2.5 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
+                    style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>全不选</button>
+                </div>
+              )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
               {filtered.length === 0 ? (
@@ -1220,6 +1256,7 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           excludedMemories={excludedMemories}
           onToggleSkill={toggleSkill}
           onToggleMemory={toggleMemory}
+          onBulkToggle={(kind, ids, excluded) => bulkExclude(kind === 'skill' ? setExcludedSkills : setExcludedMemories, ids, excluded)}
           skillLockedOf={isMainSkill}
           skillMutexOf={isMutexSkill}
           skillAccentOf={accentSkill}

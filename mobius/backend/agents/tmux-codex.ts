@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, containerForWindow, isolationActiveFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -304,8 +304,8 @@ function listWindowsRowsCached() {
   const rows = r.status === 0
     ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
     : []
-  // docker 隔离: 各沙箱容器内的窗口行并入
-  const allRows = [...rows, ...listWindowsRowsFromSandboxes(HUB)]
+  // docker 隔离: 各沙箱容器内的窗口行并入 (状态查询读异步快照, 不走阻塞的同步探测)
+  const allRows = [...rows, ...listWindowsRowsForStatus(HUB)]
   _listWindowsCache = { ts: now, rows: allRows }
   return allRows
 }

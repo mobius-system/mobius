@@ -356,6 +356,7 @@ export {
   issueKnowledgePath,
   issueKnowledgeMemoryId,
   issueKnowledgeMemoryName,
+  ISSUE_KNOWLEDGE_ID_PREFIX,
   readIssueKnowledgeShape,
   writeIssueKnowledge,
   ISSUE_KNOWLEDGE_TEMPLATE,

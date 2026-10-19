@@ -38,7 +38,7 @@ import { ExpandableTextarea } from '../components/expandable-textarea'
 import { SessionModelPicker } from '../components/session-model-picker'
 import { ProjectMemberInvite, type MemberInput } from '../components/project-member-invite'
 import {
-  DescriptionWithAttachments, SkillMemoryPicker, LanguageSelect, useAsyncList,
+  DescriptionWithAttachments, SkillMemoryPicker, LanguageSelect, useAsyncList, bulkExclude,
   type PickItem, type SessionLanguage,
 } from '../components/global-create'
 import { type Attachment, appendAttachmentsToDesc } from '../components/attachments'
@@ -915,6 +915,7 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
                       excludedSkills={excludedSkills} excludedMemories={excludedMemories}
                       onToggleSkill={id => toggle(excludedSkills, id, setExcludedSkills)}
                       onToggleMemory={id => toggle(excludedMemories, id, setExcludedMemories)}
+                      onBulkToggle={(kind, ids, excluded) => bulkExclude(kind === 'skill' ? setExcludedSkills : setExcludedMemories, ids, excluded)}
                       skillLockedOf={skillLockedOf}
                       disabled={!issueId} dark={dark} />
                   </div>

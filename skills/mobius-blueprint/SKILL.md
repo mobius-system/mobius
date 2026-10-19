@@ -15,9 +15,8 @@ Skill / Memory 系统，只使用当前 Session 注入的 Mobius 上下文与项
 （操作部署文档等，含双主题、等距字体、CDN 托管）。两类场景侧重点不同，
 按实际任务取用相应规则。
 
-MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
+MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`，运行 `echo $MOBIUS_HIDDEN_FOLDER_NAME` 查看。
 
----
 
 ## 一、蓝图是什么
 
@@ -62,7 +61,9 @@ MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
 
 ## 写作规范（为决策服务）
 
+- **逻辑至上**：关注逻辑的连贯性，在html内部，缓缓展开待介绍的主题，绝不允许冷不丁出现前面没有介绍过的东西（包括英文缩写、脚本、路径等）。
 - **结论先行**：首屏给出一段话结论 + 元信息（日期、状态、适用版本/commit）。
+- **语言自然**：详情见 ../mobius-human-style-writing/SKILL.md
 - 一屏一主题：一张蓝图讲清一个机制，长度控制在 3-6 屏。
 - 系统设计图用内联 SVG：组件框 + 箭头 + 分组，配色克制（3-4 色），
   每个框标出对应源码路径，方便跳转核对。
@@ -105,7 +106,6 @@ MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`。
 写完文件后，在回复里给出蓝图相对路径，并提醒用户可在项目的
 「设置 → 项目蓝图」Tab 查看。不要把 HTML 全文贴进对话。
 
----
 
 ## 二、通用 HTML 写作规范（操作部署文档等）
 

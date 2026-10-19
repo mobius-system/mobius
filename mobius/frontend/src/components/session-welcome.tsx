@@ -587,6 +587,7 @@ type GitSource = {
   dirty_count?: number
   status?: string
   hostname?: string
+  bridge?: boolean
   reason?: string
   cache_expires_at?: number
 }
@@ -840,7 +841,11 @@ export function SessionSkillMemoryEditor({
     setGitLoading(true)
     setGitError('')
     const desktop = typeof window !== 'undefined' ? (window as any).mobiusDesktop : null
-    const hubRequest = api(`/api/projects/${projectId}/git-sources${gitRefreshKey > 0 ? '?refresh=1' : ''}`)
+    // 带 ?session= 后, 后端会把当前会话绑定的 aimux bridge 设备解析成合法远程源 (与远程文件浏览器同款).
+    const gitQuery = new URLSearchParams()
+    if (sessionId) gitQuery.set('session', sessionId)
+    if (gitRefreshKey > 0) gitQuery.set('refresh', '1')
+    const hubRequest = api(`/api/projects/${projectId}/git-sources${gitQuery.size ? `?${gitQuery}` : ''}`)
       .then((res: any) => ({
         sources: (Array.isArray(res?.sources) ? res.sources as GitSource[] : []).filter((source) => (
           source.kind !== 'remote'
@@ -1228,9 +1233,9 @@ export function SessionSkillMemoryEditor({
                             {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[length:var(--fs-xs)] text-slate-300">无 Git 仓库</span>}
                             {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[length:var(--fs-xs)] text-amber-300">游离 HEAD {source.head}</span>}
                           </div>
-                          <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.path || '路径未知'}</div>
+                          <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" title={source.path} style={{ color: 'var(--text-muted)' }}>{source.bridge && source.path === '.' ? '客户端默认工作目录' : (source.path || '路径未知')}</div>
                           <div className="mt-1 flex items-center gap-2 text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>
-                            <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `远程仓库${source.hostname ? ` · ${source.hostname}` : ''}`}</span>
+                            <span>{source.kind === 'hub' ? '中枢仓库' : source.kind === 'local' ? 'Electron 本地仓库' : `远程仓库${source.bridge ? ' · 会话绑定设备' : source.hostname ? ` · ${source.hostname}` : ''}`}</span>
                             {dirtyFresh && <span className="text-amber-300">· {source.dirty_count || 0} 项未提交</span>}
                             {source.status && <span>· {source.status}</span>}
                             {!source.available && source.reason && <span className="truncate text-slate-400" title={source.reason}>· {source.reason}</span>}

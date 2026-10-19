@@ -2755,6 +2755,32 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
   let queriedSourceCount = 0;
   try {
     const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+    // ✨ 会话绑定的 aimux bridge 设备恒为第一优先远程源: bridge 连接名随客户端重连而变,
+    // 项目清单里登记的旧名字会变成"失联但状态仍是 connected"的幽灵条目, 以会话实时绑定为准.
+    // ✨ The session-bound aimux bridge device is always the first remote source: bridge names
+    // change when a client reconnects, so inventory entries go stale while still saying "connected".
+    const bridge = sessionAimuxBridgeDevice(req, req.query.session);
+    const remoteTargets: Array<{ name: string; remotePath: string; status: string; hostname: string; bridge: boolean }> = [];
+    if (bridge) {
+      remoteTargets.push({
+        name: bridge.aimuxId,
+        remotePath: bridge.localPath,
+        status: 'connected',
+        hostname: '',
+        bridge: true,
+      });
+    }
+    for (const remote of inventory) {
+      const name = String(remote?.name || '').trim();
+      if (!name || name === bridge?.aimuxId) continue;
+      remoteTargets.push({
+        name,
+        remotePath: String(remote?.remote_path || '').trim(),
+        status: String(remote?.status || ''),
+        hostname: String(remote?.hostname || ''),
+        bridge: false,
+      });
+    }
     const remember = (key: string, source: any): any => {
       const expiresAt = Date.now() + GIT_SOURCES_CACHE_TTL_MS;
       const entry = { expiresAt, scannedAt: new Date().toISOString(), source: { ...source, cache_expires_at: expiresAt } };
@@ -2791,14 +2817,24 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
       }));
     }
 
-    const remoteSources = await Promise.all(inventory.map(async (remote: any) => {
-      const name = String(remote?.name || '').trim();
-      const requestedPath = String(remote?.remote_path || '').trim() || '~';
-      if (!name) return null;
+    const remoteSources = await Promise.all(remoteTargets.map(async (target) => {
+      const name = target.name;
+      const requestedPath = target.remotePath || '~';
       let rootPath = '';
       try {
-        rootPath = await resolveAbsoluteRemotePath(name, requestedPath);
+        // ✨ bridge 设备不做绝对化解析: 它的 file list 不回显解析后的根目录 (相对根返回相对条目),
+        // 而 bridge 客户端本身就把 '.' 与相对路径按自己的工作目录展开, 照原样传给它即可.
+        // ✨ Bridge sources skip absolute-path resolution: a bridge never echoes the resolved root,
+        // and the client itself resolves '.' / relative roots against its own working directory.
+        rootPath = target.bridge ? (target.remotePath || '.') : await resolveAbsoluteRemotePath(name, requestedPath);
       } catch (e) {
+        const message = (e as Error).message || '';
+        // ✨ 名字既不在 ssh config 也不在 bridge registry = 这台机器彻底失联 (bridge 设备重连会换名,
+        // 项目清单里冻结的旧名字就会永久查不到). 原样把 aimux 的英文报错甩给用户没有意义,
+        // 同时清掉清单里那份早已过期的 connected 快照, 避免卡片自相矛盾.
+        // ✨ The name resolves nowhere: the machine is gone (bridge names change on reconnect), so the
+        // frozen inventory snapshot is stale — say so in plain words and drop the bogus "connected".
+        const lostRemote = /not found in ~\/\.ssh\/config or bridge registry/i.test(message);
         return {
           id: `remote:${name}`,
           kind: 'remote',
@@ -2807,9 +2843,12 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           branch: null,
           head: null,
           path: isAbsoluteRemotePath(requestedPath) ? requestedPath : '',
-          status: String(remote?.status || ''),
-          hostname: String(remote?.hostname || ''),
-          reason: (e as Error).message || '无法解析远端 Git 路径为绝对路径',
+          status: lostRemote ? '' : target.status,
+          hostname: target.hostname,
+          bridge: target.bridge,
+          reason: lostRemote
+            ? '机器已离线或名称已变更（bridge 重连会换名）'
+            : (message || '无法解析远端 Git 路径为绝对路径'),
         };
       }
       const remoteCacheKey = gitSourceCacheKey(name, rootPath);
@@ -2820,8 +2859,9 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           id: `remote:${name}`,
           label: name,
           path: rootPath,
-          status: String(remote?.status || ''),
-          hostname: String(remote?.hostname || ''),
+          status: target.status,
+          hostname: target.hostname,
+          bridge: target.bridge,
         };
       }
       const unavailable = (reason: string) => ({
@@ -2832,8 +2872,9 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
         branch: null,
         head: null,
         path: rootPath,
-        status: String(remote?.status || ''),
-        hostname: String(remote?.hostname || ''),
+        status: target.status,
+        hostname: target.hostname,
+        bridge: target.bridge,
         reason,
       });
       try {
@@ -2857,8 +2898,9 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           branch: branchMatch?.[1]?.trim() || null,
           head: detachedHead,
           path: rootPath,
-          status: String(remote?.status || ''),
-          hostname: String(remote?.hostname || ''),
+          status: target.status,
+          hostname: target.hostname,
+          bridge: target.bridge,
           reason: branchMatch ? '' : (detachedHead ? '游离 HEAD，当前没有分支' : '已检测到 Git，但无法从 HEAD 解析分支'),
         });
       } catch (e) {
@@ -2871,7 +2913,7 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
     const payload = {
       project_id: project.id,
       sources,
-      registered_remote_names: inventory.map((remote: any) => String(remote?.name || '').trim()).filter(Boolean),
+      registered_remote_names: remoteTargets.map(target => target.name),
       scanned_at: new Date().toISOString(),
     };
     const expiresAt = cacheEntries.length ? Math.min(...cacheEntries.map(entry => entry.expiresAt)) : Date.now();
