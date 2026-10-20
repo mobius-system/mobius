@@ -17,7 +17,7 @@ import { Loading } from '../components/shell'
 import { TruncatedText } from '../components/truncated-text'
 import { RecentSessionGroupList } from '../components/recent-session-group-list'
 import { useEditorAvailability } from '../components/workspace/use-editor-availability'
-import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
+import { buildRecentSessionTreeGroups, isRecentSessionActive } from '../services/recent-session-tree'
 import { normalizeRecentSessions, recentSessionTarget, RECENT_SESSION_LIMIT, type RecentSession } from '../services/recent-sessions'
 import { RecentSessionRow } from '../components/recent-session-row'
 import { useLayoutMode } from '../services/layout-mode'
@@ -107,6 +107,21 @@ export default function IssuePage() {
   const [recentSessionsLoading, setRecentSessionsLoading] = useState(false)
   const [recentSessionsError, setRecentSessionsError] = useState('')
   const [recentReloadVersion, setRecentReloadVersion] = useState(0)
+  // 每拿到一份新快照就 +1, 让"实时状态覆盖"的 memo 重新算 (存档该失效了).
+  // Bumped on every snapshot so the live-status overlay memo re-evaluates (archived values expire).
+  const [recentSnapshotTick, setRecentSnapshotTick] = useState(0)
+  // 最近一次 /api/tasks/recent 快照的时间戳; 比它新的实时状态才值得覆盖到行上.
+  // Timestamp of the newest /api/tasks/recent snapshot; only newer live statuses override a row.
+  const recentSnapshotAtRef = useRef(0)
+  // 轮询闭包里读最新列表用于决定快慢节奏, 避免把 recentSessions 放进 effect 依赖.
+  // The poll closure reads the latest list to pick its cadence without re-subscribing.
+  const recentSessionsRef = useRef<RecentSession[]>([])
+  recentSessionsRef.current = recentSessions
+  // 当前会话的实时状态按 id 存档 (带时间): 切走之后, 在下一份快照到来前仍用这份真值,
+  // 否则行会瞬间退回快照里的旧状态 (用户报的「切换到另一个会话后立即变回错误状态」).
+  // Keep each open session's live status with its timestamp: after switching away it still wins
+  // until the next snapshot arrives, so the row never snaps back to a stale value.
+  const liveStatusRef = useRef<Map<string, { status: string; at: number }>>(new Map())
   const [collapsedRecentGroups, setCollapsedRecentGroups] = useState<Set<string>>(() => new Set())
   // Issue 元数据区 (data-tour="issue-created-summary") 可隐藏: 收起后只留标题行,
   // 偏好存本浏览器 (与 sidebar 宽度/隐藏等 ui 偏好同族), 换项目/换会话都保持.
@@ -167,7 +182,12 @@ export default function IssuePage() {
     setRecentSessionsLoading(true)
     setRecentSessionsError('')
     api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`, { signal: controller.signal })
-      .then((value: unknown) => setRecentSessions(normalizeRecentSessions(value)))
+      .then((value: unknown) => {
+        if (controller.signal.aborted) return
+        recentSnapshotAtRef.current = Date.now()
+        setRecentSessions(normalizeRecentSessions(value))
+        setRecentSnapshotTick(tick => tick + 1)
+      })
       .catch((error: any) => {
         if (error?.name === 'AbortError') return
         setRecentSessionsError(error?.message || '近期会话加载失败')
@@ -177,6 +197,59 @@ export default function IssuePage() {
       })
     return () => controller.abort()
   }, [sessionListMode, userParam, recentReloadVersion])
+
+  // 只在挂载时拉一次的话, 徽章会一直停在那一刻的库值: 别的会话状态变了也看不见, 只有把它切成
+  // 当前会话 (ChatArea 2s 轮询覆写) 才动, 切走又立刻退回旧值. 这里按需轮询: 有活跃会话 3s,
+  // 全空闲 10s, 页面不可见时跳过请求; 只合并状态/时间/消息数, 不重排也不增删行, 免得列表乱跳.
+  // The recent list was fetched only on mount, so a badge froze unless that session was the open one.
+  // Poll adaptively (3s while anything is active, 10s otherwise) and merge only volatile fields in
+  // place — no reorder or insert — so the list stays put while the badges stay honest.
+  useEffect(() => {
+    if (sessionListMode !== 'recent') return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = async () => {
+      if (cancelled) return
+      if (document.visibilityState === 'visible') {
+        try {
+          const value = await api(`/api/tasks/recent?limit=${RECENT_SESSION_LIMIT}`)
+          if (!cancelled && Array.isArray(value)) {
+            const incoming = normalizeRecentSessions(value)
+            const byId = new Map(incoming.map(session => [session.session_id, session]))
+            // 快照时间戳先推进: 下一帧渲染起, 比它旧的实时状态存档不再覆盖行.
+            // Advance the snapshot stamp first so older saved live statuses stop overriding rows.
+            recentSnapshotAtRef.current = Date.now()
+            setRecentSnapshotTick(tick => tick + 1)
+            setRecentSessions(prev => {
+              let changed = false
+              const merged = prev.map(row => {
+                const next = byId.get(row.session_id)
+                if (!next) return row
+                if (row.agent_status === next.agent_status
+                  && row.last_active === next.last_active
+                  && row.message_count === next.message_count) return row
+                changed = true
+                return {
+                  ...row,
+                  agent_status: next.agent_status,
+                  last_active: next.last_active,
+                  message_count: next.message_count,
+                }
+              })
+              return changed ? merged : prev
+            })
+          }
+        } catch { /* 网络抖动/超时忽略, 下一轮再来 */ }
+      }
+      if (cancelled) return
+      // ✨ 决定下一轮间隔: 有活跃会话就追紧, 全空闲就放宽.
+      // ✨ Pick the next cadence: tight while anything is active, relaxed when everything is idle.
+      const active = recentSessionsRef.current.some(isRecentSessionActive)
+      timer = setTimeout(tick, active ? 3000 : 10000)
+    }
+    timer = setTimeout(tick, 3000)
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
+  }, [sessionListMode])
 
   // URL ?session= 是唯一选中真理源：有则进入对话，无则清空展示概览.
   // 优先级:
@@ -310,22 +383,39 @@ export default function IssuePage() {
 
   const onSelectSession = (s: any) => goToSession(s.session_id)
 
-  // 当前会话的 agent_status 由 ChatArea 的 /status 轮询 (2s) 实时维护并写回 store, 比
-  // /api/tasks/recent 的库值新; 这里把它盖到近期会话行上, 侧栏状态徽章就不会慢几秒才跟上
-  // 会话标题栏 (点"终止"后立刻回落到"空闲"同理). 其余会话仍用 recent 列表的库值.
-  // The open session's agent_status is kept live by ChatArea's /status poll and written back to
-  // the store, fresher than the DB value inside /api/tasks/recent. Overlaying it onto the recent
-  // list keeps the sidebar badge in step with the chat header instead of lagging a few seconds.
+  // 当前会话的 agent_status 由 ChatArea 的 /status 轮询 (2s) 直接探测真相源, 比
+  // /api/tasks/recent 的库值新; 每变一次就按 id 存档一份, 供行渲染时覆盖快照值.
+  // The open session's agent_status is probed live by ChatArea's /status poll (2s); archive it
+  // per session id so rows can override whatever the snapshot says.
+  useEffect(() => {
+    const sid = currentSession?.session_id
+    const status = currentSession?.agent_status
+    if (!sid || !status) return
+    liveStatusRef.current.set(sid, { status, at: Date.now() })
+  }, [currentSession?.session_id, currentSession?.agent_status])
+
+  // 把「比当前快照更新」的实时状态盖到近期会话行上: 当前会话永远用实时值, 刚切走的会话在
+  // 下一份快照到来前也沿用存档值, 于是不会出现"切走瞬间退回旧状态"的闪变.
+  // Overlay every live status newer than the current snapshot: the open session always wins, and a
+  // just-left session keeps its last live value until a fresher snapshot lands — no snap-back flash.
   const recentWithLiveStatus = useMemo(() => {
+    const snapshotAt = recentSnapshotAtRef.current
+    const live = new Map<string, string>()
+    for (const [sid, entry] of liveStatusRef.current) {
+      if (entry.at > snapshotAt) live.set(sid, entry.status)
+    }
     const liveId = currentSession?.session_id
     const liveStatus = currentSession?.agent_status
-    if (!liveId || !liveStatus) return recentSessions
-    const stale = recentSessions.some(session => session.session_id === liveId && session.agent_status !== liveStatus)
-    if (!stale) return recentSessions
-    return recentSessions.map(session => (
-      session.session_id === liveId ? { ...session, agent_status: liveStatus } : session
-    ))
-  }, [recentSessions, currentSession?.session_id, currentSession?.agent_status])
+    if (liveId && liveStatus) live.set(liveId, liveStatus)
+    let changed = false
+    const merged = recentSessions.map(session => {
+      const status = live.get(session.session_id)
+      if (!status || status === session.agent_status) return session
+      changed = true
+      return { ...session, agent_status: status }
+    })
+    return changed ? merged : recentSessions
+  }, [recentSessions, recentSnapshotTick, currentSession?.session_id, currentSession?.agent_status])
 
   // 当前会话可能压根不在 /api/tasks/recent 里 (50 条上限把它挤掉, 或太久没动被过滤掉), 这时补一条,
   // 保证「近期会话」永远能列出用户正打开的这个会话. 项目名/任务名取本页已加载的, 跨项目会话留空回落 id.

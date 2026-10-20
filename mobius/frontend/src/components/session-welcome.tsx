@@ -882,8 +882,11 @@ export function SessionSkillMemoryEditor({
     return () => { cancelled = true }
   }, [activePanel, projectId, gitRefreshKey])
   const [previewItem, setPreviewItem] = useState<null | { kind: 'skill' | 'memory'; item: EditorItem }>(null)
-  // 添加 skill/memory 成功后: 先让后端用当前 live 数据重建该会话的 selection snapshot
-  // (会话快照在创建时已冻结, 不刷新则新装的条目既不进列表也不被注入), 再重新拉取.
+  // 正文按需读取: 列表只带名字与描述, 点「浏览」时才向后端要这一条的正文.
+  const [previewBody, setPreviewBody] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewReqRef = useRef(0)
+  // 添加 skill/memory 成功后: 让后端用当前 live 数据重建该会话的 selection 记录, 再重新拉取.
   const [reloadKey, setReloadKey] = useState(0)
   const reload = useCallback(async () => {
     try {
@@ -896,6 +899,8 @@ export function SessionSkillMemoryEditor({
     setReloadKey(k => k + 1)
   }, [sessionId])
 
+  // 面板没打开就不读 Skill / Memory (按需读取); 打开对应 tab 时才拉实时目录.
+  const resourcesActive = activePanel === 'skill' || activePanel === 'memory'
   useEffect(() => {
     let cancelled = false
     if (!sessionId) {
@@ -906,6 +911,7 @@ export function SessionSkillMemoryEditor({
       setLoading(false)
       return () => { cancelled = true }
     }
+    if (!resourcesActive) return () => { cancelled = true }
     setLoading(true)
     setError('')
     api(`/api/sessions/${sessionId}/selection-snapshot`)
@@ -939,7 +945,7 @@ export function SessionSkillMemoryEditor({
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [sessionId, reloadKey])
+  }, [sessionId, reloadKey, resourcesActive])
 
   const handleEmphasize = useCallback(async (kind: 'skill' | 'memory', itemId: string) => {
     if (!sessionId) return
@@ -970,6 +976,33 @@ export function SessionSkillMemoryEditor({
       window.alert?.(e?.message || '发送失败')
     }
   }, [sessionId])
+
+  // 打开正文预览: 先出弹窗, 正文按需向后端读取 (列表里不再携带全文).
+  const openPreview = useCallback(async (kind: 'skill' | 'memory', item: EditorItem) => {
+    setPreviewItem({ kind, item })
+    setPreviewBody('')
+    const seq = previewReqRef.current + 1
+    previewReqRef.current = seq
+    if (!sessionId) return
+    setPreviewLoading(true)
+    try {
+      const res = await api(`/api/sessions/${sessionId}/context-item?kind=${kind}&item_id=${encodeURIComponent(item.id)}`)
+      if (previewReqRef.current !== seq) return
+      setPreviewBody(typeof res?.body === 'string' && res.body ? res.body : '')
+    } catch (e: any) {
+      if (previewReqRef.current !== seq) return
+      setPreviewBody(`读取失败：${e?.message || '未知错误'}`)
+    } finally {
+      if (previewReqRef.current === seq) setPreviewLoading(false)
+    }
+  }, [sessionId])
+
+  const closePreview = useCallback(() => {
+    previewReqRef.current += 1
+    setPreviewItem(null)
+    setPreviewBody('')
+    setPreviewLoading(false)
+  }, [])
 
   const renderList = (
     items: EditorItem[],
@@ -1025,7 +1058,7 @@ export function SessionSkillMemoryEditor({
               </div>
               <button
                 type="button"
-                onClick={() => setPreviewItem({ kind, item: it })}
+                onClick={() => { void openPreview(kind, it) }}
                 className="flex-shrink-0 text-[length:var(--fs-xs)] px-2 py-0.5 rounded border transition-colors inline-flex items-center gap-1 hover:bg-[var(--bg-card-hover)]"
                 style={{
                   color: 'var(--text-secondary)',
@@ -1257,7 +1290,7 @@ export function SessionSkillMemoryEditor({
             type="button"
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             aria-label="关闭正文浏览"
-            onClick={() => setPreviewItem(null)}
+            onClick={closePreview}
           />
           <div
             className="relative flex w-full max-w-[860px] flex-col overflow-hidden rounded-2xl shadow-2xl"
@@ -1278,7 +1311,7 @@ export function SessionSkillMemoryEditor({
                     className="shrink-0 rounded border px-1.5 py-0.5 text-[length:var(--fs-xs)]"
                     style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)', background: 'rgba(255,255,255,0.04)' }}
                   >
-                    {(previewItem.item.body || '').length} 字
+                    {previewLoading ? '读取中' : (previewBody || previewItem.item.body || '').length > 0 ? `${(previewBody || previewItem.item.body || '').length} 字` : '0 字'}
                   </span>
                 </div>
                 {previewItem.item.description && (
@@ -1289,7 +1322,7 @@ export function SessionSkillMemoryEditor({
               </div>
               <button
                 type="button"
-                onClick={() => setPreviewItem(null)}
+                onClick={closePreview}
                 className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
                 aria-label="关闭正文浏览"
@@ -1309,7 +1342,7 @@ export function SessionSkillMemoryEditor({
                   fontFamily: 'ui-monospace,SFMono-Regular,"Noto Sans SC",monospace',
                 }}
               >
-                {previewItem.item.body || '这个快照条目没有可浏览的正文。'}
+                {previewLoading ? '正在读取正文...' : (previewBody || previewItem.item.body || '这个条目没有可浏览的正文。')}
               </pre>
             </div>
           </div>

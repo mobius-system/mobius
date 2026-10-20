@@ -212,17 +212,21 @@ function uniqueAllowedIds(ids: any, allowedIds: Set<string> | null): string[] {
 function buildSelectionSnapshotFromSources(selectedSources: any, totalSources: any, excludedSkillIds: any, excludedMemoryIds: any): any {
   const selected = selectedSources || {};
   const total = totalSources || selected;
-  const skills = Array.isArray(selected.skills) ? selected.skills.map(compactSkillForSnapshot).filter(Boolean) : [];
-  const memories = Array.isArray(selected.memories) ? selected.memories.map(compactMemoryForSnapshot).filter(Boolean) : [];
+  // 会话记录只留 id / 名称等元数据, 不存正文: 正文按需从实时库读取 (见 routes/sessions context-item).
+  const dropBody = (item: any) => ({ ...item, body: '' });
+  const skills = Array.isArray(selected.skills) ? selected.skills.map(compactSkillForSnapshot).filter(Boolean).map(dropBody) : [];
+  const memories = Array.isArray(selected.memories) ? selected.memories.map(compactMemoryForSnapshot).filter(Boolean).map(dropBody) : [];
   const enabledSkillIds = new Set(skills.map((sk: any) => sk.id));
   const enabledMemoryIds = new Set(memories.map((memory: any) => memory.id));
   const allSkills = (Array.isArray(total.skills) ? total.skills : skills)
     .map(compactSkillForSnapshot)
     .filter(Boolean)
+    .map(dropBody)
     .map((sk: any) => ({ ...sk, enabled: enabledSkillIds.has(sk.id) }));
   const allMemories = (Array.isArray(total.memories) ? total.memories : memories)
     .map(compactMemoryForSnapshot)
     .filter(Boolean)
+    .map(dropBody)
     .map((memory: any) => ({ ...memory, enabled: enabledMemoryIds.has(memory.id) }));
   return {
     version: 1,
@@ -509,8 +513,9 @@ function gatherSources(user: any, sessionId: string): any {
         : { skills: exSkills, memories: exMemories, pc_client_metadata: session.pc_client_metadata },
     );
     if (storedSelection) {
-      researchSources.skills = storedSelection.skills;
-      researchSources.memories = storedSelection.memories;
+      // 勾选状态取记录, 正文/名称一律取实时库 (快照里的旧正文不再参与注入).
+      researchSources.skills = keepUsedContextItems(researchSources.skills, storedSelection.skills);
+      researchSources.memories = keepUsedContextItems(researchSources.memories, storedSelection.memories);
       researchSources.selection_totals = storedSelection.totals;
       researchSources.selection_excluded_skill_ids = storedSelection.excluded_skill_ids;
       researchSources.selection_excluded_memory_ids = storedSelection.excluded_memory_ids;
@@ -552,8 +557,9 @@ function gatherSources(user: any, sessionId: string): any {
       : { skills: exSkills, memories: exMemories, pc_client_metadata: session.pc_client_metadata },
   );
   if (storedSelection) {
-    issueSources.skills = storedSelection.skills;
-    issueSources.memories = storedSelection.memories;
+    // 勾选状态取记录, 正文/名称一律取实时库 (快照里的旧正文不再参与注入).
+    issueSources.skills = keepUsedContextItems(issueSources.skills, storedSelection.skills);
+    issueSources.memories = keepUsedContextItems(issueSources.memories, storedSelection.memories);
     issueSources.selection_totals = storedSelection.totals;
     issueSources.selection_excluded_skill_ids = storedSelection.excluded_skill_ids;
     issueSources.selection_excluded_memory_ids = storedSelection.excluded_memory_ids;
@@ -700,6 +706,78 @@ function regenerateSessionSelectionSnapshot(user: any, sessionId: string): any {
     return buildSessionSelectionSnapshot(user, session.issue_id, excludedSkillIds, excludedMemoryIds, options);
   }
   return null;
+}
+
+// =====================================================================
+// 会话只记录「用了哪些」Skill / Memory (id 列表), 目录与正文一律按需读实时库:
+//   - 列表: buildLiveSessionSelectionSnapshot() 用实时库重建, 再用记录里的 id 标记 enabled;
+//   - 单条正文: resolveSessionContextItem() 按 id 现读 (面板点「浏览」时才调用).
+// 这样新建 / 改名 / 改正文的 Skill 与 Memory 会立刻出现在老会话里, 不再被创建时的快照冻结.
+// =====================================================================
+
+// 用实时库拼出该会话可用的全部 Skill / Memory (不做勾选减法, 由调用方按「用过」过滤).
+function gatherLiveSessionSources(user: any, session: any): any {
+  if (!session) return null;
+  const draftSession = { pc_client_metadata: session.pc_client_metadata ?? null };
+  // includeBody=false: 只要条目列表, 不必把整段 prompt 文本拼出来.
+  if (session.scope_type === 'research' && session.research_id) {
+    return buildResearchContextPreview(user, session.research_id, draftSession, [], [], session.language, { includeBody: false }).sources;
+  }
+  if (session.scope_type === 'issue' && session.issue_id) {
+    return buildIssueContextPreview(user, session.issue_id, draftSession, [], [], session.language, { includeBody: false }).sources;
+  }
+  return null;
+}
+
+// 「用过」= 存储快照里被选中的 id; 没有快照的老会话回落到 excluded 列的反面.
+function sessionUsedSelection(session: any, live: any): { skills: Set<string>; memories: Set<string> } {
+  const stored = normalizeSelectionSnapshot(session?.session_selection_snapshot);
+  if (stored) {
+    return {
+      skills: new Set(stored.skills.map((sk: any) => sk.id)),
+      memories: new Set(stored.memories.map((m: any) => m.id)),
+    };
+  }
+  const exSkills = new Set(parseStoredIdArray(session?.session_excluded_skills));
+  const exMemories = new Set(parseStoredIdArray(session?.session_excluded_memories));
+  return {
+    skills: new Set((live?.skills || []).map((sk: any) => sk.id).filter((id: string) => !exSkills.has(id))),
+    memories: new Set((live?.memories || []).map((m: any) => m.id).filter((id: string) => !exMemories.has(id))),
+  };
+}
+
+// 注入用: 保留记录里「用过」的条目, 内容取实时库 (记录里已删除的条目自动消失).
+function keepUsedContextItems(liveItems: any, usedItems: any): any[] {
+  const usedIds = new Set((Array.isArray(usedItems) ? usedItems : []).map((it: any) => it && it.id).filter(Boolean));
+  return (Array.isArray(liveItems) ? liveItems : []).filter((it: any) => it && usedIds.has(it.id));
+}
+
+// 实时重建展示快照: 全量目录取实时库, 勾选状态取会话记录. 不落库.
+function buildLiveSessionSelectionSnapshot(user: any, session: any): any {
+  const live = gatherLiveSessionSources(user, session);
+  if (!live) return null;
+  const used = sessionUsedSelection(session, live);
+  // 只用记录里「用过」的条目, 新加的默认不勾选, 由用户点「追加」再引入.
+  const skills = (live.skills || []).filter((sk: any) => used.skills.has(sk.id));
+  const memories = (live.memories || []).filter((m: any) => used.memories.has(m.id));
+  return buildSelectionSnapshotFromSources({ skills, memories }, live, [], []);
+}
+
+// 按 id 现读单条 Skill / Memory 正文 (user / project / builtin / 本任务知识 都走同一条实时路径).
+function resolveSessionContextItem(user: any, session: any, kind: string, itemId: string): any {
+  if (!itemId) return null;
+  const live = gatherLiveSessionSources(user, session);
+  if (!live) return null;
+  const pool = kind === 'skill' ? (live.skills || []) : (live.memories || []);
+  const hit = pool.find((it: any) => it && it.id === itemId);
+  if (!hit) return null;
+  return {
+    id: hit.id,
+    scope: hit.scope,
+    name: hit.name,
+    description: hit.description || '',
+    body: typeof hit.body === 'string' ? hit.body : '',
+  };
 }
 
 function disabledIdsFromStoredSelection(storedSelection: any, rawSelection: any, allKey: string, excludedKey: string): string[] | null {
@@ -881,6 +959,8 @@ export {
   buildResearchSessionSelectionSnapshot,
   buildResearchSelectionDefaults,
   regenerateSessionSelectionSnapshot,
+  buildLiveSessionSelectionSnapshot,
+  resolveSessionContextItem,
   wrapUserMessage,
   gatherIssueSources,
   stripContextItemBodies,

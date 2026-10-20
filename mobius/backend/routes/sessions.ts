@@ -13,7 +13,7 @@ import { SessionPendingMentions } from '../repositories/session-pending-mentions
 // @ts-ignore — bridge instance 仍是 .js
 import { bridge } from '../bridge/instance';
 // @ts-ignore — service 仍是 .js
-import { buildSessionContext, buildSessionSelectionSnapshot, regenerateSessionSelectionSnapshot } from '../services/session-context';
+import { buildSessionContext, buildSessionSelectionSnapshot, buildLiveSessionSelectionSnapshot, resolveSessionContextItem } from '../services/session-context';
 // @ts-ignore — service 仍是 .js
 import { parsePcClientMetadata, pcClientMetadataForContinuation } from '../services/pc-client-context';
 // @ts-ignore — repository 仍是 .js
@@ -1677,7 +1677,8 @@ function stripBodies(snapshot: any) {
     name: s.name,
     description: s.description || '',
     dirName: s.dirName || null,
-    body: typeof s.body === 'string' ? s.body : '',
+    // 列表不带正文: 正文由 GET /:id/context-item 按需读取.
+    body: '',
     enabled: s.enabled !== false,
   });
   const mapMemory = (m: any) => ({
@@ -1685,7 +1686,7 @@ function stripBodies(snapshot: any) {
     scope: m.scope,
     name: m.name,
     description: m.description || '',
-    body: typeof m.body === 'string' ? m.body : '',
+    body: '',
     enabled: m.enabled !== false,
   });
   return {
@@ -1737,15 +1738,15 @@ function pruneUnresolvableContextItems(snapshot: any, user: AnyUser, session: An
 }
 
 // 在已存在的会话内新装/新加 skill|memory 后, 用当前 live 数据 + 该会话现存的勾选状态
-// 重建并持久化 selection snapshot. 会话快照在创建时一次性冻结, 不刷新则新装的条目
-// 既不进入会话面板列表、也不会在后续对话回合被注入.
+// 用实时库重建并持久化 selection snapshot. 会话只记录「用了哪些」id, 目录与正文不再冻结;
+// 这里持久化的是一份展示用副本, 主要作用是保留勾选状态并让老会话也能刷新.
 router.post('/:id/refresh-selection-snapshot', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
   const session = findSessionReadable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'refresh_session_selection_snapshot', session);
-  const snapshot = regenerateSessionSelectionSnapshot(user, id);
+  const snapshot = buildLiveSessionSelectionSnapshot(user, session);
   if (!snapshot) {
     res.status(400).json({ error: '该会话类型不支持刷新快照' });
     return;
@@ -1760,6 +1761,23 @@ router.post('/:id/refresh-selection-snapshot', auth, (req: express.Request, res:
   });
 });
 
+// 单条 Skill / Memory 正文: 面板点「浏览」时按需读取, 不在快照里搬运正文.
+router.get('/:id/context-item', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionReadable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  const kind = String(req.query.kind || '');
+  const itemId = String(req.query.item_id || '');
+  if ((kind !== 'skill' && kind !== 'memory') || !itemId) {
+    res.status(400).json({ error: 'kind 与 item_id 必填' });
+    return;
+  }
+  const item = resolveSessionContextItem(user, session, kind, itemId);
+  if (!item) { res.status(404).json({ error: '不存在或无权访问' }); return; }
+  res.json(item);
+});
+
 router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
@@ -1767,19 +1785,17 @@ router.get('/:id/selection-snapshot', auth, (req: express.Request, res: express.
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'read_session_selection_snapshot', session);
 
+  // 目录实时读: 会话记录只提供「用过」的 id, 新建 / 改名的条目每次都会重新出现.
   const stored = Sessions.getSelectionSnapshot(id) as any;
-  if (stored?.session_selection_snapshot) {
-    try {
-      res.json({
-        snapshot: stripBodies(pruneUnresolvableContextItems(JSON.parse(stored.session_selection_snapshot), user, session)),
-        snapshot_at: stored.session_selection_snapshot_at || null,
-        source: 'created',
-        legacy: false,
-      });
-      return;
-    } catch (e) {
-      console.warn(`[sessions] selection snapshot parse failed (${id}): ${(e as Error).message}`);
-    }
+  const liveSnapshot = buildLiveSessionSelectionSnapshot(user, session);
+  if (liveSnapshot) {
+    res.json({
+      snapshot: stripBodies(pruneUnresolvableContextItems(liveSnapshot, user, session)),
+      snapshot_at: stored?.session_selection_snapshot_at || null,
+      source: 'live',
+      legacy: false,
+    });
+    return;
   }
 
   const snap = Sessions.getContextSnapshot(id) as any;
