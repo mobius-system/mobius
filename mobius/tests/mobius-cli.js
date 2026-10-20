@@ -57,6 +57,13 @@ async function main() {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755);
   }
   assert.strictEqual(run(path.join(binDir, 'display-files'), ['--remote', 'remote', '/tmp/a.py']).status, 0);
+  assert.strictEqual(run(path.join(binDir, 'display-files'), ['/tmp/a.py']).status, 0);
+
+  const displayFilesHelp = run(path.join(binDir, 'display-files'), ['--help']);
+  assert.strictEqual(displayFilesHelp.status, 0, displayFilesHelp.stderr);
+  assert.match(displayFilesHelp.stdout, /--remote/);
+  assert.match(displayFilesHelp.stdout, /--root/);
+  assert.strictEqual(run(path.join(binDir, 'display-files'), []).status, 2);
 
   for (const name of ['research_blackboard_read', 'research_blackboard_write']) {
     const helpResult = run(path.join(binDir, name), ['--help']);

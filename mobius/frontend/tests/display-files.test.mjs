@@ -70,4 +70,9 @@ assert.deepEqual(entryDisplayFiles(bashEntry('display-files a\\&b.txt')), [{ pat
 // 文件名里恰好带数字时不受影响
 // A file name that merely ends in a digit stays intact
 assert.deepEqual(entryDisplayFiles(bashEntry('display-files v2.ts')), [{ path: 'v2.ts' }])
+// 帮助/未知选项不产生文件卡片
+// Help and unknown options do not produce file cards
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files --help 2>&1 | head -60')), [])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files -h')), [])
+assert.deepEqual(entryDisplayFiles(bashEntry('display-files --remote dev-a --root /srv --help')), [])
 console.log('display-files parser tests passed')

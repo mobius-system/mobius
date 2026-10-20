@@ -31,7 +31,7 @@ import {
   textMatchesProjectSearch,
   type ProjectSessionSearchResponse,
 } from '../services/project-session-search'
-import { projectItemOrder } from '../services/project-session-order'
+import { projectItemOrder, sortProjectSessions } from '../services/project-session-order'
 import { pollRecursive } from '../services/polling'
 import { readListCache, writeListCache } from '../services/list-swr-cache'
 import { projectHref } from '../services/project-url'
@@ -188,6 +188,13 @@ export default function ProjectPage() {
   const [cardDensity, setCardDensity] = useState<ProjectCardDensity>(densityInit)
   useEffect(() => { try { localStorage.setItem(PROJECT_CARD_DENSITY_KEY, cardDensity) } catch {} }, [cardDensity])
   const pageSize = cardDensity === 'list' ? LIST_PAGE_SIZE : DETAILED_PAGE_SIZE
+  // 列表密度下主列表是会话活动流 (按活跃顺序), 与任务列表分页互不影响。
+  // In list density the main list is a session feed (activity order), paginated separately.
+  const sessionListMode = cardDensity === 'list' && section === 'issues'
+  const [projectSessions, setProjectSessions] = useState<any[]>([])
+  const [projectSessionsLoading, setProjectSessionsLoading] = useState(false)
+  const [projectSessionsTruncated, setProjectSessionsTruncated] = useState(false)
+  const [sessionPage, setSessionPage] = useState(1)
   // 左栏是独立的纵向列表，页容量按实际可用高度动态计算；右侧卡片继续使用密度页容量。
   const [sidebarPageSize, setSidebarPageSize] = useState(SIDEBAR_INITIAL_PAGE_SIZE)
   const [sidebarIssuePage, setSidebarIssuePage] = useState(1)
@@ -385,6 +392,23 @@ export default function ProjectPage() {
     return [...arr].sort(projectItemOrder)
   }, [projectResearches, filter, search, activeSessionSearch.researches])
 
+  // 会话活动流: 过滤沿用侧栏的「全部/活跃/已完成」(按所属任务状态), 搜索匹配会话名与任务名,
+  // 排序交给 projectSessionOrder (执行中 → 活跃 → 已完成, 再按活跃时间倒序).
+  // Session feed: reuse the sidebar filter against the parent status, search on session/parent names,
+  // and order with projectSessionOrder (running → active → finished, then by activity time desc).
+  const filteredProjectSessions = useMemo(() => {
+    let arr = projectSessions
+    if (filter === 'active') arr = arr.filter((s: any) => s.parent_status !== 'completed')
+    else if (filter === 'completed') arr = arr.filter((s: any) => s.parent_status === 'completed')
+    if (search.trim()) {
+      arr = arr.filter((s: any) => (
+        textMatchesProjectSearch(s.name, search)
+        || textMatchesProjectSearch(s.parent_title, search)
+      ))
+    }
+    return sortProjectSessions(arr)
+  }, [projectSessions, filter, search])
+
   const issueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / pageSize))
   const sidebarIssueTotalPages = Math.max(1, Math.ceil(filteredIssues.length / sidebarPageSize))
   const currentSidebarIssuePage = Math.min(sidebarIssuePage, sidebarIssueTotalPages)
@@ -403,6 +427,12 @@ export default function ProjectPage() {
     const start = (currentResearchPage - 1) * pageSize
     return filteredResearches.slice(start, start + pageSize)
   }, [filteredResearches, currentResearchPage, pageSize])
+  const sessionTotalPages = Math.max(1, Math.ceil(filteredProjectSessions.length / LIST_PAGE_SIZE))
+  const currentSessionPage = Math.min(sessionPage, sessionTotalPages)
+  const pagedProjectSessions = useMemo(() => {
+    const start = (currentSessionPage - 1) * LIST_PAGE_SIZE
+    return filteredProjectSessions.slice(start, start + LIST_PAGE_SIZE)
+  }, [filteredProjectSessions, currentSessionPage])
   const pagedIssueIdsKey = useMemo(() => (
     mainPagedIssues.map((issue: any) => String(issue?.id || '').trim()).filter(Boolean).join(',')
   ), [mainPagedIssues])
@@ -416,6 +446,7 @@ export default function ProjectPage() {
     setSidebarIssuePage(1)
     setMainIssuePage(1)
     setResearchPage(1)
+    setSessionPage(1)
   }, [projectId, filter, search, cardDensity])
 
   useEffect(() => {
@@ -429,6 +460,10 @@ export default function ProjectPage() {
   useEffect(() => {
     if (researchPage > researchTotalPages) setResearchPage(researchTotalPages)
   }, [researchPage, researchTotalPages])
+
+  useEffect(() => {
+    if (sessionPage > sessionTotalPages) setSessionPage(sessionTotalPages)
+  }, [sessionPage, sessionTotalPages])
 
   useEffect(() => {
     const issueIds = section === 'issues' ? pagedIssueIdsKey : ''
@@ -447,6 +482,25 @@ export default function ProjectPage() {
     }
     return pollRecursive(load, 10_000, 10_000)
   }, [projectId, section, pagedIssueIdsKey, visibleResearchIdsKey, setSessionsMapBatch])
+
+  // 「列表」密度: 拉取项目内的会话活动流 (一次取最近 500 条, 10s 轮询保持活跃顺序新鲜)。
+  // List density: fetch the project's session feed (latest 500, refreshed every 10s).
+  useEffect(() => {
+    if (!sessionListMode) return
+    let alive = true
+    setProjectSessions([])
+    setProjectSessionsTruncated(false)
+    setProjectSessionsLoading(true)
+    const load = (signal: AbortSignal) => api(`/api/projects/${projectId}/sessions?scope=issue&limit=500`, { signal })
+      .then((payload: any) => {
+        if (!alive) return
+        setProjectSessions(Array.isArray(payload?.sessions) ? payload.sessions : [])
+        setProjectSessionsTruncated(!!payload?.truncated)
+      })
+      .finally(() => { if (alive) setProjectSessionsLoading(false) })
+    const stop = pollRecursive(load, 10_000, 10_000)
+    return () => { alive = false; stop() }
+  }, [projectId, sessionListMode])
 
   const refreshIssues = (signal?: AbortSignal) => api(`/api/projects/${projectId}/issues`, signal ? { signal } : undefined).then((arr: any) => { setIssues(arr); setIssuesMap(projectId, arr) }).catch(() => {})
   const refreshResearches = (signal?: AbortSignal) => api(`/api/projects/${projectId}/researches`, signal ? { signal } : undefined).then((arr: any) => { setResearches(arr); setResearchesMap(projectId, arr) }).catch(() => {})
@@ -904,6 +958,16 @@ export default function ProjectPage() {
                     totalItems: filteredResearches.length,
                     totalPages: researchTotalPages,
                     onPageChange: setResearchPage,
+                  }}
+                  projectSessions={pagedProjectSessions}
+                  projectSessionsLoading={projectSessionsLoading}
+                  projectSessionsTruncated={projectSessionsTruncated}
+                  sessionPagination={{
+                    page: currentSessionPage,
+                    pageSize: LIST_PAGE_SIZE,
+                    totalItems: filteredProjectSessions.length,
+                    totalPages: sessionTotalPages,
+                    onPageChange: setSessionPage,
                   }}
                   density={cardDensity}
                   desktopWorkspace={!isMobile}

@@ -1,3 +1,80 @@
 #!/usr/bin/env bash
-# Marker command scanned by the Mobius conversation viewer.
+# display-files - marker command scanned by the Mobius conversation viewer.
+set -euo pipefail
+
+prog="$(basename "$0")"
+
+usage() {
+  cat <<USAGE
+Usage: $prog [options] <path> [<path> ...]
+
+  Mark files for display in the Mobius conversation viewer.
+  This command does not read, copy or print the files. It is a no-op marker:
+  the viewer scans this Bash command and renders the listed files as cards in
+  the chat. Nothing is shown if the command is quoted inside echo/printf or
+  otherwise embedded in another command's text.
+
+  Local paths are resolved against the project bind directory: either a
+  relative path, or an absolute path that stays inside that directory.
+  With --remote, paths are relative to the remote root (see --root).
+
+Options:
+  --remote <name>   show files from an aimux remote / bridge device
+  --root <dir>      root directory on that remote; defaults to the remote's
+                    configured project path
+  --                end of options; every following token is a path
+  -h, --help        show this help and exit
+
+Notes:
+  - Only the options above are recognized; other tokens starting with '-'
+    are skipped by the viewer.
+  - On success the command prints nothing and exits 0.
+
+Examples:
+  $prog src/main.py README.md
+  $prog /home/alice/project/docs/design.html
+  $prog --remote gptac-zs-dev --root /workspace/app src/main.py README.md
+  $prog -- "report & draft.md"
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    echo "Input error: no file paths provided" >&2
+    echo >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# 解析参数只为提示明显错误; 真正的展示由前端扫描命令行完成.
+# Parse options only to flag obvious mistakes; the actual display is done by the frontend scanner.
+paths=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --) shift; paths+=("$@"); break ;;
+    --remote|--root)
+      if [[ $# -lt 2 ]]; then
+        echo "Input error: $1 requires a value" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --remote=*|--root=*) shift ;;
+    -*) shift ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+
+if [[ ${#paths[@]} -eq 0 ]]; then
+  echo "Input error: no file paths provided" >&2
+  exit 2
+fi
+
+# 标记命令本身不输出内容, 由会话查看器渲染文件卡片.
+# The marker itself stays silent; the conversation viewer renders the cards.
 exit 0

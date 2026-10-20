@@ -3,6 +3,7 @@ import { ExternalLink, LayoutList, Plus, Rows3, Settings, Wrench } from 'lucide-
 import { IssueCard } from './IssueCard'
 import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
 import { PrimaryActionButton } from '../primary-action-button'
+import { ProjectSessionList, type ProjectSessionRow } from './ProjectSessionList'
 import { ResearchCard } from './ResearchCard'
 import { ListLoadingHint } from '../list-loading-hint'
 import type { IssueConfirmAction, ProjectCardDensity, ProjectFilter, ProjectIssuePagination, ProjectListSection } from './types'
@@ -31,6 +32,12 @@ type ProjectItemsPanelProps = {
   sessionSearchLoading?: boolean
   issuePagination: ProjectIssuePagination
   researchPagination: ProjectIssuePagination
+  // 「列表」密度展示的是项目会话活动流, 分页以会话条数为准。
+  // List density shows a project session feed, paginated by session count.
+  projectSessions?: ProjectSessionRow[]
+  projectSessionsLoading?: boolean
+  projectSessionsTruncated?: boolean
+  sessionPagination?: ProjectIssuePagination
   density: ProjectCardDensity
   desktopWorkspace?: boolean
   scrollResetKey: string
@@ -66,6 +73,10 @@ export function ProjectItemsPanel({
   sessionSearchLoading = false,
   issuePagination,
   researchPagination,
+  projectSessions = [],
+  projectSessionsLoading = false,
+  projectSessionsTruncated = false,
+  sessionPagination,
   density,
   desktopWorkspace = false,
   scrollResetKey,
@@ -90,7 +101,13 @@ export function ProjectItemsPanel({
   const extensionRunUrl = extensionName ? `/extension/${extensionName}/` : ''
   const developmentLink = extensionName ? EXTENSION_DEVELOPMENT_LINKS[extensionName] : null
   const listView = density === 'list'
-  const activePagination = section === 'issues' ? issuePagination : researchPagination
+  // 列表密度下, 任务列表改为按活跃顺序展示「会话」, 不再展示任务行。
+  // In list density the issue tab renders a session feed (ordered by activity) instead of issue rows.
+  const sessionListMode = listView && section === 'issues' && !!sessionPagination
+  const activePagination = sessionListMode && sessionPagination
+    ? sessionPagination
+    : (section === 'issues' ? issuePagination : researchPagination)
+  const paginationItemLabel = sessionListMode ? '会话' : (section === 'issues' ? '任务' : '研究')
   const showPagination = activePagination.totalItems > activePagination.pageSize
 
   useEffect(() => {
@@ -202,7 +219,7 @@ export function ProjectItemsPanel({
             </ProjectTabList>
           )}
           {showPagination && (
-            <ProjectPaginationControls pagination={activePagination} itemLabel={section === 'issues' ? '任务' : '研究'} />
+            <ProjectPaginationControls pagination={activePagination} itemLabel={paginationItemLabel} />
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -248,7 +265,15 @@ export function ProjectItemsPanel({
         ref={listScrollRef}
         className={desktopWorkspace ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 pb-6' : ''}>
 
-      {section === 'issues' ? (
+      {sessionListMode ? (
+        <ProjectSessionList
+          sessions={projectSessions}
+          loading={projectSessionsLoading}
+          truncated={projectSessionsTruncated}
+          userParam={userParam}
+          projectId={projectId}
+        />
+      ) : section === 'issues' ? (
         <IssueList
           issues={issues}
           sessionsMap={sessionsMap}

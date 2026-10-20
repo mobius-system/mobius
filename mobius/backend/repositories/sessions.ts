@@ -317,6 +317,36 @@ const Sessions = {
     `).all(projectId, query, query) as SessionListRow[];
   },
 
+  // 项目页「列表」密度: 该项目某一作用域下的会话活动流, 按活跃度排序。
+  // 只取列表需要的轻字段 (不含 description 全文), 并带上父级标题/状态供前端展示与筛选。
+  // Project page list density: session activity feed of one scope, ordered by activity.
+  // Only light list fields are selected (no full description); parent title/status are joined in.
+  listByProjectScopeActivity: (projectId: string, scopeType: 'issue' | 'research', limit = 500): any[] => {
+    if (!projectId) return [];
+    const max = Math.max(1, Math.min(Number(limit) || 500, 1000));
+    return db.prepare(`
+      SELECT s.session_id, s.project_id, s.issue_id, s.research_id, s.scope_type, s.research_role,
+             s.user_id, s.name, s.status, s.agent_status, s.created_at, s.completed_at,
+             s.last_active, s.message_count,
+             u.display_name AS user_display_name,
+             COALESCE(i.title, r.title) AS parent_title,
+             COALESCE(i.status, r.status) AS parent_status
+      FROM sessions_v2 s
+      LEFT JOIN users u ON s.user_id = u.id
+      LEFT JOIN issues i ON s.scope_type = 'issue' AND s.issue_id = i.id
+      LEFT JOIN researches r ON s.scope_type = 'research' AND s.research_id = r.id
+      WHERE s.project_id = ?
+        AND s.scope_type = ?
+        AND s.status != 'archived'
+        AND s.deleted_at IS NULL
+      ORDER BY
+        CASE WHEN s.agent_status = 'running' THEN 0 WHEN s.status = 'active' THEN 1 ELSE 2 END,
+        CASE WHEN s.status = 'completed' THEN COALESCE(s.completed_at, s.last_active) ELSE s.last_active END DESC,
+        s.created_at DESC
+      LIMIT ?
+    `).all(projectId, scopeType, max) as any[];
+  },
+
   // @ Session 候选: 只返回可被上层 access-control 继续过滤的轻量元数据。
   // 不绑定当前项目，便于“同 Issue → 同项目 → 其他项目”的分层排序。
   listMentionCandidates: (rawQuery: string = '', limit: number = 300): any[] => {

@@ -2011,6 +2011,65 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
   res.json({ issues, researches });
 });
 
+// 项目页「列表」密度: 按活跃顺序返回项目内的会话 (scope=issue|research), 而不是父级任务/研究.
+// Project page list density: sessions of one scope ordered by activity instead of parent items.
+router.get('/:id/sessions', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const projectId = String(req.params.id);
+  const project = Projects.findById(projectId);
+  if (!project || !canReadProject(user, project) || isHidden(user.id, 'project', project.id)) {
+    res.status(404).json({ error: '未找到' });
+    return;
+  }
+
+  const scope: 'issue' | 'research' = String(req.query.scope || '') === 'research' ? 'research' : 'issue';
+  if (scope === 'research' && !project.research_enabled) {
+    res.json({ sessions: [], truncated: false });
+    return;
+  }
+  const rawLimit = Number(req.query.limit || 500);
+  const limit = Math.max(1, Math.min(500, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 500));
+
+  // 父级可读性: 会话本身可见但父级不可见的行不返回 (与会话搜索同口径).
+  // Parent readability: skip sessions whose parent issue/research is not readable.
+  const readableIssueIds = new Set(Issues.listForProject(project.id, undefined, user?.id)
+    .filter((issue: any) => canReadIssue(user, issue))
+    .map((issue: any) => String(issue.id)));
+  const readableResearchIds = new Set(Researches.listForProject(project.id)
+    .filter((research: any) => canReadResearch(user, research))
+    .map((research: any) => String(research.id)));
+
+  // 权限过滤会丢弃部分行, 多取一段再截断, 避免结果被挤空.
+  // Permission filtering may drop rows; over-fetch a little before truncating.
+  const rows = Sessions.listByProjectScopeActivity(projectId, scope, Math.min(1000, limit * 2) + 1)
+    .filter((session: any) => {
+      if (!canReadSession(user, session)) return false;
+      if (session.scope_type === 'issue') return readableIssueIds.has(String(session.issue_id || ''));
+      return readableResearchIds.has(String(session.research_id || ''));
+    });
+
+  const sessions = rows.slice(0, limit).map((session: any) => ({
+    session_id: session.session_id,
+    name: session.name || '',
+    scope_type: session.scope_type,
+    issue_id: session.issue_id || null,
+    research_id: session.research_id || null,
+    research_role: session.research_role || null,
+    status: session.status,
+    agent_status: session.agent_status,
+    created_at: session.created_at,
+    completed_at: session.completed_at,
+    last_active: session.last_active,
+    message_count: Number(session.message_count || 0),
+    user_display_name: session.user_display_name || '',
+    parent_title: session.parent_title || '',
+    parent_status: session.parent_status || null,
+  }));
+
+  auditAdminProjectList(req, 'list_project_sessions', [project]);
+  res.json({ sessions, truncated: rows.length > limit });
+});
+
 router.get('/:id/session-matches', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const projectId = String(req.params.id);
