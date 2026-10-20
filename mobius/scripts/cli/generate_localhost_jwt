@@ -8,6 +8,12 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'USAGE'
 Usage: generate_localhost_jwt <user_id>
 
+  Sign a short-lived (1 hour) localhost JWT for one Mobius user.
+  The secret is read from APP_DIR/.env; it never appears in arguments or the environment.
+
+Options:
+  -h, --help      show this help and exit
+
 Environment:
   MOBIUS_APP_DIR  override the Mobius APP_DIR (default: APP_DIR from the shell,
                   otherwise the repository root inferred from this script)

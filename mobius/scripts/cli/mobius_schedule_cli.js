@@ -21,14 +21,33 @@ function usage(mode, stream = process.stdout) {
     stream.write('Usage:\n');
     stream.write('  mobius_schedule_wake_me_up <session_id> --once --after-time <duration> --reminder <text>\n');
     stream.write('  mobius_schedule_wake_me_up <session_id> --interval --interval-time <duration> --reminder <text>\n\n');
-    stream.write('Duration format: positive integer followed by s, m, h, or d. Interval minimum: 10m.\n');
+    stream.write('  Schedule a reminder that wakes one Mobius Session later.\n\n');
+    stream.write('Options:\n');
+    stream.write('  --once                 fire once after --after-time, then cancel itself\n');
+    stream.write('  --after-time <duration> delay before the single wake-up\n');
+    stream.write('  --interval             repeat every --interval-time until cancelled\n');
+    stream.write('  --interval-time <duration> repeat period; minimum 10m\n');
+    stream.write('  --reminder <text>      reminder text delivered when the Session wakes\n');
+    stream.write('  -h, --help             show this help and exit\n\n');
+    stream.write('Duration format: positive integer followed by s, m, h, or d (max 365d).\n');
+    stream.write('Examples:\n');
+    stream.write('  mobius_schedule_wake_me_up abc123 --once --after-time 30m --reminder "check the build"\n');
+    stream.write('  mobius_schedule_wake_me_up abc123 --interval --interval-time 2h --reminder "check service health"\n');
     return;
   }
   if (mode === 'list') {
-    stream.write('Usage: mobius_schedule_list [--json]\n');
+    stream.write('Usage: mobius_schedule_list [--json]\n\n');
+    stream.write('  List the scheduled wake-ups of the current Session.\n\n');
+    stream.write('Options:\n');
+    stream.write('  --json     print the raw JSON payload\n');
+    stream.write('  -h, --help show this help and exit\n');
     return;
   }
-  stream.write('Usage: mobius_schedule_cancel_all --session-id <session_id>\n');
+  stream.write('Usage: mobius_schedule_cancel_all --session-id <session_id>\n\n');
+  stream.write('  Cancel every scheduled wake-up of one Session.\n\n');
+  stream.write('Options:\n');
+  stream.write('  --session-id <id>  Mobius Session ID\n');
+  stream.write('  -h, --help         show this help and exit\n');
 }
 
 function takeOption(args, index, name) {

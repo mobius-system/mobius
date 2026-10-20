@@ -8,7 +8,7 @@ BASE="${MOBIUS_BASE:-}"
 prog="$(basename "$0")"
 
 usage() {
-  cat <<USAGE >&2
+  cat <<USAGE
 Usage: $prog <self_id> <target_id> <content...>
 
   Send a message to a target Session after a bidirectional @ mention.
@@ -28,7 +28,7 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 if [[ $# -lt 3 ]]; then
-  usage
+  usage >&2
   exit 2
 fi
 

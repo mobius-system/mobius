@@ -77,6 +77,23 @@ async function main() {
     assert.strictEqual(helpResult.status, 0, helpResult.stderr);
     assert.match(helpResult.stdout, /Usage:/);
   }
+  assert.match(run(path.join(binDir, 'mobius_schedule_wake_me_up'), ['--help']).stdout, /--interval-time/);
+  assert.match(run(path.join(binDir, 'mobius_schedule_list'), ['--help']).stdout, /--json/);
+  assert.match(run(path.join(binDir, 'mobius_schedule_cancel_all'), ['--help']).stdout, /--session-id/);
+
+  // Every public command must answer -h/--help on stdout with a usable usage block.
+  for (const name of [
+    'multiagent_send', 'generate_localhost_jwt', 'declare_job_done', 'declare_job_failed',
+    'research_blackboard_read', 'research_blackboard_write', 'display-files',
+    'mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all',
+  ]) {
+    for (const flag of ['-h', '--help']) {
+      const helpResult = run(path.join(binDir, name), [flag]);
+      assert.strictEqual(helpResult.status, 0, `${name} ${flag}: ${helpResult.stderr}`);
+      assert.match(helpResult.stdout, /Usage:/, `${name} ${flag} prints usage`);
+      assert.match(helpResult.stdout, /-h, --help/, `${name} ${flag} lists -h, --help`);
+    }
+  }
 
   const doneHelp = run(path.join(binDir, 'declare_job_done'), ['--help']);
   assert.strictEqual(doneHelp.status, 0, doneHelp.stderr);

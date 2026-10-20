@@ -15,12 +15,27 @@ function fail(message, code = 2) {
 
 function usage(mode, stream = process.stdout) {
   const command = mode === 'read' ? 'research_blackboard_read' : 'research_blackboard_write';
-  const line = mode === 'read'
-    ? `${command} --from=<self_id> --research=<research_id>`
-    : `${command} --from=<self_id> --research=<research_id> [--limit-receiver --receiver=<receiver_id>] <content...>`;
-  stream.write(`Usage: ${line}\n\n`);
+  if (mode === 'read') {
+    stream.write(`Usage: ${command} --from=<self_id> --research=<research_id>\n\n`);
+    stream.write('  Read the shared blackboard of one research session.\n\n');
+    stream.write('Options:\n');
+    stream.write('  --from <id>       sending Session ID or backend Agent ID\n');
+    stream.write('  --research <id>   research Session ID or backend Agent ID\n');
+    stream.write('  -h, --help        show this help and exit\n\n');
+    stream.write(`Examples:\n  ${command} --from=abc123 --research=def456\n`);
+    return;
+  }
+  stream.write(`Usage: ${command} --from=<self_id> --research=<research_id> [options] <content...>\n\n`);
+  stream.write('  Append a message to the shared blackboard of one research session.\n\n');
+  stream.write('Options:\n');
+  stream.write('  --from <id>        sending Session ID or backend Agent ID\n');
+  stream.write('  --research <id>    research Session ID or backend Agent ID\n');
+  stream.write('  --stdin            read the content from standard input (multiline)\n');
+  stream.write('  --limit-receiver   deliver only to one receiver; discouraged, use only if the user insists\n');
+  stream.write('  --receiver <id>    receiver Session/Agent ID; requires --limit-receiver\n');
+  stream.write('  -h, --help         show this help and exit\n\n');
   stream.write('IDs may be a Mobius Session ID or backend Agent ID.\n');
-  if (mode === 'write') stream.write('Use --stdin instead of content arguments for multiline input.\n');
+  stream.write(`Examples:\n  ${command} --from=abc123 --research=def456 "findings so far"\n  echo "line1\nline2" | ${command} --from=abc123 --research=def456 --stdin\n`);
 }
 
 function takeOption(args, index, name) {
