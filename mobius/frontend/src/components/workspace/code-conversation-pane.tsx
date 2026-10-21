@@ -258,6 +258,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const openingRef = useRef<Set<string>>(new Set())
   // 每个 Tab 的 CodeMirror 实例 (Tab 保活 => 撤销栈/滚动保留); Tab 切回可见时 requestMeasure.
   const editorViewsRef = useRef<Map<string, EditorView>>(new Map())
+  // 从磁盘刷新当前文件中 (按钮转圈 + 防重复点击).
+  // Reloading the active file from disk (spinner + re-entry guard)
+  const [reloading, setReloading] = useState(false)
 
   // 局部更新某个 Tab 的字段 (函数式 patch 可读旧值).
   const patchTab = useCallback((key: string, patch: Partial<EditorTab> | ((tab: EditorTab) => Partial<EditorTab>)) => {
@@ -812,6 +815,33 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     if (!paths.includes(treeRoot)) paths.unshift(treeRoot)
     await Promise.all(paths.map(path => loadDir(path)))
   }, [expanded, loadDir, treeRoot])
+
+  // 刷新当前文件: 从磁盘重新读取内容并覆盖 Tab (有未保存修改先确认丢弃).
+  // Reload the active file from disk, confirming before discarding unsaved edits
+  const reload = useCallback(async () => {
+    const tab = tabsRef.current.find(t => t.key === activeKey)
+    if (!tab || tab.loading || tab.saving || reloading) return
+    if (tab.dirty && !window.confirm(`「${tab.entry.name}」有未保存的修改，刷新将丢弃。确定刷新？`)) return
+    const key = tab.key
+    const entry = tab.entry
+    setReloading(true)
+    try {
+      const root = source === 'local' ? localBindPath : bindPath
+      const rel = source === 'remote' ? (entry.rel_path || tab.fileData?.path || '/') : relPathUnderBind(entry.abs_path, root)
+      const data = source === 'local'
+        ? await desktop?.readProjectLocalFile?.(projectId, rel)
+        : source === 'remote'
+          ? await api(`/api/projects/${projectId}/remote-file?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(rel)}${remoteRootParam}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`)
+          : await api(`/api/projects/${projectId}/file?path=${encodeURIComponent(rel)}`)
+      if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本地文件失败')
+      // ✨ 用磁盘上的最新内容覆盖该 Tab, 同时清除脏标记与旧提示
+      patchTab(key, { fileData: data as FileContent, doc: (data as FileContent).content || '', dirty: false, saveError: '', saveOk: false })
+    } catch (e: any) {
+      showToast(e?.message || '刷新失败', 'error')
+    } finally {
+      setReloading(false)
+    }
+  }, [activeKey, desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab, reloading, showToast])
 
   // ── 蓝图变体: 蓝图目录不存在时的「初始化蓝图目录」(mkdir 单层, 逐级创建, 409=已存在视为成功) ──
   const [blueprintInitBusy, setBlueprintInitBusy] = useState(false)
@@ -1465,6 +1495,15 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
               <div className="flex-1" />
               {saveOk && <span className="flex-shrink-0 text-[length:var(--fs-xs)] text-emerald-400">已保存</span>}
               {saveError && <span className="flex-shrink-0 text-[length:var(--fs-xs)] text-red-400" title={saveError}>保存失败</span>}
+              {/* ★ 刷新: 从磁盘重新读取当前文件, 丢弃本 Tab 的未保存修改 (有修改时先确认) */}
+              {fileData && (
+                <button type="button" onClick={reload} disabled={reloading || saving}
+                  title="从磁盘刷新当前文件"
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cc.hover}`}
+                  style={{ color: cc.muted }}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${reloading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
               {fileData && !fileData.binary && !fileData.truncated && (
                 <button type="button" onClick={save} disabled={!dirty || saving} title="保存 (Ctrl+S)"
                   className={`inline-flex h-6 items-center gap-1 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${cc.hover}`}

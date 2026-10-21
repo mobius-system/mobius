@@ -236,29 +236,35 @@ Set-Content -Path $openHereCmd -Value $openHereLines -Encoding ASCII
 # Use Windows Terminal explicitly: the hidden parent's console is not handed to
 # the default terminal, and conhost renders wide/ambiguous chars in 2 cells.
 $openHereAdminPs1 = Join-Path $binDir "mobius-open-here-admin.ps1"
+# 生成的管理员脚本刻意只用 ASCII 注释: Windows PowerShell 5.1 会把无 BOM 的 .ps1
+# 当 ANSI 读, 中文字符串可能吃掉后面的 { }, 而这份脚本会被 apply-patch 之类不写 BOM
+# 的工具直接改; 用纯 ASCII 就没有这个隐患.
+# The generated script stays ASCII-only: Windows PowerShell 5.1 reads a BOM-less
+# .ps1 as ANSI, so non-ASCII text can swallow following braces; tools that rewrite
+# files without a BOM (apply-patch) would otherwise break it.
 $openHereAdminLines = @(
     'param([string]$Target)',
-    '# 每次启动覆盖写诊断日志, 闪退时可以直接看原因.',
-    '# Overwrite a diagnostic log on every launch so a flash-and-close can be explained later.',
+    '# Diagnostic log, overwritten on every launch so a flash-and-close can be explained later.',
     '$log = Join-Path $env:USERPROFILE ".mobius\logs\admin-launch.log"',
     'try {',
     '    New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null',
-    '# 右键文件夹时 Explorer 会传路径, 兜底用当前目录.',
     '# Explorer passes the folder path; fall back to the current directory.',
     '    if (-not $Target) { $Target = (Get-Location).Path }',
     '    $launcher = Join-Path $PSScriptRoot "mobius-open-here.cmd"',
+    '    $shell = New-Object -ComObject Shell.Application',
     '    $wt = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\wt.exe"',
     '    if (Test-Path $wt) {',
-    '# wt 用 -d 指定起始目录, 再让 cmd 执行同一个启动器.',
-    '# wt takes the starting directory with -d and runs the same launcher via cmd.',
+    '# wt takes the start directory with -d and runs the same launcher via cmd.',
+    '# Elevation is mandatory: without runas this menu opens a normal-privilege',
+    '# terminal, so the TUI can never offer its high-privilege GUI mode.',
+    '# ShellExecute rather than Start-Process: the hidden parent would otherwise',
+    '# hand down a hidden startup state; the 5th argument 1 = SW_SHOWNORMAL.',
     '        $wtArgs = ''-d "{0}" cmd.exe /d /s /c ""{1}" "{2}""'' -f $Target, $launcher, $Target',
-    '        Start-Process -FilePath $wt -ArgumentList $wtArgs',
-    '        "$(Get-Date -Format o) launched wt target=$Target launcher=$launcher" | Set-Content -Path $log',
+    '        $shell.ShellExecute($wt, $wtArgs, $PSScriptRoot, "runas", 1)',
+    '        "$(Get-Date -Format o) launched wt elevated target=$Target launcher=$launcher" | Set-Content -Path $log',
     '    } else {',
     '        $commandLine = ''/d /s /c ""{0}" "{1}""'' -f $launcher, $Target',
-    '# 第五个参数 1 是 SW_SHOWNORMAL, 强制提权后的窗口可见.',
-    '# The fifth argument is SW_SHOWNORMAL, forcing the elevated window to be visible.',
-    '        $shell = New-Object -ComObject Shell.Application',
+    '# The 5th argument 1 = SW_SHOWNORMAL, forcing the elevated window to be visible.',
     '        $shell.ShellExecute($env:ComSpec, $commandLine, $PSScriptRoot, "runas", 1)',
     '        "$(Get-Date -Format o) launched conhost target=$Target launcher=$launcher" | Set-Content -Path $log',
     '    }',
