@@ -563,24 +563,24 @@ function transferReferencePrompt(paths: TransferPaths, content: any): string {
   const pathLines = [
     fullPath ? `1. 完整记录：\`${fullPath}\`` : null,
     userMessagesPath ? `2. 仅用户消息：\`${userMessagesPath}\`` : null,
-    metadataPath ? `3. 旧 Session 元数据：\`${metadataPath}\`` : null,
+    metadataPath ? `3. 旧会话元数据：\`${metadataPath}\`` : null,
   ].filter(Boolean);
   if (pathLines.length === 0) return String(content || '');
   return [
-    content,
+    '这是一个从旧会话转接而来的新会话。',
     '',
-    '---',
-    '',
-    '这是一个从旧 Session 转接而来的新 Session。',
-    '',
-    '旧 Session 的转接资料保存在以下文件：',
+    '旧会话的转接资料保存在以下文件：',
     '',
     ...pathLines,
     '',
-    '开始执行前，请先读取旧 Session 元数据和用户消息，理解用户目标、后续补充及最后要求。',
+    '开始执行前，请先读取旧会话元数据和用户消息，理解用户目标、后续补充及最后要求。',
     '需要了解之前 Agent 已完成的工作、工具调用、命令输出或文件修改时，再读取完整记录。',
     '完整记录较长时可以分段读取，并优先检查文件尾部的最新卡片。',
     '不要修改或删除以上转接文件。',
+    '',
+    '--- 下面是用户的最新指令，请在理解前文的基础上，执行最新指令 ---',
+    '',
+    content,
   ].join('\n');
 }
 

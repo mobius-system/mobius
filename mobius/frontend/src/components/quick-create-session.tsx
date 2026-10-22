@@ -319,6 +319,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
         const requiredDirs = new Set([
           ...(projectKind === 'extension' ? ['mobius-extension'] : []),
           ...(initialDevice?.requiresAimux || initialDevice?.aimuxId ? ['mobius-aimux'] : []),
+          ...(initialDevice?.guiAuthorized ? ['mobius-gui-operation'] : []),
         ])
         setExcludedSkills(new Set(skills.filter((s: any) => !requiredDirs.has((s.dirName || '').replace(/_/g, '-'))).map((s: any) => s.id)))
         setExcludedMemories(new Set(memories.map((m: any) => m.id)))
@@ -357,14 +358,18 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   // web 端显式指定设备时也走 PC 任务模式 (默认双侧): 后端提示词与 remote_* MCP 注入都依赖 work_mode, 缺失则设备选择失效.
   // Picking a device on web implies PC task mode — the backend prompt and MCP injection both need work_mode
   const effectiveWorkMode = workMode ?? (deviceOverride ? 'dual' : null)
-  // 必选 skill 目录名集合: PC 任务模式 (pc/dual) 锁 mobius-aimux; 拓展项目锁 mobius-extension
+  // 必选 skill 目录名集合: PC 任务模式 (pc/dual) 锁 mobius-aimux; 拓展项目锁 mobius-extension;
+  // GUI 授权设备 (gui-xxx 的「授权操作图形界面」变体) 锁 mobius-gui-operation
   // (与 NewSessionModal 的 matchesRequiredSkill 同源, 任务页入口替换后拓展项目仍强制注入).
+  // Required skill dirs: pc/dual locks mobius-aimux, extension locks mobius-extension,
+  // and a GUI-authorized device locks mobius-gui-operation
   const requiredSkillDirs = useMemo(() => {
     const dirs = new Set<string>()
     if (effectiveWorkMode === 'pc' || effectiveWorkMode === 'dual') dirs.add('mobius-aimux')
     if (projectKind === 'extension') dirs.add('mobius-extension')
+    if (guiAuthorized) dirs.add('mobius-gui-operation')
     return dirs
-  }, [effectiveWorkMode, projectKind])
+  }, [effectiveWorkMode, projectKind, guiAuthorized])
   // SkillMemoryPicker 经 skillLockedOf 锁定必选 skill 不可取消.
   const skillLockedOf = useCallback((id: string) => {
     if (requiredSkillDirs.size === 0) return false

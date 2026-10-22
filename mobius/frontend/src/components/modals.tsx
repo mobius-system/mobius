@@ -2856,8 +2856,8 @@ export function RenameSessionModal({ session, onClose, onRenamed, entityLabel = 
 // =====================================================================
 // 通用确认弹窗
 // =====================================================================
-export function ConfirmModal({ title, message, onConfirm, onClose, confirmText = '确认', confirmClass = 'bg-red-500 hover:bg-red-600', dataTour, confirmDataTour }: {
-  title: string; message: string; onConfirm: () => void | Promise<void>; onClose: () => void; confirmText?: string; confirmClass?: string; dataTour?: string; confirmDataTour?: string
+export function ConfirmModal({ title, message, onConfirm, onClose, confirmText = '确认', cancelText = '取消', confirmClass = 'bg-red-500 hover:bg-red-600', dataTour, confirmDataTour }: {
+  title: string; message: string; onConfirm: () => void | Promise<void>; onClose: () => void; confirmText?: string; cancelText?: string; confirmClass?: string; dataTour?: string; confirmDataTour?: string
 }) {
   const { theme } = useStore()
   const [loading, setLoading] = useState(false)
@@ -2872,7 +2872,7 @@ export function ConfirmModal({ title, message, onConfirm, onClose, confirmText =
         <h3 className="text-[length:var(--fs-2xl)] font-semibold mb-2" style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
         <p className="text-[length:var(--fs-lg)] mb-5" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>{message}</p>
         <div className="flex gap-2">
-          <button onClick={onClose} disabled={loading} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>取消</button>
+          <button onClick={onClose} disabled={loading} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border disabled:opacity-40" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>{cancelText}</button>
           <button onClick={handleConfirm} disabled={loading}
             data-tour={confirmDataTour}
             className={`flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] text-white transition-colors disabled:opacity-40 ${confirmClass}`}>

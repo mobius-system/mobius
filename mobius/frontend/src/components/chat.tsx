@@ -9,7 +9,7 @@ import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
-import { NewSessionModal } from './modals'
+import { ConfirmModal, NewSessionModal } from './modals'
 import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
 import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
@@ -2278,6 +2278,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 终止完成后若该会话仍有 Mobius 定时任务, 记录数量并弹窗询问是否一并清除.
+  const [stopWakeupPrompt, setStopWakeupPrompt] = useState<{ sessionId: string; count: number } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -4123,16 +4125,39 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       }
     }
     api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
-      .then(() => {
+      .then(async () => {
         setTyping(false)
         setStreamContent('')
         loadHistoryRef.current()
+        // 常规终止已完成后才询问定时任务, 避免杀会话失败却先清掉任务.
+        // Ask about scheduled tasks only after the regular stop succeeded.
+        try {
+          const data = await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`)
+          const count = Array.isArray(data?.wakeups) ? data.wakeups.length : 0
+          // ✨ 该会话仍有定时任务时弹窗询问是否一并清除
+          // ✨ Prompt to clear remaining scheduled wake-ups for this session
+          if (count > 0) setStopWakeupPrompt({ sessionId, count })
+        } catch { /* 查询失败不打断终止流程 — query failure must not block stop */ }
       })
       .catch((e: any) => {
         setLastSendError(e?.message || '终止失败')
         setStopFeedbackActive(false)
       })
   }, [sessionId, setTyping, setStreamContent, currentIssueId, holdLiveOverride])
+
+  // 用户在弹窗里确认后清空该会话的全部 Mobius 定时任务; 关闭弹窗即保留.
+  // Clear every scheduled wake-up for the session when confirmed; closing the dialog keeps them.
+  const clearStopWakeups = useCallback(async () => {
+    const target = stopWakeupPrompt
+    if (!target) return
+    try {
+      await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(target.sessionId)}`, { method: 'DELETE' })
+      setStopWakeupPrompt(null)
+    } catch (e: any) {
+      setStopWakeupPrompt(null)
+      setLastSendError(e?.message || '清除定时任务失败')
+    }
+  }, [stopWakeupPrompt])
 
   const showSessionStartModal = !!(
     currentSession
@@ -5137,6 +5162,17 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         <SessionBashCommandsModal
           sessionId={sessionId}
           onClose={() => setBashCommandsOpen(false)}
+        />
+      )}
+
+      {stopWakeupPrompt && (
+        <ConfirmModal
+          title="同时清除定时任务？"
+          message={`该会话还有 ${stopWakeupPrompt.count} 个 Mobius 定时任务。终止后它们仍会按计划唤醒这个会话；是否一并清除？`}
+          confirmText="清除定时任务"
+          cancelText="保留定时任务"
+          onConfirm={clearStopWakeups}
+          onClose={() => setStopWakeupPrompt(null)}
         />
       )}
 
