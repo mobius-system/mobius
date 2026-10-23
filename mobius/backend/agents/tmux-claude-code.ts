@@ -337,6 +337,19 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   /*
+   * Transcript path of this session, three levels deep: the live runtime row,
+   * then the persisted hub-runtime row, then the archive row kept past
+   * terminate.
+   *
+   * Public because the history sync, search, mention context and timing
+   * waterfall all duck-type this lookup across backends; it used to be a
+   * private method and every caller probed that private name.
+   */
+  resolveJsonlPath(sessionId: string): string | null {
+    return resolveJsonlPath(this, sessionId)
+  }
+
+  /*
    * History snapshot out of the agent-history-store DB; native jsonl deltas are backfilled before the
    * read, and the jsonl path is resolved for sessions whose window is already gone.
    */

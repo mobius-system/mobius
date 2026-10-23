@@ -7,6 +7,7 @@ import { MOBIUS_KIND } from '../services/mobius-kinds';
 // 群消息推送: 给离线(无 SSE)成员远程推送
 import { pushToUser as pushToUserExt } from '../services/extension-push';
 import { Sessions } from '../repositories/sessions';
+import { agentJsonlPathOf } from '../services/agent-jsonl-path';
 import { Users } from '../repositories/users';
 import { assistantSessionKeyLike } from '../services/assistant-session';
 import { db } from '../../db';
@@ -278,7 +279,7 @@ function resolveAgentJsonlPath(sessionId: string): string | null {
     if (!sess) return null;
     const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(sess);
     const backend = agents.get(modelLaunchOptions.backend);
-    return typeof backend?._resolveJsonlPath === 'function' ? (backend._resolveJsonlPath(sessionId) as string) : null;
+    return agentJsonlPathOf(backend, sessionId);
   } catch {
     return null;
   }

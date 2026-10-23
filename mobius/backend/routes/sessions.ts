@@ -24,7 +24,7 @@ import * as modelRegistry from '../services/model-registry';
 import { useProxyForSession, withSessionProxyState } from '../services/session-proxy-state';
 // @ts-ignore — service 仍是 .js
 import * as agents from '../agents';
-import { computeSessionRuntimeStatus, syncAgentStatusIfChanged } from '../utils/session-runtime-status';
+import { agentJsonlPathOf } from '../services/agent-jsonl-path';import { computeSessionRuntimeStatus, syncAgentStatusIfChanged } from '../utils/session-runtime-status';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
 // @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
@@ -886,9 +886,7 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
     // resolvePrimary = 现问一次"这个会话的 jsonl 在哪". 适配器内部三级查表:
     // 内存 runtime Map → 运行时登记 (hub-runtime) → 历史存档 (hub-archive);
     // 新会话三者皆空 → null; typeof 防御个别后端未实现该方法.
-    const resolvePrimary = () => (typeof backend._resolveJsonlPath === 'function'
-      ? backend._resolveJsonlPath(sessionId)
-      : null);
+    const resolvePrimary = () => agentJsonlPathOf(backend, sessionId);
     {
       // 开门补齐: 连接建立时把库读到文件末尾; 新会话路径未绑定 → 跳过不报错, 后续 runSync 追上.
       const initialPath = resolvePrimary();
@@ -979,9 +977,7 @@ router.get('/:id/groups', auth, (req: express.Request, res: express.Response) =>
   auditSessionAccess(user, 'read_session_groups', session);
 
   const backend = backendForSession(session);
-  const primaryPath = typeof backend._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(id)
-    : null;
+  const primaryPath = agentJsonlPathOf(backend, id);
   try {
     const synced = syncHistoryStore(id, primaryPath, containDequeueEventOf(backend, id));
     if (!synced.ok) {
@@ -1019,9 +1015,7 @@ router.get('/:id/groups/:gid/entries', auth, (req: express.Request, res: express
     return;
   }
   const backend = backendForSession(session);
-  const primaryPath = typeof backend._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(id)
-    : null;
+  const primaryPath = agentJsonlPathOf(backend, id);
   try {
     const synced = syncHistoryStore(id, primaryPath, containDequeueEventOf(backend, id));
     if (!synced.ok) {
@@ -1159,9 +1153,7 @@ router.post('/:id/time-consume-waterfall/clear', auth, (req: express.Request, re
 
 export function sessionJsonlPath(session: AnySession, sessionId: string): string | null {
   const backend = backendForSession(session);
-  return typeof backend._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(sessionId)
-    : null;
+  return agentJsonlPathOf(backend, sessionId);
 }
 
 router.post('/:id/predicted-next-questions', auth, async (req: express.Request, res: express.Response) => {

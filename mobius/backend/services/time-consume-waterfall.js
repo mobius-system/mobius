@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 
 const { deprecatedMobiusJsonlPathOf: mobiusJsonlPathOf } = require('./mobius-agent-history-deprecated') // [deprecated-compat] 旧双轨字节统计
+const { agentJsonlPathOf } = require('./agent-jsonl-path')
 
 const TIME_CONSUME_WATERFALL_VERSION = 7
 const MIN_STEP_MS = 1000
@@ -486,9 +487,7 @@ function appendFromDisk(state, jsonlPath, nowMs) {
 
 function timeConsumeWaterfallFromBackend(backend, sessionId, opts = {}) {
   const nowMs = Number.isFinite(Number(opts.nowMs)) ? Number(opts.nowMs) : Date.now()
-  const jsonlPath = typeof backend?._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(sessionId)
-    : null
+  const jsonlPath = agentJsonlPathOf(backend, sessionId)
   if (!jsonlPath) {
     return {
       session_id: sessionId || null,
@@ -555,9 +554,7 @@ function timeConsumeWaterfallFromBackend(backend, sessionId, opts = {}) {
 
 function clearTimeConsumeWaterfallForBackend(backend, sessionId, opts = {}) {
   const nowMs = Number.isFinite(Number(opts.nowMs)) ? Number(opts.nowMs) : Date.now()
-  const jsonlPath = typeof backend?._resolveJsonlPath === 'function'
-    ? backend._resolveJsonlPath(sessionId)
-    : null
+  const jsonlPath = agentJsonlPathOf(backend, sessionId)
   if (!jsonlPath) {
     return {
       session_id: sessionId || null,

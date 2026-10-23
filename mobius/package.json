@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test:session-context-parity": "node --require tsx/cjs tests/session-context-parity.js",
+    "test:agent-jsonl-path": "node --require tsx/cjs tests/agent-jsonl-path.js",
     "test:mobius-cli": "node tests/mobius-cli.js",
     "test:scheduled-wakeups": "node --require tsx/cjs tests/scheduled-wakeups.js",
     "test:access-control": "node --require tsx/cjs tests/access-control-policy.js",

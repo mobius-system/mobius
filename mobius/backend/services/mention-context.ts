@@ -11,6 +11,7 @@ import { Sessions } from '../repositories/sessions';
 import { buildSessionContext } from './session-context';
 import modelRegistry from './model-registry';
 import agents from '../agents';
+import { agentJsonlPathOf } from './agent-jsonl-path';
 import { resolveSessionWorkspace } from './workspace';
 import { buildSessionTransferMarkdown, writeSessionTransferBundle } from './session-transfer';
 import { canOperateSession, canReadSession } from './access-control';
@@ -92,9 +93,7 @@ function resolveSessionJsonlPath(session: any, sessionId: string): string | null
   try {
     const modelLaunchOptions = modelRegistry.modelLaunchOptionsFor(session);
     const backend = agents.get(modelLaunchOptions.backend);
-    return typeof backend?._resolveJsonlPath === 'function'
-      ? backend._resolveJsonlPath(sessionId)
-      : null;
+    return agentJsonlPathOf(backend, sessionId);
   } catch {
     return null;
   }

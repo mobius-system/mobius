@@ -5,7 +5,7 @@
 //       层级: 项目 → Issue/Research → Session → 命中片段.
 //
 // 数据源: session 的 JSONL 原文 (primary cc jsonl + .mobius.jsonl sidecar, 与
-//         readMergedJsonlHistory 同源). 路径解析复用 backend._resolveJsonlPath
+//         readMergedJsonlHistory 同源). 路径解析走 services/agent-jsonl-path
 //         (runtime → hub-runtime.json → hub-archive.json 三级查表).
 //         注: messages_v2 自 2026-06-10 起只落 user/system (assistant/tool/thinking 的
 //         insertXxx 成死代码、无调用方), 不能作内容搜索源 → 完整对话正文仍以 JSONL 为唯一权威源.
@@ -28,6 +28,7 @@ import { db } from '../../db';
 import * as modelRegistry from '../services/model-registry';
 // @ts-ignore — agents registry 仍是 .js
 import * as agents from '../agents';
+import { agentJsonlPathOf } from '../services/agent-jsonl-path';
 // @ts-ignore — service 仍是 .js
 import { deprecatedMobiusJsonlPathOf as mobiusJsonlPathOf } from '../services/mobius-agent-history-deprecated';
 // @ts-ignore — service 仍是 .js
@@ -196,7 +197,7 @@ function entryUuidOf(entry: any): string | null {
 async function scanSession(sessionId: string, model: any, matcher: Matcher, maxFragments: number): Promise<Fragment[]> {
   const backendName = modelRegistry.backendNameForSessionModel(model);
   const backend = agents.get(backendName);
-  const primaryPath = typeof backend?._resolveJsonlPath === 'function' ? backend._resolveJsonlPath(sessionId) : null;
+  const primaryPath = agentJsonlPathOf(backend, sessionId);
   const paths: string[] = [];
   if (primaryPath) {
     paths.push(primaryPath);
