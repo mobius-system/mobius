@@ -25,6 +25,7 @@ import {
 import { copyTextToClipboard } from '../../utils/clipboard'
 import type { CodeSkinKey } from './code-mirror-editor'
 import { MarkdownWysiwygEditor } from './markdown-wysiwyg-editor'
+import { inlinePreviewAssets, projectFileDataUrl } from './preview-assets'
 
 const LazyCodeMirrorEditor = lazy(() => import('./code-mirror-editor').then(module => ({ default: module.CodeMirrorEditor })))
 
@@ -1595,11 +1596,23 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                     <div className="text-[length:var(--fs-md)] text-red-400">{tab.error}</div>
                   </div>
                 ) : tab.fileData?.binary ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
-                    <AlertTriangle className="w-6 h-6 text-amber-400" />
-                    <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>二进制文件，不提供预览</div>
-                    <div className="text-[length:var(--fs-sm)]">{formatSize(tab.fileData.size)}</div>
-                  </div>
+                  source === 'hub' && IMAGE_PREVIEW_RE.test(tab.entry.name) ? (
+                    /* 蓝图里的图片资产: 直接显示, 方便核对引用是否指对文件 */
+                    /* Image assets referenced by a blueprint: show them so the ref can be checked */
+                    <BinaryImagePreview
+                      projectId={projectId}
+                      relPath={relPathUnderBind(tab.entry.abs_path, bindPath)}
+                      name={tab.entry.name}
+                      size={tab.fileData.size}
+                      background={cc.bg}
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
+                      <AlertTriangle className="w-6 h-6 text-amber-400" />
+                      <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>二进制文件，不提供预览</div>
+                      <div className="text-[length:var(--fs-sm)]">{formatSize(tab.fileData.size)}</div>
+                    </div>
+                  )
                 ) : tab.fileData?.truncated ? (
                   <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
                     <AlertTriangle className="w-6 h-6 text-amber-400" />
@@ -1608,14 +1621,25 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   </div>
                 ) : tab.fileData ? (
                   /\.html?$/i.test(tab.entry.name) && tab.htmlPreview ? (
-                    <iframe
-                      key={`${tab.key}:${tab.doc}`}
-                      title={`HTML 预览: ${tab.entry.name}`}
-                      sandbox="allow-scripts"
-                      srcDoc={tab.doc}
-                      referrerPolicy="no-referrer"
-                      className="h-full w-full border-0 bg-white"
-                    />
+                    source === 'hub' ? (
+                      /* 中枢文件: 蓝图里的相对图片先在父页面读成 data URI 再送入沙箱 iframe */
+                      /* Hub files: relative images are inlined in the parent page before the sandbox iframe */
+                      <HtmlPreviewFrame
+                        html={tab.doc}
+                        title={`HTML 预览: ${tab.entry.name}`}
+                        projectId={projectId}
+                        baseDir={dirnameRel(relPathUnderBind(tab.entry.abs_path, bindPath))}
+                      />
+                    ) : (
+                      <iframe
+                        key={`${tab.key}:${tab.doc}`}
+                        title={`HTML 预览: ${tab.entry.name}`}
+                        sandbox="allow-scripts"
+                        srcDoc={tab.doc}
+                        referrerPolicy="no-referrer"
+                        className="h-full w-full border-0 bg-white"
+                      />
+                    )
                   ) : tabMd && tab.mdPreview ? (
                     <MarkdownWysiwygEditor value={tab.doc} skin={skin} onChange={onDocChange} />
                   ) : (
@@ -1858,4 +1882,105 @@ function relPathUnderBind(absPath: string, bindPath: string): string {
   if (absPath === root) return '/'
   if (absPath.startsWith(root + '/')) return '/' + absPath.slice(root.length + 1).replace(/\\/g, '/')
   return absPath.replace(/\\/g, '/')
+}
+
+// 可直接预览的图片扩展名 (蓝图资产最常见的是截图)
+// Image extensions the pane can render in place (blueprint assets are screenshots)
+const IMAGE_PREVIEW_RE = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
+
+/*
+ * HtmlPreviewFrame — sandboxed HTML preview with blueprint assets inlined.
+ *
+ * The iframe keeps `sandbox="allow-scripts"` (opaque origin), so relative image
+ * refs cannot be fetched by the document itself. Assets are read here in the
+ * trusted parent page and handed over as data URIs; the saved HTML stays small.
+ */
+function HtmlPreviewFrame({ html, title, projectId, baseDir }: {
+  html: string
+  title: string
+  projectId: string
+  baseDir: string
+}) {
+  const [doc, setDoc] = useState(html)
+  const [busy, setBusy] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    setBusy(true)
+    // ✨ 相对图片一次性读成 data URI 后再交给 iframe
+    // ✨ Inline relative images as data URIs, then hand the document to the iframe
+    inlinePreviewAssets(html, { projectId, baseDir })
+      .then(next => { if (!cancelled) setDoc(next) })
+      .catch(() => { if (!cancelled) setDoc(html) })
+      .finally(() => { if (!cancelled) setBusy(false) })
+    return () => { cancelled = true }
+  }, [html, projectId, baseDir])
+
+  if (busy) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2" style={{ background: '#fff', color: '#6b7280' }}>
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <div className="text-[length:var(--fs-sm)]">正在准备预览…</div>
+      </div>
+    )
+  }
+  return (
+    <iframe
+      key={doc}
+      title={title}
+      sandbox="allow-scripts"
+      srcDoc={doc}
+      referrerPolicy="no-referrer"
+      className="h-full w-full border-0 bg-white"
+    />
+  )
+}
+
+/* BinaryImagePreview — render an image asset opened from the file tree. */
+function BinaryImagePreview({ projectId, relPath, name, size, background }: {
+  projectId: string
+  relPath: string
+  name: string
+  size: number
+  background: string
+}) {
+  const [src, setSrc] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    setSrc('')
+    setError('')
+    projectFileDataUrl(projectId, relPath)
+      .then(url => { if (!cancelled) setSrc(url) })
+      .catch(e => { if (!cancelled) setError(e?.message || '读取失败') })
+    return () => { cancelled = true }
+  }, [projectId, relPath])
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: '#9ca3af' }}>
+        <AlertTriangle className="w-6 h-6 text-amber-400" />
+        <div className="text-[length:var(--fs-lg)]">图片加载失败</div>
+        <div className="text-[length:var(--fs-sm)]">{error}</div>
+      </div>
+    )
+  }
+  if (!src) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2" style={{ color: '#9ca3af' }}>
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <div className="text-[length:var(--fs-md)]">正在读取图片…</div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex h-full w-full flex-col overflow-auto" style={{ background }}>
+      <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5 text-[length:var(--fs-sm)]" style={{ borderColor: 'rgba(127,127,127,0.25)', color: '#9ca3af' }}>
+        <span className="truncate">{name}</span>
+        <span className="flex-shrink-0">{formatSize(size)}</span>
+      </div>
+      <div className="flex flex-1 items-center justify-center overflow-auto p-4">
+        <img src={src} alt={name} className="max-h-full max-w-full object-contain" />
+      </div>
+    </div>
+  )
 }

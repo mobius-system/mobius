@@ -51,13 +51,55 @@ MOBIUS_HIDDEN_FOLDER_NAME 通常为 `.mobius`，运行 `echo $MOBIUS_HIDDEN_FOLD
 
 - 单文件自包含：所有 CSS 内联（`<style>`），图示用内联 SVG 或 HTML/CSS 绘制。
 - **禁止任何外部依赖**：不引用 CDN、远程字体（包括 Google Fonts）、远程
-  图片、外链脚本。图片需要时用内联 SVG 或 data URI。
+  图片 URL、外链脚本。
+- **图片放蓝图旁边，用相对路径引用**（见下节「蓝图里的图片」）：截图这类
+  大图不要 base64 塞进 HTML。
 - 允许 `<script>`（预览沙箱允许脚本，可做折叠/高亮等轻交互），但内容离开
   脚本也必须可读，且脚本不得访问网络。
 - 使用系统字体栈（如 `system-ui, -apple-system, "Segoe UI", "PingFang SC",
   "Microsoft YaHei", sans-serif`）。
 - 体积控制在 500KB 以内（编辑器预读上限 1.5MB，超限不可编辑）。
 - 用 `html { background: ... }` 自带底色，兼顾明暗环境下的可读性。
+
+## 蓝图里的图片（截图 / 照片 / 生成图）
+
+蓝图预览是 `srcDoc` + `sandbox="allow-scripts"` 的沙箱 iframe，文档自身
+拿不到项目文件。Mobius 会在**预览时**把 HTML 里的相对图片读出来、在内存里
+换成 data URI 再送进 iframe，所以：
+
+- HTML 文件里写**相对路径**，磁盘上保持小体积；图片本体放在蓝图旁边的
+  `assets/` 目录里。
+- 支持三种写法（按优先级）：
+
+  | 写法 | 含义 | 示例 |
+  |------|------|------|
+  | `./assets/x.png` | 相对当前蓝图所在目录 | `<img src="./assets/overview.png">` |
+  | `../shared/x.png` | 上跳目录 | `<img src="../shared/logo.png">` |
+  | `/…/x.png` | 项目根相对 | `<img src="/.mobius/blueprints/backend/assets/x.png">` |
+
+- 只处理**图片类引用**：`<img src>`、`<source src/srcset>`、`<video src/poster>`、
+  SVG `<image href>`，以及 `<style>` / `style=""` 里的 `url(...)`。
+  `http(s):`、`data:`、`//host/...`、`#锚点` 原样保留（规范上也不该出现远程图）。
+- 单张 ≤ 2MB；截图建议先压成 webp 或优化过的 png。小图标（< 100KB）仍可直接
+  data URI 内联，保证 HTML 单独外发时也可读。
+- 图片加载失败不会阻断整篇预览：那张图显示为裂图，其余内容照常。
+
+### 制作步骤
+
+1. 截图/生成图落到项目目录（会话里常见的 `/tmp/...` 路径不在项目内，先拷进来）：
+
+   ```bash
+   mkdir -p <项目绑定目录>/.mobius/blueprints/<module>/assets
+   cp /tmp/shot.png <项目绑定目录>/.mobius/blueprints/<module>/assets/<name>.png
+   ```
+
+2. HTML 里引用：`<img src="./assets/<name>.png" alt="一句话说明这张图在讲什么">`。
+3. 在「项目蓝图」Tab 里打开即可看到图；点左侧文件树里的图片文件也能直接预览，
+   用来核对路径有没有写错。
+4. 已有蓝图如果曾把截图 base64 内联成巨型 HTML（> 1.5MB 就无法编辑了），
+   把图片抽到 `assets/` 再改成本地引用，文件会立刻瘦回几十 KB。
+
+> 注意：图片存在项目目录里，会进 git。大图请压缩，别把原始 4K 截图直接提交。
 
 ## 写作规范（为决策服务）
 

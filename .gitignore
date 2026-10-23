@@ -64,7 +64,9 @@ data/*.json
 data/turn-summaries/
 data/momo-mobile/
 local_data/
-workspace/
+# 只忽略仓库根的用户工作区; 锚定写法, 否则会误伤源码目录
+# Only the repo-root user workspace; anchored so source dirs named workspace stay tracked
+/workspace/
 mobius/uploads/
 projects/
 .deploy_data/
