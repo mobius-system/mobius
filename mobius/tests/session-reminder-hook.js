@@ -16,6 +16,8 @@
 
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { execFile } = require('child_process');
 
 const { startReminderServer } = require('./fixtures/reminder-hook-server');
@@ -33,6 +35,20 @@ const {
 const CLI_PATH = path.resolve(__dirname, '../scripts/cli/mobius_session_reminder');
 const TOKEN = 'hook-token-for-tests';
 const SECRET = 'unit-test-secret';
+const SESSION_ID = 'mobius-session-1';
+const CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'reminder-hook-config-'));
+
+/** Write a per-session hook config and return its path. */
+function writeConfig(baseUrl, sessionId = SESSION_ID, token = TOKEN) {
+  const file = path.join(CONFIG_DIR, `config-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+  fs.writeFileSync(file, JSON.stringify({ base_url: baseUrl, session_id: sessionId, token }), { mode: 0o600 });
+  return file;
+}
+
+/** Build the hook command pointing at a config file for this backend. */
+function commandFor(baseUrl) {
+  return buildReminderHookCommand({ cliPath: CLI_PATH, configPath: writeConfig(baseUrl) });
+}
 
 /** Claude Code PreToolUse payload (fields the backend reads are the same as Codex). */
 function claudePayload(sessionId = 'cc-session-1') {
@@ -70,7 +86,7 @@ function runHook(command, input, env = {}) {
       'sh',
       ['-c', command],
       {
-        env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: 'mobius-session-1', MOBIUS_HOOK_TOKEN: TOKEN, ...env },
+        env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: '', MOBIUS_HOOK_TOKEN: '', ...env },
         timeout: 20000,
         maxBuffer: 4 * 1024 * 1024,
       },
@@ -95,9 +111,9 @@ function parseHookOutput(stdout) {
 async function testClaudePayloadDelivery() {
   const server = await startReminderServer();
   try {
-    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+    const command = commandFor(server.baseUrl);
     const payload = claudePayload();
-    const result = await runHook(command, payload, { MOBIUS_BASE: server.baseUrl });
+    const result = await runHook(command, payload);
 
     assert.strictEqual(result.code, 0, `hook must exit 0, stderr: ${result.stderr}`);
     const output = parseHookOutput(result.stdout);
@@ -120,9 +136,9 @@ async function testClaudePayloadDelivery() {
 async function testCodexPayloadDelivery() {
   const server = await startReminderServer();
   try {
-    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+    const command = commandFor(server.baseUrl);
     const payload = codexPayload();
-    const result = await runHook(command, payload, { MOBIUS_BASE: server.baseUrl });
+    const result = await runHook(command, payload);
 
     assert.strictEqual(result.code, 0, `hook must exit 0, stderr: ${result.stderr}`);
     const output = parseHookOutput(result.stdout);
@@ -145,8 +161,8 @@ async function testEmptyDecisionPassthrough() {
     },
   });
   try {
-    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
-    const result = await runHook(command, claudePayload(), { MOBIUS_BASE: server.baseUrl });
+    const command = commandFor(server.baseUrl);
+    const result = await runHook(command, claudePayload());
     assert.strictEqual(result.code, 0);
     assert.deepStrictEqual(JSON.parse(result.stdout.trim()), {}, 'suppressed decision must pass through as {}');
   } finally {
@@ -159,8 +175,8 @@ async function testBackendDown() {
   const baseUrl = server.baseUrl;
   await server.close();
 
-  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
-  const result = await runHook(command, claudePayload(), { MOBIUS_BASE: baseUrl });
+  const command = commandFor(baseUrl);
+  const result = await runHook(command, claudePayload());
   assert.notStrictEqual(result.code, 0, 'connection failure must surface as a non-zero exit');
   assert.strictEqual(result.stdout.trim(), '', 'no output on failure, so the agent sees no reminder');
 }
@@ -168,9 +184,9 @@ async function testBackendDown() {
 async function testCliTimeout() {
   const server = await startReminderServer({ delayMs: 4500 });
   try {
-    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+    const command = commandFor(server.baseUrl);
     const started = Date.now();
-    const result = await runHook(command, claudePayload(), { MOBIUS_BASE: server.baseUrl });
+    const result = await runHook(command, claudePayload());
     const elapsed = Date.now() - started;
 
     assert.strictEqual(result.code, 3, 'CLI must report a network exit code when curl times out');
@@ -197,19 +213,30 @@ function testCliUsageAndConfigErrors() {
     env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: '', MOBIUS_HOOK_TOKEN: '' },
   });
   assert.strictEqual(missingEnv.status, 3, 'missing environment exits 3');
-  assert.match(missingEnv.stderr, /MOBIUS_BASE is unset/);
+  assert.match(missingEnv.stderr, /MOBIUS_BASE is unset and --config has no base_url/);
 
-  const emptyStdin = require('child_process').spawnSync(CLI_PATH, [], {
+  // 配置文件缺失 → 配置错误
+  const missingConfig = require('child_process').spawnSync(CLI_PATH, ['--config', '/nonexistent/hook.json'], {
+    encoding: 'utf8',
+    input: '{}',
+    env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: '', MOBIUS_HOOK_TOKEN: '' },
+  });
+  assert.strictEqual(missingConfig.status, 3, 'unreadable --config exits 3');
+  assert.match(missingConfig.stderr, /cannot read hook config/);
+
+  // 有配置文件时不需要任何环境变量
+  const cfg = writeConfig('http://127.0.0.1:1');
+  const emptyStdin = require('child_process').spawnSync(CLI_PATH, ['--config', cfg], {
     encoding: 'utf8',
     input: '',
-    env: { ...process.env, MOBIUS_BASE: 'http://127.0.0.1:1', MOBIUS_SESSION_ID: 'mobius-session-1', MOBIUS_HOOK_TOKEN: TOKEN },
+    env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: '', MOBIUS_HOOK_TOKEN: '' },
   });
   assert.strictEqual(emptyStdin.status, 0, 'empty stdin is a silent success');
   assert.strictEqual(emptyStdin.stdout, '');
 }
 
 function testClaudeSettingsFragment() {
-  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+  const command = commandFor('http://127.0.0.1:45616');
   const settings = claudeReminderHookSettings(command);
   const group = settings.hooks.PreToolUse[0];
 
@@ -223,7 +250,7 @@ function testClaudeSettingsFragment() {
 }
 
 function testCodexTomlFragment() {
-  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+  const command = commandFor('http://127.0.0.1:45616');
   const toml = codexReminderHookToml(command);
 
   assert.match(toml, /^\[\[hooks\.PreToolUse\]\]$/m,
@@ -237,10 +264,11 @@ function testCodexTomlFragment() {
 }
 
 function testCommandValidation() {
-  assert.throws(() => buildReminderHookCommand({ cliPath: 'relative/path' }), /invalid reminder hook cli path/);
-  assert.throws(() => buildReminderHookCommand({ cliPath: "/tmp/x'; rm -rf /" }), /invalid reminder hook cli path/);
+  assert.throws(() => buildReminderHookCommand({ cliPath: 'relative/path', configPath: '/tmp/c.json' }), /invalid reminder hook cli path/);
+  assert.throws(() => buildReminderHookCommand({ cliPath: "/tmp/x'; rm -rf /", configPath: '/tmp/c.json' }), /invalid reminder hook cli path/);
+  assert.throws(() => buildReminderHookCommand({ cliPath: CLI_PATH, configPath: "relative.json" }), /invalid reminder hook config path/);
   assert.throws(
-    () => buildReminderHookCommand({ cliPath: CLI_PATH, reminderType: '../evil' }),
+    () => buildReminderHookCommand({ cliPath: CLI_PATH, configPath: '/tmp/c.json', reminderType: '../evil' }),
     /invalid reminder type/,
   );
 }

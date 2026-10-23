@@ -307,10 +307,10 @@ export function destroySandbox(userId: string): void {
   knownAlive.delete(String(userId));
   // 重建后的新容器同名: 清掉 tmux 引导缓存, 下次 prepareSpawn 重新预建容器内 hub session
   try { (require('./exec-router') as typeof import('./exec-router')).forgetContainerGuidance(name); } catch { /* best-effort */ }
-  // 会话配置随容器生灭 (2026-10-13: 配置只在启动会话瞬间复制到 per-user temp 的 sbx-session/ 下)
+  // 会话配置随容器生灭 (配置只在启动会话瞬间复制到 per-user temp 的 session-config/ 下)
   try {
     const fsx = require('fs');
-    fsx.rmSync(path.join(ensureTempRoot(String(userId)), 'sbx-session'), { recursive: true, force: true });
+    fsx.rmSync(path.join(ensureTempRoot(String(userId)), 'session-config'), { recursive: true, force: true });
   } catch { /* best-effort */ }
 }
 

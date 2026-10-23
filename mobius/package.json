@@ -67,7 +67,8 @@
     "test:session-jobs-cli": "node tests/session-jobs-cli.js",
     "test:session-reminder-store": "node --require tsx/cjs tests/session-reminder-store.js",
     "test:session-hook-inject": "node --require tsx/cjs tests/session-hook-inject.js",
-    "test:session-reminders-route": "node --require tsx/cjs tests/session-reminders-route.js"
+    "test:session-reminders-route": "node --require tsx/cjs tests/session-reminders-route.js",
+    "test:session-dispatch-identity": "node --require tsx/cjs tests/session-dispatch-identity.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

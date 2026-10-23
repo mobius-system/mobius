@@ -231,11 +231,12 @@ export function rewriteHostPath(userId: string | null | undefined, p: string): s
   return p;
 }
 
-// 会话级配置临时目录: 宿主 = 本人 per-user temp 下, 容器内 = /tmp/sbx-session/<sid>/ (同一挂载).
+// 会话级配置目录: 宿主 = 本人 per-user temp 下, 容器内同路径可见 (整个 temp 根同路径挂载).
+// 与是否启用沙箱无关, 管理员会话同样使用该目录.
 // 语义 (2026-10-13 用户决策): docker 模式的会话配置在"启动会话的瞬间"复制到临时路径,
 // 随容器生灭 (reaper 删容器时顺手清理), 不在 .sbx-home 里堆积.
 export function sessionConfigDir(userId: string, sessionId: string): string {
-  return path.join(ensureTempRoot(userId), 'sbx-session', String(sessionId || 'adhoc'));
+  return path.join(ensureTempRoot(userId), 'session-config', String(sessionId || 'adhoc'));
 }
 
 export function removeSessionConfigs(userId: string, sessionId: string): void {
@@ -243,7 +244,7 @@ export function removeSessionConfigs(userId: string, sessionId: string): void {
 }
 
 // 容器版 settings 物化: 读宿主 settings (含 withproxy 副本), 把 127.0.0.1 换成
-// 沙箱网关 IP 后复制到会话临时目录, 返回容器内同路径 (/tmp/sbx-session/<sid>/<basename>).
+// 沙箱网关 IP 后复制到会话临时目录, 返回容器内同路径 (<per-user temp>/session-config/<sid>/<basename>).
 // 非隔离用户返回 null (调用方保留原路径).
 export function materializeSettingsForSbx(userId: string | null | undefined, sessionId: string | null | undefined, settingsPath: string | null): string | null {
   if (!isolationActiveFor(userId) || !settingsPath) return null;

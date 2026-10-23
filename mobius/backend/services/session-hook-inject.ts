@@ -10,8 +10,52 @@
 import fs from 'fs'
 import path from 'path'
 
+import { HIDDEN_FOLDER_NAME } from '../config'
+
 /** Marker used to detect an already-injected Codex hook block. */
 const CODEX_HOOK_MARKER = '[[hooks.PreToolUse]]'
+
+/** Directory name of the per-session agent config inside the project hidden folder. */
+export const SESSION_SETTINGS_DIRNAME = 'mobius-session-settings'
+
+export interface SessionSettingsPaths {
+  dir: string
+  /** Claude settings copy carrying the reminder hook. */
+  settingsPath: string
+  /** Reminder hook config (base url, session id, token). */
+  hookConfigPath: string
+}
+
+/**
+ * Paths for one session's agent config, rooted at the project bind path.
+ *
+ * The bind path is host-backed and bind-mounted into sandboxes at the same
+ * path, so one string works for admins and sandboxed users alike.
+ */
+export function sessionSettingsPaths(bindRoot: string, sessionId: string): SessionSettingsPaths {
+  // 每个会话一个目录: <bind>/<hidden>/mobius-session-settings/<sid>/
+  // One directory per session; the directory survives terminate on purpose.
+  const dir = path.join(String(bindRoot), HIDDEN_FOLDER_NAME, SESSION_SETTINGS_DIRNAME, String(sessionId))
+  return {
+    dir,
+    settingsPath: path.join(dir, 'settings.json'),
+    hookConfigPath: path.join(dir, 'hook.json'),
+  }
+}
+
+/**
+ * Create the settings directory and keep session files out of git.
+ *
+ * The hook config carries a token, so the directory ships a `.gitignore` that
+ * ignores everything regardless of what the project tracks.
+ */
+export function ensureSessionSettingsDir(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const ignore = path.join(dir, '.gitignore')
+  if (!fs.existsSync(ignore)) {
+    try { fs.writeFileSync(ignore, '*\n', { mode: 0o600 }) } catch { /* best-effort */ }
+  }
+}
 
 export interface ClaudeHookInjectOptions {
   /** Effective settings file for this session (already proxy/container rewritten). */

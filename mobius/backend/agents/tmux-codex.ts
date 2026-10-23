@@ -40,17 +40,16 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, sandboxPolicyFor, sessionConfigDir, SBX_GATEWAY_IP } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, sandboxPolicyFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
 const { resolveDispatchIdentity } = require('../services/session-dispatch-identity')
 const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
-const { injectCodexReminderHook, writeReminderHookConfig } = require('../services/session-hook-inject')
+const { injectCodexReminderHook, writeReminderHookConfig, sessionSettingsPaths, ensureSessionSettingsDir } = require('../services/session-hook-inject')
 const {
   buildReminderHookCommand,
   codexReminderHookToml,
   reminderHookBaseUrl,
   reminderHookToken,
   CODEX_REMINDER_MATCHER,
-  REMINDER_HOOK_CONFIG_FILENAME,
 } = require('../services/session-reminder-hook')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
@@ -1485,9 +1484,8 @@ class TmuxCodexBackend extends AgentBackend {
     // 会话级 profile 副本 (含提醒钩子) 随会话删除
     // The per-session profile copy (with the reminder hook) dies with the session.
     if (entry?.withHookProfilePath) { try { fs.unlinkSync(entry.withHookProfilePath) } catch {} }
-    // 会话级钩子配置 (base/session/token) 随会话删除
-    // The per-session hook config dies with the session.
-    if (entry?.withHookConfigPath) { try { fs.unlinkSync(entry.withHookConfigPath) } catch {} }
+    // 项目隐藏目录下的钩子配置保留: 终止时不删
+    // The hook config under the project hidden folder is kept on terminate.
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1711,8 +1709,10 @@ class TmuxCodexBackend extends AgentBackend {
         const hookProfileKey = `${finalProfileKey}hook_${safeSid}`
         // 钩子配置落文件: 重开时环境变量可能丢失, 文件仍在
         // Hook config lives in a file: a respawned agent may lose the env vars
+        const settingsPaths = sessionSettingsPaths(effFlagRoot, sessionId)
+        ensureSessionSettingsDir(settingsPaths.dir)
         withHookConfigPath = writeReminderHookConfig(
-          path.join(sessionConfigDir(String(userId), sessionId), REMINDER_HOOK_CONFIG_FILENAME),
+          settingsPaths.hookConfigPath,
           {
             base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
             session_id: sessionId,

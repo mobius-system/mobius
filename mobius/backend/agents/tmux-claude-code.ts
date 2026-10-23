@@ -55,13 +55,12 @@ const { take_tmux_window_text } = require('./tmux_utils')
 const { ensureSessionWithProxy } = require('../services/model-access')
 const { ensureTempRoot } = require('../services/file-access')
 const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
-const { injectClaudeReminderHook, writeReminderHookConfig } = require('../services/session-hook-inject')
+const { injectClaudeReminderHook, writeReminderHookConfig, sessionSettingsPaths, ensureSessionSettingsDir } = require('../services/session-hook-inject')
 const {
   buildReminderHookCommand,
   reminderHookBaseUrl,
   reminderHookToken,
   CLAUDE_REMINDER_MATCHER,
-  REMINDER_HOOK_CONFIG_FILENAME,
 } = require('../services/session-reminder-hook')
 const { APP_DIR, JWT_SECRET, PORT: MOBIUS_PORT } = require('../config')
 import { sandboxCommand } from '../services/agent-sandbox'
@@ -1671,13 +1670,8 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 删掉数字雨用的withproxy临时文件
     // Delete the digital-rain per-session withproxy file
     if (entry?.withProxyPath) { try { fs.unlinkSync(entry.withProxyPath) } catch {} }
-    // 删掉带提醒钩子的会话级 settings 副本 (只在会话配置目录内)
-    // Delete the per-session settings copy that carries the reminder hook
-    if (entry?.settingsPath && /[\\/]sbx-session[\\/]/.test(entry.settingsPath)) {
-      try { fs.unlinkSync(entry.settingsPath) } catch {}
-      try { fs.unlinkSync(path.join(path.dirname(entry.settingsPath), REMINDER_HOOK_CONFIG_FILENAME)) } catch {}
-      try { fs.rmdirSync(path.dirname(entry.settingsPath)) } catch {}
-    }
+    // 项目隐藏目录下的会话配置保留: 终止时不删目录, 便于事后排查
+    // Session config under the project hidden folder is kept on terminate for post-mortem.
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1776,25 +1770,25 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // lives in sessionConfigDir, which is bind-mounted at the same path in sandboxes.
     if (aimuxRemoteName && userId && finalSettingsPath) {
       try {
-        const configDir = sessionConfigDir(String(userId), sessionId)
+        // 会话配置落在项目绑定路径的隐藏目录: 宿主与沙箱同一路径可见
+        // Session config lives under the project bind path, which is bind-mounted
+        // into sandboxes at the same path.
+        const paths = sessionSettingsPaths(effFlagRoot, sessionId)
+        ensureSessionSettingsDir(paths.dir)
         // 钩子配置落文件: 会话被重开时环境变量可能丢失, 文件仍在
         // Hook config lives in a file: a respawned agent may lose the env vars
-        const hookConfigPath = writeReminderHookConfig(
-          path.join(configDir, REMINDER_HOOK_CONFIG_FILENAME),
-          {
-            base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
-            session_id: sessionId,
-            token: reminderHookToken(sessionId, JWT_SECRET),
-          },
-        )
+        const hookConfigPath = writeReminderHookConfig(paths.hookConfigPath, {
+          base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
+          session_id: sessionId,
+          token: reminderHookToken(sessionId, JWT_SECRET),
+        })
         const hookCommand = buildReminderHookCommand({
           cliPath: path.join(APP_DIR, 'mobius', 'scripts', 'cli', 'mobius_session_reminder'),
           configPath: hookConfigPath,
         })
-        const dest = path.join(configDir, 'settings.json')
         finalSettingsPath = injectClaudeReminderHook({
           sourcePath: finalSettingsPath,
-          destPath: dest,
+          destPath: paths.settingsPath,
           command: hookCommand,
           matcher: CLAUDE_REMINDER_MATCHER,
           timeoutSeconds: 5,
@@ -1878,7 +1872,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 有MCP要注入就写会话级配置文件，再用--mcp-config传进去
     // With MCP servers to inject, write the per-session config and pass it in
     if (Object.keys(mcpServers).length > 0) {
-      // 隔离用户: 必须落在容器内同路径可达的会话配置目录 (per-user temp 的 sbx-session/ 同路径挂载);
+      // 隔离用户: 必须落在容器内同路径可达的会话配置目录 (per-user temp 的 session-config/ 同路径挂载);
       // 写宿主 /tmp 的话容器里看不见, claude 会以 "MCP config file not found" 直接退出, TUI 永远不就绪.
       // Isolated users: the file must land where the container sees the same path (per-user temp
       // root is bind-mounted at the identical path). Writing host /tmp makes claude exit with

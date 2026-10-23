@@ -61,9 +61,6 @@ export function reminderHookBaseUrl(options: ReminderHookBaseUrlOptions): string
   return `http://${host}:${port}`
 }
 
-/** Name of the per-session JSON file carrying base URL, session id and token. */
-export const REMINDER_HOOK_CONFIG_FILENAME = 'mobius-reminder-hook.json'
-
 export interface ReminderHookCommandOptions {
   /** Absolute path to the mobius_session_reminder CLI (same path host and sandbox). */
   cliPath: string
