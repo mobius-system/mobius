@@ -882,8 +882,14 @@ export default function IssuePage() {
       {showNewSession && <CreateSessionForm onClose={() => setShowNewSession(false)}
         onDone={(s: any) => {
           setShowNewSession(false)
+          // 先用创建响应直接进入会话, 不等列表/详情接口 (后端忙碌时可达数秒, 期间页面只显示"正在加载会话").
+          // Enter with the create response immediately instead of waiting for the list/detail refetch.
+          if (s?.session_id) {
+            setCurrentSession(s)
+            setCurrentTask(s)
+            goToSession(s.session_id)
+          }
           refreshSessions()
-          if (s?.session_id) goToSession(s.session_id)
         }}
         defaultProjectId={projectId}
         defaultIssueId={issueId}

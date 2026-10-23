@@ -37,7 +37,7 @@ import {
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare,
   X, Eye, Sparkles, RefreshCw, Paperclip, Image as ImageIcon, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search, BrainCircuit,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, BrainCircuit, Loader2,
 } from 'lucide-react'
 // 「新建快捷会话」表单已独立成文件 (含 取消/预览/创建 三键与传统菜单第 2 步预览的衔接)
 import { CreateSessionForm } from './quick-create-session'
@@ -776,21 +776,33 @@ export function CreateModalShell({ title, onClose, children, footer, dark, width
   )
 }
 
-export function Footer({ loading, submitText, onClose, onSubmit, disabled, preview }: { loading: boolean; submitText: string; onClose: () => void; onSubmit: () => void; disabled?: boolean; preview?: { onClick: () => void; disabled?: boolean } }) {
+export function Footer({ loading, submitText, onClose, onSubmit, disabled, preview, hint }: { loading: boolean; submitText: string; onClose: () => void; onSubmit: () => void; disabled?: boolean; preview?: { onClick: () => void; disabled?: boolean }; hint?: string }) {
   return (
-    <div className="flex gap-2">
-      <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)]"
-        style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>取消</button>
-      {/* 预览: 取消与创建之间的第三键, 进入传统菜单第 2 步 (Skill/Memory 勾选 + 注入文本预览) */}
-      {preview && (
-        <button onClick={preview.onClick} disabled={preview.disabled}
-          className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ borderColor: 'rgba(59,130,246,0.4)', color: '#60a5fa', background: 'rgba(59,130,246,0.08)' }}>预览</button>
+    <div className="space-y-2">
+      {/* 提交中的进度提示: 创建请求可能耗时数秒, 用转圈 + 文案明确告知"正在进行", 避免像卡死.
+          Loading hint: the create request can take seconds, so show a spinner + copy instead of a frozen-looking dialog. */}
+      {loading && hint && (
+        <div role="status" aria-live="polite" className="flex items-center gap-2 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
+          <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" style={{ color: '#60a5fa' }} />
+          <span className="min-w-0">{hint}</span>
+        </div>
       )}
-      <button onClick={onSubmit} disabled={loading || disabled}
-        className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
-        {loading ? '创建中...' : submitText}
-      </button>
+      <div className="flex gap-2">
+        <button onClick={onClose} disabled={loading}
+          className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>取消</button>
+        {/* 预览: 取消与创建之间的第三键, 进入传统菜单第 2 步 (Skill/Memory 勾选 + 注入文本预览) */}
+        {preview && (
+          <button onClick={preview.onClick} disabled={loading || preview.disabled}
+            className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] border transition-colors hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ borderColor: 'rgba(59,130,246,0.4)', color: '#60a5fa', background: 'rgba(59,130,246,0.08)' }}>预览</button>
+        )}
+        <button onClick={onSubmit} disabled={loading || disabled} aria-busy={loading}
+          className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+          {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {loading ? '创建中...' : submitText}
+        </button>
+      </div>
     </div>
   )
 }

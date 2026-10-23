@@ -543,6 +543,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
       <div style={previewOpen ? { display: 'none' } : undefined}>
         <CreateModalShell title={isContinue ? '修改模型并继续' : '新建快捷会话'} onClose={onClose} dark={dark} width={600} headerExtra={isContinue ? null : headerExtra}
           footer={<Footer loading={loading} submitText={isContinue ? '创建并继续' : '创建'} onClose={onClose} onSubmit={submit} disabled={!projectId || !issueId}
+            hint={isContinue || successMode !== 'external' ? '正在创建会话，请稍候…' : '正在创建会话，完成后将自动进入新会话…'}
             preview={{ onClick: openPreview, disabled: !projectId || !issueId }} />}>
           {/* 目标项目 / 目标任务 并排一行省高度; 窄屏 (手机) 仍退回上下两行
               Project + task sit on one row to save vertical space; they stack again on narrow screens */}

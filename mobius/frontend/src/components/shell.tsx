@@ -8,7 +8,7 @@ import { AimuxStatusBadge } from './aimux-status-badge'
 import { ProjectPathBindGate } from './project-path-bind-gate'
 import type { AdminPanelTab } from './panels'
 import { MobiusLogo } from './mobius-logo'
-import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, Type, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, CircleDot, FlaskConical, History, LayoutPanelTop, Loader2, Menu, MessageSquare, Moon, Network, Palette, Plus, Search, Sliders, Sparkles, Sun, Type, UserRound, WavesHorizontal, createLucideIcon } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { pollRecursive } from '../services/polling'
@@ -1668,8 +1668,12 @@ function OverlayPanels() {
 // =====================================================================
 export function Loading({ text = '加载中...' }: { text?: string } = {}) {
   return (
-    <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
-      <div className="text-[length:var(--fs-lg)]">{text}</div>
+    <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }} role="status" aria-live="polite">
+      {/* 转圈动效让"等待中"一眼可见, 静止文字容易被误判为卡死 */}
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+        <div className="text-[length:var(--fs-lg)]">{text}</div>
+      </div>
     </div>
   )
 }

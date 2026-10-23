@@ -2708,14 +2708,21 @@ export function NewSessionModal({
                 {scopeNotice}
               </div>
             )}
+            {loading && !isPresetMode && (
+              <div role="status" aria-live="polite" className="flex items-center gap-2 text-[length:var(--fs-sm)] mb-2" style={{ color: 'var(--text-muted)' }}>
+                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" style={{ color: '#60a5fa' }} />
+                <span className="min-w-0">正在创建会话，请稍候…</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => onBack
                 // 带回第 2 步里改过的勾选, 外部表单 (新建快捷会话) 接管后续创建
                 ? onBack({ excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories) })
-                : setStep(1)} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
+                : setStep(1)} disabled={loading} className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] bg-[var(--bg-card-hover)] border disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: isDark ? '#9ca3af' : '#64748b', borderColor: 'var(--input-border)' }}>上一步</button>
               <button onClick={submit} disabled={loading || previewLoading}
                 data-tour="session-submit"
-                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40">
+                className="flex-1 h-9 rounded-xl text-[length:var(--fs-lg)] btn-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {loading ? (isPresetMode ? '保存中...' : '创建中...') : (isPresetMode ? '保存预设' : '确认并创建')}
               </button>
             </div>
