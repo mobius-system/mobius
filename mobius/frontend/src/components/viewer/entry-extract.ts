@@ -1260,7 +1260,9 @@ function collectDisplayFiles(command: string, depth: number, out: DisplayFileRef
     const toks = tokenizeCommandArgv(seg.trim())
     if (toks.length === 0) continue
     const base = toks[0].split('/').pop() || toks[0]
-    if (base === 'display-files') {
+    // 规范名 display_files; 兼容历史会话里的 display-files
+    // Canonical name is display_files; tolerate the historic hyphen form
+    if (base === 'display_files' || base === 'display-files') {
       let remote = ''
       let root = ''
       const paths: string[] = []
@@ -1306,7 +1308,7 @@ export function entryDisplayFiles(entry: AnyEntry): DisplayFileRef[] {
   }
   const found = commands.flatMap(command => {
     const rows: DisplayFileRef[] = []
-    if (command.includes('display-files')) collectDisplayFiles(command, 0, rows)
+    if (command.includes('display_files') || command.includes('display-files')) collectDisplayFiles(command, 0, rows)
     return rows
   })
   const seen = new Set<string>()

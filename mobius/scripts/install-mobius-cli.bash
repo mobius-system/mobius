@@ -15,7 +15,7 @@ for required in bash awk curl node python3 install; do
 done
 mkdir -p -- "$PREFIX"
 
-for cmd in multiagent_send declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files display_images mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
+for cmd in multiagent_send declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display_files display_images mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
@@ -30,7 +30,7 @@ echo "  declare_job_done --help"
 echo "  declare_job_failed --help"
 echo "  research_blackboard_read --help"
 echo "  research_blackboard_write --help"
-echo "  display-files --help"
+echo "  display_files --help"
 echo "  display_images --help"
 echo "  mobius_session_reminder --help"
 echo "  mobius_schedule_wake_me_up --help"

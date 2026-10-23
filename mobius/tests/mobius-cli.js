@@ -7,7 +7,7 @@
  *   - what the installer puts on disk
  *   - that every command answers -h/--help
  *   - that HTTP commands refuse to run without the session environment
- *   - that display-files / display_images stay no-ops that need nothing
+ *   - that display_files / display_images stay no-ops that need nothing
  *
  * Per-command HTTP behaviour is covered by session-jobs-cli.js and
  * session-reminder-hook.js.
@@ -52,7 +52,7 @@ function main() {
   const installed = [
     'multiagent_send', 'declare_job_done', 'declare_job_failed',
     'research_blackboard_read', 'research_blackboard_write',
-    'display-files', 'display_images', 'mobius_session_reminder',
+    'display_files', 'display_images', 'mobius_session_reminder',
     'mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all',
     '.research_blackboard_cli', '.mobius_schedule_cli',
   ];
@@ -91,8 +91,8 @@ function main() {
       `${name} names the missing variable`);
   }
 
-  assert.strictEqual(run(path.join(binDir, 'display-files'), ['/tmp/a.py'], { env: CLEAN_ENV }).status, 0);
-  assert.strictEqual(run(path.join(binDir, 'display-files'), [], { env: CLEAN_ENV }).status, 2);
+  assert.strictEqual(run(path.join(binDir, 'display_files'), ['/tmp/a.py'], { env: CLEAN_ENV }).status, 0);
+  assert.strictEqual(run(path.join(binDir, 'display_files'), [], { env: CLEAN_ENV }).status, 2);
   assert.strictEqual(run(path.join(binDir, 'display_images'), ['/tmp/a.png'], { env: CLEAN_ENV }).status, 0);
   assert.strictEqual(run(path.join(binDir, 'display_images'), ['relative.png'], { env: CLEAN_ENV }).status, 2);
 

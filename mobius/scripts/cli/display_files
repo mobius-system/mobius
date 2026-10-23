@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# display-files - marker command scanned by the Mobius conversation viewer.
+# display_files - marker command scanned by the Mobius conversation viewer.
 set -euo pipefail
 
 prog="$(basename "$0")"
