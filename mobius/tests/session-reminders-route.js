@@ -43,10 +43,15 @@ if (!env.JWT_SECRET) {
 }
 
 const { router } = require('../backend/routes/session-reminders');
-const { reminderHookToken } = require('../backend/services/session-reminder-hook');
+const jwt = require('jsonwebtoken');
 
 const TYPE = 'remote_target_local_tool';
-const TOKEN = reminderHookToken;
+
+/** 与生产一致: CLI 用会话启动时签发的用户 JWT (7 天) 作为 Bearer
+ *  Same as production: the CLI presents the session's user JWT as a bearer token */
+function tokenFor(userId) {
+  return jwt.sign({ id: userId, session_id: 'test' }, env.JWT_SECRET, { expiresIn: '7d' });
+}
 
 function request(baseUrl, sessionId, token, body) {
   return fetch(`${baseUrl}/api/internal/session-reminders/${TYPE}/decide`, {
@@ -54,7 +59,7 @@ function request(baseUrl, sessionId, token, body) {
     headers: {
       'content-type': 'application/json',
       'x-mobius-session-id': sessionId,
-      'x-mobius-hook-token': token,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
   }).then(async (res) => ({ status: res.status, body: await res.json() }));
@@ -66,10 +71,10 @@ async function main() {
   const db = new Database(dbfile, { readonly: true });
 
   const remote = db.prepare(
-    "SELECT session_id FROM sessions_v2 WHERE pc_client_metadata LIKE '%add_remote_aimux_mcp%true%' LIMIT 1",
+    "SELECT session_id, user_id FROM sessions_v2 WHERE pc_client_metadata LIKE '%add_remote_aimux_mcp%true%' LIMIT 1",
   ).get();
   const local = db.prepare(
-    "SELECT session_id FROM sessions_v2 WHERE session_id <> ? AND (pc_client_metadata IS NULL OR pc_client_metadata NOT LIKE '%add_remote_aimux_mcp%true%') LIMIT 1",
+    "SELECT session_id, user_id FROM sessions_v2 WHERE session_id <> ? AND (pc_client_metadata IS NULL OR pc_client_metadata NOT LIKE '%add_remote_aimux_mcp%true%') LIMIT 1",
   ).get(remote?.session_id || '');
   db.close();
 
@@ -99,20 +104,20 @@ async function main() {
     const wrongToken = await request(baseUrl, remote.session_id, 'wrong', { tool_name: 'Bash' });
     assert.strictEqual(wrongToken.status, 401, 'invalid token must be rejected');
 
-    const tokenForOther = await request(baseUrl, remote.session_id, TOKEN(local.session_id, env.JWT_SECRET), { tool_name: 'Bash' });
-    assert.strictEqual(tokenForOther.status, 401, 'a token for another session must not work');
+    const unknownUser = await request(baseUrl, remote.session_id, tokenFor('no-such-user'), { tool_name: 'Bash' });
+    assert.strictEqual(unknownUser.status, 401, 'a token for an unknown user must be rejected');
 
     // 2. 不存在的会话
-    const missing = await request(baseUrl, 'no-such-session', TOKEN('no-such-session', env.JWT_SECRET), { tool_name: 'Bash' });
+    const missing = await request(baseUrl, 'no-such-session', tokenFor(remote.user_id || 'user'), { tool_name: 'Bash' });
     assert.strictEqual(missing.status, 404);
 
     // 3. 无远端目标 → 空决策
-    const suppressed = await request(baseUrl, local.session_id, TOKEN(local.session_id, env.JWT_SECRET), { tool_name: 'Bash' });
+    const suppressed = await request(baseUrl, local.session_id, tokenFor(local.user_id || 'user'), { tool_name: 'Bash' });
     assert.strictEqual(suppressed.status, 200);
     assert.deepStrictEqual(suppressed.body, {}, 'no remote target means no reminder');
 
     // 4. 有远端目标 → 第一次提醒, 一小时内第二次被压制, 清缓存后恢复
-    const token = TOKEN(remote.session_id, env.JWT_SECRET);
+    const token = tokenFor(remote.user_id || 'user');
     const first = await request(baseUrl, remote.session_id, token, { tool_name: 'Bash' });
     assert.strictEqual(first.status, 200);
     assert.ok(first.body.hookSpecificOutput, 'first call must return a reminder');
@@ -132,7 +137,7 @@ async function main() {
       headers: {
         'content-type': 'application/json',
         'x-mobius-session-id': remote.session_id,
-        'x-mobius-hook-token': token,
+        authorization: `Bearer ${token}`,
       },
       body: '{}',
     });

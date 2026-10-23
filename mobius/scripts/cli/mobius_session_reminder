@@ -6,31 +6,30 @@
 #   - stdin:  the agent's hook JSON (passed to the backend unchanged)
 #   - stdout: the backend response verbatim (`{}` or hookSpecificOutput JSON)
 #
-# Backend address and token come from the session environment, so the same
-# command works on the host and inside a Docker sandbox:
+# Everything comes from the session environment exported by the launcher, so
+# the same command works on the host and inside a Docker sandbox:
 #   MOBIUS_BASE        e.g. http://127.0.0.1:45616 or http://172.28.0.1:45616
-#   MOBIUS_HOOK_TOKEN  per-session HMAC token minted at spawn
+#   MOBIUS_SESSION_ID  Mobius session id
+#   MOBIUS_CLI_JWT     per-session CLI token (7 day user JWT)
 set -euo pipefail
 
 prog="$(basename "$0")"
 
 usage() {
   cat <<USAGE
-Usage: $prog [--config <file>] [--type <reminder_type>]
+Usage: $prog [--type <reminder_type>]
 
   Read an agent hook payload (JSON) from stdin, ask the backend whether this
   tool call should carry a reminder, and print the backend response verbatim.
 
 Options:
-  --config <file> reminder hook config: {"base_url","session_id","token"}
-                  Written per session; takes precedence over the environment.
   --type <name>   reminder type (default: remote_target_local_tool)
   -h, --help      show this help and exit
 
-Environment (fallback when --config is absent):
+Environment (required):
   MOBIUS_BASE        backend base URL
   MOBIUS_SESSION_ID  Mobius session id
-  MOBIUS_HOOK_TOKEN  per-session hook token
+  MOBIUS_CLI_JWT     per-session CLI token
 
 Exit codes:
   0  response printed (including an empty decision "{}")
@@ -44,27 +43,8 @@ case "${1:-}" in
 esac
 
 reminder_type="remote_target_local_tool"
-config_path=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config)
-      if [[ $# -lt 2 || -z "${2:-}" ]]; then
-        echo "Input error: --config requires a value" >&2
-        usage >&2
-        exit 2
-      fi
-      config_path="$2"
-      shift 2
-      ;;
-    --config=*)
-      config_path="${1#*=}"
-      if [[ -z "$config_path" ]]; then
-        echo "Input error: --config requires a value" >&2
-        usage >&2
-        exit 2
-      fi
-      shift
-      ;;
     --type)
       if [[ $# -lt 2 || -z "${2:-}" ]]; then
         echo "Input error: --type requires a value" >&2
@@ -90,55 +70,27 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ ! "$reminder_type" =~ ^[A-Za-z0-9_-]+$ ]]; then
+if [[ ! "$reminder_type" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
   echo "Input error: reminder type may contain only letters, digits, '_' and '-'" >&2
   exit 2
 fi
 
-# 配置优先级: --config 文件 > 环境变量. 会话被重开时环境可能丢失, 文件一定在.
-# Precedence: --config file > environment. A respawned agent may lose the env,
-# while the file always sits next to the session config.
-cfg_base=""
-cfg_session=""
-cfg_token=""
-if [[ -n "$config_path" ]]; then
-  if [[ ! -r "$config_path" ]]; then
-    echo "Configuration error: cannot read hook config: $config_path" >&2
-    exit 3
-  fi
-  cfg_out="$(python3 - "$config_path" <<'PY'
-import json, shlex, sys
-try:
-    with open(sys.argv[1], encoding='utf-8') as fh:
-        data = json.load(fh)
-except Exception as exc:
-    print(f"Configuration error: invalid hook config: {exc}", file=sys.stderr)
-    sys.exit(3)
-for name, key in (("CFG_BASE", "base_url"), ("CFG_SESSION", "session_id"), ("CFG_TOKEN", "token")):
-    print(f"{name}={shlex.quote(str(data.get(key) or ''))}")
-PY
-)" || exit 3
-  eval "$cfg_out"
-  cfg_base="$CFG_BASE"
-  cfg_session="$CFG_SESSION"
-  cfg_token="$CFG_TOKEN"
-fi
-
-MOBIUS_BASE_RESOLVED="${cfg_base:-${MOBIUS_BASE:-}}"
-MOBIUS_SESSION_RESOLVED="${cfg_session:-${MOBIUS_SESSION_ID:-}}"
-MOBIUS_TOKEN_RESOLVED="${cfg_token:-${MOBIUS_HOOK_TOKEN:-}}"
+# 地址 / 会话 / 令牌全部来自会话环境 (启动器在 agent 启动前导出)
+# Address, session and token all come from the session environment
+MOBIUS_BASE_RESOLVED="${MOBIUS_BASE:-}"
+MOBIUS_SESSION_RESOLVED="${MOBIUS_SESSION_ID:-}"
+MOBIUS_TOKEN_RESOLVED="${MOBIUS_CLI_JWT:-}"
 
 if [[ -z "$MOBIUS_BASE_RESOLVED" ]]; then
-  echo "Configuration error: MOBIUS_BASE is unset and --config has no base_url" >&2
+  echo "Configuration error: MOBIUS_BASE is unset" >&2
   exit 3
 fi
 if [[ -z "$MOBIUS_TOKEN_RESOLVED" ]]; then
-  echo "Configuration error: MOBIUS_HOOK_TOKEN is unset and --config has no token" >&2
+  echo "Configuration error: MOBIUS_CLI_JWT is unset" >&2
   exit 3
 fi
 if [[ -z "$MOBIUS_SESSION_RESOLVED" ]]; then
-  echo "Configuration error: MOBIUS_SESSION_ID is unset and --config has no session_id" >&2
+  echo "Configuration error: MOBIUS_SESSION_ID is unset" >&2
   exit 3
 fi
 
@@ -154,7 +106,7 @@ resp="$(printf '%s' "$payload" | curl --silent --show-error \
   -X POST "$MOBIUS_BASE_RESOLVED/api/internal/session-reminders/$reminder_type/decide" \
   -H 'content-type: application/json' \
   -H "x-mobius-session-id: $MOBIUS_SESSION_RESOLVED" \
-  -H "x-mobius-hook-token: $MOBIUS_TOKEN_RESOLVED" \
+  -H "authorization: Bearer $MOBIUS_TOKEN_RESOLVED" \
   --data-binary @-)" || {
   echo "Network error: cannot reach $MOBIUS_BASE_RESOLVED" >&2
   exit 3

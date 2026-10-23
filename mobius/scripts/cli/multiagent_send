@@ -2,8 +2,6 @@
 # multiagent_send - send a message through the Mobius multiagent API.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-JWT_HELPER="${MOBIUS_JWT_HELPER:-$SCRIPT_DIR/generate_localhost_jwt}"
 BASE="${MOBIUS_BASE:-}"
 prog="$(basename "$0")"
 
@@ -17,10 +15,8 @@ Options:
   -h, --help    show this help and exit
 
 Environment:
-  MOBIUS_BASE       backend base URL; otherwise derived from APP_DIR/.env
-  MOBIUS_APP_DIR    override the Mobius APP_DIR used for .env discovery
-  MOBIUS_USER_ID    override the user id (otherwise nearest .imac/multiagent.env)
-  MOBIUS_JWT_HELPER override the JWT helper path
+  MOBIUS_BASE     backend base URL (required)
+  MOBIUS_CLI_JWT  per-session CLI token minted by the Mobius session launcher
 USAGE
 }
 
@@ -41,69 +37,16 @@ if [[ -z "$content" ]]; then
   exit 2
 fi
 
-user_id="${MOBIUS_USER_ID:-}"
-if [[ -z "$user_id" ]]; then
-  dir="$PWD"
-  while [[ "$dir" != "/" ]]; do
-    if [[ -f "$dir/.imac/multiagent.env" ]]; then
-      user_id="$(awk -F= '$1 == "MOBIUS_USER_ID" { sub(/\r$/, "", $2); print $2; exit }' "$dir/.imac/multiagent.env")"
-      break
-    fi
-    dir="$(dirname -- "$dir")"
-  done
-fi
-if [[ -z "$user_id" ]]; then
-  echo "Configuration error: MOBIUS_USER_ID is unset and no .imac/multiagent.env was found" >&2
-  exit 3
-fi
-if [[ ! -x "$JWT_HELPER" ]]; then
-  echo "Configuration error: JWT helper is not executable: $JWT_HELPER" >&2
-  exit 3
-fi
-
 if [[ -z "$BASE" ]]; then
-  APP_DIR="${MOBIUS_APP_DIR:-${APP_DIR:-}}"
-  if [[ -z "$APP_DIR" && -n "${MOBIUS_ROOT:-}" ]]; then
-    APP_DIR="$(cd -- "$MOBIUS_ROOT/.." 2>/dev/null && pwd -P || true)"
-  fi
-  if [[ -z "$APP_DIR" ]]; then
-    if [[ -f "$SCRIPT_DIR/.mobius-cli-app-dir" ]]; then
-      IFS= read -r APP_DIR < "$SCRIPT_DIR/.mobius-cli-app-dir" || true
-    fi
-  fi
-  if [[ -z "$APP_DIR" ]]; then
-    source_app_dir="$(cd -- "$SCRIPT_DIR/../../.." 2>/dev/null && pwd -P || true)"
-    if [[ -f "$source_app_dir/.env" ]]; then
-      APP_DIR="$source_app_dir"
-    fi
-  fi
-  if [[ -z "$APP_DIR" || ! -f "$APP_DIR/.env" ]]; then
-    echo "Configuration error: cannot locate APP_DIR/.env; set MOBIUS_BASE or MOBIUS_APP_DIR" >&2
-    exit 3
-  fi
-  # Keep this precedence identical to start.py: pre-existing environment first,
-  # then .env, with VITE_PORT preferred over MOBIUS_PORT.
-  resolved_port="${VITE_PORT:-${MOBIUS_PORT:-}}"
-  if [[ -z "$resolved_port" ]]; then
-    resolved_port="$(awk -F= '
-    function value(line, v) { v=line; sub(/^[^=]*=/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v); if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v=substr(v, 2, length(v)-2); sub(/[ \t]+#.*/, "", v); return v }
-    /^[ \t]*(export[ \t]+)?VITE_PORT=/ { vite=value($0) }
-    /^[ \t]*(export[ \t]+)?MOBIUS_PORT=/ { mobius=value($0) }
-    END { if (vite != "") print vite; else if (mobius != "") print mobius }
-    ' "$APP_DIR/.env")"
-  fi
-  if [[ ! "$resolved_port" =~ ^[0-9]+$ ]] || (( resolved_port < 1 || resolved_port > 65535 )); then
-    echo "Configuration error: .env must define a valid VITE_PORT or MOBIUS_PORT" >&2
-    exit 3
-  fi
-  BASE="http://localhost:$resolved_port"
+  echo "Configuration error: MOBIUS_BASE is unset" >&2
+  exit 3
+fi
+if [[ -z "${MOBIUS_CLI_JWT:-}" ]]; then
+  echo "Configuration error: MOBIUS_CLI_JWT is unset" >&2
+  exit 3
 fi
 
-token="$($JWT_HELPER "$user_id")" || exit $?
-if [[ -z "$token" ]]; then
-  echo "Authentication error: JWT helper returned an empty token" >&2
-  exit 4
-fi
+token="$MOBIUS_CLI_JWT"
 
 body="$(python3 -c 'import json,sys; print(json.dumps({"self_id": sys.argv[1], "target_id": sys.argv[2], "content": " ".join(sys.argv[3:])}))' "$self_id" "$target_id" "$content")"
 resp="$(curl --silent --show-error --connect-timeout 5 --max-time 30 -w '\n%{http_code}' -X POST "$BASE/api/multiagent_communication" \

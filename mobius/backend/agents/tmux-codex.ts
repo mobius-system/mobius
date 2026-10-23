@@ -43,12 +43,10 @@ import { sandboxCommand } from '../services/agent-sandbox'
 const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, containerForWindow, clearWindowOwner, isolationActiveFor, sandboxPolicyFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
 const { resolveDispatchIdentity } = require('../services/session-dispatch-identity')
 const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
-const { injectCodexReminderHook, writeReminderHookConfig, sessionSettingsPaths, ensureSessionSettingsDir } = require('../services/session-hook-inject')
+const { injectCodexReminderHook, sessionSettingsPaths, ensureSessionSettingsDir } = require('../services/session-hook-inject')
 const {
   buildReminderHookCommand,
   codexReminderHookToml,
-  reminderHookBaseUrl,
-  reminderHookToken,
   CODEX_REMINDER_MATCHER,
 } = require('../services/session-reminder-hook')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
@@ -736,7 +734,6 @@ interface CodexRuntimeEntry {
   codexSecretEnvKey: string | null
   withProxyPath?: string | null
   withHookProfilePath?: string | null
-  withHookConfigPath?: string | null
   captureStream?: boolean
   useProxy: boolean
   proxyMode: string
@@ -815,7 +812,6 @@ class TmuxCodexBackend extends AgentBackend {
             codexSecretEnvKey: p.codexSecretEnvKey || null,
             withProxyPath: p.withProxyPath || null,
             withHookProfilePath: p.withHookProfilePath || null,
-            withHookConfigPath: p.withHookConfigPath || null,
             useProxy: normalizeUseProxy(p.useProxy, false),
             proxyMode: normalizeProxyMode4(p?.proxyMode, 'direct'),
             displayName: p.displayName || null,
@@ -835,7 +831,6 @@ class TmuxCodexBackend extends AgentBackend {
             codexSecretEnvKey: entry.codexSecretEnvKey,
             withProxyPath: entry.withProxyPath,
             withHookProfilePath: entry.withHookProfilePath,
-            withHookConfigPath: entry.withHookConfigPath,
             useProxy: entry.useProxy,
             proxyMode: entry.proxyMode,
             displayName: entry.displayName,
@@ -1658,7 +1653,6 @@ class TmuxCodexBackend extends AgentBackend {
     let withProxyPath: string | null = null
     let withProxyToken: string | null = null
     let withHookProfilePath: string | null = null
-    let withHookConfigPath: string | null = null
     if (captureStream) {
       try {
         const baseUrl = tomlStringValue(configText, 'base_url')
@@ -1682,21 +1676,12 @@ class TmuxCodexBackend extends AgentBackend {
       try {
         const safeSid = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')
         const hookProfileKey = `${finalProfileKey}hook_${safeSid}`
-        // 钩子配置落文件: 重开时环境变量可能丢失, 文件仍在
-        // Hook config lives in a file: a respawned agent may lose the env vars
+        // 钩子地址/会话/令牌全部来自会话环境, 不再落任何配置文件
+        // Address, session and token all come from the session environment; no config file
         const settingsPaths = sessionSettingsPaths(effFlagRoot, sessionId)
         ensureSessionSettingsDir(settingsPaths.dir)
-        withHookConfigPath = writeReminderHookConfig(
-          settingsPaths.hookConfigPath,
-          {
-            base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
-            session_id: sessionId,
-            token: reminderHookToken(sessionId, JWT_SECRET),
-          },
-        )
         const hookCommand = buildReminderHookCommand({
           cliPath: path.join(APP_DIR, 'mobius', 'scripts', 'cli', 'mobius_session_reminder'),
-          configPath: withHookConfigPath,
         })
         withHookProfilePath = path.join(codexHomeFor(userId), `${hookProfileKey}.config.toml`)
         injectCodexReminderHook({
@@ -1941,7 +1926,6 @@ class TmuxCodexBackend extends AgentBackend {
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
         withHookProfilePath,
-        withHookConfigPath,
         captureStream: !!captureStream,
         // Secret env var name injected into Codex.
         codexSecretEnvKey: secretEnvKey,
@@ -1973,7 +1957,6 @@ class TmuxCodexBackend extends AgentBackend {
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
         withHookProfilePath,
-        withHookConfigPath,
         captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // Proxy toggle, display name and launch time.
@@ -2000,7 +1983,6 @@ class TmuxCodexBackend extends AgentBackend {
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
         withHookProfilePath,
-        withHookConfigPath,
         captureStream: !!captureStream,
         // Secret env var name injected into Codex.
         codexSecretEnvKey: secretEnvKey,
@@ -2034,7 +2016,6 @@ class TmuxCodexBackend extends AgentBackend {
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
         withHookProfilePath,
-        withHookConfigPath,
         captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // Proxy toggle, display name and rollout path.

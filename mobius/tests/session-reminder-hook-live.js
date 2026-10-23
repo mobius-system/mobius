@@ -24,17 +24,6 @@ const {
 
 const CLI_PATH = path.resolve(__dirname, '../scripts/cli/mobius_session_reminder');
 
-/** Write a per-session hook config for this run and return its path. */
-function writeHookConfig(dir, baseUrl) {
-  const file = path.join(dir, 'mobius-reminder-hook.json');
-  fs.writeFileSync(file, JSON.stringify({
-    base_url: baseUrl,
-    session_id: 'live-mobius-session',
-    token: 'live-token',
-  }), { mode: 0o600 });
-  return file;
-}
-
 const MARKER = `LIVE-MARKER-${Date.now()}`;
 const ASK_FOR_REMINDER =
   'Run the Bash command exactly: echo hi . Then answer between <seen> and </seen> with any reminder ' +
@@ -46,7 +35,7 @@ function runBin(bin, args, options = {}) {
       bin,
       args,
       {
-        env: { ...process.env, MOBIUS_HOOK_TOKEN: 'live-token', ...options.env },
+        env: { ...process.env, MOBIUS_CLI_JWT: 'live-token', ...options.env },
         timeout: options.timeout || 240000,
         maxBuffer: 16 * 1024 * 1024,
         cwd: options.cwd,
@@ -94,7 +83,7 @@ function suppressedHandler(req, res) {
 
 async function runClaude(server, mode) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `cc-reminder-${mode}-`));
-  const command = buildReminderHookCommand({ cliPath: CLI_PATH, configPath: writeHookConfig(dir, server.baseUrl) });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   const settings = claudeReminderHookSettings(command);
   const settingsPath = path.join(dir, 'settings.json');
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -105,7 +94,7 @@ async function runClaude(server, mode) {
     '--model', 'haiku',
     '--settings', settingsPath,
     '--output-format', 'text',
-  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_HOOK_TOKEN: 'live-token' } });
+  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_CLI_JWT: 'live-token' } });
   result.transcript = readClaudeTranscript(dir);
   return result;
 }
@@ -195,7 +184,7 @@ function buildCodexOverride(command) {
 
 async function runCodex(server, mode) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `cx-reminder-${mode}-`));
-  const command = buildReminderHookCommand({ cliPath: CLI_PATH, configPath: writeHookConfig(dir, server.baseUrl) });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   return runBin('codex', [
     'exec',
     '--dangerously-bypass-approvals-and-sandbox',
@@ -204,7 +193,7 @@ async function runCodex(server, mode) {
     '-C', dir,
     '-c', buildCodexOverride(command),
     ASK_FOR_REMINDER,
-  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_HOOK_TOKEN: 'live-token' } });
+  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_CLI_JWT: 'live-token' } });
 }
 
 async function testCodexShown() {

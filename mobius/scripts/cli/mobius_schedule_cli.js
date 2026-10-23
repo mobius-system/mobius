@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
 const http = require('http');
-const path = require('path');
-const { spawnSync } = require('child_process');
 
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const DURATION_RE = /^([1-9][0-9]*)([smhd])$/;
@@ -147,83 +144,6 @@ function parseArgs(mode, args) {
   return { sessionId: positional[0], sessionHint: positional[0], mode: 'interval', scheduleSeconds, reminder };
 }
 
-function parseEnvValue(raw) {
-  const value = raw.trim();
-  if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) return value.slice(1, -1);
-  return value.replace(/\s+#.*$/, '').trim();
-}
-
-function readEnv(envPath) {
-  const values = {};
-  for (const rawLine of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = rawLine.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (match) values[match[1]] = parseEnvValue(match[2]);
-  }
-  return values;
-}
-
-function resolveAppDir() {
-  let candidate = process.env.MOBIUS_APP_DIR || process.env.APP_DIR || '';
-  if (!candidate && process.env.MOBIUS_ROOT) candidate = path.dirname(process.env.MOBIUS_ROOT);
-  const marker = path.join(__dirname, '.mobius-cli-app-dir');
-  if (!candidate && fs.existsSync(marker)) candidate = fs.readFileSync(marker, 'utf8').trim();
-  if (!candidate) {
-    const inferred = path.resolve(__dirname, '../../..');
-    if (fs.existsSync(path.join(inferred, '.env'))) candidate = inferred;
-  }
-  if (!candidate) fail('Configuration error: APP_DIR is unavailable; set MOBIUS_APP_DIR or reinstall the CLI', 3);
-  try { candidate = fs.realpathSync(candidate); }
-  catch { fail(`Configuration error: APP_DIR does not exist: ${candidate}`, 3); }
-  const envPath = path.join(candidate, '.env');
-  if (!fs.existsSync(envPath)) fail(`Configuration error: required environment file is missing: ${envPath}`, 3);
-  return { appDir: candidate, envPath };
-}
-
-function nearestConfiguredUser() {
-  let dir = process.cwd();
-  while (dir !== path.dirname(dir)) {
-    const file = path.join(dir, '.imac', 'multiagent.env');
-    if (fs.existsSync(file)) {
-      const match = fs.readFileSync(file, 'utf8').match(/^MOBIUS_USER_ID=(.+)$/m);
-      if (match && match[1].trim()) return match[1].trim();
-    }
-    dir = path.dirname(dir);
-  }
-  return '';
-}
-
-function currentTmuxSessionId() {
-  if (!process.env.TMUX) return '';
-  const result = spawnSync('tmux', ['display-message', '-p', '#W'], { encoding: 'utf8' });
-  const value = result.status === 0 ? result.stdout.trim() : '';
-  return ID_RE.test(value) ? value : '';
-}
-
-/*
- * Resolve the caller identity from the agent environment, tmux window, or explicit target Session.
- */
-function resolveUserId(appDir, env, sessionHint) {
-  const direct = String(process.env.MOBIUS_USER_ID || '').trim();
-  if (direct) return direct;
-  const sessionId = String(process.env.MOBIUS_SESSION_ID || currentTmuxSessionId() || sessionHint || '').trim();
-  if (!ID_RE.test(sessionId)) {
-    const configured = nearestConfiguredUser();
-    if (configured) return configured;
-    fail('Configuration error: cannot resolve the Mobius user; run inside a Session agent or set MOBIUS_USER_ID', 3);
-  }
-  const rawDbPath = process.env.DB_PATH || env.DB_PATH || path.join(appDir, 'data', 'mobius.db');
-  const dbPath = path.isAbsolute(rawDbPath) ? rawDbPath : path.resolve(appDir, rawDbPath);
-  const Database = require(path.join(appDir, 'mobius', 'node_modules', 'better-sqlite3'));
-  const database = new Database(dbPath, { readonly: true, fileMustExist: true });
-  try {
-    const row = database.prepare('SELECT user_id FROM sessions_v2 WHERE session_id = ?').get(sessionId);
-    if (!row?.user_id) fail(`Configuration error: no Mobius user found for Session ${sessionId}`, 3);
-    return String(row.user_id);
-  } finally {
-    database.close();
-  }
-}
-
 function request(options, body) {
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
@@ -262,43 +182,16 @@ async function main() {
   if (!['wake', 'list', 'cancel-all'].includes(mode)) fail('Internal error: invalid command mode', 6);
   const input = parseArgs(mode, process.argv.slice(3));
 
-  // 会话环境齐全时直接走后端地址 + 预签令牌: 沙箱容器里既没有 .env 也没有可读数据库.
-  // Prefer the session environment when it provides a base URL and a pre-minted
-  // token: sandbox containers have neither .env nor a readable database.
+  // 地址与令牌全部来自会话环境: 宿主与沙箱走同一条路, 没有本机回落
+  // Address and token come from the session environment only; no host fallback
   const sessionBase = String(process.env.MOBIUS_BASE || '').trim();
-  const sessionToken = String(process.env.MOBIUS_JWT || '').trim();
-  let hostname = '127.0.0.1';
-  let rawPort = '';
-  let token = '';
-
-  if (sessionBase && sessionToken) {
-    let parsed;
-    try { parsed = new URL(sessionBase); } catch { fail(`Configuration error: invalid MOBIUS_BASE: ${sessionBase}`, 3); }
-    hostname = parsed.hostname;
-    rawPort = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
-    token = sessionToken;
-    // 会话内必须能确定调用者身份, 否则不做数据库回退
-    // Inside a session the caller identity must be given; there is no DB fallback
-    if (!String(process.env.MOBIUS_USER_ID || '').trim()) {
-      fail('Configuration error: cannot resolve the Mobius user; set MOBIUS_USER_ID', 3);
-    }
-  } else {
-    const { appDir, envPath } = resolveAppDir();
-    const env = readEnv(envPath);
-    const userId = resolveUserId(appDir, env, input.sessionHint);
-    const helper = process.env.MOBIUS_JWT_HELPER || path.join(__dirname, 'generate_localhost_jwt');
-    if (!fs.existsSync(helper)) fail(`Configuration error: JWT helper is missing: ${helper}`, 3);
-    const signed = spawnSync(helper, [userId], {
-      encoding: 'utf8',
-      env: { ...process.env, MOBIUS_APP_DIR: appDir },
-    });
-    if (signed.status !== 0 || !signed.stdout.trim()) fail(signed.stderr.trim() || 'Authentication error: JWT generation failed', 4);
-    token = signed.stdout.trim();
-    rawPort = process.env.VITE_PORT || process.env.MOBIUS_PORT || env.VITE_PORT || env.MOBIUS_PORT || '';
-    if (!/^\d+$/.test(rawPort) || Number(rawPort) < 1 || Number(rawPort) > 65535) {
-      fail('Configuration error: APP_DIR/.env must define a valid VITE_PORT or MOBIUS_PORT', 3);
-    }
-  }
+  const token = String(process.env.MOBIUS_CLI_JWT || '').trim();
+  if (!sessionBase) fail('Configuration error: MOBIUS_BASE is unset', 3);
+  if (!token) fail('Configuration error: MOBIUS_CLI_JWT is unset', 3);
+  let parsedBase;
+  try { parsedBase = new URL(sessionBase); } catch { fail(`Configuration error: invalid MOBIUS_BASE: ${sessionBase}`, 3); }
+  const hostname = parsedBase.hostname;
+  const rawPort = parsedBase.port || (parsedBase.protocol === 'https:' ? '443' : '80');
 
   let method = 'GET';
   let requestPath = '/api/scheduled-wake-ups';

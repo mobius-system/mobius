@@ -22,8 +22,6 @@ export interface SessionSettingsPaths {
   dir: string
   /** Claude settings copy carrying the reminder hook. */
   settingsPath: string
-  /** Reminder hook config (base url, session id, token). */
-  hookConfigPath: string
   /** MCP server definitions passed to the agent via --mcp-config. */
   mcpConfigPath: string
 }
@@ -41,7 +39,6 @@ export function sessionSettingsPaths(bindRoot: string, sessionId: string): Sessi
   return {
     dir,
     settingsPath: path.join(dir, 'settings.json'),
-    hookConfigPath: path.join(dir, 'hook.json'),
     mcpConfigPath: path.join(dir, 'mcp.json'),
   }
 }
@@ -63,28 +60,6 @@ export interface ClaudeHookInjectOptions {
   command: string
   matcher: string
   timeoutSeconds?: number
-}
-
-export interface ReminderHookConfigFile {
-  /** Backend origin reachable from where the agent runs. */
-  base_url: string
-  /** Mobius session id. */
-  session_id: string
-  /** Per-session hook token. */
-  token: string
-  /** Optional reminder type override. */
-  reminder_type?: string
-}
-
-/**
- * Write the per-session hook config (base URL, session id, token).
- *
- * The hook command embeds this file's path, so the hook keeps working even when
- * an agent respawn loses the environment variables the launcher exported.
- */
-export function writeReminderHookConfig(destPath: string, config: ReminderHookConfigFile): string {
-  writeAtomic(destPath, JSON.stringify(config, null, 2))
-  return destPath
 }
 
 export interface CodexHookInjectOptions {

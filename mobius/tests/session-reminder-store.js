@@ -9,7 +9,6 @@ const Database = require('better-sqlite3');
 
 const { createReminderStore } = require('../backend/services/session-reminder-store');
 const { decideReminder, DEFAULT_REMINDER_MESSAGE } = require('../backend/services/session-reminder-decide');
-const { reminderHookToken, verifyReminderHookToken } = require('../backend/services/session-reminder-hook');
 
 const SECRET = 'store-test-secret';
 const TYPE = 'remote_target_local_tool';
@@ -106,16 +105,4 @@ function newStore() {
   console.log('ok 4 - store + decide enforce the rolling hour');
 }
 
-// ── 5. 令牌校验 ──────────────────────────────────────────────────────────
-{
-  const token = reminderHookToken('s1', SECRET);
-  assert.strictEqual(verifyReminderHookToken(token, 's1', SECRET), true);
-  assert.strictEqual(verifyReminderHookToken(token, 's2', SECRET), false, 'token is session-scoped');
-  assert.strictEqual(verifyReminderHookToken(token, 's1', 'other-secret'), false);
-  assert.strictEqual(verifyReminderHookToken('', 's1', SECRET), false);
-  assert.strictEqual(verifyReminderHookToken('not-a-token', 's1', SECRET), false);
-  assert.strictEqual(verifyReminderHookToken(token + 'x', 's1', SECRET), false);
-  console.log('ok 5 - hook token verification is constant-time and session-scoped');
-}
-
-console.log('\n5/5 session reminder store checks passed');
+console.log('\n4/4 session reminder store checks passed');

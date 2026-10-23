@@ -65,12 +65,6 @@ import {
 // @ts-ignore — service 仍是 .js
 import { recordAdminAuditIfCrossUser } from '../services/admin-audit';
 import { db } from '../../db';
-import { JWT_SECRET } from '../config';
-// @ts-ignore — util 仍是 .js
-import {
-  RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER,
-  verifyResearchBlackboardCliToken,
-} from '../utils/research-blackboard-capability';
 
 const router = express.Router();
 const projectScoped = express.Router({ mergeParams: true });
@@ -541,26 +535,40 @@ function resolveSessionReference(rawRef: any): { session?: any; error?: string; 
   return { session: matches[0] };
 }
 
+/**
+ * CLI 入口鉴权: 与其余 Mobius CLI 一致, 用会话令牌走普通 auth 中间件;
+ * 发送人由 x-mobius-session-id 指定, 且必须属于令牌里的用户.
+ * CLI access: the ordinary auth middleware plus an x-mobius-session-id header
+ * naming the sender, which must belong to the token's user.
+ */
 function researchBlackboardCliAccess(action: 'read' | 'write') {
   return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+    auth(req, res, () => {
     const researchId = String(req.params.researchId || '').trim();
-    const token = req.header(RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER);
-    const verified = verifyResearchBlackboardCliToken(token, JWT_SECRET, { action, researchId });
-    if (!verified) {
-      res.status(401).json({ error: 'Research Blackboard CLI capability 无效或已过期' });
+    const sessionRef = String(req.header('x-mobius-session-id') || '').trim();
+    if (!sessionRef) {
+      res.status(400).json({ error: 'x-mobius-session-id is required' });
       return;
     }
+    const limitedReceiver = String(req.header('x-mobius-limited-receiver') || '').trim() === '1';
+    const receiverRef = String(req.header('x-mobius-receiver') || '').trim();
     const research = Researches.findById(researchId) as any;
     if (!research) {
       res.status(404).json({ error: `Research 不存在：${researchId}` });
       return;
     }
-    const senderResolved = resolveSessionReference(verified.sessionRef);
+    const senderResolved = resolveSessionReference(sessionRef);
     if (!senderResolved.session) {
       res.status(senderResolved.status || 404).json({ error: senderResolved.error });
       return;
     }
     const sender = senderResolved.session;
+    // 令牌属于该用户, 不允许用别人的会话身份发言
+    // The token belongs to this user; reject a session owned by someone else
+    if (String(sender.user_id || '') !== String((req as any).user?.id || '')) {
+      res.status(403).json({ error: `发送人/读取人 Session ${sender.session_id} 不属于当前用户` });
+      return;
+    }
     if (sender.deleted_at) {
       res.status(403).json({ error: `发送人/读取人 Session ${sender.session_id} 已被删除` });
       return;
@@ -579,12 +587,12 @@ function researchBlackboardCliAccess(action: 'read' | 'write') {
     }
 
     let receiver: any = null;
-    if (verified.limitedReceiver) {
-      if (!verified.receiverRef) {
+    if (limitedReceiver) {
+      if (!receiverRef) {
         res.status(400).json({ error: '--limit-receiver 必须且只能指定一个 receiver' });
         return;
       }
-      const receiverResolved = resolveSessionReference(verified.receiverRef);
+      const receiverResolved = resolveSessionReference(receiverRef);
       if (!receiverResolved.session) {
         res.status(receiverResolved.status || 404).json({ error: `接收者无效：${receiverResolved.error}` });
         return;
@@ -610,12 +618,13 @@ function researchBlackboardCliAccess(action: 'read' | 'write') {
         res.status(403).json({ error: `接收者 Session ${receiver.session_id} 当前状态为 ${receiver.status || '未知'}，无法接收定向消息` });
         return;
       }
-    } else if (verified.receiverRef) {
+    } else if (receiverRef) {
       res.status(400).json({ error: '指定 receiver 时必须同时使用 --limit-receiver' });
       return;
     }
-    (req as any).researchBlackboardCli = { sender, receiver, research, capability: verified };
+    (req as any).researchBlackboardCli = { sender, receiver, research, capability: { limitedReceiver } };
     next();
+    });
   };
 }
 

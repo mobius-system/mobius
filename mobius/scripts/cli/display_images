@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# display_images — 占位实现: 将一个或多个图片"展示"给用户(实际仅回显提示)
+set -euo pipefail
+
+prog="$(basename "$0")"
+
+usage() {
+  cat <<USAGE
+Usage: $prog [options] <image1> [image2 ...]
+
+  将一个或多个图片"展示"给用户。
+  当前为占位实现: 不真正渲染, 仅为每个图片回显一行提示。
+
+  ⚠ 重要: 图片路径【必须是绝对路径】(以 / 开头),
+     或是 http:// / https:// 开头的 URL。传入相对路径会被拒绝。
+
+参数:
+  <图片N>       图片的绝对路径(以 / 开头)或 http(s) URL
+
+选项:
+  -h, --help    显示本说明并退出
+
+示例:
+  $prog /home/tianyi/pics/cat.png
+  $prog /home/tianyi/pics/a.png /home/tianyi/pics/b.jpg
+  $prog https://example.com/photo.jpg
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    echo "错误: 未指定图片参数" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+# 校验: 每个参数必须是绝对路径或 http(s) URL
+for img in "$@"; do
+  case "$img" in
+    /*|http://*|https://*) ;;
+    *)
+      echo "错误: 路径必须是绝对路径(以 / 开头)或 http(s) URL: $img" >&2
+      exit 2
+      ;;
+  esac
+done
+
+for img in "$@"; do
+  echo "Image has been displayed to user: $img"
+done

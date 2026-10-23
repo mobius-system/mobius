@@ -15,13 +15,7 @@ for required in bash awk curl node python3 install; do
 done
 mkdir -p -- "$PREFIX"
 
-APP_DIR="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
-if [[ ! -f "$APP_DIR/.env" ]]; then
-  echo "ERROR: required Mobius environment file not found: $APP_DIR/.env" >&2
-  exit 1
-fi
-
-for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
+for cmd in multiagent_send declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files display_images mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
@@ -29,18 +23,15 @@ for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_f
 done
 install -m 755 -- "$SRC_DIR/research_blackboard_cli.js" "$PREFIX/.research_blackboard_cli"
 install -m 755 -- "$SRC_DIR/mobius_schedule_cli.js" "$PREFIX/.mobius_schedule_cli"
-printf '%s\n' "$APP_DIR" > "$PREFIX/.mobius-cli-app-dir"
-chmod 644 "$PREFIX/.mobius-cli-app-dir"
-
 echo
 echo "Done. Safe verification examples:"
 echo "  multiagent_send --help"
-echo "  generate_localhost_jwt --help"
 echo "  declare_job_done --help"
 echo "  declare_job_failed --help"
 echo "  research_blackboard_read --help"
 echo "  research_blackboard_write --help"
 echo "  display-files --help"
+echo "  display_images --help"
 echo "  mobius_session_reminder --help"
 echo "  mobius_schedule_wake_me_up --help"
 echo "  mobius_schedule_list --help"

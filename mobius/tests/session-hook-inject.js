@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { injectClaudeReminderHook, injectCodexReminderHook, writeReminderHookConfig, sessionSettingsPaths } = require('../backend/services/session-hook-inject');
+const { injectClaudeReminderHook, injectCodexReminderHook, sessionSettingsPaths } = require('../backend/services/session-hook-inject');
 const { buildReminderHookCommand, codexReminderHookToml } = require('../backend/services/session-reminder-hook');
 
 const CLI = '/opt/app/mobius/scripts/cli/mobius_session_reminder';
@@ -117,31 +117,13 @@ function tmpDir() {
   console.log('ok 4 - codex injection is idempotent');
 }
 
-// ── 5. 钩子配置文件 ──────────────────────────────────────────────────────
-{
-  const dir = tmpDir();
-  const file = path.join(dir, 'mobius-reminder-hook.json');
-  writeReminderHookConfig(file, {
-    base_url: 'http://172.28.0.1:45616',
-    session_id: 'sess-1',
-    token: 'tok-1',
-  });
-  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.strictEqual(data.base_url, 'http://172.28.0.1:45616');
-  assert.strictEqual(data.session_id, 'sess-1');
-  assert.strictEqual(data.token, 'tok-1');
-  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600, 'the config carries a token, so it must be 0600');
-  console.log('ok 5 - per-session hook config file');
-}
-
-// ── 6. 每会话目录布局 ───────────────────────────────────────────────────
+// ── 5. 每会话目录布局 ───────────────────────────────────────────────────
 {
   const paths = sessionSettingsPaths('/project', 'sid-1');
   assert.strictEqual(paths.dir, '/project/.imac/mobius-session-settings/sid-1');
   assert.strictEqual(paths.settingsPath, '/project/.imac/mobius-session-settings/sid-1/settings.json');
-  assert.strictEqual(paths.hookConfigPath, '/project/.imac/mobius-session-settings/sid-1/hook.json');
   assert.strictEqual(paths.mcpConfigPath, '/project/.imac/mobius-session-settings/sid-1/mcp.json');
-  console.log('ok 6 - one directory per session under the project hidden folder');
+  console.log('ok 5 - one directory per session under the project hidden folder');
 }
 
-console.log('\n6/6 session hook injection checks passed');
+console.log('\n5/5 session hook injection checks passed');

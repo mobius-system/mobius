@@ -10,8 +10,6 @@
  * these builders only produce transport config and must stay pure.
  */
 
-import * as crypto from 'crypto'
-
 /** Reminder kind written to the rate-limit cache and used in the endpoint path. */
 export const REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL = 'remote_target_local_tool'
 
@@ -64,11 +62,6 @@ export function reminderHookBaseUrl(options: ReminderHookBaseUrlOptions): string
 export interface ReminderHookCommandOptions {
   /** Absolute path to the mobius_session_reminder CLI (same path host and sandbox). */
   cliPath: string
-  /**
-   * Absolute path to the per-session config file. The command must not depend on
-   * environment variables: the agent process can be respawned without them.
-   */
-  configPath: string
   /** Defaults to REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL. */
   reminderType?: string
 }
@@ -81,12 +74,12 @@ export interface ReminderHookHandlerOptions {
 }
 
 /**
- * Command shared by both agents: invoke the CLI with its per-session config file.
+ * Command shared by both agents: invoke the CLI with nothing but its type.
  *
- * The CLI reads the hook JSON from stdin, loads base URL + session id + token
- * from `configPath`, and prints the response verbatim. Environment variables are
- * deliberately not part of this contract: when an agent window is respawned
- * after an interrupt, the new process may not carry them.
+ * The CLI reads the hook JSON from stdin and takes the backend address, session
+ * id and token from the session environment (MOBIUS_BASE / MOBIUS_SESSION_ID /
+ * MOBIUS_CLI_JWT) that the launcher exports before the agent starts; the window
+ * re-exports them on every respawn, so no per-session config file is needed.
  */
 export function buildReminderHookCommand(options: ReminderHookCommandOptions): string {
   const type = String(options.reminderType || REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL)
@@ -94,16 +87,12 @@ export function buildReminderHookCommand(options: ReminderHookCommandOptions): s
     throw new Error(`invalid reminder type: ${type}`)
   }
   const cliPath = String(options.cliPath || '').trim()
-  const configPath = String(options.configPath || '').trim()
-  // 只允许安全字符: 这两个值会被原样写进 shell / JSON / TOML
-  // Restrict to shell-safe characters; both values are embedded in shell, JSON and TOML
+  // 只允许安全字符: 这个值会被原样写进 shell / JSON / TOML
+  // Restrict to shell-safe characters; the path is embedded in shell, JSON and TOML
   if (!/^\/[A-Za-z0-9._/-]+$/.test(cliPath)) {
     throw new Error(`invalid reminder hook cli path: ${options.cliPath}`)
   }
-  if (!/^\/[A-Za-z0-9._/-]+$/.test(configPath)) {
-    throw new Error(`invalid reminder hook config path: ${options.configPath}`)
-  }
-  return `${cliPath} --config ${configPath} --type ${type}`
+  return `${cliPath} --type ${type}`
 }
 
 /** Claude Code settings fragment: a PreToolUse command hook group. */
@@ -149,26 +138,6 @@ export function codexReminderHookToml(
     `command = "${escaped}"`,
     '',
   ].join('\n')
-}
-
-/** Session-scoped hook token: HMAC over the Mobius session id. */
-export function reminderHookToken(sessionId: string, secret: string): string {
-  const sid = String(sessionId || '')
-  const key = String(secret || '')
-  if (!sid) throw new Error('sessionId is required')
-  if (!key) throw new Error('secret is required')
-  return crypto.createHmac('sha256', key).update(`reminder:${sid}`).digest('base64url')
-}
-
-/** Constant-time check of a presented hook token. */
-export function verifyReminderHookToken(candidate: string, sessionId: string, secret: string): boolean {
-  try {
-    const expected = Buffer.from(reminderHookToken(sessionId, secret))
-    const presented = Buffer.from(String(candidate || ''))
-    return presented.length === expected.length && crypto.timingSafeEqual(presented, expected)
-  } catch {
-    return false
-  }
 }
 
 function boundedTimeout(value: number | undefined): number {

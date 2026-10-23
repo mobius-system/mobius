@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
 const http = require('http');
-const path = require('path');
 
 const LIMITED_WARNING = '【Mobius不鼓励使用 --limit-receiver，建议仅在用户强烈要求的情况下才去用它】';
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -117,41 +115,6 @@ function parseArgs(mode, rawArgs) {
   return { from, research, limitedReceiver, receiver, content };
 }
 
-function parseEnvValue(raw) {
-  const value = raw.trim();
-  if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) return value.slice(1, -1);
-  return value.replace(/\s+#.*$/, '').trim();
-}
-
-function readEnv(envPath) {
-  const values = {};
-  for (const rawLine of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = rawLine.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (match) values[match[1]] = parseEnvValue(match[2]);
-  }
-  return values;
-}
-
-function resolveAppDir() {
-  let candidate = process.env.MOBIUS_APP_DIR || process.env.APP_DIR || '';
-  if (!candidate && process.env.MOBIUS_ROOT) candidate = path.dirname(process.env.MOBIUS_ROOT);
-  const marker = path.join(__dirname, '.mobius-cli-app-dir');
-  if (!candidate && fs.existsSync(marker)) candidate = fs.readFileSync(marker, 'utf8').trim();
-  if (!candidate) {
-    const inferred = path.resolve(__dirname, '../../..');
-    if (fs.existsSync(path.join(inferred, '.env'))) candidate = inferred;
-  }
-  if (!candidate) fail('Configuration error: APP_DIR is unavailable; set MOBIUS_APP_DIR or reinstall the CLI', 3);
-  try {
-    candidate = fs.realpathSync(candidate);
-  } catch {
-    fail(`Configuration error: APP_DIR does not exist: ${candidate}`, 3);
-  }
-  const envPath = path.join(candidate, '.env');
-  if (!fs.existsSync(envPath)) fail(`Configuration error: required environment file is missing: ${envPath}`, 3);
-  return { appDir: candidate, envPath };
-}
-
 function request(options, body) {
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
@@ -172,39 +135,35 @@ async function main() {
   const rawArgs = process.argv.slice(3);
   if (rawArgs.includes('--limit-receiver')) process.stderr.write(`${LIMITED_WARNING}\n`);
   const input = parseArgs(mode, rawArgs);
-  const { appDir, envPath } = resolveAppDir();
-  const env = readEnv(envPath);
-  const secret = env.JWT_SECRET || '';
-  if (!secret || secret.startsWith('change-me')) fail(`Configuration error: JWT_SECRET is missing, empty, or a placeholder in ${envPath}`, 3);
-  const rawPort = env.VITE_PORT || env.MOBIUS_PORT || '';
-  if (!/^\d+$/.test(rawPort) || Number(rawPort) < 1 || Number(rawPort) > 65535) {
-    fail('Configuration error: APP_DIR/.env must define a valid VITE_PORT or MOBIUS_PORT; no fixed default is used', 3);
-  }
-  const codecPath = path.join(appDir, 'mobius', 'backend', 'utils', 'research-blackboard-capability.js');
-  if (!fs.existsSync(codecPath)) fail(`Configuration error: Blackboard capability module is missing: ${codecPath}`, 3);
-  const { RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER, createResearchBlackboardCliToken } = require(codecPath);
-  const token = createResearchBlackboardCliToken(secret, {
-    action: mode,
-    sessionRef: input.from,
-    researchId: input.research,
-    limitedReceiver: input.limitedReceiver,
-    receiverRef: input.receiver,
-  });
+  // 地址与令牌来自会话环境; 发送人用 --from 指定, 由后端校验归属
+  // Address and token come from the session environment; the sender comes from
+  // --from and the backend verifies that it belongs to the token's user.
+  const base = String(process.env.MOBIUS_BASE || '').trim();
+  const token = String(process.env.MOBIUS_CLI_JWT || '').trim();
+  if (!base) fail('Configuration error: MOBIUS_BASE is unset', 3);
+  if (!token) fail('Configuration error: MOBIUS_CLI_JWT is unset', 3);
+  let parsedBase;
+  try { parsedBase = new URL(base); } catch { fail(`Configuration error: invalid MOBIUS_BASE: ${base}`, 3); }
+  const hostname = parsedBase.hostname;
+  const rawPort = parsedBase.port || (parsedBase.protocol === 'https:' ? '443' : '80');
   const body = mode === 'write' ? JSON.stringify({ content: input.content }) : null;
   let response;
   try {
     response = await request({
-      hostname: '127.0.0.1',
+      hostname,
       port: Number(rawPort),
       method: mode === 'read' ? 'GET' : 'POST',
       path: `/api/research-blackboard/cli/${encodeURIComponent(input.research)}`,
       headers: {
-        [RESEARCH_BLACKBOARD_CLI_TOKEN_HEADER]: token,
+        Authorization: `Bearer ${token}`,
+        'x-mobius-session-id': input.from,
+        ...(input.limitedReceiver ? { 'x-mobius-limited-receiver': '1' } : {}),
+        ...(input.receiver ? { 'x-mobius-receiver': input.receiver } : {}),
         ...(body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}),
       },
     }, body);
   } catch (error) {
-    fail(`Network error: unable to connect to Mobius at 127.0.0.1:${rawPort}: ${error.message}`, 5);
+    fail(`Network error: unable to connect to Mobius at ${hostname}:${rawPort}: ${error.message}`, 5);
   }
   if (response.status >= 200 && response.status < 300) {
     if (mode === 'read') {

@@ -1,7 +1,6 @@
 /**
- * Unit tests for declare_job_done / declare_job_failed when a session
- * environment is present: both must call POST /api/session-jobs/declare
- * instead of reading the SQLite database.
+ * Unit tests for declare_job_done / declare_job_failed: both are HTTP-only and
+ * authenticate with the session's MOBIUS_CLI_JWT (there is no local fallback).
  *
  * Run: node tests/session-jobs-cli.js
  */
@@ -14,7 +13,7 @@ const { execFile } = require('child_process');
 const CLI_DIR = path.resolve(__dirname, '../scripts/cli');
 const DONE = path.join(CLI_DIR, 'declare_job_done');
 const FAILED = path.join(CLI_DIR, 'declare_job_failed');
-const JWT = 'test-session-jwt';
+const CLI_JWT = 'test-session-jwt';
 
 function startServer(respond) {
   const requests = [];
@@ -45,7 +44,7 @@ function run(cli, args, env) {
     execFile(cli, args, {
       encoding: 'utf8',
       timeout: 20000,
-      env: { ...process.env, MOBIUS_BASE: '', MOBIUS_JWT: '', MOBIUS_APP_DIR: '', ...env },
+      env: { ...process.env, MOBIUS_BASE: '', MOBIUS_CLI_JWT: '', ...env },
     }, (error, stdout, stderr) => {
       resolve({ status: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr });
     });
@@ -55,7 +54,7 @@ function run(cli, args, env) {
 async function testDone() {
   const server = await startServer(() => ({ status: 200, payload: { ok: true } }));
   try {
-    const result = await run(DONE, ['sess-1'], { MOBIUS_BASE: server.baseUrl, MOBIUS_JWT: JWT });
+    const result = await run(DONE, ['sess-1'], { MOBIUS_BASE: server.baseUrl, MOBIUS_CLI_JWT: CLI_JWT });
     assert.strictEqual(result.status, 0, result.stderr);
 
     assert.strictEqual(server.requests.length, 1);
@@ -63,7 +62,7 @@ async function testDone() {
     assert.strictEqual(req.method, 'POST');
     assert.strictEqual(req.url, '/api/session-jobs/declare');
     assert.strictEqual(req.headers['content-type'], 'application/json');
-    assert.strictEqual(req.headers.authorization, `Bearer ${JWT}`);
+    assert.strictEqual(req.headers.authorization, `Bearer ${CLI_JWT}`);
     assert.deepStrictEqual(JSON.parse(req.body), { session_id: 'sess-1', status: 'done' });
     console.log('ok 1 - declare_job_done posts to the backend');
   } finally {
@@ -75,7 +74,7 @@ async function testFailedWithTrickyReason() {
   const server = await startServer(() => ({ status: 200, payload: { ok: true } }));
   try {
     const reason = 'line one\nline "two" \\ end';
-    const result = await run(FAILED, ['sess-2', reason], { MOBIUS_BASE: server.baseUrl, MOBIUS_JWT: JWT });
+    const result = await run(FAILED, ['sess-2', reason], { MOBIUS_BASE: server.baseUrl, MOBIUS_CLI_JWT: CLI_JWT });
     assert.strictEqual(result.status, 0, result.stderr);
 
     const body = JSON.parse(server.requests[0].body);
@@ -91,7 +90,7 @@ async function testFailedWithTrickyReason() {
 async function testBackendRejection() {
   const server = await startServer(() => ({ status: 404, payload: { error: 'session not found' } }));
   try {
-    const result = await run(DONE, ['sess-3'], { MOBIUS_BASE: server.baseUrl, MOBIUS_JWT: JWT });
+    const result = await run(DONE, ['sess-3'], { MOBIUS_BASE: server.baseUrl, MOBIUS_CLI_JWT: CLI_JWT });
     assert.strictEqual(result.status, 5, 'non-200 must exit 5');
     assert.match(result.stderr, /Backend error \(HTTP 404\)/);
     assert.match(result.stderr, /session not found/);
@@ -106,7 +105,7 @@ async function testNetworkFailure() {
   const baseUrl = server.baseUrl;
   await server.close();
 
-  const result = await run(DONE, ['sess-4'], { MOBIUS_BASE: baseUrl, MOBIUS_JWT: JWT });
+  const result = await run(DONE, ['sess-4'], { MOBIUS_BASE: baseUrl, MOBIUS_CLI_JWT: CLI_JWT });
   assert.strictEqual(result.status, 3, 'unreachable backend must exit 3');
   assert.match(result.stderr, /Network error/);
   console.log('ok 4 - unreachable backend exits 3');

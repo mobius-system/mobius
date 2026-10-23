@@ -8,6 +8,10 @@
  *   - how a CLI reaches the backend (loopback on the host, the docker bridge
  *     gateway inside a sandbox) and what token it presents
  *
+ * Every CLI authenticates with the same MOBIUS_CLI_JWT: a per-session JWT that
+ * carries the owner's user id plus the session id and expires with the backend's
+ * usual 7 day window. The existing auth middleware accepts it unchanged.
+ *
  * Keeping it in one function means no CLI needs an "am I in docker?" branch:
  * identity comes from the token, the address comes from the environment.
  */
@@ -16,7 +20,7 @@ import * as path from 'path'
 import jwt from 'jsonwebtoken'
 
 import { APP_DIR, JWT_SECRET, PORT } from '../config'
-import { reminderHookBaseUrl, reminderHookToken } from './session-reminder-hook'
+import { reminderHookBaseUrl } from './session-reminder-hook'
 
 export interface SessionCliEnvInput {
   userId: string
@@ -35,9 +39,10 @@ export interface SessionCliEnv {
 /**
  * Build the CLI environment for one session.
  *
- * The JWT is minted here so sandbox sessions never need JWT_SECRET; its claims
- * carry only the user id, and the auth middleware resolves the user from the
- * database, so the token cannot grant more than that user already has.
+ * The JWT is minted here so sandbox sessions never need JWT_SECRET. Its claims
+ * are the user id (the field auth middleware reads) and the session id (for
+ * auditing / log correlation). 7 day lifetime: a long-lived session that
+ * outlives it must be respawned to get a fresh one.
  */
 export function buildSessionCliEnv(input: SessionCliEnvInput): SessionCliEnv {
   const userId = String(input.userId || '').trim()
@@ -49,10 +54,9 @@ export function buildSessionCliEnv(input: SessionCliEnvInput): SessionCliEnv {
     cliDir: path.join(APP_DIR, 'mobius', 'scripts', 'cli'),
     vars: {
       MOBIUS_BASE: reminderHookBaseUrl({ isolated: !!input.isolated, backendPort: PORT }),
-      // 与登录令牌同寿命 (7d); 长命会话不会在一天后突然失去 CLI 能力
-      // Same lifetime as login tokens (7d), so long-lived sessions keep working
-      MOBIUS_JWT: jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' }),
-      MOBIUS_HOOK_TOKEN: reminderHookToken(sessionId, JWT_SECRET),
+      // 所有 CLI 共用一枚令牌: 中间件只读 id, session_id 仅用于审计与日志关联
+      // One token for every CLI: the middleware reads id; session_id is for audit
+      MOBIUS_CLI_JWT: jwt.sign({ id: userId, session_id: sessionId }, JWT_SECRET, { expiresIn: '7d' }),
     },
   }
 }
