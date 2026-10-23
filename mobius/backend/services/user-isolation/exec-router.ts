@@ -40,6 +40,23 @@ export function clearWindowOwner(sessionId: string): void {
   windowOwner.delete(sessionId);
 }
 
+// 控制流用的窗口存在性查询: 只问该窗口自己的容器, 不遍历所有沙箱.
+// 每个沙箱一次 docker exec (~100ms, 阻塞事件循环), 8 个沙箱 ≈ 每次派发 1s;
+// 返回 null 表示"不是隔离用户的窗口", 调用方退回宿主判断.
+// Control-flow existence check: ask only the owning container instead of walking every
+// sandbox (one blocking docker exec each). null means "not an isolated user's window".
+export function containerWindowExists(sessionId: string, hub: string): boolean | null {
+  const userId = windowOwner.get(sessionId);
+  if (!userId || !isolationActiveFor(userId)) return null;
+  const r = spawnSync('docker', ['exec', containerNameFor(userId), 'tmux', '-L', 'mobius-agent',
+    'list-windows', '-t', hub, '-F', '#{window_name}',
+  ], { encoding: 'utf8', timeout: 15000 });
+  // 容器不在/无 tmux server 都按"窗口不存在"处理, 调用方会重新拉起
+  // A stopped container or a missing tmux server reads as "no window"; the caller respawns.
+  if (r.status !== 0) return false;
+  return (r.stdout || '').split('\n').includes(sessionId);
+}
+
 // tmux() 自动路由入口: 从 args 里解析 HUB:<window> 目标, 命中已注册窗口 → 返回容器名.
 export function resolveWindowContainer(args: string[]): string | null {
   if (!isDockerIsolation() || windowOwner.size === 0) return null;

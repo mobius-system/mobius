@@ -10,7 +10,7 @@ export {
   reconcileSandboxes, startBackgroundTimers, refreshSbxHomeInputs,
 } from './docker-sandbox';
 export {
-  prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow,
+  prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow, containerWindowExists,
   listWindowsRowsFromSandboxes, listWindowsRowsForStatus, claudeHomeFor, codexHomeFor,
   rewriteHostPath, rewriteEnvUrls, rewriteAimuxBin, spawnHarnessChild, materializeSettingsForSbx,
   sessionConfigDir, removeSessionConfigs,

@@ -24,6 +24,8 @@ export interface SessionSettingsPaths {
   settingsPath: string
   /** Reminder hook config (base url, session id, token). */
   hookConfigPath: string
+  /** MCP server definitions passed to the agent via --mcp-config. */
+  mcpConfigPath: string
 }
 
 /**
@@ -40,21 +42,16 @@ export function sessionSettingsPaths(bindRoot: string, sessionId: string): Sessi
     dir,
     settingsPath: path.join(dir, 'settings.json'),
     hookConfigPath: path.join(dir, 'hook.json'),
+    mcpConfigPath: path.join(dir, 'mcp.json'),
   }
 }
 
 /**
- * Create the settings directory and keep session files out of git.
- *
- * The hook config carries a token, so the directory ships a `.gitignore` that
- * ignores everything regardless of what the project tracks.
+ * Create the per-session settings directory. Git ignore policy is the project's
+ * concern, not the backend's.
  */
 export function ensureSessionSettingsDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const ignore = path.join(dir, '.gitignore')
-  if (!fs.existsSync(ignore)) {
-    try { fs.writeFileSync(ignore, '*\n', { mode: 0o600 }) } catch { /* best-effort */ }
-  }
 }
 
 export interface ClaudeHookInjectOptions {

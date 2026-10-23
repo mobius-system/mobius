@@ -140,6 +140,7 @@ function tmpDir() {
   assert.strictEqual(paths.dir, '/project/.imac/mobius-session-settings/sid-1');
   assert.strictEqual(paths.settingsPath, '/project/.imac/mobius-session-settings/sid-1/settings.json');
   assert.strictEqual(paths.hookConfigPath, '/project/.imac/mobius-session-settings/sid-1/hook.json');
+  assert.strictEqual(paths.mcpConfigPath, '/project/.imac/mobius-session-settings/sid-1/mcp.json');
   console.log('ok 6 - one directory per session under the project hidden folder');
 }
 

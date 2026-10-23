@@ -1731,7 +1731,9 @@ class TmuxCodexBackend extends AgentBackend {
         })
         finalProfileKey = hookProfileKey
       } catch (e: any) {
-        console.warn(`[tmux-codex] reminder hook 注入失败 (${sessionId}): ${e?.message || e}`)
+        // fail fast: 钩子配置写不进项目目录就不启动, 不静默降级
+        // Fail fast: if the hook config cannot be written, refuse to start.
+        throw new Error(`reminder hook 注入失败 (${sessionId}): ${e?.message || e}`)
       }
     }
     // useProxy is fully decoupled from the profile: it only picks the network tier.
