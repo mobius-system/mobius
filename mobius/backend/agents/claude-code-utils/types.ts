@@ -25,6 +25,28 @@ export interface ClaudeRuntimeEntry {
   watch: { stop?: () => void } | null
 }
 
+/**
+ * The slice of the backend the helper modules are allowed to touch.
+ *
+ * Declared structurally on purpose: the helpers must not import the backend
+ * class, or the class's import of the helpers would become a runtime cycle.
+ * Only what the moved code actually needs appears here.
+ */
+export interface ClaudeBackendHost {
+  name: string
+  runtime: Map<string, ClaudeRuntimeEntry>
+  persisted: Record<string, any>
+  _emitRaw(sessionId: string, raw: unknown): void
+  _persistEntry(sessionId: string, partial: Record<string, any>): void
+  _forgetPersisted(sessionId: string): void
+  _lookupPersistedJsonlPath(sessionId: string): string | null
+  _lookupArchivedJsonlPath(sessionId: string): string | null
+  harnessWriteMobiusCoreEntry(sessionId: string, record: MobiusPromptRecord | null | undefined, cwdHint?: string): any
+  getPendingRequests(sessionId: string): any[]
+  isWorking(sessionId: string): boolean
+  pauseCurrentAndResumeFromSession(opts: ClaudeDispatchOpts): any
+}
+
 /** Dispatch contract: the arg shape shared by createNewSession / queue / pause. */
 export interface ClaudeDispatchOpts {
   sessionId: string
