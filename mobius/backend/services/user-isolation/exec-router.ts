@@ -124,6 +124,16 @@ export function prepareSpawn(userId: string | null | undefined, sessionId: strin
   // 代理文件都要按 mtime 补进容器可见的 .sbx-home (容器已在跑就一直是旧副本).
   refreshSbxHomeInputs(String(userId));
   ensureContainerTmuxServer(String(userId));
+  // 容器内 aimux bridge broker 必须在 spawn 前就绪: 否则 agent 一启动就用 MCP 时
+  // aimux mcp serve 会报 "bridge broker is not running" (它目前只在 UI 走 /aimux_bridge
+  // 代理时才被懒启动, 早于 UI 打开的任何 MCP 调用都会失败).
+  // The container's bridge broker must be up before the agent starts: it is currently
+  // started lazily by the UI proxy, so any MCP call that happens earlier fails with
+  // "bridge broker is not running".
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  try { (require('./bridge') as typeof import('./bridge')).ensureBroker(String(userId)); } catch (e) {
+    console.warn(`[user-isolation] 容器内 broker 启动失败 (${userId}): ${(e as Error).message}`);
+  }
   if (sessionId) setWindowOwner(sessionId, String(userId));
   return containerNameFor(String(userId));
 }
