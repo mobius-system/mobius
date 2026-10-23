@@ -40,7 +40,7 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, sandboxPolicyFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, containerForWindow, clearWindowOwner, isolationActiveFor, sandboxPolicyFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
 const { resolveDispatchIdentity } = require('../services/session-dispatch-identity')
 const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
 const { injectCodexReminderHook, writeReminderHookConfig, sessionSettingsPaths, ensureSessionSettingsDir } = require('../services/session-hook-inject')
@@ -68,6 +68,7 @@ const {
 const { MOBIUS_DATA_PATH, TOKEN_PROXY_BASE_URL, APP_DIR, JWT_SECRET, PORT: MOBIUS_PORT } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
+import { createTmuxHub } from './tmux-hub'
 const { encodeProxyToken } = require('../token-proxy/encoding')
 const { ensureTempRoot } = require('../services/file-access')
 
@@ -275,50 +276,13 @@ function codexComposerHoldsPastedText(sessionId: string) {
   } catch { /* best-effort: a failure means not stuck */ return false }
 }
 
-// Whether the hub tmux session that hosts every agent window exists.
-function hubExists() {
-  return tmux(['has-session', '-t', HUB]).status === 0
-}
-
-function ensureHub() {
-  if (hubExists()) return
-  const r = tmux(['new-session', '-d', '-s', HUB, '-n', '_root'])
-  if (r.status !== 0) throw new Error(`tmux new-session failed: ${r.stderr}`)
-  log(`[tmux-codex] created tmux session ${HUB}`)
-}
-
-function windowExists(name: string) {
-  const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}'])
-  if (r.status !== 0) return false
-  // docker 隔离: 沙箱容器内的窗口也算存在 (宿主 hub 看不到它们)
-  if (listWindowsRowsFromSandboxes(HUB).some((cols: string[]) => cols[0] === name)) return true
-  return r.stdout.split('\n').includes(name)
-}
-
-// list-windows result cache (status queries only).
-// /status and the syncer poll every 2~5s; within one /status, isAlive + isWorking (which calls
-// isAlive itself) + listSessions + getRecentError's isAlive repeat list-windows up to 5 times, all
-// via spawnSync, which blocks Node's single event loop. Reusing the parsed rows within
-// LIST_WINDOWS_TTL_MS (3s) drops that to 0~1 spawnSync per /status and removes the "one slow tmux
-// call occupies the event loop and every request behind it queues up" avalanche.
-// Control flow (windowExists inside create/terminate/pause/recovery) still queries live, unaffected by the TTL.
-const LIST_WINDOWS_TTL_MS = 3 * 1000
-let _listWindowsCache: { ts: number; rows: string[][] } | null = null // { ts: number, rows: string[][] }
-
-function listWindowsRowsCached() {
-  const now = Date.now()
-  if (_listWindowsCache && now - _listWindowsCache.ts < LIST_WINDOWS_TTL_MS) {
-    return _listWindowsCache.rows
-  }
-  const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}'])
-  const rows = r.status === 0
-    ? r.stdout.trim().split('\n').filter(Boolean).map((l: string) => l.split('|'))
-    : []
-  // docker 隔离: 各沙箱容器内的窗口行并入 (状态查询读异步快照, 不走阻塞的同步探测)
-  const allRows = [...rows, ...listWindowsRowsForStatus(HUB)]
-  _listWindowsCache = { ts: now, rows: allRows }
-  return allRows
-}
+// 本会话 hub 的查询集: 存在性/建 hub/窗口存在/状态缓存 与 claude 后端共用一套实现
+// This backend's hub queries; the shared implementation owns the cache
+const hub = createTmuxHub(HUB, '[tmux-codex]')
+const hubExists = hub.hubExists
+const ensureHub = hub.ensureHub
+const windowExists = hub.windowExists
+const listWindowsRowsCached = hub.listWindowsRowsCached
 
 function shellQuote(s: string) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`
@@ -1277,11 +1241,16 @@ class TmuxCodexBackend extends AgentBackend {
   // Create path: reuse a live window (binding its existing thread) or spawn one, send the initial
   // prompt, then bind the codex thread that the new rollout created.
   async _createImpl(opts: CodexDispatchOpts) {
-    const { sessionId, userId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized } = opts
+    const { sessionId, cwd, flagRoot, displayName, initialPrompt, agentSessionId, aimuxRemoteName, aimuxGuiAuthorized } = opts
+    let { userId } = opts
     const { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, captureStream } = unpackLaunch(opts)
     if (!sessionId || !cwd) throw new Error('createNewSession requires sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession requires initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`)
+    // 入口兜底: 派发方可能只转发部分字段, 缺 userId 会让 CODEX_HOME/sessions 指到宿主
+    // Entry fallback: a partial dispatch would read the host CODEX_HOME instead of the
+    // sandbox one, so the thread snapshot and resume lookup would both be wrong.
+    userId = resolveDispatchIdentity(sessionId, { userId }).userId || userId
 
     let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
@@ -1327,12 +1296,15 @@ class TmuxCodexBackend extends AgentBackend {
   // Queue path: respawn the window when it is gone (falling back to the last persisted cwd/model/
   // proxy/thread), otherwise reuse it; then send the prompt and bind if still unbound.
   async _queueImpl(opts: CodexDispatchOpts) {
-    const { sessionId, userId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
-    let { cwd, flagRoot, displayName } = opts
+    const { sessionId, prompt, agentSessionId, mobiusPromptRecord = null, suppressRunningFlag = false, aimuxRemoteName, aimuxGuiAuthorized } = opts
+    let { userId, cwd, flagRoot, displayName } = opts
     let { model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath: codexConfigPath0, codexSecretEnvKey, codexSecretValue, captureStream } = unpackLaunch(opts)
     let codexConfigPath = codexConfigPath0
     if (!sessionId) throw new Error('sessionId required')
     if (!prompt) throw new Error('prompt required')
+    // 入口兜底: 同上, 队列路径也可能拿不到 userId
+    // Entry fallback, same reason: the queue path may arrive without userId.
+    userId = resolveDispatchIdentity(sessionId, { userId }).userId || userId
 
     let spawnInfo: any = null
     let allowUpdatedThreadFallback = false
@@ -1492,6 +1464,9 @@ class TmuxCodexBackend extends AgentBackend {
       tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
       log(`[tmux-codex] terminate: killed window=${sessionId} (wasWorking=${wasWorking})`)
     }
+    // 沙箱窗口属主表同步清掉: 窗口已死, 留着会让后续 tmux 调用被路由进容器
+    // Drop the sandbox owner row too: a dead window must not keep routing tmux into a container
+    clearWindowOwner(sessionId)
     const flagRoot = entry?.flagRoot || entry?.cwd
     if (flagRoot) {
       safeRemoveFlagDir(flagRoot, sessionId, 'tmux-codex')

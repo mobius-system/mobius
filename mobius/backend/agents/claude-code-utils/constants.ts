@@ -93,14 +93,6 @@ export const INITIAL_CONTEXT_DELAY_MS = 5000
 export const INITIAL_CONTEXT_GREETING_CHOICES = ['hello', 'greeting', 'are you there', 'good day']
 
 // ── Status reading ──────────────────────────────────────
-// list-windows result cache (status queries only).
-// /status and the syncer poll every 2~5s; one /status calls list-windows 3 times (isAlive, isWorking
-// with its inner isAlive, listSessions), all spawnSync and blocking Node's single event loop. Reusing
-// the parsed rows within LIST_WINDOWS_TTL_MS (3s) cuts that to 0~1 spawnSync per /status, removing
-// the "one slow tmux → event loop occupied → every request in that window queues" avalanche.
-// Control flow (windowExists in create/terminate/pause/recovery) still queries live.
-export const LIST_WINDOWS_TTL_MS = 3 * 1000
-
 // isWorking's tail window over the transcript. Must dwarf a single record: claude-code's injected
 // context user entry (🚁🍕 project+memory) and long assistant output reach 30KB+ on one line, so the
 // old 16KB window held not even one — the first thinking phase's only user marker fell out, leaving

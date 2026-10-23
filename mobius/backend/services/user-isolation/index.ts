@@ -13,7 +13,7 @@ export {
   prepareSpawn, resolveWindowContainer, setWindowOwner, clearWindowOwner, containerForWindow, containerWindowExists,
   listWindowsRowsFromSandboxes, listWindowsRowsForStatus, claudeHomeFor, codexHomeFor,
   rewriteHostPath, rewriteEnvUrls, rewriteAimuxBin, spawnHarnessChild, materializeSettingsForSbx,
-  sessionConfigDir, removeSessionConfigs,
+  sessionConfigDir,
 } from './exec-router';
 export { dockerCodeServerActive, ensureDocker, killDocker, proxyTargetHost, listDocker } from './code-server';
 export { bridgeRoutedFor, ensureBroker, bridgeTargetFor } from './bridge';

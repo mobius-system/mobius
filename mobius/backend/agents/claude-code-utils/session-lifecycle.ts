@@ -345,18 +345,20 @@ export async function spawnWindow(backend: ClaudeBackendHost, opts: ClaudeDispat
     aimuxGuiAuthorized,
   })
 
-  // 预先写好目录信任，TUI就不会弹"trust this folder"
-  // Pre-set the trust so the trust-folder dialog never shows up
-  // 这一步失败由就绪轮询里的截屏自动确认兜底
-  // A failure here falls back to the screenshot auto-confirm in the ready poll
-  ensureProjectTrusted(cwd, userId)
-
   // 在hub会话里建后台窗口，在cwd下跑bash -lc cmd
   // Create the background window in the hub, running bash -lc cmd in cwd
   const launchCmd = sandboxCommand(sandboxPolicy || null, launch.cmd)
   // 隔离用户: 先确保沙箱容器与容器内 tmux server 就绪, 窗口归属登记后显式走容器
   // Isolated users: bring the container and its tmux server up first, then target it explicitly
+  // 必须早于目录信任写盘: 容器建不出来时 prepareSpawn 先抛错, 不会把信任写进服务账号的 HOME
+  // Must run before the trust write: when the container cannot be built, prepareSpawn throws
+  // instead of letting the trust land in the service account's HOME.
   const sbxContainer = prepareSpawn(userId, sessionId)
+  // 预先写好目录信任，TUI就不会弹"trust this folder"
+  // Pre-set the trust so the trust-folder dialog never shows up
+  // 这一步失败由就绪轮询里的截屏自动确认兜底
+  // A failure here falls back to the screenshot auto-confirm in the ready poll
+  ensureProjectTrusted(cwd, userId)
   // ✨ 真正拉起 agent 的唯一一步
   // The one step that actually starts the agent ✨
   const r = tmux(['new-window', '-d', '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', launchCmd],

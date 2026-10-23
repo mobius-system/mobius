@@ -14,7 +14,7 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { db } from '../../../db';
 import {
-  SBX_GATEWAY_IP, SBX_AIMUX_BIN, SBX_NODE22, isDockerIsolation,
+  SBX_GATEWAY_IP, SBX_AIMUX_BIN, SBX_NODE22, containerNameFor, isDockerIsolation,
 } from './config';
 import { isolationActiveFor, sbxHomeFor, ensureSandbox, containerAlive, refreshSbxHomeInputs } from './docker-sandbox';
 import { ensureTempRoot } from '../file-access';
@@ -72,20 +72,29 @@ export function resolveWindowContainer(args: string[]): string | null {
   if (!win || win === '_root') return null;
   const userId = windowOwner.get(win);
   if (!userId || !isolationActiveFor(userId)) return null;
-  return containerNameOf(userId);
-}
-
-import { containerNameFor } from './config';
-function containerNameOf(userId: string): string {
   return containerNameFor(userId);
 }
 
 // ── 容器 tmux server 引导 (每容器一次) ───────────────────────────────────────
 const guidedContainers = new Set<string>();
 
+// 容器内 tmux server + claude hub 是否还在 (一次 docker exec).
+// Whether the container's tmux server and its claude hub are still there (one docker exec).
+function containerHubAlive(container: string): boolean {
+  const r = spawnSync('docker', ['exec', container, 'tmux', '-L', 'mobius-agent',
+    'has-session', '-t', 'imac_claude_code_agent_hub',
+  ], { encoding: 'utf8', timeout: 15000 });
+  return r.status === 0;
+}
+
 export function ensureContainerTmuxServer(userId: string): void {
   const name = containerNameFor(userId);
-  if (guidedContainers.has(name)) return;
+  // 缓存只说明"引导过"; 容器里的 tmux server 可能已被杀 (OOM/人工), 此时 hub 也没了,
+  // 再建窗口会失败. 命中缓存时用一次 has-session 复核, 失败就重新引导.
+  // The cache only says "guided once": the container's tmux server may have died since, taking
+  // the hub with it. Verify with one has-session before skipping the re-guide.
+  if (guidedContainers.has(name) && containerHubAlive(name)) return;
+  guidedContainers.delete(name);
   const r = spawnSync('docker', ['exec', name, 'tmux', '-L', 'mobius-agent',
     'start-server', ';',
     'set-option', '-g', 'exit-empty', 'off', ';',
@@ -254,10 +263,6 @@ export function rewriteHostPath(userId: string | null | undefined, p: string): s
 // 随容器生灭 (reaper 删容器时顺手清理), 不在 .sbx-home 里堆积.
 export function sessionConfigDir(userId: string, sessionId: string): string {
   return path.join(ensureTempRoot(userId), 'session-config', String(sessionId || 'adhoc'));
-}
-
-export function removeSessionConfigs(userId: string, sessionId: string): void {
-  try { fs.rmSync(sessionConfigDir(userId, sessionId), { recursive: true, force: true }); } catch { /* best-effort */ }
 }
 
 // 容器版 settings 物化: 读宿主 settings (含 withproxy 副本), 把 127.0.0.1 换成
