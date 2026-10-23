@@ -34,6 +34,24 @@ export function isolationActiveFor(userId: string | null | undefined): boolean {
   return !!user && user.role !== 'admin';
 }
 
+/**
+ * 隔离用户的某个绝对路径是否会出现在沙箱容器里 (其挂载集合内).
+ *
+ * 会话 cwd 或会话配置目录不在挂载集合内时, 容器里要么看不到文件 (--settings 缺失 →
+ * TUI 永远不就绪), 要么 tmux -c 静默回落到容器 HOME (agent 跑在错误目录). 调用方
+ * 应当在 spawn 前用它 fail fast, 而不是让用户等 25s 超时后看到一句无关的错误.
+ *
+ * Whether an absolute path is visible inside the user's sandbox (inside its
+ * mount set). Callers should fail fast before spawning instead of timing out.
+ */
+export function pathVisibleInSandbox(userId: string | null | undefined, target: string): boolean {
+  if (!isolationActiveFor(userId)) return true;
+  const abs = path.resolve(String(target || ''));
+  if (!abs) return false;
+  const mounts = mountsFor(String(userId));
+  return mounts.some((m) => abs === m.host || abs.startsWith(m.host + path.sep));
+}
+
 export function sbxHomeFor(workDir: string): string {
   return path.join(workDir, SBX_HOME_DIRNAME);
 }

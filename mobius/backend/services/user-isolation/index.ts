@@ -6,7 +6,7 @@
  */
 export { USER_ISOLATION_METHOD, USER_ISOLATION_DOCKER_IMAGE, isDockerIsolation, dockerSandboxAvailable, SBX_GATEWAY_IP } from './config';
 export {
-  isolationActiveFor, ensureSandbox, rebuildNow, destroySandbox,
+  isolationActiveFor, ensureSandbox, rebuildNow, destroySandbox, pathVisibleInSandbox,
   reconcileSandboxes, startBackgroundTimers, refreshSbxHomeInputs,
 } from './docker-sandbox';
 export {

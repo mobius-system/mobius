@@ -261,19 +261,43 @@ async function main() {
   const mode = process.argv[2];
   if (!['wake', 'list', 'cancel-all'].includes(mode)) fail('Internal error: invalid command mode', 6);
   const input = parseArgs(mode, process.argv.slice(3));
-  const { appDir, envPath } = resolveAppDir();
-  const env = readEnv(envPath);
-  const userId = resolveUserId(appDir, env, input.sessionHint);
-  const helper = process.env.MOBIUS_JWT_HELPER || path.join(__dirname, 'generate_localhost_jwt');
-  if (!fs.existsSync(helper)) fail(`Configuration error: JWT helper is missing: ${helper}`, 3);
-  const signed = spawnSync(helper, [userId], {
-    encoding: 'utf8',
-    env: { ...process.env, MOBIUS_APP_DIR: appDir },
-  });
-  if (signed.status !== 0 || !signed.stdout.trim()) fail(signed.stderr.trim() || 'Authentication error: JWT generation failed', 4);
-  const rawPort = process.env.VITE_PORT || process.env.MOBIUS_PORT || env.VITE_PORT || env.MOBIUS_PORT || '';
-  if (!/^\d+$/.test(rawPort) || Number(rawPort) < 1 || Number(rawPort) > 65535) {
-    fail('Configuration error: APP_DIR/.env must define a valid VITE_PORT or MOBIUS_PORT', 3);
+
+  // 会话环境齐全时直接走后端地址 + 预签令牌: 沙箱容器里既没有 .env 也没有可读数据库.
+  // Prefer the session environment when it provides a base URL and a pre-minted
+  // token: sandbox containers have neither .env nor a readable database.
+  const sessionBase = String(process.env.MOBIUS_BASE || '').trim();
+  const sessionToken = String(process.env.MOBIUS_JWT || '').trim();
+  let hostname = '127.0.0.1';
+  let rawPort = '';
+  let token = '';
+
+  if (sessionBase && sessionToken) {
+    let parsed;
+    try { parsed = new URL(sessionBase); } catch { fail(`Configuration error: invalid MOBIUS_BASE: ${sessionBase}`, 3); }
+    hostname = parsed.hostname;
+    rawPort = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    token = sessionToken;
+    // 会话内必须能确定调用者身份, 否则不做数据库回退
+    // Inside a session the caller identity must be given; there is no DB fallback
+    if (!String(process.env.MOBIUS_USER_ID || '').trim()) {
+      fail('Configuration error: cannot resolve the Mobius user; set MOBIUS_USER_ID', 3);
+    }
+  } else {
+    const { appDir, envPath } = resolveAppDir();
+    const env = readEnv(envPath);
+    const userId = resolveUserId(appDir, env, input.sessionHint);
+    const helper = process.env.MOBIUS_JWT_HELPER || path.join(__dirname, 'generate_localhost_jwt');
+    if (!fs.existsSync(helper)) fail(`Configuration error: JWT helper is missing: ${helper}`, 3);
+    const signed = spawnSync(helper, [userId], {
+      encoding: 'utf8',
+      env: { ...process.env, MOBIUS_APP_DIR: appDir },
+    });
+    if (signed.status !== 0 || !signed.stdout.trim()) fail(signed.stderr.trim() || 'Authentication error: JWT generation failed', 4);
+    token = signed.stdout.trim();
+    rawPort = process.env.VITE_PORT || process.env.MOBIUS_PORT || env.VITE_PORT || env.MOBIUS_PORT || '';
+    if (!/^\d+$/.test(rawPort) || Number(rawPort) < 1 || Number(rawPort) > 65535) {
+      fail('Configuration error: APP_DIR/.env must define a valid VITE_PORT or MOBIUS_PORT', 3);
+    }
   }
 
   let method = 'GET';
@@ -295,14 +319,14 @@ async function main() {
   let response;
   try {
     response = await request({
-      hostname: '127.0.0.1', port: Number(rawPort), method, path: requestPath,
+      hostname, port: Number(rawPort), method, path: requestPath,
       headers: {
-        Authorization: `Bearer ${signed.stdout.trim()}`,
+        Authorization: `Bearer ${token}`,
         ...(body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}),
       },
     }, body);
   } catch (error) {
-    fail(`Network error: unable to connect to Mobius at 127.0.0.1:${rawPort}: ${error.message}`, 5);
+    fail(`Network error: unable to connect to Mobius at ${hostname}:${rawPort}: ${error.message}`, 5);
   }
 
   let payload = null;

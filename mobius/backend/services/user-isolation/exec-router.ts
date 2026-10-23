@@ -17,6 +17,7 @@ import {
   SBX_GATEWAY_IP, SBX_AIMUX_BIN, SBX_NODE22, containerNameFor, isDockerIsolation,
 } from './config';
 import { isolationActiveFor, sbxHomeFor, ensureSandbox, containerAlive, refreshSbxHomeInputs } from './docker-sandbox';
+import { AGENT_TMUX_SOCKET } from '../../config';
 import { ensureTempRoot } from '../file-access';
 import * as registry from './registry';
 
@@ -48,7 +49,7 @@ export function clearWindowOwner(sessionId: string): void {
 export function containerWindowExists(sessionId: string, hub: string): boolean | null {
   const userId = windowOwner.get(sessionId);
   if (!userId || !isolationActiveFor(userId)) return null;
-  const r = spawnSync('docker', ['exec', containerNameFor(userId), 'tmux', '-L', 'mobius-agent',
+  const r = spawnSync('docker', ['exec', containerNameFor(userId), 'tmux', '-L', AGENT_TMUX_SOCKET,
     'list-windows', '-t', hub, '-F', '#{window_name}',
   ], { encoding: 'utf8', timeout: 15000 });
   // 容器不在/无 tmux server 都按"窗口不存在"处理, 调用方会重新拉起
@@ -81,7 +82,7 @@ const guidedContainers = new Set<string>();
 // 容器内 tmux server + claude hub 是否还在 (一次 docker exec).
 // Whether the container's tmux server and its claude hub are still there (one docker exec).
 function containerHubAlive(container: string): boolean {
-  const r = spawnSync('docker', ['exec', container, 'tmux', '-L', 'mobius-agent',
+  const r = spawnSync('docker', ['exec', container, 'tmux', '-L', AGENT_TMUX_SOCKET,
     'has-session', '-t', 'imac_claude_code_agent_hub',
   ], { encoding: 'utf8', timeout: 15000 });
   return r.status === 0;
@@ -95,7 +96,7 @@ export function ensureContainerTmuxServer(userId: string): void {
   // the hub with it. Verify with one has-session before skipping the re-guide.
   if (guidedContainers.has(name) && containerHubAlive(name)) return;
   guidedContainers.delete(name);
-  const r = spawnSync('docker', ['exec', name, 'tmux', '-L', 'mobius-agent',
+  const r = spawnSync('docker', ['exec', name, 'tmux', '-L', AGENT_TMUX_SOCKET,
     'start-server', ';',
     'set-option', '-g', 'exit-empty', 'off', ';',
     'set-option', '-g', 'history-limit', '100000', ';',
@@ -104,7 +105,7 @@ export function ensureContainerTmuxServer(userId: string): void {
   if (r.status !== 0) return;
   // 容器内还要预建两个 agent hub session (宿主侧 ensureHub 不会进容器): 幂等.
   for (const hub of ['imac_claude_code_agent_hub', 'imac_codex_agent_hub']) {
-    spawnSync('docker', ['exec', name, 'tmux', '-L', 'mobius-agent',
+    spawnSync('docker', ['exec', name, 'tmux', '-L', AGENT_TMUX_SOCKET,
       'new-session', '-d', '-s', hub, '-n', '_root'], { encoding: 'utf8', timeout: 15000 });
   }
   guidedContainers.add(name);
@@ -133,7 +134,7 @@ export function listWindowsRowsFromSandboxes(hub: string): string[][] {
   const rows: string[][] = [];
   for (const entry of registry.allEntries()) {
     if (!isolationActiveFor(entry.user) || !containerAlive(entry.user)) continue;
-    const r = spawnSync('docker', ['exec', entry.containerName, 'tmux', '-L', 'mobius-agent',
+    const r = spawnSync('docker', ['exec', entry.containerName, 'tmux', '-L', AGENT_TMUX_SOCKET,
       'list-windows', '-t', hub,
       '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}',
     ], { encoding: 'utf8', timeout: 15000 });
@@ -168,7 +169,7 @@ let sbxRowsLastSyncFallbackTs = 0;
 function dockerTmuxListWindows(container: string, hub: string): Promise<string[][] | null> {
   return new Promise((resolve) => {
     let out = '';
-    const child = spawn('docker', ['exec', container, 'tmux', '-L', 'mobius-agent',
+    const child = spawn('docker', ['exec', container, 'tmux', '-L', AGENT_TMUX_SOCKET,
       'list-windows', '-t', hub,
       '-F', '#{window_name}|#{pane_pid}|#{window_index}|#{window_activity}|#{pane_dead}|#{pane_current_command}',
     ], { stdio: ['ignore', 'pipe', 'ignore'] });

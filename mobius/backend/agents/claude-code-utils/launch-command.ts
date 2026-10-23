@@ -14,7 +14,7 @@ import crypto from 'crypto'
 
 import { resolveClaudeProxyMode, assertProxyAvailable, type ProxyMode } from './proxy'
 import { jsonlPathOf, resolveAimuxBin, shellQuote } from './session-paths'
-import { isolationActiveFor, materializeSettingsForSbx, rewriteAimuxBin } from '../../services/user-isolation'
+import { isolationActiveFor, materializeSettingsForSbx, pathVisibleInSandbox, rewriteAimuxBin } from '../../services/user-isolation'
 import { ensureSessionWithProxy } from '../../services/model-access'
 import { ensureTempRoot } from '../../services/file-access'
 import { buildSessionCliEnv, sessionCliEnvExports } from '../../services/session-cli-env'
@@ -205,6 +205,16 @@ async function buildAimuxMcpServer(sessionId: string, userId: string | undefined
  * global default.
  */
 export async function buildClaudeLaunch(input: LaunchInput): Promise<LaunchPlan> {
+  // 隔离用户: cwd 与会话配置根必须落在沙箱挂载范围内, 否则容器里看不到配置/目录
+  // Isolated users: cwd and the session-config root must sit inside the sandbox mounts
+  if (input.userId && isolationActiveFor(input.userId)) {
+    if (!pathVisibleInSandbox(input.userId, input.cwd)) {
+      throw new Error(`会话目录不在沙箱挂载范围内, 容器内不可见: ${input.cwd}`)
+    }
+    if (!pathVisibleInSandbox(input.userId, input.flagRoot)) {
+      throw new Error(`会话配置目录不在沙箱挂载范围内, 容器内不可见: ${input.flagRoot}`)
+    }
+  }
   const { settingsPath: finalSettingsPath, withProxyPath } = prepareSettings(input)
 
   // 代理档位与settings互相独立，代理分支一样要传--settings
