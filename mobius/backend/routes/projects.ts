@@ -3336,13 +3336,6 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
   const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
-  const inventoryRemotes = inventory.map((entry: any) => ({
-    name: String(entry.name || ''),
-    status: String(entry.status || ''),
-    remote_path: String(entry.remote_path || ''),
-    hostname: String(entry.hostname || ''),
-    hardware: String(entry.hardware || ''),
-  })).filter((entry: any) => entry.name);
   const bridgeRemotes = bridge ? [{
     name: bridge.aimuxId,
     status: 'connected',
@@ -3351,6 +3344,22 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
     hardware: '',
     bridge: true,
   }] : [];
+  // 清单里与 bridge 设备同名的旧条目会被 bridge 行顶替, 必须剔除否则下拉框出现两条一样的机器.
+  // Inventory rows sharing the bridge device name are superseded by the bridge row; drop them or the list duplicates.
+  const seenNames = new Set(bridgeRemotes.map(remote => remote.name));
+  const inventoryRemotes: any[] = [];
+  for (const entry of inventory) {
+    const name = String(entry?.name || '');
+    if (!name || seenNames.has(name)) continue;
+    seenNames.add(name);
+    inventoryRemotes.push({
+      name,
+      status: String(entry.status || ''),
+      remote_path: String(entry.remote_path || ''),
+      hostname: String(entry.hostname || ''),
+      hardware: String(entry.hardware || ''),
+    });
+  }
   res.json({ remotes: [...bridgeRemotes, ...inventoryRemotes] });
 });
 
