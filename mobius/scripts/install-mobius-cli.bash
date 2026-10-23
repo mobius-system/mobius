@@ -21,7 +21,7 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   exit 1
 fi
 
-for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
+for cmd in multiagent_send generate_localhost_jwt declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display-files mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
@@ -41,6 +41,7 @@ echo "  declare_job_failed --help"
 echo "  research_blackboard_read --help"
 echo "  research_blackboard_write --help"
 echo "  display-files --help"
+echo "  mobius_session_reminder --help"
 echo "  mobius_schedule_wake_me_up --help"
 echo "  mobius_schedule_list --help"
 echo "  mobius_schedule_cancel_all --help"

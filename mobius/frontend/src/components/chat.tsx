@@ -39,6 +39,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { EasySessionChatInput } from './easy-session-chat-input'
+import { EasySessionProjectSelector } from './easy-session-project-selector'
 import { AdvancedSessionActions } from './advanced-session-actions'
 import { UnifiedButtonGroup, type VisibilityOption } from './unified-button-group'
 import { EasySessionToolBar } from './easy-session-tool-bar'
@@ -4663,71 +4664,135 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   ))}
                 </div>
               )}
+              {/* 项目选择入口: 「更改此聊天的项目」按钮 (issue 2026-10-13) */}
+              {easyProjectControl && (
+                <div className="mb-2">
+                  <EasySessionProjectSelector
+                    selectedProjectId={easyProjectControl.selectedProjectId}
+                    selectedProjectName={easyProjectControl.selectedProjectName}
+                    projects={easyProjectControl.projects}
+                    onSelectProject={easyProjectControl.onSelectProject}
+                    onCreateProject={easyProjectControl.onCreateProject}
+                  />
+                </div>
+              )}
               <EasySessionChatInput
                 mode="follow_session_mode"
                 input={input}
-                inputRef={inputRef}
-                inputPlaceholder={inputPlaceholder}
-                inputFocused={inputFocused}
-                theme={theme}
-                voiceState={voiceState}
-                voiceTip={voiceTip}
-                voiceBusy={voiceBusy}
-                messageSubmitting={messageSubmitting}
-                anyUploading={anyUploading}
-                hasReadyAttachments={attachments.some(attachment => attachment.status === 'done')}
-                hasPendingSend={!!pendingSendAt}
-                modelAvailable={modelAvailable}
-                onStop={handleStopSession}
-                stopFeedbackActive={stopFeedbackActive}
-                onChange={handleChatInputChange}
-                onPaste={handlePaste}
-                onFocus={() => setInputFocused(true)}
-                onBlur={(event) => {
-                  const nextTarget = event.relatedTarget as Node | null
-                  if (nextTarget && event.currentTarget.contains(nextTarget)) return
-                  setInputFocused(false)
-                }}
-                onToggleVoice={toggleVoiceRecording}
-                onUpload={openFilePicker}
-                onSend={send}
-                toolbar={
-                  // 简易布局下标准侧栏按钮组不渲染, 这里把它收进贴住输入框的工具浮层 (同一份定义).
-                  <EasySessionToolBar label="会话工具" disabled={!currentSession?.session_id && !sessionId}>
-                    {renderSessionToolGroup({
-                      // 与标准布局侧栏完全同一个 variant 与按钮清单: 简易模式只是把这一组搬进浮层,
-                      // 图标态也避免了 'menu'/'compact' 形态与资源编辑器重复出 Skill/Memory/Git.
-                      variant: 'default',
-                      className: 'flex min-h-0 flex-col',
-                      initialPanel: null,
-                      persistActivePanel: true,
-                    })}
-                  </EasySessionToolBar>
-                }
-                onKeyDown={e => {
-                  if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-                    handleInputArrowUp(e)
-                    return
-                  }
-                  if (e.key !== 'Enter') return
-                  const nativeEvent = e.nativeEvent as KeyboardEvent
-                  if (composingRef.current || (e as any).isComposing || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
-                  if (e.shiftKey) return
-                  if (e.altKey) {
-                    e.preventDefault()
-                    const el = inputRef.current
-                    if (el) {
-                      const start = el.selectionStart
-                      const end = el.selectionEnd
-                      setInput(input.slice(0, start) + '\n' + input.slice(end))
-                      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 1 })
+                  inputRef={inputRef}
+                  inputPlaceholder={inputPlaceholder}
+                  inputFocused={inputFocused}
+                  theme={theme}
+                  voiceState={voiceState}
+                  voiceTip={voiceTip}
+                  voiceBusy={voiceBusy}
+                  messageSubmitting={messageSubmitting}
+                  anyUploading={anyUploading}
+                  hasReadyAttachments={attachments.some(attachment => attachment.status === 'done')}
+                  hasPendingSend={!!pendingSendAt}
+                  modelAvailable={modelAvailable}
+                  onStop={handleStopSession}
+                  stopFeedbackActive={stopFeedbackActive}
+                  onChange={handleChatInputChange}
+                  onPaste={handlePaste}
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={(event) => {
+                    const nextTarget = event.relatedTarget as Node | null
+                    if (nextTarget && event.currentTarget.contains(nextTarget)) return
+                    setInputFocused(false)
+                  }}
+                  onToggleVoice={toggleVoiceRecording}
+                  onUpload={openFilePicker}
+                  onSend={send}
+                  sessionId={sessionId}
+                  sessionModelKey={(currentSession as any)?.model || (currentTask as any)?.model || ''}
+                  sessionModelLabel={currentModelLabel}
+                  agentWorking={!!(backendAlive && backendWorking)}
+                  showContextAccess={!!((currentSession as any)?.pc_client_metadata || (currentTask as any)?.pc_client_metadata)}
+                  contextAccessLabel="完全访问"
+                  recentSessions={(useStore.getState().sessions || []).slice(0, 20) as any}
+                  projects={(easyProjectControl as any)?.projects as any}
+                  currentProjectId={(easyProjectControl as any)?.selectedProjectId || currentProjectId}
+                  onSwitchSession={(sid) => {
+                    if (!sid) return
+                    const search = new URLSearchParams(location.search)
+                    search.set('session', sid)
+                    navigate(`${location.pathname}?${search.toString()}${location.hash}`, { replace: true })
+                  }}
+                  onSwitchProject={(pid) => {
+                    (easyProjectControl as any)?.onSelectProject(pid)
+                  }}
+                  language={(currentSession as any)?.language === 'en' ? 'en' : 'zh'}
+                  onChangeLanguage={(next) => {
+                    setLastSendError('语言切换需要新建会话才能生效')
+                    setTimeout(() => setLastSendError(''), 2500)
+                  }}
+                  onInjectSkill={() => setSkillMemoryModal('skill')}
+                  onInjectMemory={() => setSkillMemoryModal('memory')}
+                  onInjectGit={() => setSkillMemoryModal('git')}
+                  onOpenFileChanges={() => setFileChangesOpen(true)}
+                  onOpenBashCommands={() => setBashCommandsOpen(true)}
+                  onOpenInputReplay={() => setInputReplayOpen(true)}
+                  onOpenTerminal={() => setTerminalChoiceOpen(true)}
+                  onOpenCooperablePc={() => setCooperablePcOpen(true)}
+                  onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
+                  onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
+                  showJsonlMeta={showJsonlMeta}
+                  onSendProjectKnowledge={sendProjectKnowledgePrompt}
+                  projectKnowledgeSending={projectKnowledgeSending}
+                  jsonlEntryCount={historyStore ? (historyStore.flattenEntries?.()?.length ?? 0) : 0}
+                  connectionReady={connectionStatus === 'connected'}
+                  onChangeSessionModel={async (nextModel: string) => {
+                    if (!sessionId) return
+                    try {
+                      await api(`/api/sessions/${sessionId}/model`, { method: 'PATCH', body: JSON.stringify({ model: nextModel }) })
+                      const store = useStore.getState()
+                      const sel = store.currentSession
+                      if (sel?.session_id === sessionId) {
+                        store.setCurrentSession({ ...sel, model: nextModel })
+                      }
+                      const task = store.currentTask as any
+                      if (task?.task_id === sessionId) {
+                        store.setCurrentTask({ ...task, model: nextModel })
+                      }
+                    } catch (e: any) {
+                      setLastSendError(e?.message || '切换模型失败')
                     }
-                    return
+                  }}
+                  toolbar={
+                    <EasySessionToolBar label="会话工具" disabled={!currentSession?.session_id && !sessionId}>
+                      {renderSessionToolGroup({
+                        variant: 'default',
+                        className: 'flex min-h-0 flex-col',
+                        initialPanel: null,
+                        persistActivePanel: true,
+                      })}
+                    </EasySessionToolBar>
                   }
-                  e.preventDefault()
-                  send(autoUrgentOnEnter)
-                }}
-              />
+                  onKeyDown={e => {
+                    if (e.key === 'ArrowUp' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                      handleInputArrowUp(e)
+                      return
+                    }
+                    if (e.key !== 'Enter') return
+                    const nativeEvent = e.nativeEvent as KeyboardEvent
+                    if (composingRef.current || (e as any).isComposing || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
+                    if (e.shiftKey) return
+                    if (e.altKey) {
+                      e.preventDefault()
+                      const el = inputRef.current
+                      if (el) {
+                        const start = el.selectionStart
+                        const end = el.selectionEnd
+                        setInput(input.slice(0, start) + '\n' + input.slice(end))
+                        requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 1 })
+                      }
+                      return
+                    }
+                    e.preventDefault()
+                    send(autoUrgentOnEnter)
+                  }}
+                />
             </div>
           )}
           {/* 标准模式输入区；简易模式使用上方独立组件 */}

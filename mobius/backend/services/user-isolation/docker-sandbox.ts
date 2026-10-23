@@ -19,6 +19,7 @@ import {
 } from './config';
 import { exceptionPathsFor } from '../agent-sandbox';
 import { ensureTempRoot } from '../file-access';
+import { APP_DIR } from '../../config';
 import * as registry from './registry';
 
 const HOME = os.homedir();
@@ -77,6 +78,10 @@ export function mountsFor(userId: string): Array<{ host: string; mode: 'rw' | 'r
   push(path.join(CS_EXT_DIR, userId), 'rw');
   // harness runtime (只读, 版本随宿主)
   push(RUNTIME_DIR, 'ro');
+  // Mobius CLI 脚本 (只读): 同路径挂载, agent 在容器内可直接执行/加入 PATH.
+  // 脚本本身不含任何密钥, 凭证一律由会话环境变量提供.
+  // Mobius CLI scripts, mounted read-only at the same path so agents can run them.
+  push(path.join(APP_DIR, 'mobius', 'scripts', 'cli'), 'ro');
   return mounts;
 }
 

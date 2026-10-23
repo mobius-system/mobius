@@ -1,12 +1,20 @@
-import { useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Mic, Paperclip, RefreshCw, SendHorizontal, Sparkles, Square, Zap } from 'lucide-react'
-import { AdvancedInteractionBtn } from './advanced-interaction-btn'
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, ShieldAlert, Square, Zap } from 'lucide-react'
+import { SessionModelDropdown } from './quick-create-session'
+import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
+import { EasySessionToolMenu, type EasySessionLite, type EasyProjectOption } from './easy-session-tool-menu'
 import type { VoiceInputState } from '../services/assistant-voice'
 import type { Attachment } from './attachments'
 
 /**
  * create_session_mode: 欢迎页还没有会话，输入框只负责收集任务描述，提交后进入完整的新建会话配置。
  * follow_session_mode: 会话内的持续对话，带语音输入与加急发送等完整交互。
+ *
+ * UI 参考 issue 2026-10-13 用户截图 (MoneyPrinterTurbo) — 走扁平图标路线:
+ *   左侧 = + (选择文件/图片入口)  +  「完全访问」状态指示 (橙色盾牌, 仅 pc_client_metadata 存在时)
+ *   右侧 = 当前模型 (文字+chevron) | 语音输入 | 发送 (蓝色圆形)
+ *   智能体运行时 → 同一个按钮变为停止 (保持圆形 + 红色填充)
  */
 export type EasySessionChatInputMode = 'create_session_mode' | 'follow_session_mode'
 
@@ -17,7 +25,7 @@ type EasySessionChatInputCommonProps = {
   onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   /** create_session_mode 下只有普通发送，参数被忽略 */
   onSend: (urgent?: boolean) => void
-  onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
   /** 底部工具栏左侧的插槽: 欢迎页放 EasySessionConfigBar, 会话内放 EasySessionToolBar */
   toolbar?: ReactNode
 }
@@ -34,6 +42,18 @@ type CreateSessionModeProps = EasySessionChatInputCommonProps & {
   onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onRemoveAttachment: (id: string) => void
+  /** 欢迎页右下: 当前所选模型 key (来自 EasySessionConfigBar selection.model) */
+  welcomeModelKey?: string
+  /** 欢迎页右下: 切换模型回调 (写入 EasySessionConfigBar selection.model) */
+  onChangeWelcomeModel?: (model: string) => void
+  /** 欢迎页右下: 语音输入状态 (useVoiceInput) */
+  welcomeVoiceState?: VoiceInputState
+  /** 欢迎页右下: 语音按钮提示文案 */
+  welcomeVoiceTip?: string
+  /** 欢迎页右下: 切换语音录音 */
+  onToggleWelcomeVoice?: () => void
+  /** 嵌入模式: 去掉自己的圆角+边框, 由外层容器统一 */
+  embedded?: boolean
 }
 
 type FollowSessionModeProps = EasySessionChatInputCommonProps & {
@@ -48,16 +68,78 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   hasReadyAttachments: boolean
   hasPendingSend: boolean
   modelAvailable: boolean
-  /** 打开本地文件选择器上传附件 (与标准模式「更多输入功能 → 上传文件」同一动作) */
+  /** 打开本地文件选择器上传附件 */
   onUpload: () => void
-  /** 终止当前智能体正在执行的操作 (与标准模式标题栏的"终止"按钮同一动作) */
+  /** 终止当前智能体正在执行的操作 */
   onStop: () => void
-  /** 终止指令已发出后的反馈态: 按钮转红并脉冲, 1.8s 后自动回落 */
+  /** 终止指令已发出后的反馈态 */
   stopFeedbackActive?: boolean
+  /** 当前会话 id (供工具菜单高亮) */
+  sessionId?: string
   onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
   onFocus: () => void
   onBlur: (event: FocusEvent<HTMLDivElement>) => void
   onToggleVoice: () => void
+  /** 当前会话的模型 key, 用于在右侧展示当前模型 + 弹窗切换 */
+  sessionModelKey?: string
+  /** 当前会话的模型展示名 (例如 "DeepSeek V4.1 Flash · DeepSeek 高") */
+  sessionModelLabel?: string
+  /** 切换当前会话模型 (复用 PATCH /api/sessions/:id/model) */
+  onChangeSessionModel?: (model: string) => Promise<void> | void
+  /** 智能体是否正在工作 (用于合并按钮的 send → stop 切换) */
+  agentWorking?: boolean
+  /** 是否显示「完全访问」状态指示 (pc_client_metadata 存在时为 true) */
+  showContextAccess?: boolean
+  /** 完全访问模式文案 (默认 "完全访问", 后续可派生 hub/local 等) */
+  contextAccessLabel?: string
+  /** 工具菜单: 近期会话列表 (用于「切换会话」子菜单) */
+  recentSessions?: EasySessionLite[]
+  /** 工具菜单: 项目列表 (用于「切换项目」子菜单) */
+  projects?: EasyProjectOption[]
+  /** 工具菜单: 当前项目 id (高亮) */
+  currentProjectId?: string
+  /** 工具菜单: 切换会话回调 */
+  onSwitchSession?: (sessionId: string) => void
+  /** 工具菜单: 切换项目回调 (传 null 清除) */
+  onSwitchProject?: (projectId: string | null) => void
+  /** 工具菜单: 当前语言 */
+  language?: 'zh' | 'en'
+  /** 工具菜单: 切换语言回调 */
+  onChangeLanguage?: (next: 'zh' | 'en') => void
+  /** 工具菜单: 注入 Skill 回调 */
+  onInjectSkill?: () => void
+  /** 工具菜单: 注入 Memory 回调 */
+  onInjectMemory?: () => void
+  /** 工具菜单: 注入 Git 回调 */
+  onInjectGit?: () => void
+  /** 工具菜单: 文件改动回调 */
+  onOpenFileChanges?: () => void
+  /** 工具菜单: Bash 命令回调 */
+  onOpenBashCommands?: () => void
+  /** 工具菜单: 输入回放回调 */
+  onOpenInputReplay?: () => void
+  /** 工具菜单: 终端回调 */
+  onOpenTerminal?: () => void
+  /** 工具菜单: 可合作计算机回调 */
+  onOpenCooperablePc?: () => void
+  /** 工具菜单: 知识回调 */
+  onOpenKnowledge?: () => void
+  /** 工具菜单: 切换 JSONL 时间与序号 */
+  onToggleJsonlMeta?: () => void
+  /** 工具菜单: 当前 JSONL 时间与序号状态 */
+  showJsonlMeta?: boolean
+  /** 工具菜单: 发送项目知识 */
+  onSendProjectKnowledge?: () => void
+  /** 工具菜单: 项目知识发送中状态 */
+  projectKnowledgeSending?: boolean
+  /** 工具菜单: 当前 jsonl 条目数 */
+  jsonlEntryCount?: number
+  /** 工具菜单: 当前是否已连接 */
+  connectionReady?: boolean
+  /** 工具菜单: 是否有当前会话 (用于禁用 Skill/Memory/Git 按钮) */
+  hasSession?: boolean
+  /** 工具菜单: 是否有当前项目 (用于禁用 Git 按钮) */
+  hasProject?: boolean
 }
 
 export type EasySessionChatInputProps = CreateSessionModeProps | FollowSessionModeProps
@@ -74,14 +156,28 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const disabled = follow
     ? (!input.trim() && !follow.hasReadyAttachments) || follow.anyUploading || follow.hasPendingSend || follow.messageSubmitting || follow.voiceBusy || !follow.modelAvailable
     : (!input.trim() && !props.hasReadyAttachments) || props.anyUploading || submitBlocked
-  const sendBg = disabled ? (theme !== 'light' ? '#374151' : '#e5e7eb') : (theme !== 'light' ? '#ffffff' : '#111827')
-  const sendFg = disabled ? (theme !== 'light' ? '#6b7280' : '#9ca3af') : (theme !== 'light' ? '#111827' : '#ffffff')
-  const border = theme !== 'light' ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'
+  const isDark = theme !== 'light'
+  const border = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'
+  // 合并 send + stop: 智能体运行时同一个按钮变为终止, 其它时候仍为发送 (蓝色圆形 Codex 风格).
+  const canStop = !!follow && !!follow.agentWorking
+  // 蓝色 send 按钮: 不可用时灰底灰字; 可用时蓝底白字.
+  const sendBg = canStop
+    ? (follow.stopFeedbackActive ? '#b91c1c' : '#ef4444')
+    : disabled
+      ? (isDark ? '#3f3f46' : '#cbd5e1')
+      : '#2563eb'
+  const sendFg = canStop
+    ? '#ffffff'
+    : disabled
+      ? (isDark ? '#71717a' : '#94a3b8')
+      : '#ffffff'
   const sendTip = follow
-    ? follow.voiceBusy ? follow.voiceTip : follow.hasPendingSend || follow.messageSubmitting ? '正在提交上一条消息...' : '发送 (Enter)'
+    ? canStop
+      ? (follow.stopFeedbackActive ? '终止指令已发送' : '终止当前任务')
+      : follow.voiceBusy ? follow.voiceTip : follow.hasPendingSend || follow.messageSubmitting ? '正在提交上一条消息...' : '发送 (Enter)'
     : (props.mode === 'create_session_mode' && props.submitTooltip) || '开始新会话'
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (onKeyDown) {
       onKeyDown(event)
       return
@@ -94,8 +190,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const hasCreateAttachments = props.mode === 'create_session_mode' && props.attachments.length > 0
   // 输入框随内容长高, 封顶 = 初始高度的 3 倍 (会话内 96→288, 欢迎页 144→432), 超出后 textarea 内部滚动
   const isCreateMode = props.mode === 'create_session_mode'
-  const baseInputHeight = isCreateMode ? 144 : 96
-  const baseTextAreaHeight = isCreateMode ? 63 : 42
+  // 欢迎页与会话页同一套尺寸 (issue 2026-10-17 用户要求两者一致)
+  const baseInputHeight = 110
+  const baseTextAreaHeight = 56
   const chromeHeight = baseInputHeight - baseTextAreaHeight
   const maxInputHeight = baseInputHeight * 3
   const [textAreaHeight, setTextAreaHeight] = useState(baseTextAreaHeight)
@@ -123,12 +220,14 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
     <div
       data-tour="session-chat-input"
       data-mode={props.mode}
-      className="easy-session-chat-input relative min-w-0 w-full overflow-hidden rounded-[22px] transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
+      className="easy-session-chat-input relative min-w-0 w-full overflow-hidden rounded-[18px] transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
       style={{
         height: inputHeight,
         minHeight: 0,
         maxHeight: inputHeight,
-        background: 'color-mix(in srgb, var(--bg-secondary) 94%, transparent)',
+        // 比外层页面背景略浅, 形成轻微抬升感 (issue 2026-10-13 参考图)
+        // 浅色主题: 略暗于页面 (rgba 黑 0.04), 模拟 Codex 灰白卡片
+        background: isDark ? 'rgba(45, 52, 64, 0.65)' : 'rgba(0, 0, 0, 0.04)',
         border: `1px solid ${border}`,
         boxShadow: inputFocused
           ? '0 4px 20px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.02) inset'
@@ -150,7 +249,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         <div className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
           {props.attachments.map(attachment => (
             <div key={attachment.id} className="group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} title={attachment.error || attachment.name}>
-              {attachment.kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} className="h-7 w-7 rounded object-cover" /> : <Paperclip className="h-3 w-3 flex-shrink-0" />}
+              {attachment.kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} className="h-7 w-7 rounded object-cover" /> : <Plus className="h-3 w-3 flex-shrink-0" />}
               <span className="max-w-[150px] truncate">{attachment.name}</span>
               {attachment.status === 'uploading' ? <RefreshCw className="h-3 w-3 animate-spin" /> : attachment.status === 'error' ? <span className="text-red-400">失败</span> : null}
               <button type="button" onClick={() => props.onRemoveAttachment(attachment.id)} className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[length:var(--fs-sm)] opacity-70 hover:bg-red-500/20 hover:text-red-300" aria-label={`移除附件 ${attachment.name}`}>×</button>
@@ -160,12 +259,14 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
       )}
       <div className="px-3 pt-3 pb-2.5">
         {follow && !input && (
-          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 grid min-w-0 grid-cols-2 gap-x-3 text-[length:var(--fs-sm)] leading-[1.35] ml-[1%] mr-[50%]" style={{ color: 'var(--placeholder-color)' }}>
-            <span className="col-span-2 min-w-0 truncate">发送指令：</span>
-            <span className="min-w-0 truncate">· Shift+Enter 换行</span>
-            <span className="min-w-0 truncate">· Ctrl/⌘+V 粘贴文件/截图</span>
-            <span className="min-w-0 truncate">· ↑键回溯</span>
-            <span className="min-w-0 truncate">· @引用文件/智能体</span>
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)' }}>
+            <span className="flex-shrink-0">发送指令：</span>
+            <span className="flex min-w-0 items-center gap-2 truncate">
+              <span className="flex-shrink-0">· Shift+Enter 换行</span>
+              <span className="flex-shrink-0">· Ctrl/⌘+V 粘贴文件/截图</span>
+              <span className="flex-shrink-0">· ↑键回溯</span>
+              <span className="flex-shrink-0">· @引用文件/智能体</span>
+            </span>
           </div>
         )}
         <textarea
@@ -174,107 +275,419 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           onChange={onChange}
           onKeyDown={handleKeyDown}
           placeholder={follow && !input ? undefined : inputPlaceholder}
-          className="min-h-[42px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 text-[length:var(--fs-2xl)] leading-[1.6] focus:outline-none"
-          style={{ color: 'var(--text-primary)', height: textAreaHeight, maxHeight: maxInputHeight - chromeHeight }}
+          className="min-h-[56px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 pt-0 pb-1 leading-[1.6] focus:outline-none"
+          style={{ color: 'var(--text-primary)', height: textAreaHeight, maxHeight: maxInputHeight - chromeHeight, fontSize: 'var(--fs-lg)' }}
         />
       </div>
-      <div className="absolute bottom-0 left-0 right-0 flex h-9 min-w-0 items-center justify-end gap-2 overflow-hidden px-3 pb-1">
-        {props.toolbar ? (
-          <div className={`mr-auto flex min-w-0 items-center gap-1.5 overflow-hidden ${follow ? 'easy-session-tool-bar' : 'easy-session-config-bar'}`}>{props.toolbar}</div>
-        ) : !follow ? (
-          <span className="mr-auto flex min-w-0 items-center gap-1.5 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-            <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
-            <span className="truncate">提交后可配置项目、任务、模型和上下文</span>
-          </span>
-        ) : null}
-        {props.mode === 'create_session_mode' && (
-          <AdvancedInteractionBtn
-            onClick={props.onUpload}
-            label="上传文件"
-            tooltip="上传文件"
-            accent="blue"
-            motion="breathe"
-            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-            iconClassName="h-[17px] w-[17px]"
-            style={{ color: '#d1d5db' }}
-            icon={<Paperclip className="h-[17px] w-[17px]" />}
-          />
-        )}
-        {/* 上传附件: 标准模式把它收在「更多输入功能」菜单里, 简易模式只留这一个入口, 直接放在行内.
-            样式与同一行其它按钮一致 (无边框圆形, 见 Unify easy-mode chat input toolbar buttons). */}
-        {follow && (
-          <AdvancedInteractionBtn
-            onClick={follow.onUpload}
-            label="上传文件"
-            tooltip="上传文件"
-            accent="blue"
-            motion="breathe"
-            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-            iconClassName="h-[17px] w-[17px]"
-            style={{ color: '#d1d5db' }}
-            icon={<Paperclip className="h-[17px] w-[17px]" />}
-          />
-        )}
-        {follow && (
-          <AdvancedInteractionBtn
-            onClick={follow.onToggleVoice}
-            disabled={follow.messageSubmitting || follow.voiceState === 'transcribing'}
-            aria-pressed={follow.voiceState === 'recording'}
-            label={follow.voiceTip}
-            tooltip={follow.voiceTip}
-            accent="cyan"
-            motion="breathe"
-            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-            iconClassName="h-[17px] w-[17px]"
-            style={{ color: follow.voiceState === 'recording' ? '#f87171' : '#d1d5db' }}
-            icon={follow.voiceState === 'recording' ? <Square className="h-[17px] w-[17px]" fill="currentColor" /> : follow.voiceState === 'transcribing' ? <RefreshCw className="h-[17px] w-[17px] animate-spin" /> : <Mic className="h-[17px] w-[17px]" />}
-          />
-        )}
-        {/* Stop: 终止当前智能体正在执行的操作 — 与标准模式标题栏的"终止"同源 (handleStopSession)。
-            复用 .session-stop-button 系列样式, 保持两处终止按钮的配色与反馈动画一致。 */}
-        {follow && (
-          <AdvancedInteractionBtn
-            onClick={follow.onStop}
-            data-tour="session-chat-stop"
-            label="终止"
-            tooltip={follow.stopFeedbackActive ? '终止指令已发送' : '终止当前智能体正在执行的操作'}
-            accent="red"
-            motion="breathe"
-            className={`session-stop-button ${follow.stopFeedbackActive ? 'session-stop-button--active' : ''}`}
-            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-            iconClassName="h-[17px] w-[17px]"
-            icon={<Square className={`h-[10px] w-[10px] ${follow.stopFeedbackActive ? 'session-stop-button__square' : ''}`} fill="currentColor" />}
-          />
-        )}
-        {follow && (
-          <AdvancedInteractionBtn
-            onClick={() => follow.onSend(true)}
-            disabled={disabled}
-            data-tour="session-chat-send-urgent"
-            label="加急发送"
-            tooltip="发送（加急）— 打断当前输出并立即发送"
-            accent="amber"
-            motion="breathe"
-            buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-            iconClassName="h-[17px] w-[17px]"
-            style={{ color: '#d1d5db' }}
-            icon={<Zap className="h-[17px] w-[17px]" />}
-          />
-        )}
-        <AdvancedInteractionBtn
-          onClick={() => onSend()}
-          disabled={disabled}
-          data-tour="session-chat-send"
-          label="发送"
-          tooltip={sendTip}
-          accent="emerald"
-          motion="breathe"
-          buttonClassName="h-7 w-7 flex-shrink-0 rounded-full"
-          iconClassName="h-[18px] w-[18px]"
-          style={{ background: sendBg, color: sendFg, cursor: disabled ? 'not-allowed' : 'pointer' }}
-          icon={follow && (follow.anyUploading || follow.voiceState === 'transcribing') ? <RefreshCw className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-[18px] w-[18px]" strokeWidth={2.4} />}
-        />
+      {/* 底部按钮行: 扁平图标路线 (issue 2026-10-13 用户截图, 与 Codex 一致)
+            左侧: + 选择文件 + 「完全访问」状态指示
+            右侧: 模型切换 (文字+chevron) | 语音 | 发送 (蓝色圆形, 运行时变红色停止)
+            注意: 此行不能 overflow-hidden — 语音/终止按钮的脉冲光晕 (box-shadow) 需要溢出显示;
+            长文案裁切由内部各子容器自身的 overflow-hidden 负责 (config-bar / hint 行)。 */}
+      <div className="absolute bottom-0 left-0 right-0 flex h-10 min-w-0 items-center justify-between gap-2 px-3 pb-1.5">
+        {/* 左侧: 配置条 (欢迎页: 项目/任务/Skill·Memory) — 设备中枢选择 + Skill/Memory 注入 */}
+        <div className="flex min-w-0 items-center gap-3">
+          {/* 欢迎页: 配置条 (项目下拉 = 设备中枢选择, + SkillMemoryPicker) */}
+          {props.toolbar && props.mode === 'create_session_mode' && (
+            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden easy-session-config-bar">{props.toolbar}</div>
+          )}
+          {/* 会话内: 工具菜单按钮 (Plus 简化) - 用户参考图用 + 替代 Wrench, 后续在 EasyModePage 顶栏的会话工具展开完整 6 类 */}
+          {/* 会话内: 工具菜单按钮 (Wrench) - 弹出 6 类小工具 (切换会话/项目/语言 + 注入 Skill/Memory/Git) */}
+          {follow && (
+            <EasySessionToolMenu
+              isDark={isDark}
+              recentSessions={follow.recentSessions}
+              currentSessionId={follow.sessionId}
+              projects={follow.projects}
+              currentProjectId={follow.currentProjectId}
+              onSwitchSession={follow.onSwitchSession}
+              onSwitchProject={follow.onSwitchProject}
+              language={follow.language}
+              onChangeLanguage={follow.onChangeLanguage}
+              onInjectSkill={follow.onInjectSkill}
+              onInjectMemory={follow.onInjectMemory}
+              onInjectGit={follow.onInjectGit}
+              onOpenFileChanges={follow.onOpenFileChanges}
+              onOpenBashCommands={follow.onOpenBashCommands}
+              onOpenInputReplay={follow.onOpenInputReplay}
+              onOpenTerminal={follow.onOpenTerminal}
+              onOpenCooperablePc={follow.onOpenCooperablePc}
+              onOpenKnowledge={follow.onOpenKnowledge}
+              onToggleJsonlMeta={follow.onToggleJsonlMeta}
+              showJsonlMeta={follow.showJsonlMeta}
+              onSendProjectKnowledge={follow.onSendProjectKnowledge}
+              projectKnowledgeSending={follow.projectKnowledgeSending}
+              jsonlEntryCount={follow.jsonlEntryCount}
+              connectionReady={follow.connectionReady}
+              hasSession={!!follow.sessionId}
+              hasProject={!!follow.currentProjectId}
+            />
+          )}
+          {/* 完全访问状态指示: 仅在会话内有 pc_client_metadata 时显示 */}
+          {follow && follow.showContextAccess && (
+            <span
+              className="easy-context-access-chip inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium"
+              style={{ color: isDark ? '#fb923c' : '#ea580c' }}
+              title={`当前会话上下文模式: ${follow.contextAccessLabel || '完全访问'}`}
+            >
+              <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />
+              <span className="truncate">{follow.contextAccessLabel || '完全访问'}</span>
+            </span>
+          )}
+        </div>
+        {/* 右侧: 模型切换 | 附件上传 (Paperclip) | 语音 | 加急 | 发送/终止 (合并, 蓝色圆形 Codex 风格)
+            欢迎页与会话页同一套顺序与样式 (issue 2026-10-17 用户要求) */}
+        <div className="flex min-w-0 items-center gap-3">
+          {follow && (
+            <EasySessionModelPill
+              isDark={isDark}
+              modelLabel={follow.sessionModelLabel || ''}
+              modelKey={follow.sessionModelKey || ''}
+              onChange={async (model: string) => {
+                if (!follow.onChangeSessionModel) return
+                await follow.onChangeSessionModel(model)
+              }}
+              disabled={!follow.modelAvailable || follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
+            />
+          )}
+          {/* 欢迎页: 模型 pill (与会话页同款), 选中写入 EasySessionConfigBar selection.model */}
+          {props.mode === 'create_session_mode' && props.welcomeModelKey !== undefined && (
+            <EasySessionModelPill
+              isDark={isDark}
+              modelLabel=""
+              modelKey={props.welcomeModelKey}
+              onChange={model => props.onChangeWelcomeModel?.(model)}
+            />
+          )}
+          {/* 欢迎页: 附件上传按钮 (Paperclip, 与会话页同款) */}
+          {props.mode === 'create_session_mode' && (
+            <button
+              type="button"
+              onClick={props.onUpload}
+              aria-label="上传文件或图片"
+              title="上传文件或图片"
+              data-testid="easy-welcome-upload"
+              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ color: isDark ? '#d1d5db' : '#374151' }}
+            >
+              <Paperclip className="h-[18px] w-[18px]" strokeWidth={2} />
+            </button>
+          )}
+          {/* 欢迎页: 语音输入按钮 (与会话页同款样式; 录音中红色脉冲) */}
+          {props.mode === 'create_session_mode' && props.onToggleWelcomeVoice && (
+            <button
+              type="button"
+              onClick={props.onToggleWelcomeVoice}
+              disabled={props.welcomeVoiceState === 'transcribing'}
+              aria-pressed={props.welcomeVoiceState === 'recording'}
+              aria-label={props.welcomeVoiceTip || '语音输入'}
+              title={props.welcomeVoiceTip || '语音输入'}
+              data-testid="easy-welcome-voice"
+              className={`easy-icon-btn easy-icon-btn--voice inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${props.welcomeVoiceState === 'recording' ? 'easy-icon-btn--voice-active' : ''}`}
+              style={{
+                color: props.welcomeVoiceState === 'recording' ? '#f87171' : (isDark ? '#e5e7eb' : '#1f2937'),
+                background: props.welcomeVoiceState === 'recording' ? 'rgba(239,68,68,0.13)' : 'transparent',
+              }}
+            >
+              {props.welcomeVoiceState === 'recording' ? <Square className="h-3.5 w-3.5" fill="currentColor" /> : props.welcomeVoiceState === 'transcribing' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px]" strokeWidth={2} />}
+            </button>
+          )}
+          {/* 欢迎页: 加急发送按钮 (⚡, 与会话页同款; 欢迎页无输出可打断, 语义 = 直接提交) */}
+          {props.mode === 'create_session_mode' && (
+            <button
+              type="button"
+              onClick={() => onSend(true)}
+              disabled={disabled}
+              data-tour="session-chat-send-urgent"
+              aria-label="加急发送"
+              title="发送（加急）"
+              data-testid="easy-welcome-urgent"
+              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ color: '#f59e0b' }}
+            >
+              <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
+            </button>
+          )}
+          {follow && (
+            <button
+              type="button"
+              onClick={follow.onUpload}
+              aria-label="上传文件或图片"
+              title="上传文件或图片"
+              data-testid="easy-session-upload"
+              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ color: isDark ? '#d1d5db' : '#374151' }}
+            >
+              <Paperclip className="h-[18px] w-[18px]" strokeWidth={2} />
+            </button>
+          )}
+          {follow && (
+            <button
+              type="button"
+              onClick={follow.onToggleVoice}
+              disabled={follow.messageSubmitting || follow.voiceState === 'transcribing'}
+              aria-pressed={follow.voiceState === 'recording'}
+              aria-label={follow.voiceTip}
+              title={follow.voiceTip}
+              className={`easy-icon-btn easy-icon-btn--voice inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${follow.voiceState === 'recording' ? 'easy-icon-btn--voice-active' : ''}`}
+              style={{
+                color: follow.voiceState === 'recording' ? '#f87171' : (isDark ? '#e5e7eb' : '#1f2937'),
+                background: follow.voiceState === 'recording' ? 'rgba(239,68,68,0.13)' : 'transparent',
+              }}
+            >
+              {follow.voiceState === 'recording' ? <Square className="h-3.5 w-3.5" fill="currentColor" /> : follow.voiceState === 'transcribing' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px]" strokeWidth={2} />}
+            </button>
+          )}
+          {/* 加急发送 (闪电): 打断当前输出并立即发送, 沿用 AdvancedSessionActions 行为 */}
+          {follow && (
+            <button
+              type="button"
+              onClick={() => onSend(true)}
+              disabled={disabled}
+              data-tour="session-chat-send-urgent"
+              aria-label="加急发送"
+              title="发送（加急）— 打断当前输出并立即发送"
+              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ color: '#f59e0b' }}
+            >
+              <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
+            </button>
+          )}
+          {/* 发送/终止合并按钮: 蓝色圆形 Codex 风格; 运行态变红色 stop */}
+          <button
+            type="button"
+            onClick={canStop ? follow!.onStop : () => onSend()}
+            disabled={!canStop && disabled}
+            aria-label={canStop ? '终止当前任务' : '发送'}
+            title={sendTip}
+            data-tour={canStop ? 'session-chat-stop' : 'session-chat-send'}
+            className={`easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${canStop ? 'easy-send-btn--stop' : ''} ${follow?.stopFeedbackActive ? 'easy-send-btn--active' : ''}`}
+            style={{
+              background: sendBg,
+              color: sendFg,
+              cursor: !canStop && disabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {canStop ? (
+              <Square className="h-3 w-3" fill="currentColor" />
+            ) : follow && (follow.anyUploading || follow.voiceState === 'transcribing') ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <SendHorizontal className="h-[15px] w-[15px]" strokeWidth={2.4} />
+            )}
+          </button>
+          {/* 欢迎页没有 stop, 已经在上面统一渲染; 此分支只占位 */}
+        </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 会话内的"当前模型"显示按钮 (Codex 风格: 文字+下拉箭头, 点击弹 SessionModelDropdown).
+ * 复用 SessionModelDropdown 的选项/配额数据, 选中后由 onChange 回调上行 ——
+ * 父组件把新模型 POST 到 PATCH /api/sessions/:id/model, 这正是「修改模型并继续」的同一链路.
+ *
+ * 显示文案: 优先用服务端给的 label, 否则查 model-options 拿 title + sub (例如 "GLM-5.3 (最新) · DeepSeek 高").
+ */
+function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled }: {
+  isDark: boolean
+  modelLabel: string
+  modelKey: string
+  onChange: (model: string) => void
+  disabled?: boolean
+}) {
+  const { options, stats } = useSessionModelOptions()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
+  const popupRef = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+
+  // 过滤: 按 title / label / sub 模糊匹配
+  const filteredOptions = query.trim()
+    ? options.filter(opt => {
+        const q = query.trim().toLowerCase()
+        return (opt.title || '').toLowerCase().includes(q)
+          || (opt.label || '').toLowerCase().includes(q)
+          || (opt.sub || '').toLowerCase().includes(q)
+          || (opt.key || '').toLowerCase().includes(q)
+      })
+    : options
+
+  // 弹窗打开时自动聚焦搜索框
+  useLayoutEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => searchRef.current?.focus())
+    } else {
+      setQuery('')
+    }
+  }, [open])
+
+  // 派生"展示名": 1) 服务端给的 label; 2) options.title + options.sub 的前半截 (Codex 风格 "GLM-5.3 (最新) · DeepSeek 高");
+  // 3) 渠道兜底; 4) 原始 key.
+  const matched = options.find(opt => opt.key === modelKey)
+  const friendlyTitle = matched?.title || matched?.label || modelLabel || PROMPT_BACKEND_LABEL[promptBackendKeyForOption(matched)] || modelKey
+  // sub 通常是 "Codex · 强力" 这种, Codex 风格只取 · 前的渠道标签
+  const subFirst = matched?.sub?.split('·')[0]?.trim()
+  const displayText = subFirst && matched
+    ? `${friendlyTitle} · ${subFirst}`
+    : friendlyTitle
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const update = () => {
+      const el = buttonRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const width = Math.min(300, Math.max(240, window.innerWidth - 16))
+      setPos({
+        left: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8)),
+        bottom: Math.max(8, window.innerHeight - rect.top + 8),
+        width,
+      })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    const onClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (buttonRef.current?.contains(target)) return
+      if (popupRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClickOutside)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onClickOutside)
+    }
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="当前会话模型"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        title={disabled ? '当前不可切换模型' : `当前模型: ${displayText || modelKey || '(未设置)'}`}
+        onClick={() => setOpen(v => !v)}
+        className="easy-icon-btn easy-icon-btn--model inline-flex h-9 max-w-[280px] min-w-0 items-center gap-1.5 rounded-full px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        style={{
+          color: isDark ? '#e5e7eb' : '#1f2937',
+          background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
+        }}
+      >
+        <span className="truncate text-[length:var(--fs-md)] font-medium">{displayText || '模型'}</span>
+        <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popupRef}
+          role="menu"
+          aria-label="切换会话模型"
+          data-testid="easy-session-model-picker"
+          className="fixed z-[96] flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+          style={{
+            left: pos.left,
+            bottom: pos.bottom,
+            width: pos.width,
+            background: 'var(--modal-bg)',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 18px 48px -12px rgba(0,0,0,0.5)',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          {/* 搜索框 */}
+          <div className="flex flex-shrink-0 items-center gap-2 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
+            <Search className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  if (query) setQuery('')
+                  else setOpen(false)
+                }
+              }}
+              placeholder="搜索模型..."
+              className="min-w-0 flex-1 border-0 bg-transparent text-[length:var(--fs-sm)] outline-none placeholder:text-[length:var(--fs-xs)]"
+              style={{ color: 'var(--text-primary)' }}
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="清除搜索"
+                className="flex-shrink-0 text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                清除
+              </button>
+            )}
+          </div>
+          {/* 模型列表 */}
+          <div className="min-h-0 max-h-[360px] overflow-y-auto py-1">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-3 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
+                {query.trim() ? `未找到与「${query.trim()}」匹配的模型` : '暂无可用模型'}
+              </div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isSelected = opt.key === modelKey
+                const usage = stats?.model_usage_limits?.models?.[opt.key]
+                const blocked = !!usage?.blocked
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    role="menuitem"
+                    disabled={blocked}
+                    onClick={() => { setOpen(false); onChange(opt.key) }}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                    style={{
+                      background: isSelected ? 'rgba(59,130,246,0.12)' : undefined,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: isDark ? '#e5e7eb' : '#1f2937' }}>
+                          {opt.title || opt.label || opt.key}
+                        </span>
+                        {isSelected && (
+                          <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(59,130,246,0.18)', color: '#60a5fa' }}>当前</span>
+                        )}
+                      </div>
+                      {opt.sub && (
+                        <div className="mt-0.5 truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
+                          {opt.sub}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }

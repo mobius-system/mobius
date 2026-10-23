@@ -2,12 +2,12 @@
  * session-reminder-hook.ts — builders for the session reminder hook shared by
  * Claude Code and Codex.
  *
- * Both agents receive the same shell command: curl forwards the hook's stdin JSON
- * to the Mobius backend and echoes the response body back as the hook output.
- * Claude Code consumes it as a `command` handler in its settings file; Codex
- * consumes it as a `command` handler in its profile config. Everything that
- * decides whether a reminder is shown lives in the backend, so these builders
- * only produce transport config and must stay pure.
+ * Both agents run the same command: the `mobius_session_reminder` CLI forwards
+ * the hook's stdin JSON to the Mobius backend and echoes the response body back
+ * as the hook output. Claude Code consumes it as a `command` handler in its
+ * settings file; Codex consumes it as a `command` handler in its profile config.
+ * Everything that decides whether a reminder is shown lives in the backend, so
+ * these builders only produce transport config and must stay pure.
  */
 
 import * as crypto from 'crypto'
@@ -18,22 +18,62 @@ export const REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL = 'remote_target_local_tool'
 /** PreToolUse handler timeout in seconds (both agents support the field). */
 export const DEFAULT_REMINDER_HOOK_TIMEOUT_SECONDS = 5
 
-/** curl gives up before the handler timeout so a slow backend still returns cleanly. */
-export const DEFAULT_REMINDER_CURL_MAX_TIME_SECONDS = 3
-
 /** Claude Code tool names that act on the core host. */
 export const CLAUDE_REMINDER_MATCHER = 'Bash|Edit|Write'
 
 /** Codex canonical names; Write/Edit are accepted aliases of apply_patch. */
 export const CODEX_REMINDER_MATCHER = 'Bash|apply_patch'
 
+/**
+ * Docker sandbox bridge gateway on the host. Inside a sandbox container
+ * 127.0.0.1 is the container itself, so isolated sessions must call the backend
+ * through this address (same convention as token-proxy and
+ * materializeSettingsForSbx).
+ */
+export const SANDBOX_GATEWAY_IP = '172.28.0.1'
+
+export interface ReminderHookBaseUrlOptions {
+  /** True when the session runs inside a Docker sandbox container. */
+  isolated: boolean
+  /** Port the Mobius backend is reachable on from the caller's network. */
+  backendPort: number
+  /** Override for tests / non-default docker networks. */
+  gatewayIp?: string
+}
+
+/**
+ * Pick the base URL the hook must use for this session.
+ *
+ * Host sessions talk to loopback; sandbox sessions talk to the host bridge
+ * gateway, because their loopback is the container itself.
+ */
+export function reminderHookBaseUrl(options: ReminderHookBaseUrlOptions): string {
+  const port = Number(options.backendPort)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`invalid backend port: ${options.backendPort}`)
+  }
+  const host = options.isolated
+    ? String(options.gatewayIp || SANDBOX_GATEWAY_IP).trim()
+    : '127.0.0.1'
+  if (!/^[0-9.]+$|^[A-Za-z0-9.-]+$/.test(host)) {
+    throw new Error(`invalid hook host: ${host}`)
+  }
+  return `http://${host}:${port}`
+}
+
+/** Name of the per-session JSON file carrying base URL, session id and token. */
+export const REMINDER_HOOK_CONFIG_FILENAME = 'mobius-reminder-hook.json'
+
 export interface ReminderHookCommandOptions {
-  /** Backend origin, e.g. http://127.0.0.1:45616 or the sandbox gateway origin. */
-  baseUrl: string
+  /** Absolute path to the mobius_session_reminder CLI (same path host and sandbox). */
+  cliPath: string
+  /**
+   * Absolute path to the per-session config file. The command must not depend on
+   * environment variables: the agent process can be respawned without them.
+   */
+  configPath: string
   /** Defaults to REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL. */
   reminderType?: string
-  /** Defaults to DEFAULT_REMINDER_CURL_MAX_TIME_SECONDS. */
-  maxTimeSeconds?: number
 }
 
 export interface ReminderHookHandlerOptions {
@@ -44,38 +84,29 @@ export interface ReminderHookHandlerOptions {
 }
 
 /**
- * Build the decide endpoint URL and reject anything that could break out of the
- * shell-quoted command or the JSON/TOML config.
+ * Command shared by both agents: invoke the CLI with its per-session config file.
+ *
+ * The CLI reads the hook JSON from stdin, loads base URL + session id + token
+ * from `configPath`, and prints the response verbatim. Environment variables are
+ * deliberately not part of this contract: when an agent window is respawned
+ * after an interrupt, the new process may not carry them.
  */
-export function reminderHookUrl({ baseUrl, reminderType }: ReminderHookCommandOptions): string {
-  const type = String(reminderType || REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL)
+export function buildReminderHookCommand(options: ReminderHookCommandOptions): string {
+  const type = String(options.reminderType || REMINDER_TYPE_REMOTE_TARGET_LOCAL_TOOL)
   if (!/^[A-Za-z0-9_-]+$/.test(type)) {
     throw new Error(`invalid reminder type: ${type}`)
   }
-  const base = String(baseUrl || '').trim().replace(/\/+$/, '')
-  if (!/^https?:\/\/[^\s'"]+$/.test(base)) {
-    throw new Error(`invalid reminder hook base url: ${baseUrl}`)
+  const cliPath = String(options.cliPath || '').trim()
+  const configPath = String(options.configPath || '').trim()
+  // 只允许安全字符: 这两个值会被原样写进 shell / JSON / TOML
+  // Restrict to shell-safe characters; both values are embedded in shell, JSON and TOML
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(cliPath)) {
+    throw new Error(`invalid reminder hook cli path: ${options.cliPath}`)
   }
-  return `${base}/api/internal/session-reminders/${type}/decide`
-}
-
-/**
- * Shell command shared by both agents.
- *
- * It reads the hook JSON from stdin and prints the backend response verbatim, so
- * the backend's `hookSpecificOutput.additionalContext` becomes the hook output.
- * The token is expanded by the shell from MOBIUS_HOOK_TOKEN, keeping the session
- * secret out of the generated config file.
- */
-export function buildReminderHookCommand(options: ReminderHookCommandOptions): string {
-  const url = reminderHookUrl(options)
-  const maxTime = Number(options.maxTimeSeconds ?? DEFAULT_REMINDER_CURL_MAX_TIME_SECONDS)
-  if (!Number.isFinite(maxTime) || maxTime <= 0 || maxTime > 60) {
-    throw new Error(`invalid curl max-time: ${options.maxTimeSeconds}`)
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(configPath)) {
+    throw new Error(`invalid reminder hook config path: ${options.configPath}`)
   }
-  // 只使用单引号，配置写进 JSON/TOML 都不需要额外转义
-  // Single quotes only, so the command needs no extra escaping in JSON or TOML
-  return `curl -sS --max-time ${Math.floor(maxTime)} -X POST '${url}' -H 'content-type: application/json' -H 'x-mobius-hook-token: '$MOBIUS_HOOK_TOKEN --data-binary @-`
+  return `${cliPath} --config ${configPath} --type ${type}`
 }
 
 /** Claude Code settings fragment: a PreToolUse command hook group. */
@@ -123,13 +154,24 @@ export function codexReminderHookToml(
   ].join('\n')
 }
 
-/** Session-scoped hook token: HMAC over the agent session id. */
+/** Session-scoped hook token: HMAC over the Mobius session id. */
 export function reminderHookToken(sessionId: string, secret: string): string {
   const sid = String(sessionId || '')
   const key = String(secret || '')
   if (!sid) throw new Error('sessionId is required')
   if (!key) throw new Error('secret is required')
   return crypto.createHmac('sha256', key).update(`reminder:${sid}`).digest('base64url')
+}
+
+/** Constant-time check of a presented hook token. */
+export function verifyReminderHookToken(candidate: string, sessionId: string, secret: string): boolean {
+  try {
+    const expected = Buffer.from(reminderHookToken(sessionId, secret))
+    const presented = Buffer.from(String(candidate || ''))
+    return presented.length === expected.length && crypto.timingSafeEqual(presented, expected)
+  } catch {
+    return false
+  }
 }
 
 function boundedTimeout(value: number | undefined): number {

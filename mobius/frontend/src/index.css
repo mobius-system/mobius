@@ -704,7 +704,7 @@ label,
   --input-border: rgba(0, 0, 0, 0.12);
   --modal-bg: #ffffff;
   --menu-bg: #ffffff;
-  --placeholder-color: #64748b;
+  --placeholder-color: #94a3b8;
   --accent-primary: #2563eb;
   --accent-secondary: #0d9488;
   --assistant-panel-border: rgba(15, 23, 42, .12);
@@ -6092,11 +6092,17 @@ body.mobius-resizing .mobius-resizable-handle {
 [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
   overflow: visible;
   min-height: 0 !important;
-  border-radius: 11px !important;
-  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent) !important;
+  border-radius: 18px !important;
+  background: rgba(45, 52, 64, 0.65) !important;
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
   box-shadow: 0 20px 54px rgba(0, 0, 0, .18), inset 0 1px 0 color-mix(in srgb, white 7%, transparent) !important;
+}
+.light .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"],
+.light [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
+  /* 浅色主题: 纯白卡片浮在浅灰页面上 (靠阴影分层, 不再叠灰罩) */
+  background: #ffffff !important;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .10), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input textarea {
   font-size: var(--fs-2xl);
@@ -6223,22 +6229,24 @@ body:has([data-page="easy-mode"]) .easy-sidebar-primary {
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-nav {
   display: flex;
-  min-height: 30px;
+  min-height: 32px;
   width: 100%;
   align-items: center;
-  gap: 7px;
-  border-radius: 7px;
-  padding: 5px 7px;
+  gap: 9px;
+  border-radius: 999px; /* 胶囊 hover, 与输入框按钮语言一致 (issue 2026-10-20 图标统一) */
+  padding: 5px 10px;
   color: var(--text-secondary);
   text-align: left;
   font-size: var(--fs-md);
   font-weight: 450;
   transition: background .14s ease, color .14s ease;
 }
-body:has([data-page="easy-mode"]) .easy-sidebar-nav > svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 1.8;
+body:has([data-page="easy-mode"]) .easy-sidebar-nav > svg,
+body:has([data-page="easy-mode"]) .easy-nav-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  flex: 0 0 auto;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-nav:hover:not(:disabled),
 body:has([data-page="easy-mode"]) .easy-sidebar-nav.is-active {
@@ -6246,7 +6254,11 @@ body:has([data-page="easy-mode"]) .easy-sidebar-nav.is-active {
   color: var(--text-primary);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-nav.is-active {
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent-primary) 76%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-primary) 13%, transparent);
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-nav.is-active > svg,
+body:has([data-page="easy-mode"]) .easy-sidebar-nav.is-active .easy-nav-icon {
+  color: var(--accent-primary);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-nav:disabled {
   cursor: default;
@@ -6287,13 +6299,15 @@ body:has([data-page="easy-mode"]) .easy-sidebar-tools__label {
 /* 标签前的模式图标: 行内排布随文字一起参与省略号截断, 不额外增加行高 */
 body:has([data-page="easy-mode"]) .easy-sidebar-tools__label-icon {
   display: inline-block;
-  /* 尺寸/右边距与 .easy-sidebar-nav 的图标一致 (14px + gap 7px), 图标列与文字列才对得上 */
-  width: 14px;
-  height: 14px;
+  /* 与 .easy-sidebar-nav 图标同规格 (16px / stroke 2), 全站图标语言统一 (issue 2026-10-20) */
+  width: 16px;
+  height: 16px;
   margin-right: 7px;
-  /* -2.5 而非整数: 与 12px 文字基线配平后, 图标中心与文字中心正好重合 */
-  vertical-align: -2.5px;
-  stroke-width: 1.8;
+  /* 与 12px 文字基线配平, 图标中心与文字中心重合 */
+  vertical-align: -3px;
+  stroke-width: 2;
+  /* 图标亮度与按钮图标同档 (标签文字保持 muted, 图标提亮到 secondary 一级) */
+  color: var(--text-secondary);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-tools button,
 body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
@@ -6305,15 +6319,20 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
-  color: var(--text-muted);
+  border-radius: 999px; /* 圆形 hover, 与输入框按钮同款 (issue 2026-10-20 图标统一) */
+  /* 颜色与输入框图标同档 (暗色 #d1d5db / 浅色 #374151), 不再用更暗的 text-muted */
+  color: #d1d5db;
   transition: background .14s ease, color .14s ease;
+}
+.light body:has([data-page="easy-mode"]) .easy-sidebar-tools button,
+.light body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
+  color: #374151;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-tools button > svg,
 body:has([data-page="easy-mode"]) .easy-sidebar-footer button > svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 1.8;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-tools button:hover,
 body:has([data-page="easy-mode"]) .easy-sidebar-tools button.is-active,
@@ -6321,6 +6340,11 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button:hover,
 body:has([data-page="easy-mode"]) .easy-sidebar-footer button.is-active {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+/* 左下角快捷入口: active 态蓝色 (记忆与技能面板打开时) */
+body:has([data-page="easy-mode"]) .easy-sidebar-footer .easy-footer-btn.is-active {
+  background: color-mix(in srgb, var(--accent-primary) 13%, transparent);
+  color: var(--accent-primary);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-tools__count {
   display: inline-flex;
@@ -6459,25 +6483,28 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session-row:focus-within .easy-s
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session__action {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: none;
+  border-radius: 999px; /* 圆形 hover, 与全站图标语言一致 (issue 2026-10-20) */
   color: var(--text-muted);
   background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
-  transition: color .14s ease, background .14s ease, border-color .14s ease;
+  transition: color .14s ease, background .14s ease;
+}
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action > svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session__action--rename:hover {
   color: var(--accent-primary);
-  border-color: color-mix(in srgb, var(--accent-primary) 30%, transparent);
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 13%, transparent);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session__action--delete:hover {
   color: #f87171;
-  border-color: rgba(248, 113, 113, .24);
-  background: rgba(239, 68, 68, .10);
+  background: rgba(239, 68, 68, .12);
 }
 body:has([data-page="easy-mode"]) .easy-sidebar-session:hover,
 body:has([data-page="easy-mode"]) .easy-sidebar-session--active {
@@ -6736,9 +6763,6 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   outline-offset: 3px;
   border-radius: 3px;
 }
-[data-page="easy-mode"] .easy-welcome-card .easy-session-chat-input {
-  border-top-left-radius: 0 !important;
-}
 [data-page="easy-mode"] #easy-welcome-composer {
   position: relative;
 }
@@ -6792,6 +6816,48 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-welcome-card .mobius-chat-body--easy { min-height: 0; }
 [data-page="easy-mode"] .easy-welcome-logo { display: block; margin: 0 0 14px; }
 [data-page="easy-mode"] .easy-welcome-card h1 { margin: 0 0 22px; color: var(--text-primary); font-size: var(--fs-2xl); font-weight: 700; line-height: 1.32; letter-spacing: -.025em; }
+
+/* ===== 欢迎页头部重设计 (issue 2026-10-19): 品牌行 + 主标题 + 副标题 ===== */
+[data-page="easy-mode"] .easy-welcome-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+[data-page="easy-mode"] .easy-welcome-brand__logo { display: block; flex: 0 0 auto; }
+[data-page="easy-mode"] .easy-welcome-brand__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text-primary);
+}
+[data-page="easy-mode"] .easy-welcome-brand__divider {
+  width: 1px;
+  height: 14px;
+  background: color-mix(in srgb, var(--border-color) 120%, transparent);
+}
+[data-page="easy-mode"] .easy-welcome-brand__tag {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  letter-spacing: .08em;
+}
+[data-page="easy-mode"] .easy-welcome-headline {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -.02em;
+  text-align: center;
+}
+[data-page="easy-mode"] .easy-welcome-sub {
+  margin: 0 0 26px;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  text-align: center;
+}
 [data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
 [data-page="easy-mode"] .easy-welcome-suggestions span { border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent); border-radius: 999px; padding: 9px 15px; color: var(--text-secondary); background: var(--bg-primary); font-size: var(--fs-md); }
 [data-page="easy-mode"] .easy-content--context { display: flex; flex-direction: column; overflow: hidden; }
@@ -7269,9 +7335,10 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 }
 .light .jsonl-entry-card > summary .text-orange-300 { color: var(--initial-accent-text); }
 
-/* 简易模式内容统一限制字体上限，避免历史 Markdown 或卡片组件放大主体排版。 */
+/* 简易模式内容统一限制字体上限，避免历史 Markdown 或卡片组件放大主体排版。
+   注: 用 max(13px, inherit) 强制下限 = 13px, 避免 body { font-size: 11px } 通过 min() 把字缩到 11px. */
 .mobius-chat-body.mobius-chat-body--easy * {
-  font-size: min(var(--fs-lg), 1em) !important;
+  font-size: var(--fs-lg) !important;
 }
 :root {
   --display-files-border: color-mix(in srgb, var(--border-color) 82%, transparent);
@@ -7328,3 +7395,134 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 }
 .display-files-card__download:hover { border-color: #38bdf8; background: var(--bg-hover); color: var(--text-primary); }
 .display-files-card--easy { margin-left: 8px; }
+
+/* ===== 简易模式输入框底部按钮样式 (issue 2026-10-13 用户截图对齐) =====
+ * 扁平图标路线 (Codex 风格): + / 模型 / 语音 全是圆形 transparent 按钮, 仅 hover 浅底.
+ * 发送按钮 = 蓝色 36×36 圆形 (#2563eb); 运行态变红色 (#ef4444).
+ */
+/* 默认圆按钮通用基础 */
+.easy-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: background-color .15s ease, color .15s ease, transform .12s ease;
+}
+.easy-icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-card-hover) 80%, transparent) !important;
+}
+.easy-icon-btn:active:not(:disabled) {
+  transform: scale(.94);
+}
+.easy-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+/* 模型按钮: 文字 + chevron, 仅 hover 浅底 */
+.easy-icon-btn--model:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent) !important;
+}
+/* 录音中: 红色脉冲 */
+.easy-icon-btn--voice.easy-icon-btn--voice-active {
+  animation: easy-voice-pulse 1.4s ease-in-out infinite;
+}
+@keyframes easy-voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+  50% { box-shadow: 0 0 0 6px rgba(239,68,68,.18); }
+}
+/* 发送/停止按钮: 36×36 圆形 (h-9 w-9) */
+.easy-send-btn {
+  box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.04);
+}
+.easy-send-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.easy-send-btn--stop {
+  animation: easy-stop-pulse 1.6s ease-in-out infinite;
+}
+.easy-send-btn--stop.easy-send-btn--active {
+  animation: none;
+}
+@keyframes easy-stop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0), 0 1px 2px rgba(0,0,0,.12); }
+  50% { box-shadow: 0 0 0 5px rgba(239,68,68,.22), 0 1px 2px rgba(0,0,0,.12); }
+}
+/* 完全访问状态 chip: 橙色盾牌 + 文字 */
+.easy-context-access-chip {
+  line-height: 1;
+}
+
+/* ===== 输入框流光描边 (方案 5, issue 2026-10-17) =====
+ * 一段渐变亮弧沿输入框四边缓慢巡游 (4s 一圈), 像待机呼吸灯;
+ * 聚焦时亮弧增强并出现静态柔光边. 纯 CSS (@property 动画角度), GPU 合成.
+ * 实现: 外层 wrapper 用 conic-gradient 做边, 内层内容区盖住中间只剩 1px 边缘. */
+@property --easy-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.easy-input-glow {
+  position: relative;
+  border-radius: 18px;
+  padding: 1px; /* 描边厚度 */
+  background:
+    conic-gradient(from var(--easy-border-angle),
+      transparent 0deg,
+      transparent 250deg,
+      rgba(96, 165, 250, 0.0) 280deg,
+      rgba(96, 165, 250, 0.45) 320deg,
+      rgba(147, 197, 253, 0.75) 340deg,
+      transparent 360deg),
+    rgba(255, 255, 255, 0.10); /* 底色描边 (静止时也能看到完整边界) */
+  animation: easy-border-spin 4.5s linear infinite;
+}
+.easy-input-glow > .easy-session-chat-input {
+  border: none !important; /* 描边由外层承担, 内层不重复画 */
+}
+/* 聚焦: 亮弧更亮 + 静态柔光 */
+.easy-input-glow:focus-within {
+  background:
+    conic-gradient(from var(--easy-border-angle),
+      transparent 0deg,
+      transparent 220deg,
+      rgba(96, 165, 250, 0.15) 270deg,
+      rgba(96, 165, 250, 0.7) 320deg,
+      rgba(147, 197, 253, 0.95) 342deg,
+      transparent 360deg),
+    rgba(255, 255, 255, 0.16);
+  animation-duration: 2.8s;
+  box-shadow: 0 0 22px rgba(59, 130, 246, 0.14);
+}
+@keyframes easy-border-spin {
+  to { --easy-border-angle: 360deg; }
+}
+/* 浅色主题: 白卡片 + 柔灰底边 + 亮白流光扫过 (白色高光衬在灰边上), 聚焦时边色转品牌蓝 */
+.light .easy-input-glow {
+  background:
+    conic-gradient(from var(--easy-border-angle),
+      transparent 0deg,
+      transparent 245deg,
+      rgba(255, 255, 255, 0.0) 275deg,
+      rgba(255, 255, 255, 0.9) 318deg,
+      #ffffff 342deg,
+      transparent 360deg),
+    rgba(100, 116, 139, 0.35);
+}
+.light .easy-input-glow:focus-within {
+  background:
+    conic-gradient(from var(--easy-border-angle),
+      transparent 0deg,
+      transparent 220deg,
+      rgba(147, 197, 253, 0.4) 265deg,
+      rgba(255, 255, 255, 0.95) 320deg,
+      #ffffff 344deg,
+      transparent 360deg),
+    rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.18);
+}
+/* 动效降级: 亮弧停止, 保留静态描边 */
+@media (prefers-reduced-motion: reduce) {
+  .easy-input-glow {
+    animation: none;
+  }
+}

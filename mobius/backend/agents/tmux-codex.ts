@@ -40,7 +40,18 @@ const {
 import type { MobiusPromptRecord } from '../services/mobius-agent-history'
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): 容器路由 + CODEX_HOME 按用户重定向 (auth.json 绝不进容器)
-const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, SBX_GATEWAY_IP } = require('../services/user-isolation')
+const { prepareSpawn, codexHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, containerForWindow, isolationActiveFor, sandboxPolicyFor, sessionConfigDir, SBX_GATEWAY_IP } = require('../services/user-isolation')
+const { resolveDispatchIdentity } = require('../services/session-dispatch-identity')
+const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
+const { injectCodexReminderHook, writeReminderHookConfig } = require('../services/session-hook-inject')
+const {
+  buildReminderHookCommand,
+  codexReminderHookToml,
+  reminderHookBaseUrl,
+  reminderHookToken,
+  CODEX_REMINDER_MATCHER,
+  REMINDER_HOOK_CONFIG_FILENAME,
+} = require('../services/session-reminder-hook')
 const { watch: watchJsonlFile } = require('../services/jsonl-watcher')
 const {
   timeConsumeWaterfallFromBackend,
@@ -55,7 +66,7 @@ const {
   safeRemoveRunningFlag,
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
-const { MOBIUS_DATA_PATH, TOKEN_PROXY_BASE_URL } = require('../config')
+const { MOBIUS_DATA_PATH, TOKEN_PROXY_BASE_URL, APP_DIR, JWT_SECRET, PORT: MOBIUS_PORT } = require('../config')
 const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 const { encodeProxyToken } = require('../token-proxy/encoding')
@@ -346,8 +357,19 @@ const WITH_PROXY_SUFFIX_RE = /(?:\.withproxy\.|withproxy_)[A-Za-z0-9_-]*$/
 // A profile key restored from runtime may carry the withproxy suffix; strip it back to the base
 // channel first. Channels are letters-only, so a suffixed name fails normalizeCodexChannel and the
 // respawn would fail outright.
+const HOOK_PROFILE_SUFFIX_RE = /hook_[A-Za-z0-9_-]*$/
+
 function baseProfileKeyOf(key: unknown): string {
-  return String(key || '').trim().replace(WITH_PROXY_SUFFIX_RE, '')
+  // 逐层剥掉运行时追加的后缀 (withproxy / hook), 重启后能回到基础渠道名
+  // Strip runtime-added suffixes (withproxy / hook) layer by layer so a restart
+  // resolves back to the base channel profile.
+  let out = String(key || '').trim()
+  for (let i = 0; i < 4; i += 1) {
+    const next = out.replace(WITH_PROXY_SUFFIX_RE, '').replace(HOOK_PROFILE_SUFFIX_RE, '')
+    if (next === out) break
+    out = next
+  }
+  return out
 }
 
 function codexWithProxyPathFor(profileKey: string, sessionId: string, userId?: string | null): string {
@@ -750,6 +772,8 @@ interface CodexRuntimeEntry {
   codexConfigPath: string | null
   codexSecretEnvKey: string | null
   withProxyPath?: string | null
+  withHookProfilePath?: string | null
+  withHookConfigPath?: string | null
   captureStream?: boolean
   useProxy: boolean
   proxyMode: string
@@ -826,6 +850,9 @@ class TmuxCodexBackend extends AgentBackend {
             codexProfileKey: p.codexProfileKey || null,
             codexConfigPath: p.codexConfigPath || null,
             codexSecretEnvKey: p.codexSecretEnvKey || null,
+            withProxyPath: p.withProxyPath || null,
+            withHookProfilePath: p.withHookProfilePath || null,
+            withHookConfigPath: p.withHookConfigPath || null,
             useProxy: normalizeUseProxy(p.useProxy, false),
             proxyMode: normalizeProxyMode4(p?.proxyMode, 'direct'),
             displayName: p.displayName || null,
@@ -843,6 +870,9 @@ class TmuxCodexBackend extends AgentBackend {
             codexProfileKey: entry.codexProfileKey,
             codexConfigPath: entry.codexConfigPath,
             codexSecretEnvKey: entry.codexSecretEnvKey,
+            withProxyPath: entry.withProxyPath,
+            withHookProfilePath: entry.withHookProfilePath,
+            withHookConfigPath: entry.withHookConfigPath,
             useProxy: entry.useProxy,
             proxyMode: entry.proxyMode,
             displayName: entry.displayName,
@@ -1452,6 +1482,12 @@ class TmuxCodexBackend extends AgentBackend {
     if (entry?.watch?.stop) { try { entry.watch.stop() } catch {} }
     // Clean up the per-session withproxy file (digital-rain token).
     if (entry?.withProxyPath) { try { fs.unlinkSync(entry.withProxyPath) } catch {} }
+    // 会话级 profile 副本 (含提醒钩子) 随会话删除
+    // The per-session profile copy (with the reminder hook) dies with the session.
+    if (entry?.withHookProfilePath) { try { fs.unlinkSync(entry.withHookProfilePath) } catch {} }
+    // 会话级钩子配置 (base/session/token) 随会话删除
+    // The per-session hook config dies with the session.
+    if (entry?.withHookConfigPath) { try { fs.unlinkSync(entry.withHookConfigPath) } catch {} }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1599,6 +1635,19 @@ class TmuxCodexBackend extends AgentBackend {
   // Start a new Codex tmux window and return the launch info used to bind its rollout later.
   async _spawnWindow({ sessionId, userId, cwd, flagRoot, model, useProxy, proxyMode, codexProfileKey, codexChannel, codexConfigPath, codexSecretEnvKey, codexSecretValue, displayName, agentSessionId, captureStream = false, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy = null }: CodexDispatchOpts) {
     if (!sessionId || !cwd) throw new Error('_spawnWindow requires sessionId + cwd')
+    // 入口兜底: 中断后加急重开只带一部分参数, 缺失的 userId/远端绑定从会话行补齐.
+    // Entry fallback: interrupt-and-resume respawns forward only a subset of options;
+    // fill userId / aimux binding from the session row.
+    const identity = resolveDispatchIdentity(sessionId, { userId, aimuxRemoteName, aimuxGuiAuthorized })
+    userId = identity.userId || userId
+    aimuxRemoteName = identity.aimuxRemoteName || aimuxRemoteName
+    aimuxGuiAuthorized = identity.aimuxGuiAuthorized ?? aimuxGuiAuthorized
+    if (!sandboxPolicy && userId && identity.role !== 'admin') {
+      sandboxPolicy = sandboxPolicyFor(
+        { id: userId, role: identity.role },
+        { userId: String(userId), projectId: identity.projectId, workDir: cwd },
+      ) || null
+    }
     // Make sure the tmux hub session that hosts agent windows exists.
     ensureHub()
     // Launch time, later written into runtime and persisted state.
@@ -1635,6 +1684,8 @@ class TmuxCodexBackend extends AgentBackend {
     let finalProfileKey = profileKey
     let withProxyPath: string | null = null
     let withProxyToken: string | null = null
+    let withHookProfilePath: string | null = null
+    let withHookConfigPath: string | null = null
     if (captureStream) {
       try {
         const baseUrl = tomlStringValue(configText, 'base_url')
@@ -1649,6 +1700,38 @@ class TmuxCodexBackend extends AgentBackend {
         console.warn(`[tmux-codex] per-session withproxy 生成失败, 回落原 profile (${sessionId}): ${e?.message || e}`)
         withProxyPath = null
         withProxyToken = null
+      }
+    }
+    // 有远端目标才装提醒钩子: 基于当前生效的 profile 生成会话级副本, 共享配置不动
+    // Install the reminder hook only for remote-target sessions: copy the effective
+    // profile into a per-session file so the shared model config stays untouched.
+    if (aimuxRemoteName) {
+      try {
+        const safeSid = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '_')
+        const hookProfileKey = `${finalProfileKey}hook_${safeSid}`
+        // 钩子配置落文件: 重开时环境变量可能丢失, 文件仍在
+        // Hook config lives in a file: a respawned agent may lose the env vars
+        withHookConfigPath = writeReminderHookConfig(
+          path.join(sessionConfigDir(String(userId), sessionId), REMINDER_HOOK_CONFIG_FILENAME),
+          {
+            base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
+            session_id: sessionId,
+            token: reminderHookToken(sessionId, JWT_SECRET),
+          },
+        )
+        const hookCommand = buildReminderHookCommand({
+          cliPath: path.join(APP_DIR, 'mobius', 'scripts', 'cli', 'mobius_session_reminder'),
+          configPath: withHookConfigPath,
+        })
+        withHookProfilePath = path.join(codexHomeFor(userId), `${hookProfileKey}.config.toml`)
+        injectCodexReminderHook({
+          sourcePath: withProxyPath || expectedConfigPath,
+          destPath: withHookProfilePath,
+          tomlBlock: codexReminderHookToml(hookCommand, { matcher: CODEX_REMINDER_MATCHER }),
+        })
+        finalProfileKey = hookProfileKey
+      } catch (e: any) {
+        console.warn(`[tmux-codex] reminder hook 注入失败 (${sessionId}): ${e?.message || e}`)
       }
     }
     // useProxy is fully decoupled from the profile: it only picks the network tier.
@@ -1679,6 +1762,9 @@ class TmuxCodexBackend extends AgentBackend {
     // the secret env var named by the TOML env_key inside the tmux command.
     // Assemble the Codex CLI args: model, cwd, and the approval/sandbox bypass.
     const codexArgs = ['-m', finalModel, '-C', cwd, '--dangerously-bypass-approvals-and-sandbox']
+    // 远端会话装了提醒钩子: 信任审查会卡住后台会话, 与 approvals bypass 同口径跳过
+    // Remote sessions run our hook: skip the trust review just like the approvals bypass.
+    if (aimuxRemoteName) codexArgs.push('--dangerously-bypass-hook-trust')
     // TUI/Electron sessions (add_remote_aimux_mcp + aimux_id): inject the aimux stdio MCP server so
     // codex drives the remote workstation through its MCP tools
     // (remote_execute/read_file/write_file/ping/apply_patch).
@@ -1719,12 +1805,19 @@ class TmuxCodexBackend extends AgentBackend {
     // The profile arg always points at the normalized channel/profile.
     const profileArg = `--profile ${shellQuote(finalProfileKey)}`
 
+    // 会话级 CLI 环境: PATH + 后端地址 + 令牌, 宿主与沙箱只差一个地址
+    // Per-session CLI env: PATH, backend address and token; host and sandbox differ only in address
+    const cliEnv = userId
+      ? buildSessionCliEnv({ userId: String(userId), sessionId, isolated: isolationActiveFor(userId) })
+      : null
+
     // Build the bash -lc command line by line, joined with && at the end.
     const cmdLines = [
       // Drop VS Code IPC env vars so the CLI cannot attach to a host IDE.
       'unset VSCODE_IPC_HOOK_CLI VSCODE_GIT_IPC_HANDLE VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_ASKPASS_MAIN',
       // Mark this process as running in a controlled sandbox.
       'export IS_SANDBOX=1',
+      ...(cliEnv ? sessionCliEnvExports(cliEnv) : []),
     ]
     // Split by tier: env loads env-var proxies; proxychains wraps chains; env_proxychains does both;
     // direct starts bare.
@@ -1870,6 +1963,8 @@ class TmuxCodexBackend extends AgentBackend {
         // Codex config path actually used.
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
+        withHookProfilePath,
+        withHookConfigPath,
         captureStream: !!captureStream,
         // Secret env var name injected into Codex.
         codexSecretEnvKey: secretEnvKey,
@@ -1900,6 +1995,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexProfileKey: finalProfileKey,
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
+        withHookProfilePath,
+        withHookConfigPath,
         captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // Proxy toggle, display name and launch time.
@@ -1925,6 +2022,8 @@ class TmuxCodexBackend extends AgentBackend {
         // Codex config path actually used.
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
+        withHookProfilePath,
+        withHookConfigPath,
         captureStream: !!captureStream,
         // Secret env var name injected into Codex.
         codexSecretEnvKey: secretEnvKey,
@@ -1957,6 +2056,8 @@ class TmuxCodexBackend extends AgentBackend {
         codexProfileKey: finalProfileKey,
         codexConfigPath: codexConfigPath || expectedConfigPath,
         withProxyPath,
+        withHookProfilePath,
+        withHookConfigPath,
         captureStream: !!captureStream,
         codexSecretEnvKey: secretEnvKey,
         // Proxy toggle, display name and rollout path.

@@ -96,6 +96,33 @@ check('防误切: memory 正文中的后向/未知 ## 标题不产生新块',
 check('防误切: memory 正文原样保留在 memory 块内',
   !!trickyMem && trickyMem.body.includes('## 用户') && trickyMem.body.includes('## Not In Catalog'))
 
+// ── ④ 换模型转接会话: 引导语前多一段转接说明 (transferReferencePrompt) ──────
+const zhSources = { ...enSources, language: 'zh' }
+const zhBody = formatBody(zhSources, stubDeps)
+const zhQuestion = '把失败任务的垃圾清理掉'
+const transferPrefix = [
+  '这是一个从旧会话转接而来的新会话。',
+  '',
+  '旧会话的转接资料保存在以下文件：',
+  '',
+  '1. 完整记录：`/home/fuqingxu/cc-workspace/kind_star/.imac/change_model/7b861ed8/full.md`',
+  '2. 仅用户消息：`/home/fuqingxu/cc-workspace/kind_star/.imac/change_model/7b861ed8/user_messages.md`',
+  '3. 旧会话元数据：`/home/fuqingxu/cc-workspace/kind_star/.imac/change_model/7b861ed8/session_metadata.json`',
+  '',
+  '开始执行前，请先读取旧会话元数据和用户消息，理解用户目标、后续补充及最后要求。',
+  '不要修改或删除以上转接文件。',
+  '',
+  '--- 下面是用户的最新指令，请在理解前文的基础上，执行最新指令 ---',
+  '',
+].join('\n')
+const transferWrapped = `${transferPrefix}${zhBody}\n\n---\n\n## 用户的问题\n${zhQuestion}`
+const transferMatch = extractInitialContext({ type: 'user', message: { content: transferWrapped } })
+check('转接会话: 引导语前有转接说明也能辨识 (zh)',
+  !!transferMatch && transferMatch.language === 'zh' && transferPrefix.length > 400,
+  `prefixLen=${transferPrefix.length}`)
+check('转接会话: 问题切分正确', transferMatch ? transferMatch.question === zhQuestion : false,
+  JSON.stringify(transferMatch && transferMatch.question))
+
 // 非初始消息不误判
 const plain = extractInitialContext({ type: 'user', message: { content: '请帮我看一下这个报错\n## 用户的问题\n假标题' } })
 check('非初始消息: 不误判', plain === null)

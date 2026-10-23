@@ -87,11 +87,12 @@ export function codeServerAllowedFor(user: any): boolean {
   return isDockerIsolation();
 }
 
-// 小莫助理 (「小莫光点」浮动入口) 可用性 —— 临时措施 (2026-10-13 用户要求):
-// 关闭期间普通用户对小莫的一切访问被拒 (server.js 在 /api/assistant 挂闸门, 403),
-// 前端入口同步隐藏 (frontend/src/services/assistant-availability.ts 同名常量).
-// 管理员不受影响. 恢复: 把下面常量改为 false, 改完 python3 start.py --detach 重载.
-export const ASSISTANT_NORMAL_USER_BLOCKED = true;
+// 小莫助理 (「小莫光点」浮动入口) 可用性 —— 开关常量.
+// 2026-10-13 曾临时设为 true 屏蔽普通用户; 2026-10-22 用户决定「全部恢复」, 已改回 false.
+// 设为 true 时: server.js 在 /api/assistant 挂闸门返 403, 前端入口同步隐藏
+// (frontend/src/services/assistant-availability.ts 同名常量, 两处必须一起改).
+// 改完执行 python3 start.py --detach 重载生效.
+export const ASSISTANT_NORMAL_USER_BLOCKED = false;
 
 export function assistantAllowedFor(user: any): boolean {
   if (!ASSISTANT_NORMAL_USER_BLOCKED) return true;

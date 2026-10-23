@@ -138,6 +138,8 @@ app.use('/api', multiagentCommunicationRoutes);
 app.use('/api/research-blackboard', blackboardRouter);
 app.use('/api/research-graph', graphRouter);
 app.use('/api/sessions', sessionsRoutes);
+app.use('/api/session-jobs', require('./backend/routes/session-jobs').router);
+app.use('/api/internal/session-reminders', require('./backend/routes/session-reminders').router);
 app.use('/api/search', searchRoutes);
 app.use('/api/skills', skillsRoutes);
 app.use('/api/memories', memoryJsonParser, memoriesRoutes);

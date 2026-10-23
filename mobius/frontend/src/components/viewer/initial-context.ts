@@ -58,11 +58,15 @@ function entryUserText(entry: AnyEntry): string {
   return ''
 }
 
+// 引导语扫描窗口: 换模型的转接会话会在最前面插一段转接说明 (约 500 字符, 随路径长度浮动),
+// 引导语因此不在正文开头; 窗口必须覆盖它, 否则整张卡回落成原始 markdown。
+const HEAD_SCAN_CHARS = 4000
+
 // 前置快筛: buildHeaderSummary 每卡都会调, 这里必须廉价 (纯 includes, 命中才做完整解析)。
 // 双重门槛排除误命中 (用户在问题里原样引用引导语文案的裸输入卡):
-//  ① 引导语出现在开头 400 字符内; ② 正文命中 ≥2 个目录锚点行 (整行强匹配, 包装消息必有)。
+//  ① 引导语出现在开头 HEAD_SCAN_CHARS 字符内; ② 正文命中 ≥2 个目录锚点行 (整行强匹配, 包装消息必有)。
 function detectLanguage(text: string): 'zh' | 'en' | null {
-  const head = text.slice(0, 400)
+  const head = text.slice(0, HEAD_SCAN_CHARS)
   const lang = head.includes(HeaderSection.title.zh) ? 'zh' : head.includes(HeaderSection.title.en) ? 'en' : null
   if (!lang) return null
   const hitKeys = new Set<string>()

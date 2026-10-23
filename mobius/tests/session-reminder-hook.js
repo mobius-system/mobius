@@ -1,12 +1,13 @@
 /**
- * Unit tests for the session reminder hook transport shared by Claude Code and Codex.
+ * Unit tests for the session reminder hook CLI and the config fragments both
+ * agents use.
  *
  * What is covered here:
- *   - the exact shell command both agents will run (stdin → curl → stdout)
- *   - request shape the backend will receive (path, token header, body passthrough)
- *   - failure modes (backend down, backend slower than --max-time)
+ *   - mobius_session_reminder: stdin → backend → stdout, plus its exit codes
+ *   - request shape the backend receives (path, token header, body passthrough)
+ *   - failure modes (backend down, backend slower than the CLI timeout)
  *   - the two config fragments (Claude settings JSON / Codex TOML)
- *   - the session token derivation
+ *   - sandbox vs host base URL and the session token derivation
  *
  * Live agent runs live in session-reminder-hook-live.js and are opt-in.
  *
@@ -14,6 +15,7 @@
  */
 
 const assert = require('assert');
+const path = require('path');
 const { execFile } = require('child_process');
 
 const { startReminderServer } = require('./fixtures/reminder-hook-server');
@@ -22,11 +24,13 @@ const {
   claudeReminderHookSettings,
   codexReminderHookToml,
   reminderHookToken,
-  reminderHookUrl,
+  reminderHookBaseUrl,
+  SANDBOX_GATEWAY_IP,
   CLAUDE_REMINDER_MATCHER,
   CODEX_REMINDER_MATCHER,
 } = require('../backend/services/session-reminder-hook');
 
+const CLI_PATH = path.resolve(__dirname, '../scripts/cli/mobius_session_reminder');
 const TOKEN = 'hook-token-for-tests';
 const SECRET = 'unit-test-secret';
 
@@ -59,14 +63,14 @@ function codexPayload(sessionId = 'cx-session-1') {
   });
 }
 
-/** Run a hook command with stdin, the same way both agents do. */
+/** Run the hook command with stdin, the same way both agents do. */
 function runHook(command, input, env = {}) {
   return new Promise((resolve) => {
     const child = execFile(
       'sh',
       ['-c', command],
       {
-        env: { ...process.env, MOBIUS_HOOK_TOKEN: TOKEN, ...env },
+        env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: 'mobius-session-1', MOBIUS_HOOK_TOKEN: TOKEN, ...env },
         timeout: 20000,
         maxBuffer: 4 * 1024 * 1024,
       },
@@ -91,9 +95,9 @@ function parseHookOutput(stdout) {
 async function testClaudePayloadDelivery() {
   const server = await startReminderServer();
   try {
-    const command = buildReminderHookCommand({ baseUrl: server.baseUrl });
+    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
     const payload = claudePayload();
-    const result = await runHook(command, payload);
+    const result = await runHook(command, payload, { MOBIUS_BASE: server.baseUrl });
 
     assert.strictEqual(result.code, 0, `hook must exit 0, stderr: ${result.stderr}`);
     const output = parseHookOutput(result.stdout);
@@ -106,6 +110,7 @@ async function testClaudePayloadDelivery() {
     assert.strictEqual(req.url, '/api/internal/session-reminders/remote_target_local_tool/decide');
     assert.strictEqual(req.headers['content-type'], 'application/json');
     assert.strictEqual(req.headers['x-mobius-hook-token'], TOKEN);
+    assert.strictEqual(req.headers['x-mobius-session-id'], 'mobius-session-1');
     assert.strictEqual(req.body, payload, 'hook stdin must reach the backend unchanged');
   } finally {
     await server.close();
@@ -115,9 +120,9 @@ async function testClaudePayloadDelivery() {
 async function testCodexPayloadDelivery() {
   const server = await startReminderServer();
   try {
-    const command = buildReminderHookCommand({ baseUrl: server.baseUrl });
+    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
     const payload = codexPayload();
-    const result = await runHook(command, payload);
+    const result = await runHook(command, payload, { MOBIUS_BASE: server.baseUrl });
 
     assert.strictEqual(result.code, 0, `hook must exit 0, stderr: ${result.stderr}`);
     const output = parseHookOutput(result.stdout);
@@ -140,8 +145,8 @@ async function testEmptyDecisionPassthrough() {
     },
   });
   try {
-    const command = buildReminderHookCommand({ baseUrl: server.baseUrl });
-    const result = await runHook(command, claudePayload());
+    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+    const result = await runHook(command, claudePayload(), { MOBIUS_BASE: server.baseUrl });
     assert.strictEqual(result.code, 0);
     assert.deepStrictEqual(JSON.parse(result.stdout.trim()), {}, 'suppressed decision must pass through as {}');
   } finally {
@@ -154,30 +159,57 @@ async function testBackendDown() {
   const baseUrl = server.baseUrl;
   await server.close();
 
-  const command = buildReminderHookCommand({ baseUrl });
-  const result = await runHook(command, claudePayload());
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
+  const result = await runHook(command, claudePayload(), { MOBIUS_BASE: baseUrl });
   assert.notStrictEqual(result.code, 0, 'connection failure must surface as a non-zero exit');
   assert.strictEqual(result.stdout.trim(), '', 'no output on failure, so the agent sees no reminder');
 }
 
-async function testCurlTimeout() {
-  const server = await startReminderServer({ delayMs: 2500 });
+async function testCliTimeout() {
+  const server = await startReminderServer({ delayMs: 4500 });
   try {
-    const command = buildReminderHookCommand({ baseUrl: server.baseUrl, maxTimeSeconds: 1 });
+    const command = buildReminderHookCommand({ cliPath: CLI_PATH });
     const started = Date.now();
-    const result = await runHook(command, claudePayload());
+    const result = await runHook(command, claudePayload(), { MOBIUS_BASE: server.baseUrl });
     const elapsed = Date.now() - started;
 
-    assert.notStrictEqual(result.code, 0, 'curl must exit non-zero when --max-time is exceeded');
+    assert.strictEqual(result.code, 3, 'CLI must report a network exit code when curl times out');
     assert.strictEqual(result.stdout.trim(), '', 'no partial output on timeout');
-    assert.ok(elapsed < 2400, `hook must give up before the handler timeout (took ${elapsed}ms)`);
+    assert.ok(elapsed < 4000, `CLI must give up at its own timeout (took ${elapsed}ms)`);
   } finally {
     await server.close();
   }
 }
 
+function testCliUsageAndConfigErrors() {
+  const help = require('child_process').spawnSync(CLI_PATH, ['--help'], { encoding: 'utf8' });
+  assert.strictEqual(help.status, 0, '--help must exit 0');
+  assert.match(help.stdout, /Usage: mobius_session_reminder/);
+  assert.match(help.stdout, /MOBIUS_BASE/);
+
+  const badArg = require('child_process').spawnSync(CLI_PATH, ['--nope'], { encoding: 'utf8' });
+  assert.strictEqual(badArg.status, 2, 'unknown arguments exit 2');
+  assert.match(badArg.stderr, /unknown argument/);
+
+  const missingEnv = require('child_process').spawnSync(CLI_PATH, [], {
+    encoding: 'utf8',
+    input: '{}',
+    env: { ...process.env, MOBIUS_BASE: '', MOBIUS_SESSION_ID: '', MOBIUS_HOOK_TOKEN: '' },
+  });
+  assert.strictEqual(missingEnv.status, 3, 'missing environment exits 3');
+  assert.match(missingEnv.stderr, /MOBIUS_BASE is unset/);
+
+  const emptyStdin = require('child_process').spawnSync(CLI_PATH, [], {
+    encoding: 'utf8',
+    input: '',
+    env: { ...process.env, MOBIUS_BASE: 'http://127.0.0.1:1', MOBIUS_SESSION_ID: 'mobius-session-1', MOBIUS_HOOK_TOKEN: TOKEN },
+  });
+  assert.strictEqual(emptyStdin.status, 0, 'empty stdin is a silent success');
+  assert.strictEqual(emptyStdin.stdout, '');
+}
+
 function testClaudeSettingsFragment() {
-  const command = buildReminderHookCommand({ baseUrl: 'http://127.0.0.1:45616' });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   const settings = claudeReminderHookSettings(command);
   const group = settings.hooks.PreToolUse[0];
 
@@ -186,11 +218,12 @@ function testClaudeSettingsFragment() {
   assert.strictEqual(group.hooks[0].type, 'command');
   assert.strictEqual(group.hooks[0].timeout, 5);
   assert.strictEqual(group.hooks[0].command, command);
-  assert.ok(!group.hooks[0].command.includes(TOKEN), 'token must come from the environment, not the config');
+  assert.ok(group.hooks[0].command.startsWith(CLI_PATH), 'the hook must invoke the CLI');
+  assert.ok(!group.hooks[0].command.includes(TOKEN), 'no secret in the config file');
 }
 
 function testCodexTomlFragment() {
-  const command = buildReminderHookCommand({ baseUrl: 'http://127.0.0.1:45616' });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   const toml = codexReminderHookToml(command);
 
   assert.match(toml, /^\[\[hooks\.PreToolUse\]\]$/m,
@@ -201,22 +234,40 @@ function testCodexTomlFragment() {
   assert.match(toml, /^timeout = 5$/m);
   assert.ok(toml.includes(command), 'TOML must carry the shared command verbatim');
   assert.strictEqual(CODEX_REMINDER_MATCHER, 'Bash|apply_patch');
-
-  // 命令里没有双引号, 写进 TOML 基本字符串不需要转义
-  // The command contains no double quotes, so the TOML basic string stays readable
-  const commandLine = toml.split('\n').find((line) => line.startsWith('command = '));
-  assert.ok(commandLine && !commandLine.includes('\\"'), 'command line must not need escaping');
 }
 
-function testUrlValidation() {
-  assert.strictEqual(
-    reminderHookUrl({ baseUrl: 'http://127.0.0.1:45616/' }),
-    'http://127.0.0.1:45616/api/internal/session-reminders/remote_target_local_tool/decide',
-    'trailing slash must be trimmed',
+function testCommandValidation() {
+  assert.throws(() => buildReminderHookCommand({ cliPath: 'relative/path' }), /invalid reminder hook cli path/);
+  assert.throws(() => buildReminderHookCommand({ cliPath: "/tmp/x'; rm -rf /" }), /invalid reminder hook cli path/);
+  assert.throws(
+    () => buildReminderHookCommand({ cliPath: CLI_PATH, reminderType: '../evil' }),
+    /invalid reminder type/,
   );
-  assert.throws(() => reminderHookUrl({ baseUrl: 'http://127.0.0.1:1/x', reminderType: '../evil' }),
-    /invalid reminder type/);
-  assert.throws(() => reminderHookUrl({ baseUrl: "http://x'; rm -rf /" }), /invalid reminder hook base url/);
+}
+
+function testSandboxBaseUrl() {
+  assert.strictEqual(SANDBOX_GATEWAY_IP, '172.28.0.1');
+  assert.strictEqual(
+    reminderHookBaseUrl({ isolated: false, backendPort: 45616 }),
+    'http://127.0.0.1:45616',
+    'host sessions use loopback',
+  );
+  assert.strictEqual(
+    reminderHookBaseUrl({ isolated: true, backendPort: 45616 }),
+    'http://172.28.0.1:45616',
+    'sandbox sessions must use the host bridge gateway, not their own loopback',
+  );
+  assert.strictEqual(
+    reminderHookBaseUrl({ isolated: true, backendPort: 45616, gatewayIp: '172.30.0.1' }),
+    'http://172.30.0.1:45616',
+    'gateway must be overridable for non-default docker networks',
+  );
+  assert.throws(() => reminderHookBaseUrl({ isolated: false, backendPort: 0 }), /invalid backend port/);
+  assert.throws(() => reminderHookBaseUrl({ isolated: false, backendPort: 70000 }), /invalid backend port/);
+  assert.throws(
+    () => reminderHookBaseUrl({ isolated: true, backendPort: 45616, gatewayIp: "1.2.3.4'; rm -rf /" }),
+    /invalid hook host/,
+  );
 }
 
 function testTokenDerivation() {
@@ -239,10 +290,12 @@ async function main() {
     ['codex payload delivery', testCodexPayloadDelivery],
     ['empty decision passthrough', testEmptyDecisionPassthrough],
     ['backend down', testBackendDown],
-    ['curl timeout', testCurlTimeout],
+    ['cli timeout', testCliTimeout],
+    ['cli usage and config errors', testCliUsageAndConfigErrors],
     ['claude settings fragment', testClaudeSettingsFragment],
     ['codex toml fragment', testCodexTomlFragment],
-    ['url validation', testUrlValidation],
+    ['command validation', testCommandValidation],
+    ['sandbox base url', testSandboxBaseUrl],
     ['token derivation', testTokenDerivation],
   ];
 

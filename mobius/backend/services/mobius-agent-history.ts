@@ -836,8 +836,13 @@ function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'mem
   const state = st.getState.get(sessionId) as any;
   const bookmark = mode === 'members' ? (state.primary_read_bytes || 0) : 0;
   const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+  // 原生文件被截断/轮转 (大小 < 已读书签) → 不报错, 直接把书签重置为 0 从头读
+  //   原因: 之前用 markError 会让前端展示红色错误条, 但文件其实可以继续从开头增量同步.
+  //   若新文件 < 旧书签, 仅丢弃截断后丢失的那部分历史; 仍能保留对当前活跃会话的实时观察.
   if (size < bookmark) {
-    return markError(sessionId, `原生 jsonl 变小 (书签=${bookmark}, 现大小=${size}), 疑似轮转/截断: ${filePath}`);
+    // 重置书签: 让本次从 0 开始, 同时把持久化书签也清零, 避免下次再撞到同样的不变量.
+    openStore().prepare('UPDATE ingest_state SET primary_read_bytes = 0, error = NULL WHERE session_id = ?').run(sessionId);
+    return scanPrimary(sessionId, filePath, mode, legacy, markLegacyDone, containDequeueEvent, pendingInputs);
   }
 
   const sink: CommitSink = { newRounds: [], rowsByGroup: new Map() };

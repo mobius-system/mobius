@@ -16,6 +16,9 @@ Options:
   -h, --help    show this help and exit
 
 Environment:
+  MOBIUS_BASE     backend base URL; when set together with MOBIUS_JWT the
+                  command uses the backend API instead of reading the database
+  MOBIUS_JWT      session token minted by the Mobius session launcher
   MOBIUS_APP_DIR  override the Mobius APP_DIR (default: APP_DIR from the shell,
                   otherwise the installation marker or source repository)
   MOBIUS_ROOT     legacy Mobius package root (APP_DIR/mobius)
@@ -40,6 +43,31 @@ fi
 if [[ -z "${reason//[[:space:]]/}" ]]; then
   echo "Input error: failure_reason must not be empty" >&2
   exit 2
+fi
+
+# 会话环境齐全时走后端 API: 容器里没有 .env, 也没有数据库可读.
+# Prefer the backend API when the session environment provides it
+# (sandbox containers have neither .env nor a readable database).
+if [[ -n "${MOBIUS_BASE:-}" && -n "${MOBIUS_JWT:-}" ]]; then
+  body="$(python3 -c 'import json,sys; print(json.dumps({"session_id": sys.argv[1], "status": "failed", "reason": sys.argv[2]}))' "$job_id" "$reason")"
+  tmp="$(mktemp)"
+  code="$(curl -sS --connect-timeout 5 --max-time 30 -o "$tmp" -w '%{http_code}' \
+    -X POST "$MOBIUS_BASE/api/session-jobs/declare" \
+    -H 'content-type: application/json' \
+    -H "authorization: Bearer $MOBIUS_JWT" \
+    --data-binary "$body" 2>/dev/null)" || {
+    rm -f "$tmp"
+    echo "Network error: cannot reach $MOBIUS_BASE" >&2
+    exit 3
+  }
+  detail="$(cat "$tmp" 2>/dev/null || true)"
+  rm -f "$tmp"
+  if [[ "$code" == "200" ]]; then
+    echo "Job declared failed: $job_id"
+    exit 0
+  fi
+  echo "Backend error (HTTP $code): $detail" >&2
+  exit 5
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

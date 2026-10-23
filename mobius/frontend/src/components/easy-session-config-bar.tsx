@@ -9,7 +9,7 @@
 //   记忆和技能: 复用 SkillMemoryPicker 的单入口弹窗形态, 默认排除集取任务级 context-preview
 // =====================================================================
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, CircleDot, FolderKanban, FolderOpen, Languages, Type } from 'lucide-react'
+import { Brain, FolderKanban, FolderOpen, Languages, Share2, Type } from 'lucide-react'
 import { api } from '../store'
 import { createPortal } from 'react-dom'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
@@ -127,12 +127,14 @@ export function EasySessionModeTabs({ selection, onChange }: {
   )
 }
 
-export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark }: {
+export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark, onOpenCooperablePc }: {
   selection: EasySessionSelection
   onChange: (next: EasySessionSelection) => void
   projects: ProjectLite[]
   recentSessions: RecentSessionLite[]
   dark: boolean
+  /** 打开「可合作计算机」弹窗 (会话工具同款功能的欢迎页入口) */
+  onOpenCooperablePc?: () => void
 }) {
   const [pathPickerOpen, setPathPickerOpen] = useState(false)
   const [projectIssues, setProjectIssues] = useState<any[]>([])
@@ -171,9 +173,11 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     return () => { alive = false }
   }, [projectId])
 
-  // 任务变更 → 拉该任务的上下文预览: 可用 Skill/Memory、默认排除集、上次所选模型
+  // 数据源: 选中任务 → 该任务级上下文预览; 未选任务 → 用户级 + 内置条目直通 (方案 B, 欢迎页零前置可用).
+  // 勾选的默认排除集只在任务级预览里回填 (用户上一次的勾选保存在那个任务里).
   useEffect(() => {
-    if (createProject) {
+    if (createProject || !issueId) {
+      // 全新项目 / 未选任务: 拉用户级 + 内置清单, 选择器保持可用
       let alive = true
       setAvailSkills([]); setAvailMemories([]); setScopeLastModel('')
       Promise.all([api('/api/skills/creation-options'), api('/api/memories')]).then(([skills, memories]) => {
@@ -182,10 +186,6 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         setAvailMemories((Array.isArray(memories) ? memories : []).filter((m: PickItem) => m.scope === 'user'))
       }).catch(() => { if (alive) { setAvailSkills([]); setAvailMemories([]) } })
       return () => { alive = false }
-    }
-    if (!issueId) {
-      setAvailSkills([]); setAvailMemories([]); setScopeLastModel('')
-      return
     }
     let alive = true
     modelTouchedRef.current = false
@@ -334,73 +334,23 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         </>
       ) : (
         <>
-          <DropdownSelect
-            size="sm"
-            iconOnly
-            dark={dark}
-            icon={<FolderKanban className="h-3.5 w-3.5" />}
-            value={projectId}
-            placeholder="项目"
-            emptyText="暂无可用项目"
-            options={projectOptions}
-            onChange={v => {
-              // 换项目 → 任务必然作废; 模型回到新项目的默认链路
-              modelTouchedRef.current = false
-              const { onChange: emit } = latestRef.current
-              emit({ ...latestRef.current.selection, projectId: v, issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] })
-            }}
-          />
-          <DropdownSelect
-            size="sm"
-            iconOnly
-            dark={dark}
-            icon={<CircleDot className="h-3.5 w-3.5" />}
-            value={issueId}
-            placeholder="任务"
-            emptyText={projectId ? '该项目下暂无任务' : '暂无近期任务'}
-            options={taskOptions}
-            onChange={v => {
-              const { selection: latest, onChange: emit } = latestRef.current
-              const picked = taskOptions.find(o => o.value === v)
-              const recentTask = !latest.projectId ? recentTasks.find(task => task.id === v) : undefined
-              emit({
-                ...latest,
-                projectId: latest.projectId || recentTask?.projectId || '',
-                issueId: v,
-                issueTitle: picked ? picked.label : '',
-              })
-            }}
-          />
+          {/* 项目选择已移至输入框上方的 EasySessionProjectSelector; 任务下拉已移除 (按需从项目选择后自动定位最近任务) */}
+          {onOpenCooperablePc && (
+            <button
+              type="button"
+              onClick={onOpenCooperablePc}
+              aria-label="可合作计算机"
+              title="声明可合作计算机 (勾选 aimux remote, 生成声明随任务发送)"
+              data-testid="easy-welcome-cooperable-pc"
+              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ color: dark ? '#d1d5db' : '#374151' }}
+            >
+              <Share2 className="h-[18px] w-[18px]" strokeWidth={2} />
+            </button>
+          )}
         </>
       )}
-      <DropdownSelect
-        size="sm"
-        iconOnly
-        dark={dark}
-        icon={<Brain className="h-3.5 w-3.5" />}
-        value={selection.model}
-        placeholder="模型"
-        emptyText="暂无可用模型"
-        options={modelSelectOptions}
-        onChange={v => {
-          modelTouchedRef.current = true
-          const { selection: latest, onChange: emit } = latestRef.current
-          emit({ ...latest, model: v })
-        }}
-      />
-      <DropdownSelect
-        size="sm"
-        iconOnly
-        dark={dark}
-        icon={<Languages className="h-3.5 w-3.5" />}
-        value={selection.language}
-        placeholder="语言"
-        options={LANGUAGE_OPTIONS}
-        onChange={v => {
-          const { selection: latest, onChange: emit } = latestRef.current
-          emit({ ...latest, language: v as SessionLanguage })
-        }}
-      />
+      {/* 模型选择已移至输入框右下的模型 pill (EasySessionModelPill), 语言默认 zh 不再展示 */}
       <SkillMemoryPicker
         singleTrigger
         iconOnlyTrigger
@@ -412,8 +362,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         onToggleSkill={id => toggleExcluded('skill', id)}
         onToggleMemory={id => toggleExcluded('memory', id)}
         onBulkToggle={bulkExcluded}
-        disabled={!createProject && !issueId}
-        emptySkillText={createProject ? '暂无用户级或内置 Skill' : '该任务未启用 Skill'}
+        emptySkillText={issueId ? '该任务未启用 Skill' : '暂无用户级或内置 Skill'}
       />
     </>
   )

@@ -37,7 +37,7 @@ import {
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare,
   X, Eye, Sparkles, RefreshCw, Paperclip, Image as ImageIcon, Trash2,
-  CheckCircle2, ExternalLink, Lock, Ban, Search,
+  CheckCircle2, ExternalLink, Lock, Ban, Search, BrainCircuit,
 } from 'lucide-react'
 // 「新建快捷会话」表单已独立成文件 (含 取消/预览/创建 三键与传统菜单第 2 步预览的衔接)
 import { CreateSessionForm } from './quick-create-session'
@@ -577,14 +577,23 @@ export function SkillMemoryPicker({
             title="选择注入本次会话的 Skill 与 Memory"
             aria-label={`记忆和技能：${enabledTotal}/${availableTotal} 已启用`}
             data-has-value={hasValidValue ? 'true' : 'false'}
-            className={`${iconOnlyTrigger ? 'h-7 w-7 flex-shrink-0 justify-center p-0' : 'h-7 min-w-0 max-w-[168px] justify-between gap-1 px-2'} rounded-lg border text-[length:var(--fs-sm)] flex items-center transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed`}
-            style={{
-              borderColor: hasValidValue ? 'rgba(59,130,246,0.72)' : 'var(--input-border)',
-              color: hasValidValue ? '#60a5fa' : 'var(--text-secondary)',
-              boxShadow: hasValidValue ? '0 0 0 1px rgba(59,130,246,0.08)' : undefined,
-            }}>
+            className={iconOnlyTrigger
+              ? 'easy-icon-btn h-7 w-7 flex-shrink-0 justify-center rounded-full text-[length:var(--fs-sm)] flex items-center transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed'
+              : 'h-7 min-w-0 max-w-[168px] justify-between gap-1 px-2 rounded-lg border text-[length:var(--fs-sm)] flex items-center transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50 disabled:cursor-not-allowed'}
+            style={iconOnlyTrigger
+              ? {
+                  /* 图标形态与输入框按钮同款: 无边框圆形, 与左邻右舍图标恒同色 (issue 2026-10-20 统一).
+                     启用状态不再变色 (邻居可合作计算机无此状态, 变蓝会显得一个蓝一个白),
+                     已启用数量保留在 tooltip / aria-label 里。 */
+                  color: dark ? '#d1d5db' : '#374151',
+                }
+              : {
+                  borderColor: hasValidValue ? 'rgba(59,130,246,0.72)' : 'var(--input-border)',
+                  color: hasValidValue ? '#60a5fa' : 'var(--text-secondary)',
+                  boxShadow: hasValidValue ? '0 0 0 1px rgba(59,130,246,0.08)' : undefined,
+                }}>
             <span className={`flex min-w-0 items-center gap-1.5 truncate ${iconOnlyTrigger ? 'justify-center' : ''}`}>
-              <Sparkles className="h-3 w-3 flex-shrink-0" />
+              <BrainCircuit className="h-[16px] w-[16px] flex-shrink-0" strokeWidth={2} />
               {!iconOnlyTrigger && '记忆和技能'}
             </span>
             {!iconOnlyTrigger && <span className="flex-shrink-0 tabular-nums" style={{ color: 'var(--text-muted)' }}>

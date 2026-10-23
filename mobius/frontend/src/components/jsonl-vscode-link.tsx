@@ -120,7 +120,7 @@ export function VSCodeOpenProvider({ projectId, children }: { projectId?: string
 // links like "/api/..." or "/issues/..." would get hijacked. Extend the
 // list cautiously: each prefix is a commitment that real paths under it
 // are reachable by the same VSCode Web instance as the project bind path.
-const FS_PATH_PREFIXES = ['/home/', '/root/', '/Users/', '/tmp/', '/var/', '/mnt/', '/opt/', '/srv/', '/data/']
+const FS_PATH_PREFIXES = ['/home/', '/root/', '/Users/', '/tmp/', '/var/', '/mnt/', '/opt/', '/srv/', '/data/', '/app/']
 export function isLikelyFilesystemPath(href: string): boolean {
   if (!href || href.startsWith('//')) return false
   if (!href.startsWith('/')) return false

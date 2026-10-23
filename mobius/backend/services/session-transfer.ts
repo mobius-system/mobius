@@ -581,6 +581,8 @@ function transferReferencePrompt(paths: TransferPaths, content: any): string {
     '--- 下面是用户的最新指令，请在理解前文的基础上，执行最新指令 ---',
     '',
     content,
+    '',
+    '------',
   ].join('\n');
 }
 

@@ -54,9 +54,20 @@ const { AGENT_TMUX_SOCKET, log, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
 const { ensureSessionWithProxy } = require('../services/model-access')
 const { ensureTempRoot } = require('../services/file-access')
+const { buildSessionCliEnv, sessionCliEnvExports } = require('../services/session-cli-env')
+const { injectClaudeReminderHook, writeReminderHookConfig } = require('../services/session-hook-inject')
+const {
+  buildReminderHookCommand,
+  reminderHookBaseUrl,
+  reminderHookToken,
+  CLAUDE_REMINDER_MATCHER,
+  REMINDER_HOOK_CONFIG_FILENAME,
+} = require('../services/session-reminder-hook')
+const { APP_DIR, JWT_SECRET, PORT: MOBIUS_PORT } = require('../config')
 import { sandboxCommand } from '../services/agent-sandbox'
 // 用户隔离 (docker 模式): spawn 前确保沙箱容器 + tmux server, HOME/路径按用户重定向
-const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, materializeSettingsForSbx, containerForWindow, isolationActiveFor, sessionConfigDir } = require('../services/user-isolation')
+const { prepareSpawn, claudeHomeFor, rewriteHostPath, rewriteAimuxBin, listWindowsRowsFromSandboxes, listWindowsRowsForStatus, materializeSettingsForSbx, containerForWindow, isolationActiveFor, sandboxPolicyFor, sessionConfigDir } = require('../services/user-isolation')
+const { resolveDispatchIdentity } = require('../services/session-dispatch-identity')
 
 // ── Constants ───────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -1660,6 +1671,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 删掉数字雨用的withproxy临时文件
     // Delete the digital-rain per-session withproxy file
     if (entry?.withProxyPath) { try { fs.unlinkSync(entry.withProxyPath) } catch {} }
+    // 删掉带提醒钩子的会话级 settings 副本 (只在会话配置目录内)
+    // Delete the per-session settings copy that carries the reminder hook
+    if (entry?.settingsPath && /[\\/]sbx-session[\\/]/.test(entry.settingsPath)) {
+      try { fs.unlinkSync(entry.settingsPath) } catch {}
+      try { fs.unlinkSync(path.join(path.dirname(entry.settingsPath), REMINDER_HOOK_CONFIG_FILENAME)) } catch {}
+      try { fs.rmdirSync(path.dirname(entry.settingsPath)) } catch {}
+    }
     this.runtime.delete(sessionId)
     this._forgetPersisted(sessionId)
     if (wasAlive) {
@@ -1704,6 +1722,21 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 入参可为null，此处归一为非空，兜底在调用方
     // Nullable args become non-null here; the persisted fallback is the caller's
     if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
+    // 入口兜底: 中断后加急重开只带一部分参数, 缺失的 userId/远端绑定从会话行补齐.
+    // 缺 userId 会导致 prepareSpawn 返回 null (失去沙箱)、MCP 不注入、CLI 环境不导出.
+    // Entry fallback: interrupt-and-resume respawns forward only a subset of options;
+    // fill userId / aimux binding from the session row. A missing userId would drop the
+    // sandbox container, the MCP config and the CLI environment.
+    const identity = resolveDispatchIdentity(sessionId, { userId, aimuxRemoteName, aimuxGuiAuthorized })
+    userId = identity.userId || userId
+    aimuxRemoteName = identity.aimuxRemoteName || aimuxRemoteName
+    aimuxGuiAuthorized = identity.aimuxGuiAuthorized ?? aimuxGuiAuthorized
+    if (!sandboxPolicy && userId && identity.role !== 'admin') {
+      sandboxPolicy = sandboxPolicyFor(
+        { id: userId, role: identity.role },
+        { userId: String(userId), projectId: identity.projectId, workDir: cwd },
+      ) || null
+    }
     const finalDisplayName = displayName || null
     const finalAgentSid = agentSessionId || null
     const finalFlagRoot = flagRoot || cwd
@@ -1738,6 +1771,38 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 隔离用户: settings 物化到容器 HOME (token-proxy 地址改沙箱网关), 容器内读容器版
     const sbxSettings = materializeSettingsForSbx(userId, sessionId, finalSettingsPath)
     if (sbxSettings) finalSettingsPath = sbxSettings
+    // 有远端目标才装提醒钩子: 会话级副本放在 sessionConfigDir (容器同路径可见)
+    // Install the reminder hook only for remote-target sessions; the per-session copy
+    // lives in sessionConfigDir, which is bind-mounted at the same path in sandboxes.
+    if (aimuxRemoteName && userId && finalSettingsPath) {
+      try {
+        const configDir = sessionConfigDir(String(userId), sessionId)
+        // 钩子配置落文件: 会话被重开时环境变量可能丢失, 文件仍在
+        // Hook config lives in a file: a respawned agent may lose the env vars
+        const hookConfigPath = writeReminderHookConfig(
+          path.join(configDir, REMINDER_HOOK_CONFIG_FILENAME),
+          {
+            base_url: reminderHookBaseUrl({ isolated: isolationActiveFor(userId), backendPort: MOBIUS_PORT }),
+            session_id: sessionId,
+            token: reminderHookToken(sessionId, JWT_SECRET),
+          },
+        )
+        const hookCommand = buildReminderHookCommand({
+          cliPath: path.join(APP_DIR, 'mobius', 'scripts', 'cli', 'mobius_session_reminder'),
+          configPath: hookConfigPath,
+        })
+        const dest = path.join(configDir, 'settings.json')
+        finalSettingsPath = injectClaudeReminderHook({
+          sourcePath: finalSettingsPath,
+          destPath: dest,
+          command: hookCommand,
+          matcher: CLAUDE_REMINDER_MATCHER,
+          timeoutSeconds: 5,
+        })
+      } catch (e: any) {
+        console.warn(`[tmux-claude-code] reminder hook 注入失败 (${sessionId}): ${e?.message || e}`)
+      }
+    }
     // 代理档位与settings互相独立，代理分支一样要传--settings
     // Proxy tier and settings are independent; the proxy branch passes settings too
     const proxyMode = resolveClaudeProxyMode(!!useProxy, !!forceNoProxy, false, proxyModeArg ?? null)
@@ -1830,9 +1895,16 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       ? `--settings ${shellQuote(finalSettingsPath)}`
       : `--settings "$HOME/.claude/mobiusdefault.settings.json"`
 
+    // 会话级 CLI 环境: PATH + 后端地址 + 令牌, 宿主与沙箱只差一个地址
+    // Per-session CLI env: PATH, backend address and token; host and sandbox differ only in address
+    const cliEnv = userId
+      ? buildSessionCliEnv({ userId: String(userId), sessionId, isolated: isolationActiveFor(userId) })
+      : null
+
     // bash -lc链的片段，null项在下面被过滤掉
     // Fragments of the bash -lc chain; null entries are filtered out below
     const cmd = [
+      ...(cliEnv ? sessionCliEnvExports(cliEnv) : []),
       // env档位才加载环境变量代理，新文件名优先旧.bash兜底
       // Only the env tiers source the env proxy; new name first, legacy .bash second
       (finalProxyMode === 'env' || finalProxyMode === 'env_proxychains')

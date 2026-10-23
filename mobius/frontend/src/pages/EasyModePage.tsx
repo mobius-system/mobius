@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Bot,
+  BotMessageSquare,
   Boxes,
   BrainCircuit,
   Check,
@@ -11,7 +11,9 @@ import {
   CircleDot,
   Cpu,
   FolderKanban,
+  FolderTree,
   History,
+  LayoutDashboard,
   LayoutList,
   Loader2,
   MessageSquare,
@@ -24,18 +26,23 @@ import {
   Search as SearchIcon,
   Settings,
   Sparkles,
+  SquarePen,
   Trash2,
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
+import { assistantAllowedFor } from '../services/assistant-availability'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
+import { useVoiceInput } from '../services/use-voice-input'
 import { EasySessionChatInput } from '../components/easy-session-chat-input'
+import { EasySessionProjectSelector } from '../components/easy-session-project-selector'
+// 可合作计算机弹窗按需加载 (memories 模块连带 markdown 渲染栈, 欢迎页首屏不该背上)
+const RemoteComputeMemoryModal = lazyWithRetry(() => import('../components/memories').then(module => ({ default: module.RemoteComputeMemoryModal })))
 import {
   EasySessionConfigBar,
-  EasySessionModeTabs,
   EMPTY_EASY_SESSION_SELECTION,
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
@@ -54,7 +61,6 @@ import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 import { MobiusLogo } from '../components/mobius-logo'
 import { appendAttachmentsToDesc, newAttId, uploadAttachmentFile, type Attachment } from '../components/attachments'
-import { assistantAllowedFor } from '../services/assistant-availability'
 
 const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
 
@@ -231,6 +237,14 @@ export default function EasyModePage() {
   const [showWelcome, setShowWelcome] = useState(() => !search.get('session'))
   const [welcomePrompt, setWelcomePrompt] = useState('')
   const [welcomeAttachments, setWelcomeAttachments] = useState<Attachment[]>([])
+  // 欢迎页语音输入: 录音 → 转写 → 追加进输入框 (与会话页同一转写链路 /api/assistant/transcribe)
+  const [welcomeErrorNotice, setWelcomeErrorNotice] = useState('')
+  const welcomeVoice = useVoiceInput({
+    onTranscribed: text => setWelcomePrompt(prev => (prev ? `${prev} ${text}` : text)),
+    onError: msg => setWelcomeErrorNotice(msg),
+  })
+  // 欢迎页「可合作计算机」弹窗 (会话工具同款): 声明文本追加进任务描述随首次消息发送
+  const [welcomeCooperablePcOpen, setWelcomeCooperablePcOpen] = useState(false)
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(() => ({
     ...EMPTY_EASY_SESSION_SELECTION,
@@ -960,19 +974,19 @@ export default function EasyModePage() {
         >
           <div className="easy-sidebar-primary">
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'welcome' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'welcome' ? 'page' : undefined} onClick={openWelcome} title="新建任务">
-              <Plus className="h-4 w-4" />
+              <SquarePen className="easy-nav-icon" />
               <span>新任务</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'overview' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'overview' ? 'page' : undefined} onClick={() => selectPanel('overview')}>
-              <Network className="h-4 w-4" />
+              <LayoutDashboard className="easy-nav-icon" />
               <span>全局纵观</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'extensions' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'extensions' ? 'page' : undefined} onClick={() => selectPanel('extensions')}>
-              <Boxes className="h-4 w-4" />
+              <Boxes className="easy-nav-icon" />
               <span>项目与拓展</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'devices' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'devices' ? 'page' : undefined} onClick={() => selectPanel('devices')}>
-              <MonitorSmartphone className="h-4 w-4" />
+              <Network className="easy-nav-icon" />
               <span>跨设备</span>
             </button>
           </div>
@@ -981,7 +995,7 @@ export default function EasyModePage() {
             <span className="easy-sidebar-tools__label">
               {sessionListMode === 'grouped' ? (
                 <>
-                  <FolderKanban className="easy-sidebar-tools__label-icon" aria-hidden="true" />
+                  <FolderTree className="easy-sidebar-tools__label-icon" aria-hidden="true" />
                   项目分组
                 </>
               ) : (
@@ -1038,12 +1052,12 @@ export default function EasyModePage() {
           </div>
 
           <div className="easy-sidebar-footer" aria-label="快捷入口">
-            {/* 小莫助手临时关闭期间隐藏这个快捷入口 (见 services/assistant-availability). */}
+            {/* 跟随全局开关 (services/assistant-availability): 封锁期间对普通用户隐藏, 与其余 4 处入口保持同步 */}
             {assistantAllowedFor(user) && (
-            <button type="button" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><Bot className="h-[17px] w-[17px]" /></button>
+            <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><BotMessageSquare className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             )}
-            <button type="button" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Settings className="h-[17px] w-[17px]" /></button>
-            <button type="button" className={activePanel === 'context' ? 'is-active' : ''} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><BrainCircuit className="h-[17px] w-[17px]" /></button>
+            <button type="button" className="easy-footer-btn" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Settings className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><BrainCircuit className="h-[18px] w-[18px]" strokeWidth={2} /></button>
           </div>
         </ResizablePanel>
 
@@ -1066,7 +1080,7 @@ export default function EasyModePage() {
           </main>
         ) : activePanel === 'devices' ? (
           <main className="easy-content" data-testid="easy-devices-panel">
-            <div className="easy-content-header"><MonitorSmartphone className="h-5 w-5" /><div><h1>跨设备</h1><p>AIMUX 可协作设备与连接状态</p></div>{remotesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>{remotes.length}</span>}</div>
+            <div className="easy-content-header"><Network className="h-5 w-5" /><div><h1>跨设备</h1><p>AIMUX 可协作设备与连接状态</p></div>{remotesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>{remotes.length}</span>}</div>
             {remotesError ? <div className="easy-content-empty"><Cpu className="h-8 w-8" /><span>{remotesError}</span></div> : (
               <div className="easy-device-list">
                 {remotes.length === 0 && !remotesLoading ? <div className="easy-content-empty"><MonitorSmartphone className="h-8 w-8" /><span>暂无已登记的协作设备</span></div> : remotes.map((remote: any, index) => {
@@ -1102,10 +1116,20 @@ export default function EasyModePage() {
         ) : showWelcome ? (
           <main className="easy-content easy-content--welcome" data-testid="easy-welcome-panel">
             <div className="easy-welcome-card">
-              <MobiusLogo size={46} className="easy-welcome-logo" />
-              <h1>{timeGreeting(user?.display_name)}<br />您需要莫比乌斯执行什么任务？</h1>
-              <EasySessionModeTabs selection={welcomeSelection} onChange={setWelcomeSelection} />
-              <div id="easy-welcome-composer" role="tabpanel" aria-labelledby={`easy-welcome-mode-${welcomeSelection.createProject ? 1 : 0}`}>
+              {/* 品牌行: Logo + 产品名 + 定位标签 水平排列 (issue 2026-10-19 重设计) */}
+              <div className="easy-welcome-brand">
+                <MobiusLogo size={34} className="easy-welcome-brand__logo" />
+                <span className="easy-welcome-brand__name">Mobius</span>
+                <span className="easy-welcome-brand__divider" aria-hidden="true" />
+                {/* data-text-redaction-ignore: 欢迎页定位语是固定品牌文案, 不参与管理员「文字替换隐藏」规则 */}
+                <span className="easy-welcome-brand__tag" data-text-redaction-ignore="true">多智能体 · 自进化</span>
+              </div>
+              {/* 主标题: 直接说价值; 问候语降为副标题一行 */}
+              <h1 className="easy-welcome-headline">把自己的工作交给一支智能体军团</h1>
+              <p className="easy-welcome-sub">
+                {timeGreeting(user?.display_name)}。描述你的目标，莫比乌斯负责拆解、编排与执行。
+              </p>
+              <div id="easy-welcome-composer">
                 <input
                   ref={welcomeFileInputRef}
                   type="file"
@@ -1116,6 +1140,22 @@ export default function EasyModePage() {
                     event.target.value = ''
                   }}
                 />
+                {/* 项目选择 pill (与会话页输入框上方同款): 选中写入 welcomeSelection.projectId, 换项目清空任务与排除集 */}
+                {!welcomeSelection.createProject && (
+                  <div className="mb-2">
+                    <EasySessionProjectSelector
+                      selectedProjectId={welcomeSelection.projectId || undefined}
+                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
+                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
+                      onSelectProject={pid => {
+                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
+                      }}
+                      onCreateProject={() => setCreateKind('project')}
+                    />
+                  </div>
+                )}
+                {/* 流光描边容器 (方案 5): 亮弧沿边巡游, 聚焦增强 */}
+                <div className="easy-input-glow">
                 <EasySessionChatInput
                   mode="create_session_mode"
                   input={welcomePrompt}
@@ -1134,6 +1174,13 @@ export default function EasyModePage() {
                   submitTooltip={welcomeSelection.createProject && !welcomeSelection.projectName.trim()
                       ? '请填写项目名'
                       : '开始新会话'}
+                  welcomeModelKey={welcomeSelection.model}
+                  onChangeWelcomeModel={model => setWelcomeSelection(prev => ({ ...prev, model }))}
+                  welcomeVoiceState={welcomeVoice.voiceState}
+                  welcomeVoiceTip={welcomeVoice.voiceState === 'recording'
+                    ? `停止录音并转写 ${welcomeVoice.recordingSeconds}s`
+                    : welcomeVoice.voiceState === 'transcribing' ? '正在转写语音' : '语音输入'}
+                  onToggleWelcomeVoice={welcomeVoice.toggleVoiceRecording}
                   toolbar={
                     <EasySessionConfigBar
                       selection={welcomeSelection}
@@ -1147,9 +1194,11 @@ export default function EasyModePage() {
                       projects={projects}
                       recentSessions={sessions}
                       dark={theme !== 'light'}
+                      onOpenCooperablePc={() => setWelcomeCooperablePcOpen(true)}
                     />
                   }
                 />
+                </div>
                 {welcomeSelectionNotice && !welcomeSelection.createProject ? (
                   <div className="easy-selection-notice" role="status">
                     当前选择：{projects.find(project => String(project.id) === welcomeSelection.projectId)?.name || '未选择项目'}
@@ -1158,6 +1207,20 @@ export default function EasyModePage() {
                   </div>
                 ) : null}
               </div>
+              {/* 可合作计算机弹窗 (会话工具同款): 声明文本追加进任务描述, 随首次消息一起发送 */}
+              {welcomeCooperablePcOpen && (
+                <Suspense fallback={null}>
+                  <RemoteComputeMemoryModal
+                    baseUrl={`/api/projects/${welcomeSelection.projectId || ''}/memories`}
+                    mode="announce"
+                    onClose={() => setWelcomeCooperablePcOpen(false)}
+                    onAnnounce={(body) => {
+                      setWelcomePrompt(prev => (prev ? `${prev}\n\n${body}` : body))
+                      setWelcomeCooperablePcOpen(false)
+                    }}
+                  />
+                </Suspense>
+              )}
             </div>
           </main>
         ) : loading ? (

@@ -20,8 +20,9 @@ const { startReminderServer } = require('./fixtures/reminder-hook-server');
 const {
   buildReminderHookCommand,
   claudeReminderHookSettings,
-  codexReminderHookToml,
 } = require('../backend/services/session-reminder-hook');
+
+const CLI_PATH = path.resolve(__dirname, '../scripts/cli/mobius_session_reminder');
 
 const MARKER = `LIVE-MARKER-${Date.now()}`;
 const ASK_FOR_REMINDER =
@@ -51,6 +52,18 @@ function runBin(bin, args, options = {}) {
   });
 }
 
+/** Parse hook_success attachments out of a Claude Code transcript. */
+function hookSuccessEntries(transcript) {
+  return String(transcript || '')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try { return JSON.parse(line); } catch { return null; }
+    })
+    .filter((row) => row && row.attachment && row.attachment.type === 'hook_success')
+    .map((row) => row.attachment);
+}
+
 function shownHandler(req, res) {
   res.statusCode = 200;
   res.setHeader('content-type', 'application/json');
@@ -70,7 +83,7 @@ function suppressedHandler(req, res) {
 
 async function runClaude(server, mode) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `cc-reminder-${mode}-`));
-  const command = buildReminderHookCommand({ baseUrl: server.baseUrl });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   const settings = claudeReminderHookSettings(command);
   const settingsPath = path.join(dir, 'settings.json');
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -81,7 +94,7 @@ async function runClaude(server, mode) {
     '--model', 'haiku',
     '--settings', settingsPath,
     '--output-format', 'text',
-  ], { cwd: dir });
+  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_HOOK_TOKEN: 'live-token' } });
   result.transcript = readClaudeTranscript(dir);
   return result;
 }
@@ -119,6 +132,27 @@ async function testClaudeShown() {
   }
 }
 
+/**
+ * Baseline: the exact same prompt with no hook configured at all. The answer
+ * format is dictated by ASK_FOR_REMINDER, so a "NONE" answer here proves the
+ * suppressed run's NONE is the prompt's format, not injected content.
+ */
+async function testClaudeNoHookBaseline() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-reminder-baseline-'));
+  const result = await runBin('claude', [
+    '-p', ASK_FOR_REMINDER,
+    '--dangerously-skip-permissions',
+    '--model', 'haiku',
+    '--output-format', 'text',
+  ], { cwd: dir });
+  result.transcript = readClaudeTranscript(dir);
+  assert.strictEqual(result.code, 0, `claude failed: ${result.stderr}`);
+  assert.match(result.stdout, /<seen>\s*NONE\s*<\/seen>/i,
+    'without any hook the model also answers NONE: that text is the prompt format, not injected context');
+  assert.doesNotMatch(result.transcript, /hook additional context/);
+  console.log('ok - no-hook baseline answers the same way');
+}
+
 async function testClaudeSuppressedInjectsNothing() {
   const server = await startReminderServer({ handler: suppressedHandler });
   try {
@@ -130,6 +164,13 @@ async function testClaudeSuppressedInjectsNothing() {
     assert.doesNotMatch(result.stdout, new RegExp(MARKER));
     assert.doesNotMatch(result.transcript, /hook additional context/,
       'a suppressed decision must not add any context entry to the transcript');
+
+    const hooks = hookSuccessEntries(result.transcript);
+    assert.ok(hooks.length >= 1, 'the hook must appear in the transcript as a successful, empty run');
+    for (const hook of hooks) {
+      assert.strictEqual(hook.content, '', 'hook_success must carry no content');
+      assert.strictEqual(String(hook.stdout || '').trim(), '{}', 'the hook must only have emitted {}');
+    }
     console.log(`ok - claude suppressed decision injects nothing (${server.requests.length} hook call(s))`);
   } finally {
     await server.close();
@@ -143,7 +184,7 @@ function buildCodexOverride(command) {
 
 async function runCodex(server, mode) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `cx-reminder-${mode}-`));
-  const command = buildReminderHookCommand({ baseUrl: server.baseUrl });
+  const command = buildReminderHookCommand({ cliPath: CLI_PATH });
   return runBin('codex', [
     'exec',
     '--dangerously-bypass-approvals-and-sandbox',
@@ -152,7 +193,7 @@ async function runCodex(server, mode) {
     '-C', dir,
     '-c', buildCodexOverride(command),
     ASK_FOR_REMINDER,
-  ], { cwd: dir });
+  ], { cwd: dir, env: { MOBIUS_BASE: server.baseUrl, MOBIUS_SESSION_ID: 'live-mobius-session', MOBIUS_HOOK_TOKEN: 'live-token' } });
 }
 
 async function testCodexShown() {
@@ -191,6 +232,7 @@ async function main() {
     console.log('skip - set MOBIUS_HOOK_LIVE=1 to run the live Claude Code checks');
     return;
   }
+  await testClaudeNoHookBaseline();
   await testClaudeShown();
   await testClaudeSuppressedInjectsNothing();
 

@@ -82,6 +82,14 @@ const DEFAULTS: any = Object.freeze({
   autoGenerateSessionTitle: {
     enabled: true,
   },
+  // 会话提醒: 有远端目标时, 本机工具调用最多每 cooldownMinutes 提醒一次.
+  // message 留空 = 用代码里的默认文案; perType 可覆盖单个提醒类型.
+  sessionReminders: {
+    enabled: true,
+    cooldownMinutes: 60,
+    message: '',
+    perType: {},
+  },
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
   },
@@ -734,10 +742,48 @@ function loadSettings(): any {
     if (parsed && typeof parsed === 'object' && parsed.userSceneSeen) {
       merged.userSceneSeen = normalizeUserSceneSeenForRead(parsed.userSceneSeen)
     }
+    if (parsed && typeof parsed === 'object' && parsed.sessionReminders) {
+      merged.sessionReminders = normalizeSessionRemindersForRead(parsed.sessionReminders)
+    }
     return merged
   } catch (e) {
     console.warn(`[admin-settings] 读取失败, 回退默认值: ${e.message}`)
     return defaultsClone()
+  }
+}
+
+function normalizeSessionRemindersForRead(value: any): any {
+  const base = defaultsClone().sessionReminders
+  if (!value || typeof value !== 'object') return base
+  const out: any = {
+    ...base,
+    perType: (value.perType && typeof value.perType === 'object') ? { ...value.perType } : {},
+  }
+  if (typeof value.enabled === 'boolean') out.enabled = value.enabled
+  const cooldown = Number(value.cooldownMinutes)
+  if (Number.isFinite(cooldown) && cooldown > 0) out.cooldownMinutes = cooldown
+  if (typeof value.message === 'string') out.message = value.message
+  return out
+}
+
+/**
+ * Effective reminder config for one reminder type.
+ *
+ * Falls back to the global section, then to the built-in defaults. An empty
+ * message means "use the default text" and is applied by the decision module.
+ */
+function getSessionReminderConfig(reminderType?: string): {
+  enabled: boolean
+  cooldownMinutes: number
+  message: string
+} {
+  const root = loadSettings().sessionReminders || {}
+  const perType = reminderType && root.perType ? root.perType[reminderType] : null
+  const merged = { ...root, ...(perType && typeof perType === 'object' ? perType : {}) }
+  return {
+    enabled: merged.enabled !== false,
+    cooldownMinutes: Number(merged.cooldownMinutes) > 0 ? Number(merged.cooldownMinutes) : 60,
+    message: typeof merged.message === 'string' ? merged.message : '',
   }
 }
 
@@ -1069,6 +1115,7 @@ const adminSettings = {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getSessionReminderConfig,
   getModelAutoCompact,
   setModelAutoCompact,
   getGlobalDefaultModel,
@@ -1113,6 +1160,7 @@ export {
   setModelNetworkProxy,
   getModelCaptureStream,
   setModelCaptureStream,
+  getSessionReminderConfig,
   getModelAutoCompact,
   setModelAutoCompact,
   getGlobalDefaultModel,
