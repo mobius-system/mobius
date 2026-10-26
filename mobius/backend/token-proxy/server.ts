@@ -5,7 +5,7 @@
  *   cc/codex (用 .withproxy 变体配置, base_url 指向本进程)
  *     ──POST /v1/messages 或 /responses──►  本进程 (Bearer mpx1.<编码>)
  *     ──解码还原真实 BASE_URL + AUTH_TOKEN + model + session/agent (见 encoding.ts)
- *     ──fetch 真实上游, 流式逐块回传 (绝不整体缓冲, 保证流式体验)
+ *     ──fetch 真实上游, 请求体边收边转、响应体流式逐块回传 (绝不整体缓冲)
  *     ──旁路解析响应里的正文(text)与推理(thinking/reasoning)两类增量
  *
  * 缓存结构 (按 session 分桶, 每桶 16 个「完整请求」):
@@ -204,15 +204,6 @@ const RESP_DROP_HEADERS = new Set([
   'content-encoding', 'content-length', 'transfer-encoding', 'connection',
 ])
 
-function readReqBody(req: express.Request): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    req.on('data', (c: Buffer) => chunks.push(c))
-    req.on('error', reject)
-    req.on('end', () => resolve(Buffer.concat(chunks)))
-  })
-}
-
 async function relay(req: express.Request, res: express.Response): Promise<void> {
   // 1) 解码代理 token → 真实上游 + session/agent.
   const authHeader = req.headers['authorization'] || ''
@@ -232,16 +223,7 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
     return
   }
 
-  // 2) 读完整请求体, 原样转发.
-  let body: Buffer
-  try {
-    body = await readReqBody(req)
-  } catch (e: any) {
-    res.status(400).json({ error: 'failed to read request body', detail: e?.message || String(e) })
-    return
-  }
-
-  // 3) 组装上游请求头: 透传 anthropic-version/beta/user-agent 等, 替换鉴权.
+  // 2) 组装上游请求头: 透传 anthropic-version/beta/user-agent 等, 替换鉴权.
   const upstreamHeaders: Record<string, string> = {}
   for (const [k, v] of Object.entries(req.headers)) {
     if (REQ_DROP_HEADERS.has(k.toLowerCase())) continue
@@ -252,20 +234,30 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
 
   const upstreamUrl = up.baseUrl + req.path
 
-  // 4) fetch 上游. 监听客户端断开 → abort 上游, 避免连接+推理 token 空烧.
+  // 3) fetch 上游, 请求体边收边转. 客户端真断开才 abort, 避免连接+推理 token 空烧.
+  // Stream the request body straight through; abort upstream only on real client disconnects.
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
   const ac = new AbortController()
-  const onClientClose = () => { try { ac.abort() } catch { /* noop */ } }
-  req.on('close', onClientClose)
+  const onClientGone = () => { try { ac.abort() } catch { /* noop */ } }
+  // req 的 'close' 在 Node 18 表示"请求体已读完"而不是断开, 用它会在上传完成瞬间掐断上游.
+  // IncomingMessage 'close' means the body was consumed (not a disconnect), so never use it here.
+  req.on('aborted', onClientGone)
+  const onResClose = () => { if (!res.writableEnded) onClientGone() }
+  res.on('close', onResClose)
   let resp: Response
   try {
-    resp = await fetch(upstreamUrl, {
+    // duplex:'half' 是 undici 对流式请求体的硬性要求 (Node 18+), 不是多余选项
+    // duplex:'half' is mandatory for a streaming request body on Node 18+
+    const upstreamInit: any = {
       method: req.method,
       headers: upstreamHeaders,
-      body: body.length > 0 ? body : undefined,
       signal: ac.signal,
-    })
+    }
+    if (hasBody) { upstreamInit.body = req; upstreamInit.duplex = 'half' }
+    resp = await fetch(upstreamUrl, upstreamInit)
   } catch (e: any) {
-    req.off('close', onClientClose)
+    req.off('aborted', onClientGone)
+    res.off('close', onResClose)
     res.status(502).json({ error: 'upstream fetch failed', detail: e?.message || String(e) })
     return
   }
@@ -320,7 +312,8 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
   } catch {
     // cc 提前断开 / 上游读取出错: 尽力结束响应, 不抛.
   } finally {
-    req.off('close', onClientClose)
+    req.off('aborted', onClientGone)
+    res.off('close', onResClose)
   }
   try { res.end() } catch { /* already ended */ }
 
@@ -332,7 +325,8 @@ async function relay(req: express.Request, res: express.Response): Promise<void>
 
 // ── Express app ─────────────────────────────────────────────────────────────
 const app = express()
-// relay 路径走原始 body (readReqBody 自己消费 stream), 不能挂 express.json.
+// relay 路径直接把 req 当流交给上游 (不解析 body), 不能挂 express.json.
+// The relay hands req to upstream as a stream, so no body parser may be mounted here.
 // Anthropic: /v1/messages[/count_tokens]; OpenAI/Codex: /responses (兼容 /v1/responses).
 app.post('/v1/messages', (req, res) => { void relay(req, res) })
 app.post('/v1/messages/count_tokens', (req, res) => { void relay(req, res) })
