@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeftRight, AtSign, Bot, Check, ChevronRight, Eye, FileText, FolderOpen, Loader2, MessageCircle, RefreshCw, Search, X } from 'lucide-react'
 import { api } from '../store'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 import { FileTreeLevel, type DirState, type Entry } from './project-files'
 import { SessionGroupTree } from './session-group-tree'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
@@ -93,6 +94,7 @@ export function RemoteFileMentionDrawer({
   /** 打开时优先停留的 Tab; 缺省按场景推断 (有会话/任务范围 → 智能体)。 */
   initialTab?: 'files' | 'agents'
 }) {
+  const { formatName } = useRemoteDeviceNames()
   const showFilesTab = !!onPickPath
   const [activeTab, setActiveTab] = useState<'files' | 'agents'>(issueId || researchId ? 'agents' : 'files')
   const [sources, setSources] = useState<RemoteFileSource[]>([])
@@ -464,7 +466,7 @@ export function RemoteFileMentionDrawer({
                         >
                           <div className="flex items-center gap-2">
                             <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.kind !== 'remote' || source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
+                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.kind === 'remote' ? formatName(source.name) : source.name}</span>
                             {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
                           </div>
                           <div className="mt-1 truncate font-mono text-[length:var(--fs-xs)]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>

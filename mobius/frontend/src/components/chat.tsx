@@ -3488,6 +3488,22 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [inputExpanded])
+  /* Long-text editor only: Tab inserts four spaces instead of moving focus. */
+  const handleExpandedInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
+    const nativeEvent = e.nativeEvent
+    // 输入法合成中不劫持 Tab，避免打断候选词
+    // Do not hijack Tab while IME composition is active
+    if (composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
+    e.preventDefault()
+    const el = e.currentTarget
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    // ✨ 用四个空格替换选区写回输入，再把光标落到插入点之后
+    // ✨ Replace the selection with four spaces and move the caret past them
+    setInput(input.slice(0, start) + '    ' + input.slice(end))
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 4 })
+  }, [input])
 
   useEffect(() => {
     if (!inputMenuOpen) return
@@ -5158,6 +5174,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               ref={expandedInputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
+              onKeyDown={handleExpandedInputKeyDown}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
               className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"

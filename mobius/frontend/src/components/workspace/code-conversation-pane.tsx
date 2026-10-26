@@ -4,6 +4,7 @@ import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } fro
 import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { api, HIDDEN_FOLDER_NAME } from '../../store'
+import { useRemoteDeviceNames } from '../../services/remote-device-names'
 import { ResizablePanel } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
@@ -191,6 +192,7 @@ function loadCodeWordWrap(): boolean {
 }
 
 export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
+  const { formatName } = useRemoteDeviceNames()
   const compact = variant === 'sidebar'
   const blueprint = mode === 'blueprint'
   // 蓝图变体的树根: <HIDDEN_FOLDER_NAME>/blueprints (相对 bind_path); 工作区模式仍为项目根.
@@ -1181,7 +1183,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
           <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
-            {blueprint ? '项目蓝图' : (source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${remoteName}` : ''}` : '中枢文件'))}
+            {blueprint ? '项目蓝图' : (source === 'local' ? '本地文件' : (source === 'remote' ? `远程文件${remoteName ? ` · ${formatName(remoteName)}` : ''}` : '中枢文件'))}
           </span>
           <div className="flex-1" />
           <button
@@ -1227,7 +1229,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   {remoteSourcesLoaded && remoteSources.length === 0 && <option value="" disabled>未注册远程机器</option>}
                   {remoteSources.map(remote => (
                     <option key={remote.name} value={remote.name}>
-                      {remote.name}{remote.status ? ` · ${remote.status}` : ''}
+                      {formatName(remote.name)}{remote.status ? ` · ${remote.status}` : ''}
                     </option>
                   ))}
                 </optgroup>

@@ -469,7 +469,7 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
       data-search-hit={searchHighlighted ? 'true' : undefined}
       aria-label={searchHighlighted ? '搜索命中条目' : undefined}
       className={`jsonl-entry-card relative mb-2 rounded-lg border shadow-sm ${easyInline ? 'jsonl-entry-card--easy-inline' : ''} ${easyFlat ? 'jsonl-entry-card--easy-flat' : ''} ${easyOpener ? 'jsonl-entry-card--easy-opener' : ''} ${isSseFresh ? 'card-enter' : ''} ${theme.border} ${theme.bg} ${searchHighlighted ? 'ring-2 ring-red-500/95 border-red-500/95 shadow-[0_0_0_3px_rgba(239,68,68,0.3),0_0_24px_rgba(239,68,68,0.32)]' : ''}`}>
-      <summary onClick={easyOpener ? (e) => e.preventDefault() : undefined} className={`jsonl-entry-summary ${easyOpener ? 'jsonl-entry-summary--easy-opener cursor-text' : 'cursor-pointer'} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
+      <summary onClick={easyOpener ? (e) => e.preventDefault() : undefined} className={`jsonl-entry-summary group/preview ${easyOpener ? 'jsonl-entry-summary--easy-opener cursor-text' : 'cursor-pointer'} ${dense ? 'px-1 pt-0.5 gap-1' : 'px-3 pt-1.5 gap-2'} ${open ? 'pb-0.5' : dense ? 'pb-0.5' : 'pb-1.5'} flex items-center select-text${hasHeaderAction ? ' pr-[120px]' : ''}`}>
         {!easyCompactSummary && showMeta && typeof lineNo === 'number' && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">#{lineNo}</span>}
         {!easyCompactSummary && showMeta && ts && <span className="jsonl-entry-summary-meta text-[var(--text-muted)] font-mono flex-shrink-0">{ts}</span>}
         {easyInline ? (
@@ -513,7 +513,12 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {(easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short) && !(open && mode === 'compact') && <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] ${easyOpener ? 'flex-1' : 'truncate flex-1'}`}>{easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short}</span>}
+        {/* 悬停摘要行时在预览文字前补出该条目时间, 平时不占位也不截短摘要 */}
+        {/* Hovering the preview line shows the entry time in front of it, taking no space when idle */}
+        <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] ${easyOpener ? 'flex-1' : 'truncate flex-1'}`}>
+          {ts && <span className="jsonl-entry-summary-meta hidden whitespace-nowrap font-normal text-[var(--text-muted)] group-hover/preview:inline">{ts}{'  '}</span>}
+          {!(open && mode === 'compact') && (easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short)}
+        </span>
       </summary>
       {hasHeaderAction && (
         <div className="absolute top-1 right-2 flex items-center gap-1.5 z-[5]">

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { BookOpen, Brain, Clock3, Eye, GitBranch, GitFork, Loader2, MonitorPlay, Plus, Puzzle, RefreshCw, Rocket, Search, Settings2, Upload, X } from 'lucide-react'
 import { api } from '../store'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 import { DevPortsBar } from './dev-ports-bar'
 import { normalizeGithubSkillInput } from './skills'
 import { SkillMarketLink } from './skill-market-link'
@@ -780,6 +781,7 @@ export function SessionSkillMemoryEditor({
   onRequestRunProject?: (mainProjectPortPath: string) => void
   visibilityOptions?: VisibilityOption[]
 }) {
+  const { formatName } = useRemoteDeviceNames()
   const [memories, setMemories] = useState<EditorItem[]>([])
   const [skills, setSkills] = useState<EditorItem[]>([])
   const [totals, setTotals] = useState({ skills: 0, memories: 0 })
@@ -1261,7 +1263,7 @@ export function SessionSkillMemoryEditor({
                         <div key={source.id} className="rounded-lg border px-2.5 py-2" style={{ borderColor: source.available ? 'var(--border-color)' : 'rgba(148,163,184,0.28)', background: source.available ? 'rgba(245,158,11,0.04)' : 'rgba(148,163,184,0.04)' }}>
                           <div className="flex min-w-0 items-center gap-2">
                             <GitBranch className={`h-3.5 w-3.5 flex-shrink-0 ${source.available ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={1.9} />
-                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.label}</span>
+                            <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium" style={{ color: 'var(--text-primary)' }}>{source.kind === 'remote' ? formatName(source.label) : source.label}</span>
                             {source.available && source.branch && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[length:var(--fs-xs)] text-amber-300">{source.branch}</span>}
                             {!source.available && <span className="flex-shrink-0 rounded border border-slate-400/25 bg-slate-400/10 px-1.5 py-0.5 text-[length:var(--fs-xs)] text-slate-300">无 Git 仓库</span>}
                             {source.available && !source.branch && source.head && <span className="flex-shrink-0 rounded border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[length:var(--fs-xs)] text-amber-300">游离 HEAD {source.head}</span>}

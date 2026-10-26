@@ -16,6 +16,7 @@ import { PcTaskModeSection } from './pc-task-mode-section'
 export { PcTaskModeSection }
 import { randomProjectBindPath, randomProjectSlug, formatDefaultSessionName } from '../services/session-naming'
 import { ErrBanner } from './error-banner'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 
 // 既有调用方仍从本模块取这三者, 原样转出保持兼容
 export { ErrBanner }
@@ -3620,6 +3621,7 @@ const AIMUX_IDENTIFIER_STORAGE_KEY = 'mobius.aimux.guide.identifier'
 
 export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   const { theme } = useStore()
+  const { formatName } = useRemoteDeviceNames()
   const [copied, setCopied] = useState<string>('')
   const [remotes, setRemotes] = useState<Array<{ name: string; status: string; platform: string; default_profile?: string; last_seen?: string }>>([])
   const [remotesErr, setRemotesErr] = useState('')
@@ -3800,7 +3802,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
               {remotes.map((r, i) => (
                 <div key={r.name + i} className="flex items-center gap-2 px-3 py-1.5 text-[length:var(--fs-md)]" style={{ borderTop: i > 0 ? '1px solid var(--border-color)' : 'none' }}>
                   <span className={r.status === 'connected' ? 'w-1.5 h-1.5 rounded-full bg-green-500' : 'w-1.5 h-1.5 rounded-full bg-gray-400'} />
-                  <span className="font-mono" style={{ color: theme !== 'light' ? '#e2e8f0' : '#1e293b' }}>{r.name}</span>
+                  <span className="font-mono" style={{ color: theme !== 'light' ? '#e2e8f0' : '#1e293b' }}>{formatName(r.name)}</span>
                   <span className="opacity-50">·</span>
                   <span style={{ color: theme !== 'light' ? '#94a3b8' : '#64748b' }}>{r.platform || '?'}</span>
                   <span className="opacity-50">·</span>

@@ -148,6 +148,7 @@ app.use('/api/admin', adminRoutes);
 // 用户隔离 (docker 模式) 的沙箱运维面: 列表 / 强制重建 / 停止 (adminAuth 由路由内部? 否 — 挂在 admin 前缀下, 由 adminRoutes 同款 adminAuth 保护)
 app.use('/api/admin/sandboxes', require('./backend/middleware/auth').adminAuth, require('./backend/services/user-isolation/admin-routes'));
 app.use('/api/aimux', aimuxRoutes);
+app.use('/api/remote_device_name', require('./backend/routes/remote-device-names'));
 app.use('/api/scheduled-wake-ups', scheduledWakeupsRoutes);
 // /api/token_stream → 本机 token-proxy (数字雨 token 环形缓冲, SSE live tail).
 app.use('/api/token_stream', tokenStreamProxyRouter);

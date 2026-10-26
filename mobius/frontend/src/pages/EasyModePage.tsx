@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 import {
   BotMessageSquare,
   Boxes,
@@ -208,6 +209,7 @@ function readEasyLastSelection(): Pick<EasySessionSelection, 'projectId' | 'issu
 }
 
 export default function EasyModePage() {
+  const { formatName } = useRemoteDeviceNames()
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const {
@@ -1087,7 +1089,7 @@ export default function EasyModePage() {
                   const connected = remote.reachable === true || remote.connected === true || remote.status === 'reachable' || remote.event_stream_connected === true
                   const name = remote.name || remote.identifier || remote.host || `设备 ${index + 1}`
                   const detail = [remote.user && remote.hostname ? `${remote.user}@${remote.hostname}` : remote.hostname || remote.host, remote.port ? `:${remote.port}` : '', remote.rtt || remote.latency].filter(Boolean).join(' ')
-                  return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{name}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
+                  return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{formatName(name)}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
                 })}
               </div>
             )}

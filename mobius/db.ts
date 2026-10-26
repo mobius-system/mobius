@@ -383,6 +383,17 @@ function migrateUserIsolationV3Schema() {
 }
 migrateUserIsolationV3Schema();
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS remote_device_names (
+    user_id TEXT NOT NULL,
+    device_key TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (user_id, device_key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 // ===== sessions_v2: 实验栈专属会话表 =====
 // 字段语义跟生产 sessions 表一致, 缺一些用不到的列(integration / risk_level), 加一些 v2 特性列.
 db.exec(`

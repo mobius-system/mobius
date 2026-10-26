@@ -19,6 +19,7 @@ import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/glo
 import { ErrBanner } from './error-banner'
 import { PcTaskModeSection } from './pc-task-mode-section'
 import { formatDefaultSessionName } from '../services/session-naming'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { type Attachment, appendAttachmentsToDesc } from './attachments'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL, type SessionModelOption } from './session-model-picker'
@@ -159,6 +160,7 @@ function SessionCreateSuccess({ name, canView, onView, onCreateAnother, onClose,
 }
 
 export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectId, defaultIssueId, initialPrompt = '', successMode = 'dialog', projectKind, continueFromSessionId, initialName, initialDescription, initialIssueTitle, initialDevice }: { onClose: () => void; onDone: (entity: any, detailUrl?: string) => void; onNavigate?: (path: string) => void; defaultProjectId?: string; defaultIssueId?: string; initialPrompt?: string; successMode?: 'dialog' | 'external'; projectKind?: string; continueFromSessionId?: string; initialName?: string; initialDescription?: string; initialIssueTitle?: string; initialDevice?: { aimuxId?: string | null; guiAuthorized?: boolean; requiresAimux?: boolean } }) {
+  const { formatName } = useRemoteDeviceNames()
   const { theme, user } = useStore()
   const dark = theme !== 'light'
   const userParam = user?.id
@@ -637,14 +639,14 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                     emptyText="暂无可协作设备"
                     options={[
                       // 桌面端默认绑定的是本机标识, web 端没有"本机"概念 → 同一个默认项按平台措辞
-                      { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '中枢', description: aimuxId ? `当前: ${aimuxId}` : '只在莫比乌斯中枢上工作' },
+                      { value: DEVICE_AUTO, label: isDesktop ? '跟随本机' : '中枢', description: aimuxId ? `当前: ${formatName(aimuxId)}` : '只在莫比乌斯中枢上工作' },
                       // 继续会话时设备由旧会话继承且不可改; 若它还没出现在 bridge 列表里 (未加载/离线), 补一条占位项,
                       // 否则触发器会回落成「中枢」——与实际继承的设备不符.
                       // A continued session inherits its device read-only; seed a placeholder while it is absent from the
                       // bridge list (not loaded yet / offline) so the trigger does not fall back to the hub label.
                       ...(deviceOverride && !bridgeDevices.some(d => d.name === deviceOverride) ? [{
                         value: guiAuthorized ? DEVICE_GUI_PREFIX + deviceOverride : deviceOverride,
-                        label: guiAuthorized ? `${deviceOverride} (授权操作图形界面)` : deviceOverride,
+                        label: guiAuthorized ? `${formatName(deviceOverride)} (授权操作图形界面)` : formatName(deviceOverride),
                         description: '继承自原会话',
                       }] : []),
                       // 离线设备仍可选 (与头部切换设备一致: 断开时仍可依托中枢继续执行任务), 只标状态不置灰
@@ -652,7 +654,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                       ...bridgeDevices.flatMap(d => {
                         const entry = {
                           value: d.name,
-                          label: d.name,
+                          label: formatName(d.name),
                           description: [d.platform, d.status === 'connected' ? '在线' : '离线'].filter(Boolean).join(' · '),
                           badge: d.status === 'connected' ? undefined : { text: '离线', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
                         }
@@ -660,7 +662,7 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                         // GUI-capable devices get an extra authorized variant: same remote, session gets remote_gui_* tools + prompt
                         const guiEntry = d.gui?.available === true ? {
                           value: DEVICE_GUI_PREFIX + d.name,
-                          label: `${d.name} (授权操作图形界面)`,
+                          label: `${formatName(d.name)} (授权操作图形界面)`,
                           description: '在线 · 图形界面 (computer use)',
                           badge: { text: 'GUI', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
                         } : null

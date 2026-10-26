@@ -14,6 +14,7 @@ import { useLayoutMode } from './services/layout-mode'
 import { buildEasyModeUrlFromContext } from './services/easy-route-state'
 import { LayoutModeChoiceModal } from './components/layout-mode-choice-modal'
 import { assistantAllowedFor } from './services/assistant-availability'
+import { RemoteDeviceNamesProvider } from './services/remote-device-names'
 
 const Login = lazyWithRetry(() => import('./pages/Login'))
 const Welcome = lazyWithRetry(() => import('./pages/Welcome'))
@@ -466,6 +467,7 @@ function AuthenticatedApp() {
     return <Navigate to={`/u/${modeTarget.user}/easy_mode${location.search}${location.hash}`} replace />
   }
   return (
+    <RemoteDeviceNamesProvider key={user.id} userId={user.id}>
     <>
       <StaleChunkErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
@@ -499,6 +501,7 @@ function AuthenticatedApp() {
         <DesktopTabBar />
       </Suspense>
     </>
+    </RemoteDeviceNamesProvider>
   )
 }
 
