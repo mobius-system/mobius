@@ -121,7 +121,11 @@ module.exports = {
       instances: '1',
       autorestart: true,
       kill_timeout: 5000,
-      max_memory_restart: '256M',
+      // 中转代理要原样缓冲整份请求体（截图类会话单条 10~20MB，实测 3~4 倍放大），
+      // 256M 会在并发时被 pm2 杀掉并掐断在途模型流，故留足余量。
+      // The proxy buffers whole request bodies (10-20MB for screenshot sessions, ~3-4x footprint),
+      // so 256M got the process killed mid-stream; keep generous headroom.
+      max_memory_restart: '700M',
       out_file: path.join(LOG_DIR, 'mobius-token-proxy.log'),
       error_file: path.join(LOG_DIR, 'mobius-token-proxy-error.log'),
       merge_logs: true,
