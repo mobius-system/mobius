@@ -7526,3 +7526,74 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
     animation: none;
   }
 }
+
+/* ===== 统一键盘焦点环 (issue 2026-10-23, impeccable P0) =====
+ * 全站图标按钮此前缺 focus-visible, 键盘 Tab 导航看不到焦点.
+ * 这里给所有图标按钮统一 2px accent 环, 与 jsonl-icon-button 既有风格一致. */
+.easy-icon-btn:focus-visible,
+.easy-send-btn:focus-visible,
+.easy-project-trigger:focus-visible,
+.easy-sidebar-nav:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-tools button:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-footer button:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
+[data-testid="easy-session-tool-menu"] button:focus-visible {
+  outline: 2px solid color-mix(in srgb, #60a5fa 74%, transparent);
+  outline-offset: 2px;
+}
+
+/* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
+ * 统一弹窗进出动画: popover 贴边弹层 fade+上滑, modal 遮罩层 fade + 内容 scale.
+ * 时长 160ms ease-out (impeccable 产品动效 150-250ms). */
+.easy-popover-in {
+  transform-origin: left bottom;
+  animation: easy-popover-in .16s ease-out;
+}
+@keyframes easy-popover-in {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.easy-modal-overlay-in {
+  animation: easy-fade-in .16s ease-out;
+}
+.easy-modal-panel-in {
+  transform-origin: center;
+  animation: easy-modal-in .16s ease-out;
+}
+@keyframes easy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes easy-modal-in {
+  from { opacity: 0; transform: scale(.97) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .easy-popover-in, .easy-modal-overlay-in, .easy-modal-panel-in { animation: none; }
+}
+
+/* ===== 列表空态规范 (issue 2026-10-23, impeccable) =====
+ * 弹窗/下拉内的小空态统一为「图标 + 一句说明」, 替代零散纯文字. */
+.easy-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.easy-list-empty svg {
+  color: var(--text-muted);
+  opacity: .45;
+}
+.easy-list-empty .easy-list-empty__action {
+  margin-top: 4px;
+  color: var(--accent-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.easy-list-empty .easy-list-empty__action:hover { text-decoration: underline; }

@@ -155,7 +155,7 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
           role="menu"
           aria-label="会话工具"
           data-testid="easy-session-tool-menu"
-          className="fixed z-[96] flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+          className="easy-popover-in fixed z-[96] flex flex-col overflow-hidden rounded-2xl shadow-2xl"
           style={{
             left: pos.left,
             bottom: pos.bottom,
@@ -249,7 +249,7 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
             {/* 7.4 项目知识沉淀到记忆 (沿用 onSendProjectKnowledge) */}
             {props.onSendProjectKnowledge ? (
               <ToolItem
-                icon={<Puzzle className="h-3.5 w-3.5" strokeWidth={2} />}
+                icon={<Database className="h-3.5 w-3.5" strokeWidth={2} />}
                 label="项目知识沉淀到记忆"
                 tooltip={props.projectKnowledgeSending ? '正在发送项目知识沉淀指令...' : '请智能体整理并更新项目级与任务级可复用知识'}
                 disabled={props.projectKnowledgeSending || (props.jsonlEntryCount ?? 0) === 0 || !props.connectionReady}
@@ -261,7 +261,7 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
             {/* 8. 注入 Skill — 沿用 AdvancedSessionActions 的禁用规则: !hasSession 禁用 */}
             {props.onInjectSkill ? (
               <ToolItem
-                icon={<Database className="h-3.5 w-3.5" strokeWidth={2} />}
+                icon={<Puzzle className="h-3.5 w-3.5" strokeWidth={2} />}
                 label="注入 Skill"
                 tooltip={props.hasSession ? '向当前会话注入 Skill' : '需要先打开一个会话'}
                 disabled={!props.hasSession}
@@ -317,7 +317,7 @@ function ToolItem({ icon, label, subLabel, onClick, isDark, tooltip, disabled }:
       className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
       style={{ color: 'var(--text-primary)' }}
     >
-      <span className="flex-shrink-0" style={{ color: isDark ? '#7dd3fc' : '#0284c7' }}>{icon}</span>
+      <span className="flex-shrink-0" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {subLabel ? <span className="text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>{subLabel}</span> : null}
     </button>

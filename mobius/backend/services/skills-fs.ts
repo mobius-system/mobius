@@ -19,6 +19,7 @@
  * copyToScope() 把任意一条整目录快照复制到调用者的用户级或某项目级.
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { parseFrontmatter } from './skill-loader';
@@ -539,8 +540,7 @@ function deleteById(id: any): boolean {
   else if (parsed.scope === 'project') dir = path.join(userProjectDir(parsed.userId, parsed.projectId), parsed.dirName);
   else return false;
   const resolved = path.resolve(dir);
-  // 安全护栏: 必须落在 ROOT 之下, 防止 ../ 之类.
-  // 刻意严于 file-access.isWithin: 连 ROOT 自身也拒 (下面会 rmSync 递归删除).
+  // 安全护栏: 必须落在 ROOT 之下, 防止 ../ 之类
   if (!resolved.startsWith(path.resolve(ROOT) + path.sep)) return false;
   if (!fs.existsSync(resolved)) return false;
   fs.rmSync(resolved, { recursive: true, force: true });
@@ -560,7 +560,6 @@ function updateBody(id: any, body: any): { ok: boolean; skill?: any; error?: str
   if (!dir) return { ok: false, error: '无法定位 skill 目录' };
   const resolved = path.resolve(dir);
   // 安全护栏: 必须落在 ROOT 之下, 防止 ../ 越权.
-  // 刻意严于 file-access.isWithin: 连 ROOT 自身也拒 (写 SKILL.md 的目标必须是子目录).
   if (!resolved.startsWith(path.resolve(ROOT) + path.sep)) return { ok: false, error: '路径越界' };
   const skillMd = path.join(resolved, 'SKILL.md');
   if (!fs.existsSync(skillMd)) return { ok: false, error: 'SKILL.md 不存在' };
@@ -651,6 +650,17 @@ function isSafeSkillName(name: any): boolean {
   return /^[A-Za-z0-9._@/-]+$/.test(name);
 }
 
+// skills CLI 从 1.5.19 起要求 Node >= 22.20 (依赖 util.styleText), 而本机常跑 Node 18
+// → 直接 `npx skills` 拉最新会在启动时崩 (SyntaxError: styleText).
+// 这里按运行时 Node 版本选择: Node >= 22 用最新, 否则固定到兼容 Node 18 的 1.4.0.
+function skillsCliPackage(): string {
+  try {
+    const major = Number(String(process.versions?.node || '').split('.')[0])
+    if (Number.isFinite(major) && major >= 22) return 'skills'
+  } catch { /* fallthrough */ }
+  return 'skills@1.4.0'
+}
+
 function runNpxSkillsAdd(targetDir: string, skillName: string): Promise<any> {
   // --agent claude-code 指定只装到 .claude/skills/, --yes 跳过交互确认.
   // 不带 --agent 时 CLI 默认走 Universal (.agents/skills/), 不符合我们的扫描位置.
@@ -670,7 +680,7 @@ function runNpxSkillsAdd(targetDir: string, skillName: string): Promise<any> {
     childEnv.NO_PROXY = noProxy;
   }
   return new Promise((resolve) => {
-    const proc: any = spawn('npx', ['--yes', 'skills', 'add', skillName, '--agent', 'claude-code', '--yes'], {
+    const proc: any = spawn('npx', ['--yes', skillsCliPackage(), 'add', skillName, '--agent', 'claude-code', '--yes'], {
       cwd: targetDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'],
       // detached: true 让超时时能杀掉整个进程树 (npx 会 spawn git/node 子进程).
       detached: true,
@@ -724,6 +734,107 @@ function cleanNpxOutput(s: any): string {
 // 必须有上限, 否则后端 handler 永久阻塞 -> 前端 fetch 超时 -> "安装失败" 无明确原因.
 const NPX_SKILLS_TIMEOUT_MS = Number(process.env.MOBIUS_SKILLS_TIMEOUT_MS) || 120000;
 
+// 下载/解压 GitHub skill tarball 的超时上限.
+const TARBALL_DOWNLOAD_TIMEOUT_MS = Number(process.env.MOBIUS_SKILLS_TARBALL_TIMEOUT_MS) || 60000;
+
+// 用 curl 下载到本地文件 (跟随重定向, codeload.github.com 会 302 到 objects.githubusercontent.com).
+function curlDownload(url: string, dest: string, timeoutMs: number): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const proc = spawn('curl', ['-sL', '--max-time', String(Math.max(1, Math.floor(timeoutMs / 1000))), '-o', dest, url], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (d: any) => { stderr += d.toString(); });
+    proc.on('error', (err: any) => resolve({ ok: false, error: err.message }));
+    proc.on('close', (code: any) => resolve(code === 0 ? { ok: true } : { ok: false, error: stderr.trim().slice(-500) || `curl exit ${code}` }));
+  });
+}
+
+// 解析 owner/repo[@skill] → { owner, repo, skill }
+function parseGithubPackage(skillName: string): { owner: string; repo: string; skill: string } | null {
+  const m = String(skillName || '').trim().match(/^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)(?:@([A-Za-z0-9._-]+))?$/);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2], skill: m[3] || m[2] };
+}
+
+// 从解压树里定位 skill 目录 (含 SKILL.md), 优先匹配 @skill 指定的名字.
+function locateSkillDir(extractRoot: string, wantedSkill: string): string | null {
+  const candidates: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 6) return;
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const abs = path.join(dir, e.name);
+      if (fs.existsSync(path.join(abs, 'SKILL.md'))) candidates.push(abs);
+      walk(abs, depth + 1);
+    }
+  };
+  walk(extractRoot, 0);
+  if (candidates.length === 0) return null;
+  // 优先目录名 === wantedSkill (或想去掉前缀), 其次第一个.
+  const exact = candidates.find(d => path.basename(d).toLowerCase() === wantedSkill.toLowerCase());
+  return exact || candidates[0];
+}
+
+// 从 GitHub 仓库 tarball 安装 (绕过 git clone github.com 被墙的问题).
+// 依赖 api.github.com + codeload.github.com (这两个域名在受限网络下通常可达).
+async function installViaTarball(skillsDir: string, skillName: string): Promise<{ ok: boolean; skill?: any; error?: string; source?: string }> {
+  const pkg = parseGithubPackage(skillName);
+  if (!pkg) return { ok: false, error: '无法解析 GitHub 包名 (应为 owner/repo 或 owner/repo@skill-name)' };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-tarball-'));
+  try {
+    // 1. 拿 default_branch (先试 main/master 各一次, 走 codeload; 失败再用 api.github.com)
+    let branch = '';
+    for (const guess of ['main', 'master']) {
+      const probe = await curlDownload(`https://codeload.github.com/${pkg.owner}/${pkg.repo}/tar.gz/refs/heads/${guess}`, path.join(tmp, `probe-${guess}.tar.gz`), 20000);
+      if (probe.ok) { branch = guess; break; }
+      try { fs.unlinkSync(path.join(tmp, `probe-${guess}.tar.gz`)); } catch {}
+    }
+    if (!branch) {
+      // codeload 探测失败, 退回 api.github.com 读 default_branch
+      const apiUrl = `https://api.github.com/repos/${pkg.owner}/${pkg.repo}`;
+      const apiFile = path.join(tmp, 'repo.json');
+      const api = await curlDownload(apiUrl, apiFile, 15000);
+      if (api.ok && fs.existsSync(apiFile)) {
+        try {
+          const j = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
+          branch = String(j?.default_branch || '');
+        } catch {}
+      }
+    }
+    if (!branch) branch = 'main';
+    // 2. 下载 tarball
+    const tarFile = path.join(tmp, 'repo.tar.gz');
+    const dl = await curlDownload(`https://codeload.github.com/${pkg.owner}/${pkg.repo}/tar.gz/refs/heads/${branch}`, tarFile, TARBALL_DOWNLOAD_TIMEOUT_MS);
+    if (!dl.ok) return { ok: false, error: `下载 GitHub 仓库失败: ${dl.error || '网络不可达'}` };
+    // 3. 解压
+    const extractDir = path.join(tmp, 'extract');
+    fs.mkdirSync(extractDir, { recursive: true });
+    try {
+      extractArchiveFile(tarFile, extractDir, { maxBytes: 1024 * 1024 * 1024, maxFiles: 50000 });
+    } catch (e: any) {
+      return { ok: false, error: `解压失败: ${e?.message || e}` };
+    }
+    // 4. 定位 skill 目录 (解压后通常有单个顶层目录 <repo>-<branch>/)
+    let base = extractDir;
+    const topEntries = fs.readdirSync(extractDir, { withFileTypes: true });
+    const topDirs = topEntries.filter(e => e.isDirectory());
+    if (topDirs.length === 1) base = path.join(extractDir, topDirs[0].name);
+    const srcDir = locateSkillDir(base, pkg.skill);
+    if (!srcDir) return { ok: false, error: '未在仓库中找到 SKILL.md (该包可能不是 skill 仓库, 或 skill 名不匹配)' };
+    const destDirName = path.basename(srcDir);
+    const destDir = path.join(skillsDir, destDirName);
+    // 5. 复制整个 skill 目录
+    fs.mkdirSync(path.dirname(destDir), { recursive: true });
+    fs.cpSync(srcDir, destDir, { recursive: true });
+    const skill = readSkillFromDir(destDir);
+    if (!skill) return { ok: false, error: '已复制但读取 SKILL.md 失败' };
+    return { ok: true, skill, source: `tarball@${pkg.owner}/${pkg.repo}@${branch}` };
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
+}
+
 async function install({ userId, projectId, skillName }: any): Promise<any> {
   // 兜底净化: 用户可能粘贴完整命令 / GitHub URL (前端已实时净化, 这里对 API 直调再保险一次).
   skillName = normalizeSkillPackage(skillName) || String(skillName || '').trim();
@@ -742,21 +853,24 @@ async function install({ userId, projectId, skillName }: any): Promise<any> {
   const before = new Set(listSkillDirs(skillsDir).map(d => path.basename(d)));
   const result = await runNpxSkillsAdd(cwd, skillName);
   if (!result.ok) {
-    // 超时: runNpxSkillsAdd 已给出可读的中文提示, 直接用.
-    if (result.timedOut) {
-      return { ok: false, error: redactCreds(cleanNpxOutput(result.stderr) || '安装超时'), code: result.code };
+    // git clone github.com 常被墙/超时 → 尝试 tarball 降级 (api.github.com + codeload.github.com 通常可达).
+    const looksLikeNetwork = /clone|github|fetch|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|unable to access|Connection|timed out/i.test(result.stderr || result.stdout || '');
+    if (looksLikeNetwork || result.timedOut) {
+      const fallback = await installViaTarball(skillsDir, skillName);
+      if (fallback.ok && fallback.skill) {
+        const shaped = projectId ? shapeProject(fallback.skill, userId, projectId) : shapeUser(fallback.skill, userId);
+        return { ok: true, skill: shaped, source: fallback.source, fallback: true };
+      }
+      // 降级也失败: 合并两个错误, 给用户最完整的诊断.
+      const npxErr = result.timedOut
+        ? (redactCreds(cleanNpxOutput(result.stderr) || '安装超时'))
+        : redactCreds(('npx skills add 失败: ' + cleanNpxOutput(result.stderr || result.stdout || '').trim())).slice(-1200);
+      return { ok: false, error: `${npxErr}\n(tarball 降级也失败: ${fallback.error || '未知原因'})`.slice(-2000), code: result.code };
     }
-    // 非超时失败: 净化 npx 的 ANSI spinner 乱码, 只留有意义文本; 常见是 git clone github 失败.
+    // 非网络失败 (包名错误等): 保留原有提示.
     const cleaned = cleanNpxOutput(result.stderr || result.stdout || '').trim();
     const hint = 'npx skills add 失败' + (cleaned ? `: ${cleaned}` : '');
-    const netHint = /clone|github|fetch|ENOTFOUND|ETIMEDOUT|ECONNRESET|unable to access|Connection/i.test(result.stderr || result.stdout || '')
-      ? '\n多半是本机无法直连 GitHub (git clone 失败). 请在 .env 配置 MOBIUS_SKILLS_PROXY, 或改用"粘贴/上传 SKILL.md"方式安装.'
-      : '';
-    return {
-      ok: false,
-      error: redactCreds((hint + netHint)).slice(-2000),
-      code: result.code,
-    };
+    return { ok: false, error: redactCreds(hint).slice(-2000), code: result.code };
   }
   const afterDirs = listSkillDirs(skillsDir);
   const newDirs = afterDirs.filter(d => !before.has(path.basename(d)));

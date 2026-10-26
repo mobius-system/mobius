@@ -1368,7 +1368,7 @@ export function SessionSkillMemoryModal({
   const title = initialPanel === 'skill' ? '当前会话 Skill' : initialPanel === 'memory' ? '当前会话 Memory' : '当前项目 Git'
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="easy-modal-overlay-in fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <button
         type="button"
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -1376,7 +1376,7 @@ export function SessionSkillMemoryModal({
         onClick={onClose}
       />
       <div
-        className="relative flex h-[min(680px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl shadow-2xl"
+        className="easy-modal-panel-in relative flex h-[min(680px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}
         onClick={event => event.stopPropagation()}
       >

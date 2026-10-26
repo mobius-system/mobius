@@ -179,7 +179,7 @@ export function EasySessionProjectSelector({
           role="menu"
           aria-label="选择项目"
           data-testid="easy-session-project-menu"
-          className="fixed z-[97] overflow-hidden rounded-2xl shadow-2xl"
+          className="easy-popover-in fixed z-[96] overflow-hidden rounded-2xl shadow-2xl"
           style={{
             left: pos.left,
             bottom: pos.bottom,
@@ -216,8 +216,9 @@ export function EasySessionProjectSelector({
           </div>
           <div className="mt-1 max-h-[320px] overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-2 py-3 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                {query.trim() ? '未找到匹配项目' : '暂无可用项目'}
+              <div className="easy-list-empty">
+                <Search className="h-5 w-5" strokeWidth={1.8} />
+                <span>{query.trim() ? '未找到匹配项目' : '暂无可用项目'}</span>
               </div>
             ) : (
               filtered.map(p => (

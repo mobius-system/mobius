@@ -2,9 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useRemoteDeviceNames } from '../services/remote-device-names'
 import {
-  BotMessageSquare,
   Boxes,
   BrainCircuit,
+  Cog,
+  GraduationCap,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -12,10 +13,9 @@ import {
   CircleDot,
   Cpu,
   FolderKanban,
-  FolderTree,
-  History,
   LayoutDashboard,
   LayoutList,
+  ListCollapse,
   Loader2,
   MessageSquare,
   MonitorSmartphone,
@@ -25,10 +25,11 @@ import {
   Pencil,
   Puzzle,
   Search as SearchIcon,
-  Settings,
   Sparkles,
   SquarePen,
   Trash2,
+  Undo2,
+  WandSparkles,
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -997,12 +998,12 @@ export default function EasyModePage() {
             <span className="easy-sidebar-tools__label">
               {sessionListMode === 'grouped' ? (
                 <>
-                  <FolderTree className="easy-sidebar-tools__label-icon" aria-hidden="true" />
+                  <ListCollapse className="easy-sidebar-tools__label-icon" aria-hidden="true" />
                   项目分组
                 </>
               ) : (
                 <>
-                  <History className="easy-sidebar-tools__label-icon" aria-hidden="true" />
+                  <Undo2 className="easy-sidebar-tools__label-icon" aria-hidden="true" />
                   近期会话
                 </>
               )}
@@ -1056,10 +1057,10 @@ export default function EasyModePage() {
           <div className="easy-sidebar-footer" aria-label="快捷入口">
             {/* 跟随全局开关 (services/assistant-availability): 封锁期间对普通用户隐藏, 与其余 4 处入口保持同步 */}
             {assistantAllowedFor(user) && (
-            <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><BotMessageSquare className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><WandSparkles className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             )}
-            <button type="button" className="easy-footer-btn" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Settings className="h-[18px] w-[18px]" strokeWidth={2} /></button>
-            <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><BrainCircuit className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            <button type="button" className="easy-footer-btn" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Cog className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><GraduationCap className="h-[18px] w-[18px]" strokeWidth={2} /></button>
           </div>
         </ResizablePanel>
 

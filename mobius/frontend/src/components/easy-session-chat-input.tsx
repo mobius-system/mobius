@@ -601,7 +601,7 @@ function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled
           role="menu"
           aria-label="切换会话模型"
           data-testid="easy-session-model-picker"
-          className="fixed z-[96] flex flex-col overflow-hidden rounded-2xl shadow-2xl"
+          className="easy-popover-in fixed z-[96] flex flex-col overflow-hidden rounded-2xl shadow-2xl"
           style={{
             left: pos.left,
             bottom: pos.bottom,
@@ -645,8 +645,9 @@ function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled
           {/* 模型列表 */}
           <div className="min-h-0 max-h-[360px] overflow-y-auto py-1">
             {filteredOptions.length === 0 ? (
-              <div className="px-3 py-3 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                {query.trim() ? `未找到与「${query.trim()}」匹配的模型` : '暂无可用模型'}
+              <div className="easy-list-empty">
+                <Search className="h-5 w-5" strokeWidth={1.8} />
+                <span>{query.trim() ? `未找到与「${query.trim()}」匹配的模型` : '暂无可用模型'}</span>
               </div>
             ) : (
               filteredOptions.map(opt => {
