@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   ArrowUpRight,
+  BookOpen,
   CircleDot,
   FlaskConical,
   GitBranch,
@@ -10,6 +11,7 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -29,7 +31,7 @@ import { pollRecursive } from '../services/polling'
 import { redactDisplayText } from '../services/text-redaction'
 import { AgentConversationOverlays } from '../components/agent-conversation-overlays'
 
-type TimeRangeKey = '1h' | '4h' | '24h' | '48h' | '72h' | '7d' | '30d'
+type TimeRangeKey = '1h' | '4h' | '24h' | '48h' | '72h' | '7d' | '30d' | 'all'
 type ClusterMode = 'project' | 'creator'
 type ParentKind = 'issue' | 'research'
 type SessionKind = 'session' | 'research_agent'
@@ -177,7 +179,11 @@ const TIME_RANGE_OPTIONS: Array<{ key: TimeRangeKey; label: string; ms: number }
   { key: '72h', label: '72小时', ms: 72 * 60 * 60 * 1000 },
   { key: '7d', label: '1周', ms: 7 * 24 * 60 * 60 * 1000 },
   { key: '30d', label: '1月', ms: 30 * 24 * 60 * 60 * 1000 },
+  { key: 'all', label: '全部', ms: 10 * 365 * 24 * 60 * 60 * 1000 },
 ]
+// 顶栏只放核心档 (认知负荷), 细颗粒度下沉到「更多」菜单.
+const TIME_RANGE_PRIMARY = TIME_RANGE_OPTIONS.filter((o) => ['24h', '7d', '30d', 'all'].includes(o.key))
+const TIME_RANGE_SECONDARY = TIME_RANGE_OPTIONS.filter((o) => !['24h', '7d', '30d', 'all'].includes(o.key))
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 3.2
@@ -1915,6 +1921,21 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
   const [compactConversationWindows, setCompactConversationWindows] = useState<boolean>(() => {
     try { return localStorage.getItem('mobius:overview-conversation-compact') === '1' } catch { return false }
   })
+  // 图例浮层展开态 (画布右下角, 说明节点颜色/大小的含义)
+  const [legendOpen, setLegendOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:overview-cluster-legend') !== '0' } catch { return true }
+  })
+  const toggleLegend = useCallback(() => {
+    setLegendOpen((value) => {
+      const next = !value
+      try { localStorage.setItem('mobius:overview-cluster-legend', next ? '1' : '0') } catch {}
+      return next
+    })
+  }, [])
+  // 顶栏「更多」菜单: 收纳低频视图/布局控件, 减负顶栏 (issue 2026-10-23)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement | null>(null)
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null)
   const [recentOverlayIds, setRecentOverlayIds] = useState<Set<string> | null>(null)
   const [manualOverlayIds, setManualOverlayIds] = useState<Set<string>>(() => new Set())
   // 用户手动关闭过的浮窗 (含活跃会话): 记录在案避免轮询刷新 status 后又自动弹出。
@@ -1994,6 +2015,23 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [embedded, goBack])
+
+  // 「更多」菜单: 点击外部 / Esc 关闭
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (moreButtonRef.current?.contains(target) || moreRef.current?.contains(target)) return
+      setMoreOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMoreOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
 
   const candidateProjects = useMemo(
     () => sortByRecent((projects || []).filter((project: any) => (
@@ -2706,7 +2744,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
-              <div className="text-[length:var(--fs-lg)] font-semibold">Cluster Overview</div>
+              <div className="text-[length:var(--fs-lg)] font-semibold">集群总览</div>
               <div className="ml-auto flex items-center gap-1">
                 <div className="rounded-md px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', background: 'var(--bg-hover)' }}>
                   {clusterMode === 'creator' ? visibleCreatorGroups.length : visibleProjects.length}
@@ -2777,8 +2815,8 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{creator.title}</span>
                       <span className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                        <span>{creator.projects.length} Projects</span>
-                        <span>{cluster ? compactCount(cluster.sessions.length) : '加载中'} Sessions</span>
+                        <span>{creator.projects.length} 个项目</span>
+                        <span>{cluster ? compactCount(cluster.sessions.length) : '加载中'} 个会话</span>
                       </span>
                     </span>
                   </button>
@@ -2800,7 +2838,7 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[length:var(--fs-md)] font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</span>
                       <span className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                        <span>{cluster ? compactCount(cluster.sessions.length) : snapshotLoading ? '加载中' : '0'} Sessions</span>
+                        <span>{cluster ? compactCount(cluster.sessions.length) : snapshotLoading ? '加载中' : '0'} 个会话</span>
                         <span>{timeAgoPrecise(activeTimeValue(project))}</span>
                       </span>
                     </span>
@@ -2840,21 +2878,21 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
             <div className="min-w-0 flex-1">
               <div className="truncate text-[length:var(--fs-xs)] font-semibold">Mobius 点阵会话地图 · {clusterMode === 'creator' ? '创建者聚集' : '项目聚集'}</div>
               <div className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden text-[length:var(--fs-2xs)]" style={{ color: 'var(--text-muted)' }}>
-                {clusterMode === 'creator' && <span className="flex-shrink-0 whitespace-nowrap">{model.creatorClusters.length} Creators</span>}
-                <span className="min-w-0 truncate">{model.projectClusters.length} Projects · {model.parentClusters.length} Issues / Research · {model.nodes.length} Sessions / Agents</span>
-                <span className="min-w-0 truncate" title="按执行引擎统计当前视图内的智能体节点">claude code {harnessStats.cc} · codex {harnessStats.codex}</span>
+                {clusterMode === 'creator' && <span className="flex-shrink-0 whitespace-nowrap">{model.creatorClusters.length} 位创建者</span>}
+                <span className="min-w-0 truncate">{model.projectClusters.length} 个项目 · {model.parentClusters.length} 个任务 · {model.nodes.length} 个会话</span>
+                <span className="min-w-0 truncate" title="按执行引擎统计当前视图内的智能体节点">Claude Code {harnessStats.cc} · Codex {harnessStats.codex}</span>
                 {snapshotLoading && <span className="flex-shrink-0 whitespace-nowrap">正在加载全局快照</span>}
               </div>
             </div>
-            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              {TIME_RANGE_OPTIONS.map((option) => {
+            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }} title="活跃窗口：仅显示该时间段内活跃的会话与 Agent">
+              {TIME_RANGE_PRIMARY.map((option) => {
                 const active = option.key === timeRange
                 return (
                   <button
                     key={option.key}
                     type="button"
                     onClick={() => handleTimeRangeChange(option.key)}
-                    className="h-5 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors"
+                    className="h-6 rounded px-2 text-[length:var(--fs-sm)] font-medium transition-colors"
                     style={{
                       color: active ? '#fff' : 'var(--text-secondary)',
                       background: active ? 'var(--accent-primary)' : 'transparent',
@@ -2866,43 +2904,88 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
               })}
             </div>
             <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="显示所有执行中 Agent 的对话浮窗" onClick={handleConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors" style={{ color: showConversationWindows ? '#fff' : 'var(--text-secondary)', background: showConversationWindows ? 'var(--accent-primary)' : 'transparent' }}><MessageSquare className="h-2.5 w-2.5" />对话窗</button>
-            </div>
-            <button type="button" title="显示近期会话浮窗（最多 10 个）" aria-label="显示近期会话浮窗" onClick={handleRecentConversationWindowsChange} className="flex h-6 flex-shrink-0 items-center gap-1 rounded-md border px-2 text-[length:var(--fs-2xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}><MessageSquare className="h-2.5 w-2.5" />近期会话浮窗</button>
-            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} aria-label={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'} onClick={handleCompactConversationWindowsChange} className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors" style={{ color: compactConversationWindows ? '#fff' : 'var(--text-secondary)', background: compactConversationWindows ? 'var(--accent-primary)' : 'transparent' }}>{compactConversationWindows ? <Maximize2 className="h-2.5 w-2.5" /> : <Minimize2 className="h-2.5 w-2.5" />}微缩</button>
-            </div>
-            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomOut className="h-2.5 w-2.5" />
+              <button type="button" title="缩小" onClick={() => applyZoom(zoomRef.current / ZOOM_STEP)} className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomOut className="h-3.5 w-3.5" />
               </button>
-              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-5 min-w-[40px] items-center justify-center gap-1 rounded px-1 text-[length:var(--fs-2xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <LocateFixed className="h-2 w-2" />
+              <button type="button" title="适应视图" onClick={() => fitView(modelRef.current.nodes, 1.25)} className="flex h-6 min-w-[44px] items-center justify-center gap-1 rounded px-1 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <LocateFixed className="h-3 w-3" />
                 {Math.round(zoom * 100)}%
               </button>
-              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <ZoomIn className="h-2.5 w-2.5" />
+              <button type="button" title="放大" onClick={() => applyZoom(zoomRef.current * ZOOM_STEP)} className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
+                <ZoomIn className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button type="button" title={paused ? '继续布局' : '暂停布局'} onClick={() => setPaused((value) => !value)} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                {paused ? <Play className="h-2.5 w-2.5" /> : <Pause className="h-2.5 w-2.5" />}
-              </button>
-              <button type="button" title="重新布局" onClick={reheat} className="flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-secondary)' }}>
-                <RotateCcw className="h-2.5 w-2.5" />
-              </button>
-            </div>
-            <div className="flex flex-shrink-0 items-center rounded-md border p-0.5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+            {/* 更多视图/布局选项: 收纳低频控件, 减负顶栏 (功能全部保留在菜单内) */}
+            <div className="relative flex-shrink-0">
               <button
+                ref={moreButtonRef}
                 type="button"
-                title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）"
-                onClick={handleShowCommunicationChange}
-                className="flex h-5 items-center gap-1 rounded px-1.5 text-[length:var(--fs-2xs)] font-medium transition-colors"
-                style={{ color: showCommunication ? '#fff' : 'var(--text-secondary)', background: showCommunication ? 'var(--accent-primary)' : 'transparent' }}
+                onClick={() => setMoreOpen((value) => !value)}
+                title="更多视图与布局选项"
+                aria-label="更多选项"
+                aria-expanded={moreOpen}
+                className="flex h-6 w-6 items-center justify-center rounded-md border transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
               >
-                <MessageSquare className="h-2.5 w-2.5" />
-                通讯
+                <MoreHorizontal className="h-4 w-4" />
               </button>
+              {moreOpen && (
+                <div
+                  ref={moreRef}
+                  className="easy-popover-in absolute right-0 top-full z-50 mt-1 w-[220px] rounded-lg border p-1.5 shadow-xl"
+                  style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--modal-bg) 96%, transparent)' }}
+                >
+                  {/* 时间范围细颗粒度 (顶栏只放核心档) */}
+                  <div className="px-2.5 pt-1 pb-0.5 text-[length:var(--fs-xs)] font-medium" style={{ color: 'var(--text-muted)' }}>活跃窗口</div>
+                  <div className="mb-1 grid grid-cols-2 gap-1 px-2">
+                    {TIME_RANGE_SECONDARY.map((option) => {
+                      const active = option.key === timeRange
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => { handleTimeRangeChange(option.key); }}
+                          className="h-6 rounded px-2 text-[length:var(--fs-xs)] font-medium transition-colors"
+                          style={{ color: active ? '#fff' : 'var(--text-secondary)', background: active ? 'var(--accent-primary)' : 'var(--bg-hover)' }}
+                        >
+                          {option.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="my-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
+                  <button type="button" onClick={() => { handleConversationWindowsChange(); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: (showConversationWindows && recentOverlayIds === null) ? 'var(--accent-primary)' : 'var(--text-primary)' }} title="实时显示正在运行的会话浮窗（持续监控）">
+                    <MessageSquare className="h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1">运行中的对话</span>
+                    {showConversationWindows && recentOverlayIds === null && <CircleDot className="h-3 w-3 flex-shrink-0" fill="currentColor" />}
+                  </button>
+                  <button type="button" onClick={() => { handleRecentConversationWindowsChange(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: (showConversationWindows && recentOverlayIds !== null) ? 'var(--accent-primary)' : 'var(--text-primary)' }} title="显示最近 10 个会话的浮窗（回顾最近活动）">
+                    <MessageSquare className="h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1">最近的会话</span>
+                    {showConversationWindows && recentOverlayIds !== null && <CircleDot className="h-3 w-3 flex-shrink-0" fill="currentColor" />}
+                  </button>
+                  <button type="button" onClick={() => { handleCompactConversationWindowsChange(); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: compactConversationWindows ? 'var(--accent-primary)' : 'var(--text-primary)' }} title={compactConversationWindows ? '恢复浮窗大小' : '浮窗微缩'}>
+                    {compactConversationWindows ? <Maximize2 className="h-4 w-4 flex-shrink-0" /> : <Minimize2 className="h-4 w-4 flex-shrink-0" />}
+                    <span className="flex-1">浮窗微缩</span>
+                    {compactConversationWindows && <CircleDot className="h-3 w-3 flex-shrink-0" fill="currentColor" />}
+                  </button>
+                  <button type="button" onClick={() => { handleShowCommunicationChange(); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: showCommunication ? 'var(--accent-primary)' : 'var(--text-primary)' }} title="显示 Agent 双向通讯虚线（两端 Agent 都可见时绘制）">
+                    <GitBranch className="h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1">通讯连线</span>
+                    <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{communicationLinks.length}</span>
+                    {showCommunication && <CircleDot className="h-3 w-3 flex-shrink-0" fill="currentColor" />}
+                  </button>
+                  <div className="my-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
+                  <button type="button" onClick={() => { setPaused((value) => !value); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: paused ? 'var(--accent-primary)' : 'var(--text-primary)' }} title={paused ? '继续布局' : '暂停布局'}>
+                    {paused ? <Play className="h-4 w-4 flex-shrink-0" /> : <Pause className="h-4 w-4 flex-shrink-0" />}
+                    <span className="flex-1">{paused ? '继续布局' : '暂停布局'}</span>
+                  </button>
+                  <button type="button" onClick={() => { reheat(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-hover)]" style={{ color: 'var(--text-primary)' }} title="重新布局">
+                    <RotateCcw className="h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1">重新布局</span>
+                  </button>
+                </div>
+              )}
             </div>
             {error && <div className="max-w-[250px] truncate text-[length:var(--fs-2xs)] text-red-400">{error}</div>}
           </div>
@@ -2932,11 +3015,72 @@ export default function MobiusOverviewClusterPage({ embedded = false }: { embedd
               </div>
             )}
             {!loadingCount && model.nodes.length === 0 && (
-              <div className="absolute left-1/2 top-1/2 flex w-[340px] -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-lg border p-4" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'var(--card-bg)' }}>
-                <Sparkles className="h-5 w-5 flex-shrink-0" />
-                <div className="text-[length:var(--fs-md)] leading-5">最近{selectedRange.label}内没有可展示的活跃 Session 或 Research Agent。</div>
+              <div className="absolute left-1/2 top-1/2 flex w-[360px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 rounded-lg border p-5 text-center" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'var(--card-bg)' }}>
+                <Sparkles className="h-6 w-6 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                <div>
+                  <div className="text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>当前窗口内暂无活跃会话</div>
+                  <div className="mt-1 text-[length:var(--fs-md)] leading-5">最近{selectedRange.label}内没有活跃的 Session 或 Research Agent。</div>
+                </div>
+                {timeRange !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => handleTimeRangeChange('all')}
+                    className="flex h-8 items-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--accent-primary)', border: '1px solid color-mix(in srgb, var(--accent-primary) 45%, transparent)' }}
+                  >
+                    查看全部时间
+                  </button>
+                )}
               </div>
             )}
+            {/* 通讯连线无数据提示: 开关打开但当前无活跃跨智能体通讯时给出反馈 (issue 2026-10-26) */}
+            {showCommunication && communicationLinks.length === 0 && (
+              <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border px-3 py-1.5 text-[length:var(--fs-sm)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)', background: 'color-mix(in srgb, var(--modal-bg) 96%, transparent)' }}>
+                <GitBranch className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>当前无活跃的跨智能体通讯</span>
+              </div>
+            )}
+            {/* 图例: 说明节点颜色/大小含义, 右下角可折叠 (issue 2026-10-23) */}
+            <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-1.5">
+              <button
+                type="button"
+                onClick={toggleLegend}
+                title={legendOpen ? '收起图例' : '展开图例'}
+                aria-label={legendOpen ? '收起图例' : '展开图例'}
+                aria-expanded={legendOpen}
+                className="flex h-6 items-center gap-1 rounded-md border px-2 text-[length:var(--fs-xs)] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}
+              >
+                <BookOpen className="h-3 w-3" />
+                图例
+              </button>
+              {legendOpen && (
+                <div className="w-[200px] rounded-lg border p-3 text-[length:var(--fs-xs)] shadow-xl" style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--modal-bg) 96%, transparent)', color: 'var(--text-secondary)' }}>
+                  <div className="mb-2 font-semibold" style={{ color: 'var(--text-primary)' }}>会话节点颜色</div>
+                  {[
+                    ['#22c55e', '运行中'],
+                    ['#ef4444', '失败'],
+                    ['#38bdf8', '已完成'],
+                    ['#f59e0b', '停滞'],
+                    ['#a855f7', '研究 Agent'],
+                    ['#94a3b8', '空闲'],
+                  ].map(([color, label]) => (
+                    <div key={label} className="mb-1 flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: color }} />
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                  <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="mb-1 font-semibold" style={{ color: 'var(--text-primary)' }}>节点大小</div>
+                    <div className="mb-1 flex items-center gap-2"><span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: '#94a3b8' }} />小点 = 空闲会话</div>
+                    <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 flex-shrink-0 rounded-full" style={{ background: '#22c55e' }} />大点 = 运行中</div>
+                  </div>
+                  <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="leading-4">项目 / 创建者节点的颜色由系统自动分配，用于区分不同实体。</div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <DetailDrawer selection={selected} userParam={userParam} onClose={() => setSelected(null)} onShowConversation={(session) => { setRecentOverlayIds(null); setManualOverlayIds((current) => new Set(current).add(session.id)); setDismissedOverlayIds((current) => { const next = new Set(current); next.delete(session.id); return next }); window.dispatchEvent(new CustomEvent('mobius:pin-overlay', { detail: { sessionId: session.id } })); setShowConversationWindows(true); try { localStorage.setItem('mobius:overview-conversation-windows', '1') } catch {} }} />

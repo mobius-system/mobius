@@ -453,30 +453,51 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
             </button>
           )}
-          {/* 发送/终止合并按钮: 蓝色圆形 Codex 风格; 运行态变红色 stop */}
-          <button
-            type="button"
-            onClick={canStop ? follow!.onStop : () => onSend()}
-            disabled={!canStop && disabled}
-            aria-label={canStop ? '终止当前任务' : '发送'}
-            title={sendTip}
-            data-tour={canStop ? 'session-chat-stop' : 'session-chat-send'}
-            className={`easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${canStop ? 'easy-send-btn--stop' : ''} ${follow?.stopFeedbackActive ? 'easy-send-btn--active' : ''}`}
-            style={{
-              background: sendBg,
-              color: sendFg,
-              cursor: !canStop && disabled ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {canStop ? (
-              <Square className="h-3 w-3" fill="currentColor" />
-            ) : follow && (follow.anyUploading || follow.voiceState === 'transcribing') ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <SendHorizontal className="h-[15px] w-[15px]" strokeWidth={2.4} />
-            )}
-          </button>
-          {/* 欢迎页没有 stop, 已经在上面统一渲染; 此分支只占位 */}
+          {/* 欢迎页: 发送 = 「开始」胶囊按钮 (首要动作, 加大 + 文字, impeccable P0) */}
+          {!follow && (
+            <button
+              type="button"
+              onClick={() => onSend()}
+              disabled={disabled}
+              aria-label="开始新会话"
+              title={sendTip}
+              data-tour="session-chat-send"
+              className="easy-send-btn inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-4 transition-all active:scale-95"
+              style={{
+                background: sendBg,
+                color: sendFg,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <SendHorizontal className="h-4 w-4" strokeWidth={2.4} />
+              <span className="text-[length:var(--fs-md)] font-medium">开始</span>
+            </button>
+          )}
+          {/* 会话内: 发送/终止合并按钮 (保持 28px 圆钮, 运行态变红色 stop) */}
+          {follow && (
+            <button
+              type="button"
+              onClick={canStop ? follow!.onStop : () => onSend()}
+              disabled={!canStop && disabled}
+              aria-label={canStop ? '终止当前任务' : '发送'}
+              title={sendTip}
+              data-tour={canStop ? 'session-chat-stop' : 'session-chat-send'}
+              className={`easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${canStop ? 'easy-send-btn--stop' : ''} ${follow?.stopFeedbackActive ? 'easy-send-btn--active' : ''}`}
+              style={{
+                background: sendBg,
+                color: sendFg,
+                cursor: !canStop && disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {canStop ? (
+                <Square className="h-3 w-3" fill="currentColor" />
+              ) : follow.anyUploading || follow.voiceState === 'transcribing' ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <SendHorizontal className="h-[15px] w-[15px]" strokeWidth={2.4} />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

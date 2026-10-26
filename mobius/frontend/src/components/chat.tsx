@@ -9,11 +9,9 @@ import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
-import { ConfirmModal, NewSessionModal } from './modals'
-import { CreateSessionForm } from './quick-create-session'
+import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
-import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
-import { ResizablePanel, useNarrowContainer } from './resizable-panel'
+import { ResizablePanel } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -21,7 +19,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, continuationDevice } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -67,10 +65,6 @@ const CHAT_INPUT_MIN_RATIO = 0.14
 const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
-// 会话体中栏窄于此宽度即转纵向堆叠 (历史在上, 输入在下). 与 index.css 里
-// @media(max-width:900px) 同一断点, 区别是这里量的是中栏自己的宽度: 左侧会话栏和
-// 右侧文件编辑栏 (原生文件编辑器) 都会占掉中栏宽度, 视口宽 ≠ 中栏宽.
-const CHAT_BODY_STACK_BREAKPOINT = 900
 // 「会话统一按钮组」的显示设置清单: 标准布局的侧栏与简易模式的工具浮层共用同一份,
 // 否则两处的显示开关会漂移 (存储 key 相同, 清单不同会互相隐藏对方的按钮).
 const SESSION_TOOL_VISIBILITY_OPTIONS: VisibilityOption[] = [
@@ -167,12 +161,6 @@ function JsonlCountSlot({ store, children }: { store: SessionHistoryStore | null
 // lerp 跟随系数 (调参台定稿 0.06, 见 tmp/frontend_unit_mock): 每帧走"距底剩余距离"的比例.
 const LERP_FOLLOW_K = 0.06
 
-// 吸附阈值: lerp 单帧增量 = 剩余距离 * 0.06, 剩余不足 ~17px 时增量已小于 1px, 而 scrollTop
-// 按整像素生效 —— 增量被整个吞掉, 环既追不平 (delta 永远 > 0.5) 也推不动一格, 于是每帧空转
-// 并把视野死钉在底部, 任何程序滚动 (轮次跳转按钮/摘要跳转) 都被它逐帧按回去 = "按钮无效".
-// 剩余距离进这个阈值就直接吸附到底并收环. 24px 留足整像素余量, 视觉上仍是"到底".
-const LERP_SNAP_PX = 24
-
 // 两个触发源 (条数变化 / 内容长高) 共用同一个自续 RAF 追赶环: 每帧只走剩余距离的
 // LERP_FOLLOW_K — 落后越多追得越快, 逼近底部自动减速, 高卡/批量呈现为先快后慢的
 // 缓动, 小增量轻带即到; 底部在长高中途变化也自然 retarget. 系数按 60Hz 手感调的,
@@ -222,14 +210,6 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (!el) { diagRef.current.lastStop = '滚动容器不存在'; return }
     const delta = el.scrollHeight - el.scrollTop - el.clientHeight
     if (delta <= 0.5) { diagRef.current.lastStop = '已在底部 (delta<=0.5)'; scrollDebug('chase: done (delta<=0.5)'); return }
-    // 剩余距离已在 lerp 分辨率之下: 直接吸附到底并收环, 否则环空转不休 (见 LERP_SNAP_PX)
-    // Inside the lerp's dead zone: snap to the bottom and end the loop, or it would spin forever
-    if (delta <= LERP_SNAP_PX) {
-      el.scrollTop = el.scrollHeight
-      diagRef.current.lastStop = '已在底部 (吸附收环)'
-      scrollDebug('chase: snap to bottom then stop, delta=', delta.toFixed(1))
-      return
-    }
     diagRef.current.frames += 1
     diagRef.current.lastFrameAt = Date.now()
     diagRef.current.lastStop = '追赶中'
@@ -248,14 +228,7 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (rafRef.current) { diag.scheduleBlocked += 1; return }
     rafRef.current = requestAnimationFrame(chase)
   }
-  // 卸载时取消在跑的帧, 并把句柄归零: 取消掉的帧不算"环还在跑", 留着非 0 句柄会让
-  // schedulePin 的守卫永远挡下后续排帧, 环再也不会启动 (dev StrictMode 双调用必现).
-  // Cancel the pending frame and clear the handle: a cancelled frame is not a running loop,
-  // and a stale non-zero handle would make schedulePin's guard block every later start.
-  useEffect(() => () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    rafRef.current = 0
-  }, [])
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   // 浮窗探针: 读实时 DOM + 计数器, 给出"环是否还活着"和"被谁挡住"的结论.
   // Panel probe: reads live DOM plus the counters to say whether the loop is alive and what blocks it.
@@ -551,7 +524,7 @@ function SessionTitle({ name, theme }: { name?: string | null; theme: string }) 
   const full = String(name || '')
   return (
     <h2
-      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-lg)]"
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-xl)]"
       style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
       title={full || undefined}
     >
@@ -1519,7 +1492,6 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
-  onOpenBlueprint, canOpenBlueprint,
 }: {
   jsonlCount: number
   onOpenRaw: () => void
@@ -1529,8 +1501,6 @@ function ChatHeaderOverflowMenu({
   onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
-  onOpenBlueprint: () => void
-  canOpenBlueprint: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1569,10 +1539,6 @@ function ChatHeaderOverflowMenu({
             disabled={!canStop}
             onClick={() => { setOpen(false); onStop() }}>
             <span>终止当前操作</span>
-          </button>
-          <button className={itemClass} disabled={!canOpenBlueprint}
-            onClick={() => { setOpen(false); onOpenBlueprint() }}>
-            <span>查看项目蓝图</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
@@ -2061,10 +2027,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
-  // 中栏是否已被挤窄 (视口宽 ≠ 中栏宽: 左侧会话栏 + 右侧文件编辑栏都要占位).
-  // 只有标准分栏需要这个判据 —— 简易模式 (--easy) 与代码对话 (--stacked) 本就纵向堆叠.
-  const chatBodyWidthNarrow = useNarrowContainer(chatBodyRef, CHAT_BODY_STACK_BREAKPOINT)
-  const chatBodyNarrow = layout === 'default' && chatBodyWidthNarrow
   const chatInputRef = useRef<HTMLDivElement>(null)
   const chatSplitHandleRef = useRef<HTMLDivElement>(null)
   const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
@@ -2254,9 +2216,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const [easyLoadingAll, setEasyLoadingAll] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
-  // 项目蓝图全屏抽屉 (从 chat 头部 … 菜单打开).
-  // Full-screen project blueprint drawer, opened from the chat header overflow menu.
-  const [projectBlueprintOpen, setProjectBlueprintOpen] = useState(false)
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [rawJsonlDownloading, setRawJsonlDownloading] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
@@ -2279,8 +2238,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 终止完成后若该会话仍有 Mobius 定时任务, 记录数量并弹窗询问是否一并清除.
-  const [stopWakeupPrompt, setStopWakeupPrompt] = useState<{ sessionId: string; count: number } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -2318,12 +2275,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
     try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
   })
-  // 常规模式的文件编辑栏开合走 store: 顶栏「原生文件编辑器」入口与 display-files 卡片写同一份状态.
-  // The standard-mode file pane open-state lives in the store so the top-bar entry and cards share one source.
-  const displayFilesOpen = useStore(s => s.fileEditorOpen)
-  const setDisplayFilesOpen = useStore(s => s.setFileEditorOpen)
-  // web 终端仅 admin 可用 (见后端 webTerminalAllowedFor): 普通用户隐藏入口与显示设置项.
-  const isAdminUser = useStore(s => s.user?.role === 'admin')
+  // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
+  const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
   // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
   const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)
@@ -2764,20 +2717,15 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
-    // 必须在 effect 内同步读取草稿: 若放进 setDrafts 的更新函数, React 会延迟到下一次渲染才执行,
-    // 那时下方的持久化 effect 已经用初始空值把 localStorage 里的草稿删掉了
-    // Read the draft synchronously here: inside the setDrafts updater React defers it to the next render,
-    // by which time the persist effect below has already deleted the saved draft with the initial empty value
-    const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
-    if (!saved?.input) return
     setDrafts(prev => {
       if (Object.prototype.hasOwnProperty.call(prev, sessionId)) return prev
-      return { ...prev, [sessionId]: saved.input as string }
+      const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
+      if (!saved?.input) return prev
+      return { ...prev, [sessionId]: saved.input }
     })
   }, [sessionId])
 
   const input = drafts[sessionId] || ''
-  const hasDraftEntry = Object.prototype.hasOwnProperty.call(drafts, sessionId)
   const setInput = (val: string | ((prev: string) => string)) => {
     if (!sessionId) return
     setDrafts(prev => {
@@ -2792,11 +2740,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
-    // 草稿水合完成前不写 localStorage, 否则初始空值会覆盖刚保存的内容
-    // Skip persisting until the draft is hydrated in state, otherwise the initial empty value wipes the saved draft
-    if (!hasDraftEntry) return
     draftSave(`session-input:${sessionId}`, { input }, { minChars: 1 })
-  }, [sessionId, input, hasDraftEntry])
+  }, [sessionId, input])
 
   // F6: 规划编辑器 3s 静止后, 预填一条"通知 Agent 已更新规划"的草稿, 避免用户来回切换.
   // 仅在事件 detail.sessionId === 当前 session 时生效, 防止跨 session 串扰.
@@ -3488,22 +3433,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [inputExpanded])
-  /* Long-text editor only: Tab inserts four spaces instead of moving focus. */
-  const handleExpandedInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
-    const nativeEvent = e.nativeEvent
-    // 输入法合成中不劫持 Tab，避免打断候选词
-    // Do not hijack Tab while IME composition is active
-    if (composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
-    e.preventDefault()
-    const el = e.currentTarget
-    const start = el.selectionStart
-    const end = el.selectionEnd
-    // ✨ 用四个空格替换选区写回输入，再把光标落到插入点之后
-    // ✨ Replace the selection with four spaces and move the caret past them
-    setInput(input.slice(0, start) + '    ' + input.slice(end))
-    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 4 })
-  }, [input])
 
   useEffect(() => {
     if (!inputMenuOpen) return
@@ -3992,7 +3921,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     // ③ 终止当前 agent (await 确认终止完成)
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
-    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 remote_ping 检查和确认新设备的情况（它会返回对面机器的操作系统、shell、工作路径）。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。小提示：你依然可以在必要的时候，使用aimux继续调用${oldId}。 】`
+    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
@@ -4142,39 +4071,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       }
     }
     api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
-      .then(async () => {
+      .then(() => {
         setTyping(false)
         setStreamContent('')
         loadHistoryRef.current()
-        // 常规终止已完成后才询问定时任务, 避免杀会话失败却先清掉任务.
-        // Ask about scheduled tasks only after the regular stop succeeded.
-        try {
-          const data = await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`)
-          const count = Array.isArray(data?.wakeups) ? data.wakeups.length : 0
-          // ✨ 该会话仍有定时任务时弹窗询问是否一并清除
-          // ✨ Prompt to clear remaining scheduled wake-ups for this session
-          if (count > 0) setStopWakeupPrompt({ sessionId, count })
-        } catch { /* 查询失败不打断终止流程 — query failure must not block stop */ }
       })
       .catch((e: any) => {
         setLastSendError(e?.message || '终止失败')
         setStopFeedbackActive(false)
       })
   }, [sessionId, setTyping, setStreamContent, currentIssueId, holdLiveOverride])
-
-  // 用户在弹窗里确认后清空该会话的全部 Mobius 定时任务; 关闭弹窗即保留.
-  // Clear every scheduled wake-up for the session when confirmed; closing the dialog keeps them.
-  const clearStopWakeups = useCallback(async () => {
-    const target = stopWakeupPrompt
-    if (!target) return
-    try {
-      await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(target.sessionId)}`, { method: 'DELETE' })
-      setStopWakeupPrompt(null)
-    } catch (e: any) {
-      setStopWakeupPrompt(null)
-      setLastSendError(e?.message || '清除定时任务失败')
-    }
-  }, [stopWakeupPrompt])
 
   const showSessionStartModal = !!(
     currentSession
@@ -4209,9 +4115,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {(jsonlEntryCount) => (
         <AdvancedSessionActions
           variant={variant}
-          showTerminal={isAdminUser}
-          // 简易布局没有 chat 头部, 也就没有承载它的 … 菜单, 开关保留在工具浮层里.
-          omitJsonlMetaButton={layout !== 'easy'}
           sessionId={currentSession?.session_id || sessionId}
           projectId={currentProjectId}
           issueId={currentIssueId}
@@ -4248,16 +4151,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   // 会话工具按钮组只有这一份定义: 标准布局挂在输入侧栏, 简易模式收进 EasySessionToolBar 浮层,
   // 避免入口/禁用条件/显示开关两处漂移 (按钮本体由 AdvancedSessionActions 定义).
-  const sessionToolVisibilityOptions = useMemo(
-    () => SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => {
-      if (option.id === 'terminal' && !isAdminUser) return false
-      // 非简易布局的「显示时间与序号」已并进 chat 头部的 … 菜单, 按钮组里不再有这个按钮,
-      // 显示设置里也就不该留一个拨不动任何东西的开关.
-      if (option.id === 'jsonl-meta' && layout !== 'easy') return false
-      return true
-    }),
-    [isAdminUser, layout],
-  )
   const renderSessionToolGroup = (opts: { variant: 'default' | 'compact' | 'menu'; className: string; initialPanel: null | 'memory'; persistActivePanel?: boolean }) => (
     <UnifiedButtonGroup
       className={opts.className}
@@ -4274,7 +4167,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         vscodeSubPath={currentVscodeSubPath}
         onRequestRunProject={sendRunProjectPortPrompt}
         onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-        visibilityOptions={sessionToolVisibilityOptions}
+        visibilityOptions={SESSION_TOOL_VISIBILITY_OPTIONS}
       />
     </UnifiedButtonGroup>
   )
@@ -4533,8 +4426,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
                 onStop={handleStopSession}
                 canStop={!!sessionId}
-                onOpenBlueprint={() => setProjectBlueprintOpen(true)}
-                canOpenBlueprint={!!currentProjectId}
               />
             )}
           </JsonlCountSlot>
@@ -4599,11 +4490,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
           窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式).
-          chatBodyNarrow (中栏自身 < 900px, 视口媒体查询管不到) 时附加 mobius-chat-body--narrow.
           easy + 文件栏打开时右 padding 收回 (空间让给文件栏, padding 平滑过渡避免内容跳动). */}
       <div
         ref={chatBodyRef}
-        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}${chatBodyNarrow ? ' mobius-chat-body--narrow' : ''}`}
+        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
         style={layout === 'easy' ? { paddingLeft: '10%', paddingRight: easyFilesOpen ? '0' : '10%', transition: 'padding .2s ease' } : undefined}
       >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。
@@ -4684,6 +4574,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               {easyProjectControl && (
                 <div className="mb-2">
                   <EasySessionProjectSelector
+                    isDark={theme !== 'light'}
                     selectedProjectId={easyProjectControl.selectedProjectId}
                     selectedProjectName={easyProjectControl.selectedProjectName}
                     projects={easyProjectControl.projects}
@@ -5174,7 +5065,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               ref={expandedInputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleExpandedInputKeyDown}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
               className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
@@ -5247,17 +5137,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         />
       )}
 
-      {stopWakeupPrompt && (
-        <ConfirmModal
-          title="同时清除定时任务？"
-          message={`该会话还有 ${stopWakeupPrompt.count} 个 Mobius 定时任务。终止后它们仍会按计划唤醒这个会话；是否一并清除？`}
-          confirmText="清除定时任务"
-          cancelText="保留定时任务"
-          onConfirm={clearStopWakeups}
-          onClose={() => setStopWakeupPrompt(null)}
-        />
-      )}
-
       {compactConfirmOpen && (
         <CompactContextConfirmModal
           onConfirm={sendCompactCommand}
@@ -5265,24 +5144,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         />
       )}
 
-      {continueModalOpen && currentSession?.session_id && currentIssueId && (
-        <CreateSessionForm
-          defaultProjectId={currentProjectId || (currentSession as any).project_id}
-          defaultIssueId={currentIssueId}
-          projectKind={projectForSession?.kind}
-          onClose={() => setContinueModalOpen(false)}
-          onDone={handleContinueSessionCreated}
-          continueFromSessionId={currentSession.session_id}
-          initialName={continueSessionName(currentSession)}
-          initialDescription={(currentSession as any).description || ''}
-          initialIssueTitle={(currentIssue as any)?.title || (currentTask as any)?.title}
-          initialDevice={continuationDevice(currentSession)}
-        />
-      )}
-      {continueModalOpen && currentSession?.session_id && !currentIssueId && (currentSession as any)?.research_id && (
+      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
         <NewSessionModal
-          issueId={undefined}
-          researchId={(currentSession as any).research_id}
+          issueId={currentIssueId || undefined}
+          researchId={(currentSession as any)?.research_id || undefined}
           onClose={() => setContinueModalOpen(false)}
           onCreated={handleContinueSessionCreated}
           defaultName={continueSessionName(currentSession)}
@@ -5358,14 +5223,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           </div>
         </div>
       )}
-
-      {/* 项目蓝图: 全屏抽屉, 内容复用项目设置里的同名面板 */}
-      {/* Project blueprint: full-screen drawer wrapping the same panel used in project settings */}
-      <ProjectBlueprintDrawer
-        open={projectBlueprintOpen}
-        projectId={currentProjectId}
-        onClose={() => setProjectBlueprintOpen(false)}
-      />
 
       {terminalOpen && (
         <WebTerminalModal

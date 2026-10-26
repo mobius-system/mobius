@@ -5875,21 +5875,6 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
-/* 全屏抽屉变体: 从右侧滑入后铺满整个视口 (会话头部「查看项目蓝图」). */
-/* Full-screen variant: slides in from the right and covers the whole viewport. */
-.mobius-drawer--full {
-  left: 0;
-  right: 0;
-  width: 100%;
-  max-width: 100%;
-  border-left: 0 !important;
-  border-right: 0 !important;
-  transform: translateX(100%);
-}
-.mobius-drawer--full.mobius-drawer--open {
-  transform: translateX(0);
-}
-
 /* 抽屉关闭按钮: 浮在右上角 */
 .mobius-drawer-close {
   position: absolute;
@@ -5990,43 +5975,6 @@ body.mobius-resizing .mobius-resizable-handle {
   .mobius-chat-split-handle {
     display: none !important;
   }
-}
-
-/* ======================================================================
-   中栏被挤窄时同样纵向堆叠, 判据换成中栏自身宽度 (JS 量出后挂 .mobius-chat-body--narrow).
-   上面那条断的是「视口」宽度 —— 左侧会话栏与右侧文件编辑栏 (原生文件编辑器) 都是从
-   中栏身上吃宽度: 视口 1914px 时中栏可能只剩 ~780px, 媒体查询不触发, 68/32 分栏就把
-   两栏压到各自 min-width (360 + 224) 以下并向右溢出, 被文件编辑栏盖住/裁掉 ——
-   就是「原生文件编辑器打开时, 中间的对话&输入很难正常转为上下布局」.
-   规则与 @media(max-width:900px) 完全同源 (堆叠后中栏只放得下输入框, 输入框下面的
-   操作按钮带与 skill/memory 编辑区一律隐藏).
-   该 class 只加在标准分栏上 (layout='default'), 简易模式与代码对话模式本就是纵向堆叠.
-   ====================================================================== */
-.mobius-chat-body.mobius-chat-body--narrow {
-  flex-direction: column;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-history {
-  width: 100% !important;
-  flex: 1 1 0%;
-  min-width: 0 !important;
-  min-height: 0;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  /* 只保留输入框贴底: 不 flex-grow, 让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
-  flex: 0 0 auto;
-  min-height: 0;
-  border-left: 0 !important;
-  border-top: 1px solid var(--border-color) !important;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-actions,
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-side {
-  display: none !important;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-split-handle {
-  display: none !important;
 }
 
 /* ======================================================================
@@ -6858,8 +6806,9 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   line-height: 1.6;
   text-align: center;
 }
-[data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
-[data-page="easy-mode"] .easy-welcome-suggestions span { border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent); border-radius: 999px; padding: 9px 15px; color: var(--text-secondary); background: var(--bg-primary); font-size: var(--fs-md); }
+[data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; justify-content: center; }
+[data-page="easy-mode"] .easy-welcome-suggestions button { border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent); border-radius: 999px; padding: 8px 15px; color: var(--text-secondary); background: var(--bg-primary); font-size: var(--fs-md); cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+[data-page="easy-mode"] .easy-welcome-suggestions button:hover { border-color: var(--accent-primary); color: var(--text-primary); background: var(--bg-hover); }
 [data-page="easy-mode"] .easy-content--context { display: flex; flex-direction: column; overflow: hidden; }
 [data-page="easy-mode"] .easy-content--context .easy-content-header { width: 100%; flex: 0 0 auto; }
 [data-page="easy-mode"] .easy-context-tabs { display: flex; width: 100%; max-width: 1050px; flex: 0 0 auto; gap: 4px; margin: 0 auto 10px; border-bottom: 1px solid var(--border-color); }
@@ -7352,17 +7301,9 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   padding: 4px 0 4px 10px;
 }
 
-.display-files-card__row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
 .display-files-card__item {
   display: flex;
   min-width: 0;
-  flex: 1;
   align-items: center;
   gap: 9px;
   border: 1px solid var(--display-files-border);
@@ -7380,20 +7321,6 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 .display-files-card__meta strong { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__meta small { overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__size { display: inline-flex; min-width: 58px; justify-content: flex-end; color: var(--text-secondary); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
-.display-files-card__download {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--display-files-border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
-  cursor: pointer;
-}
-.display-files-card__download:hover { border-color: #38bdf8; background: var(--bg-hover); color: var(--text-primary); }
 .display-files-card--easy { margin-left: 8px; }
 
 /* ===== 简易模式输入框底部按钮样式 (issue 2026-10-13 用户截图对齐) =====
@@ -7597,3 +7524,52 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   cursor: pointer;
 }
 .easy-list-empty .easy-list-empty__action:hover { text-decoration: underline; }
+
+/* ===== 工作区面板 (issue 2026-10-23) =====
+ * 搜索框 + 项目/拓展分区标题 + 首字母色块图标 + 会话计数徽标 */
+[data-page="easy-mode"] .easy-workspace-search {
+  position: relative;
+  max-width: 1050px;
+  margin: 0 auto 18px;
+}
+[data-page="easy-mode"] .easy-workspace-search input {
+  width: 100%;
+  height: 36px;
+  padding: 0 44px 0 36px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+  transition: border-color .15s ease;
+}
+[data-page="easy-mode"] .easy-workspace-search input:focus { border-color: var(--accent-primary); }
+[data-page="easy-mode"] .easy-workspace-section {
+  max-width: 1050px;
+  margin: 0 auto 22px;
+}
+[data-page="easy-mode"] .easy-workspace-section h2 {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+[data-page="easy-mode"] .easy-workspace-section h2 span {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--fs-sm);
+}
+[data-page="easy-mode"] .easy-workspace-section .easy-list-empty { border: 1px dashed color-mix(in srgb, var(--border-color) 70%, transparent); border-radius: 11px; }
+[data-page="easy-mode"] .easy-extension-card .easy-workspace-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+  line-height: 20px;
+}

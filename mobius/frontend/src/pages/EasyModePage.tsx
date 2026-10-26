@@ -1,19 +1,19 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useRemoteDeviceNames } from '../services/remote-device-names'
 import {
+  ArrowUpRight,
   Boxes,
   BrainCircuit,
-  Cog,
-  GraduationCap,
+  Cable,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDot,
+  Cog,
   Cpu,
   FolderKanban,
-  LayoutDashboard,
+  GraduationCap,
   LayoutList,
   ListCollapse,
   Loader2,
@@ -24,16 +24,17 @@ import {
   Plus,
   Pencil,
   Puzzle,
+  Radar,
   Search as SearchIcon,
   Sparkles,
-  SquarePen,
+  StickyNote,
   Trash2,
   Undo2,
   WandSparkles,
+  Workflow,
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
-import { assistantAllowedFor } from '../services/assistant-availability'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
@@ -49,14 +50,6 @@ import {
   type EasySessionSelection,
 } from '../components/easy-session-config-bar'
 import { randomProjectBindPath, formatDefaultSessionName } from '../services/session-naming'
-import {
-  EASY_DEFAULT_PROJECT_NAME,
-  EASY_DEFAULT_ISSUE_TITLE,
-  EASY_NEW_PROJECT_ISSUE_TITLE,
-  EASY_DEFAULT_DESCRIPTION,
-  isEasyDefaultProjectName,
-  easyIssueTitleAliases,
-} from '../services/easy-mode-defaults'
 import type { CreateKind } from '../components/global-create'
 import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
@@ -124,17 +117,27 @@ const ALWAYS_EXPANDED_SESSION_GROUP_COUNT = 5
 const MESSAGE_SENT_REFRESH_DELAY_MS = 1000
 const CREATE_SUCCESS_TOAST_MS = 4000
 const EASY_LIST_MODE_KEY = 'mobius:easy-mode:session-list-mode'
+// 欢迎页示例任务建议 (点击填入输入框), 给新用户一个可点的起点 (issue 2026-10-26)
+const WELCOME_SUGGESTIONS = ['帮我搭建一个网页应用', '分析一份数据并生成报告', '给项目写一份周报']
+// 工作区卡片图标色板 (项目/拓展首字母徽标用, 哈希取色)
+const WORKSPACE_AVATAR_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#06b6d4', '#a855f7', '#ef4444', '#ec4899', '#84cc16']
+function workspaceAvatarColor(key: string) {
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return WORKSPACE_AVATAR_COLORS[h % WORKSPACE_AVATAR_COLORS.length]
+}
 // 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
-// 用户没有显式选择项目/任务时，复用同一套默认项目/任务名，缺失则按需创建。
-// 名字集中在 services/easy-mode-defaults.ts, 改名字两边一起改, 历史名字在那里兜底。
+// 用户没有显式选择项目/任务时，复用 let-us-chat / a random chat，缺失则按需创建。
+const EASY_DEFAULT_PROJECT_NAME = 'let-us-chat'
+const EASY_DEFAULT_ISSUE_TITLE = 'a random chat'
+const EASY_NEW_PROJECT_ISSUE_TITLE = 'demo issue'
+const EASY_DEFAULT_DESCRIPTION = 'no description'
 const EASY_LAST_SELECTION_KEY = 'mobius:easy-mode:last-session-selection'
 
 async function ensureEasyIssue(projectId: string, title: string): Promise<{ id: string; title: string }> {
   const response = await api(`/api/projects/${projectId}/issues?status=active`)
   const issues: any[] = Array.isArray(response) ? response : (response?.issues || [])
-  // 老名字建出来的任务也算命中, 否则改名后会在这个项目里再建一个重复的默认任务
-  const aliases = easyIssueTitleAliases(title).map(alias => alias.trim().toLowerCase())
-  const existing = issues.find(issue => aliases.includes(String(issue?.title || '').trim().toLowerCase()))
+  const existing = issues.find(issue => String(issue?.title || '') === title)
   if (existing?.id) return { id: String(existing.id), title: String(existing.title || title) }
 
   const created = await api(`/api/projects/${projectId}/issues`, {
@@ -210,7 +213,6 @@ function readEasyLastSelection(): Pick<EasySessionSelection, 'projectId' | 'issu
 }
 
 export default function EasyModePage() {
-  const { formatName } = useRemoteDeviceNames()
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const {
@@ -255,10 +257,9 @@ export default function EasyModePage() {
   }))
   const [welcomeCreating, setWelcomeCreating] = useState(false)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
-  const [welcomeSelectionNotice, setWelcomeSelectionNotice] = useState(false)
   const [editingSession, setEditingSession] = useState<RecentSession | null>(null)
   const [deletingSession, setDeletingSession] = useState<RecentSession | null>(null)
-  const [createErrorToast, setCreateErrorToast] = useState<{ message: string; title?: string } | null>(null)
+  const [createErrorToast, setCreateErrorToast] = useState<{ message: string } | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
   const [projectSuccessToast, setProjectSuccessToast] = useState<{ name: string } | null>(null)
@@ -272,7 +273,6 @@ export default function EasyModePage() {
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const welcomeFileInputRef = useRef<HTMLInputElement | null>(null)
   const messageSentRefreshTimerRef = useRef<number | null>(null)
-  const welcomeSelectionNoticeTimerRef = useRef<number | null>(null)
   const navigate = useNavigate()
   const layoutMode = useLayoutMode()
   const sessionParam = search.get('session') || ''
@@ -602,6 +602,8 @@ export default function EasyModePage() {
 
   const selectProjectFilter = (projectId: string | null) => {
     const next = new URLSearchParams(search)
+    // 切到会话面板 (删除 panel 参数), 否则从工作区/总览等面板点击项目后页面不跳转, 用户看不到变化.
+    next.delete('panel')
     if (projectId) next.set('project', projectId)
     else next.delete('project')
     const matchingSessions = sessions.filter(session => (
@@ -634,7 +636,6 @@ export default function EasyModePage() {
     setWelcomePrompt('')
     clearWelcomeAttachments()
     setWelcomeSelection(current => ({ ...current, ...readEasyLastSelection(), createProject: false }))
-    setWelcomeSelectionNotice(true)
     setCurrentSession(null)
     setCurrentTask(null)
     setCurrentIssue(null)
@@ -644,12 +645,6 @@ export default function EasyModePage() {
     next.delete('project')
     next.delete('panel')
     setSearch(next)
-  }
-
-  const showWelcomeSelectionNotice = () => {
-    setWelcomeSelectionNotice(true)
-    if (welcomeSelectionNoticeTimerRef.current) window.clearTimeout(welcomeSelectionNoticeTimerRef.current)
-    welcomeSelectionNoticeTimerRef.current = window.setTimeout(() => setWelcomeSelectionNotice(false), 5000)
   }
 
   // 欢迎页附件与会话输入框共用 /api/upload, 粘贴截图和选择文件都进入同一列表。
@@ -735,28 +730,6 @@ export default function EasyModePage() {
     } catch {}
   }, [welcomeSelection.projectId, welcomeSelection.issueId, welcomeSelection.issueTitle])
 
-  // 项目列表到位后校准一次「上次选择」: 认不出的项目 id (换了账号 / 掉权限 / 项目被删)
-  // 直接清空, 别让界面显示「未选择项目」而状态里还压着上一个账号的项目 id.
-  // 只在列表非空时动手 —— 列表请求失败时保持原样, 不能把有效的记忆当垃圾清掉.
-  const welcomeSelectionPrunedRef = useRef(false)
-  useEffect(() => {
-    if (welcomeSelectionPrunedRef.current) return
-    if (!welcomeSelection.projectId) { welcomeSelectionPrunedRef.current = true; return }
-    if (!projects.length) return
-    welcomeSelectionPrunedRef.current = true
-    if (!projects.some((project: any) => String(project.id) === welcomeSelection.projectId)) {
-      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
-    }
-  }, [projects, welcomeSelection.projectId])
-
-  useEffect(() => {
-    if (!showWelcome) return
-    showWelcomeSelectionNotice()
-    return () => {
-      if (welcomeSelectionNoticeTimerRef.current) window.clearTimeout(welcomeSelectionNoticeTimerRef.current)
-    }
-  }, [showWelcome])
-
   // 欢迎页提交: 输入框内容 + 下方选择直接创建并启动会话, 不再二次跳配置弹窗.
   // 请求体与「新建快捷会话」完全同源 (POST /api/issues/:id/sessions + 首条消息启动).
   const submitWelcomePrompt = async () => {
@@ -777,26 +750,6 @@ export default function EasyModePage() {
     } = welcomeSelection
     if (createProject && !projectName.trim()) {
       setCreateErrorToast({ message: '请填写项目名' })
-      return
-    }
-    // 记住的项目 id 只有在「当前账号仍能在项目列表里看到它」时才算数. localStorage 里的
-    // 选择会跨账号/跨权限存活 (退出登录只清 cc-token), 换了账号后旧 id 既不在下拉选项里
-    // (界面显示"未选择项目"), 又会被下面的分支当成"已选项目", 于是拿着别人的 issue 去建
-    // 会话, 后端按成员关系判定返回 403「无权在此 Issue 创建 Session」—— 用户看到的就是
-    // "没选项目却提示会话创建失败". 这里把认不出的选择直接清掉, 让它落回不选项目的兜底.
-    const selectedProject = !createProject && projectId
-      ? projects.find((project: any) => String(project.id) === projectId) || null
-      : null
-    if (!createProject && projectId && !selectedProject) {
-      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
-    }
-    if (selectedProject && selectedProject.can_create_session === false) {
-      setCreateErrorToast({
-        title: '该项目的选择已失效',
-        message: `「${selectedProject.name || projectId}」你没有创建会话的权限（只读项目），请换一个项目，或清空项目选择后直接对话`,
-      })
-      // 顺手清掉这个用不了的选择: 用户按提示再发一次就能落到"不选项目"的兜底路径
-      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
       return
     }
     setWelcomeCreating(true)
@@ -824,17 +777,15 @@ export default function EasyModePage() {
         if (!targetProject?.id) throw new Error('项目创建失败')
         setProjects([...projects.filter((project: any) => project.id !== targetProject.id), targetProject])
         targetIssue = await ensureEasyIssue(String(targetProject.id), EASY_NEW_PROJECT_ISSUE_TITLE)
-      } else if (selectedProject) {
-        // 只认"项目列表里确实存在"的那个项目对象, 不再用 { id: projectId } 这种空壳伪造项目:
-        // 认不出来时上面的校验已经把选择清空, 这里会走下面的兜底分支.
-        targetProject = selectedProject
+      } else if (projectId) {
+        targetProject = projects.find((project: any) => String(project.id) === projectId) || { id: projectId }
         targetIssue = issueId
           ? { id: issueId, title: issueTitle || EASY_DEFAULT_ISSUE_TITLE }
           : await ensureEasyIssue(projectId, EASY_DEFAULT_ISSUE_TITLE)
       } else {
         targetProject = projects.find((project: any) => (
           String(project?.created_by || '') === String(user?.id || '')
-          && isEasyDefaultProjectName(project?.name)
+          && String(project?.name || '').toLowerCase() === EASY_DEFAULT_PROJECT_NAME
         ))
         if (!targetProject) {
           const workDir = String(user?.work_dir || '').trim().replace(/\/+$/, '')
@@ -861,7 +812,7 @@ export default function EasyModePage() {
 
       if (!targetProject?.id || !targetIssue?.id) throw new Error('无法确定会话所属的项目与任务')
       const name = formatDefaultSessionName(targetIssue.title)
-      const keepsSelectedContext = createProject || (!!selectedProject && targetIssue.id === issueId)
+      const keepsSelectedContext = createProject || targetIssue.id === issueId
       const session = await api(`/api/issues/${targetIssue.id}/sessions`, {
         method: 'POST',
         body: JSON.stringify({
@@ -931,7 +882,18 @@ export default function EasyModePage() {
     if (response?.message) alert(response.message)
   }
 
-  const extensionProjects = projects.filter((project: any) => project?.kind === 'extension')
+  const extensionProjects = projects.filter((project: any) => project?.kind === 'extension' && !project.hidden)
+  // 工作区: 普通项目 (非拓展) 列表, 与拓展并列展示 (issue 2026-10-23)
+  const normalProjects = projects.filter((project: any) => project?.kind !== 'extension' && !project.hidden && !project.muted)
+  // 工作区搜索词
+  const [workspaceQuery, setWorkspaceQuery] = useState('')
+  const workspaceFilter = (p: any) => {
+    const q = workspaceQuery.trim().toLowerCase()
+    if (!q) return true
+    return String(p.name || '').toLowerCase().includes(q) || String(p.description || '').toLowerCase().includes(q)
+  }
+  const visibleNormalProjects = normalProjects.filter(workspaceFilter)
+  const visibleExtensionProjects = extensionProjects.filter(workspaceFilter)
   const renderSessionRow = (session: RecentSession, nested = false) => {
     const active = session.session_id === sessionParam && contextMatchesProject && activePanel === 'sessions'
     const status = sessionStatus(session)
@@ -976,21 +938,21 @@ export default function EasyModePage() {
           className="easy-sidebar flex flex-col"
         >
           <div className="easy-sidebar-primary">
-            <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'welcome' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'welcome' ? 'page' : undefined} onClick={openWelcome} title="新建任务">
-              <SquarePen className="easy-nav-icon" />
-              <span>新任务</span>
+            <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'welcome' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'welcome' ? 'page' : undefined} onClick={openWelcome} title="对话">
+              <StickyNote className="easy-nav-icon" />
+              <span>对话</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'overview' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'overview' ? 'page' : undefined} onClick={() => selectPanel('overview')}>
-              <LayoutDashboard className="easy-nav-icon" />
-              <span>全局纵观</span>
+              <Radar className="easy-nav-icon" />
+              <span>总览</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'extensions' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'extensions' ? 'page' : undefined} onClick={() => selectPanel('extensions')}>
-              <Boxes className="easy-nav-icon" />
-              <span>项目与拓展</span>
+              <Workflow className="easy-nav-icon" />
+              <span>工作区</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'devices' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'devices' ? 'page' : undefined} onClick={() => selectPanel('devices')}>
-              <Network className="easy-nav-icon" />
-              <span>跨设备</span>
+              <Cable className="easy-nav-icon" />
+              <span>设备</span>
             </button>
           </div>
 
@@ -1055,10 +1017,7 @@ export default function EasyModePage() {
           </div>
 
           <div className="easy-sidebar-footer" aria-label="快捷入口">
-            {/* 跟随全局开关 (services/assistant-availability): 封锁期间对普通用户隐藏, 与其余 4 处入口保持同步 */}
-            {assistantAllowedFor(user) && (
             <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><WandSparkles className="h-[18px] w-[18px]" strokeWidth={2} /></button>
-            )}
             <button type="button" className="easy-footer-btn" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Cog className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><GraduationCap className="h-[18px] w-[18px]" strokeWidth={2} /></button>
           </div>
@@ -1070,16 +1029,54 @@ export default function EasyModePage() {
           </main>
         ) : activePanel === 'extensions' ? (
           <main className="easy-content" data-testid="easy-extensions-panel">
-            <div className="easy-content-header"><Boxes className="h-5 w-5" /><div><h1>系统拓展</h1><p>当前系统中可用的拓展应用</p></div><span>{extensionProjects.length}</span></div>
-            <div className="easy-extension-grid">
-              {extensionProjects.length === 0 ? <div className="easy-content-empty"><Puzzle className="h-8 w-8" /><span>当前没有可用拓展</span></div> : extensionProjects.map((project: any) => (
-                <button key={project.id} type="button" className="easy-extension-card" disabled={project.disabled} onClick={() => window.open(`/extension/${encodeURIComponent(project.extension_name)}/`, '_blank', 'noopener,noreferrer')}>
-                  <span className="easy-extension-card__icon"><Puzzle className="h-5 w-5" /></span>
-                  <span className="min-w-0 flex-1"><strong>{project.name || project.extension_name}</strong><small>{project.description || '莫比乌斯拓展应用'}</small></span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              ))}
+            <div className="easy-content-header"><Boxes className="h-5 w-5" /><div><h1>工作区</h1><p>项目与拓展应用</p></div><span>{normalProjects.length + extensionProjects.length}</span></div>
+            <div className="easy-workspace-search">
+              <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+              <input
+                value={workspaceQuery}
+                onChange={(event) => setWorkspaceQuery(event.target.value)}
+                placeholder="搜索项目或拓展"
+                aria-label="搜索项目或拓展"
+              />
+              {workspaceQuery && (
+                <button type="button" onClick={() => setWorkspaceQuery('')} aria-label="清除搜索" className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded px-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>清除</button>
+              )}
             </div>
+            {/* 项目区块 */}
+            <section className="easy-workspace-section">
+              <h2>项目 <span>{visibleNormalProjects.length}</span></h2>
+              <div className="easy-extension-grid">
+                {visibleNormalProjects.length === 0 ? (
+                  <div className="easy-list-empty">
+                    <FolderKanban className="h-5 w-5" strokeWidth={1.8} />
+                    <span>{workspaceQuery ? '没有匹配的项目' : '暂无项目'}</span>
+                    {!workspaceQuery && <button type="button" className="easy-list-empty__action" onClick={() => setCreateKind('project')}>+ 新建项目</button>}
+                  </div>
+                ) : visibleNormalProjects.map((project: any) => (
+                  <button key={project.id} type="button" className="easy-extension-card" onClick={() => selectProjectFilter(project.id)} title="打开项目并查看会话">
+                    <span className="easy-extension-card__icon" style={{ background: `${workspaceAvatarColor(project.id)}22`, color: workspaceAvatarColor(project.id) }}>{String(project.name || '?').charAt(0).toUpperCase()}</span>
+                    <span className="min-w-0 flex-1"><strong>{project.name}</strong><small>{project.description || '莫比乌斯项目'}</small></span>
+                    {typeof project.issue_count === 'number' && <span className="easy-workspace-count" title={`${project.issue_count} 个任务`}>{project.issue_count} 任务</span>}
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                ))}
+              </div>
+            </section>
+            {/* 拓展区块 */}
+            <section className="easy-workspace-section">
+              <h2>拓展 <span>{visibleExtensionProjects.length}</span></h2>
+              <div className="easy-extension-grid">
+                {visibleExtensionProjects.length === 0 ? (
+                  <div className="easy-list-empty"><Puzzle className="h-5 w-5" strokeWidth={1.8} /><span>{workspaceQuery ? '没有匹配的拓展' : '当前没有可用拓展'}</span></div>
+                ) : visibleExtensionProjects.map((project: any) => (
+                  <button key={project.id} type="button" className="easy-extension-card" disabled={project.disabled} title={project.disabled ? '该拓展已禁用' : '在新标签页打开拓展'} onClick={() => window.open(`/extension/${encodeURIComponent(project.extension_name)}/`, '_blank', 'noopener,noreferrer')}>
+                    <span className="easy-extension-card__icon" style={{ background: `${workspaceAvatarColor(project.id)}22`, color: workspaceAvatarColor(project.id) }}>{String(project.name || project.extension_name || '?').charAt(0).toUpperCase()}</span>
+                    <span className="min-w-0 flex-1"><strong>{project.name || project.extension_name}</strong><small>{project.description || '莫比乌斯拓展应用'}</small></span>
+                    <ArrowUpRight className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                  </button>
+                ))}
+              </div>
+            </section>
           </main>
         ) : activePanel === 'devices' ? (
           <main className="easy-content" data-testid="easy-devices-panel">
@@ -1090,7 +1087,7 @@ export default function EasyModePage() {
                   const connected = remote.reachable === true || remote.connected === true || remote.status === 'reachable' || remote.event_stream_connected === true
                   const name = remote.name || remote.identifier || remote.host || `设备 ${index + 1}`
                   const detail = [remote.user && remote.hostname ? `${remote.user}@${remote.hostname}` : remote.hostname || remote.host, remote.port ? `:${remote.port}` : '', remote.rtt || remote.latency].filter(Boolean).join(' ')
-                  return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{formatName(name)}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
+                  return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{name}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
                 })}
               </div>
             )}
@@ -1124,11 +1121,10 @@ export default function EasyModePage() {
                 <MobiusLogo size={34} className="easy-welcome-brand__logo" />
                 <span className="easy-welcome-brand__name">Mobius</span>
                 <span className="easy-welcome-brand__divider" aria-hidden="true" />
-                {/* data-text-redaction-ignore: 欢迎页定位语是固定品牌文案, 不参与管理员「文字替换隐藏」规则 */}
-                <span className="easy-welcome-brand__tag" data-text-redaction-ignore="true">多智能体 · 自进化</span>
+                <span className="easy-welcome-brand__tag">多智能体 · 自进化</span>
               </div>
               {/* 主标题: 直接说价值; 问候语降为副标题一行 */}
-              <h1 className="easy-welcome-headline">把自己的工作交给一支智能体军团</h1>
+              <h1 className="easy-welcome-headline">把任务交给一支智能体团队</h1>
               <p className="easy-welcome-sub">
                 {timeGreeting(user?.display_name)}。描述你的目标，莫比乌斯负责拆解、编排与执行。
               </p>
@@ -1147,6 +1143,7 @@ export default function EasyModePage() {
                 {!welcomeSelection.createProject && (
                   <div className="mb-2">
                     <EasySessionProjectSelector
+                      isDark={theme !== 'light'}
                       selectedProjectId={welcomeSelection.projectId || undefined}
                       selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
                       projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
@@ -1192,7 +1189,6 @@ export default function EasyModePage() {
                           ? { ...next, ...readEasyLastSelection() }
                           : next
                         setWelcomeSelection(restored)
-                        if (!next.createProject && welcomeSelection.createProject) showWelcomeSelectionNotice()
                       }}
                       projects={projects}
                       recentSessions={sessions}
@@ -1202,13 +1198,12 @@ export default function EasyModePage() {
                   }
                 />
                 </div>
-                {welcomeSelectionNotice && !welcomeSelection.createProject ? (
-                  <div className="easy-selection-notice" role="status">
-                    当前选择：{projects.find(project => String(project.id) === welcomeSelection.projectId)?.name || '未选择项目'}
-                    {' · '}
-                    {welcomeSelection.issueTitle || '未选择任务'}
-                  </div>
-                ) : null}
+                {/* 示例任务建议: 给新用户一个可点的起点 (issue 2026-10-26, impeccable P2) */}
+                <div className="easy-welcome-suggestions" aria-label="示例任务">
+                  {WELCOME_SUGGESTIONS.map(suggestion => (
+                    <button key={suggestion} type="button" onClick={() => setWelcomePrompt(suggestion)}>{suggestion}</button>
+                  ))}
+                </div>
               </div>
               {/* 可合作计算机弹窗 (会话工具同款): 声明文本追加进任务描述, 随首次消息一起发送 */}
               {welcomeCooperablePcOpen && (
@@ -1299,7 +1294,7 @@ export default function EasyModePage() {
       )}
       {searchOpen && (
         <Suspense fallback={null}>
-          <SearchModal onClose={() => setSearchOpen(false)} onNavigate={navigate} projectId={effectiveProject || null} />
+          <SearchModal onClose={() => setSearchOpen(false)} onNavigate={navigate} />
         </Suspense>
       )}
       {deletingSession && (
@@ -1336,7 +1331,7 @@ export default function EasyModePage() {
         <ToastCard
           tone="error"
           icon={<X className="h-4 w-4" strokeWidth={2} />}
-          title={createErrorToast.title || '会话创建失败'}
+          title="会话创建失败"
           subtitle={createErrorToast.message}
           onClose={() => setCreateErrorToast(null)}
         />

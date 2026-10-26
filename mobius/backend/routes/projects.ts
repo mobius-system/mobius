@@ -19,8 +19,15 @@ import { Memories } from '../repositories/memories';
 import { Users } from '../repositories/users';
 import { ProjectDeletionAudit, type ProjectDeletionImpact } from '../repositories/project-deletion-audit';
 // @ts-ignore — service 仍是 .js
+import {
+  buildIssueContextPreview,
+  buildIssueSelectionDefaults,
+  buildProjectIssueContextPreview,
+  buildProjectIssueSelectionDefaults,
+  stripContextItemBodies,
+} from '../services/session-context';
+// @ts-ignore — service 仍是 .js
 import { ensureGuidedDemoAssets } from '../services/guided-demo-assets';
-import { searchDirectory } from '../services/user-directory';
 // @ts-ignore — service 仍是 .js
 import { defaultCodeServerWorkspace } from '../services/code-server-workspace';
 import {
@@ -33,7 +40,6 @@ import {
   contentTypeFor,
 } from '../services/project-file-ops';
 import { resolveProjectPath } from '../services/project-path';
-import { isWithin } from '../services/file-access';
 import * as aimuxRemote from '../services/aimux-remote';
 import { aimuxRemoteNameFromMeta, parsePcClientMetadata } from '../services/pc-client-context';
 // @ts-ignore — service 仍是 .js
@@ -88,8 +94,6 @@ import {
   FORGOTTEN_FLAG_PATIENCE_MAX,
   HIDDEN_FOLDER_NAME,
 } from '../config';
-// @ts-ignore — user-isolation 统一出口 (TS)
-import { codeServerAllowedFor } from '../services/user-isolation';
 
 const router = express.Router();
 const GIT_SOURCES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -327,7 +331,7 @@ function fileIncludes(absPath: string, marker: string): boolean {
 }
 
 function removePathIfExists(absPath: string, root: string, removed: string[]): void {
-  if (!absPath || !isWithin(root, absPath)) return;
+  if (!absPath || absPath === root || !absPath.startsWith(root + path.sep)) return;
   if (!fs.existsSync(absPath)) return;
   fs.rmSync(absPath, { recursive: true, force: true });
   removed.push('/' + path.relative(root, absPath).replace(/\\/g, '/'));
@@ -388,13 +392,13 @@ function resolveBindPath(rawPath: unknown, userWorkDir: unknown, options: Resolv
   const createIfMissing = !!options.createIfMissing;
   const userRoot = path.resolve(String(userWorkDir));
   let abs: string;
-  if (path.isAbsolute(rawPath) && isWithin(userRoot, rawPath)) {
+  if (path.isAbsolute(rawPath) && (rawPath === userRoot || rawPath.startsWith(userRoot + path.sep))) {
     abs = path.resolve(rawPath);
   } else {
     // 相对路径或相对家目录的伪绝对路径 (e.g. "/imac-test")
     abs = path.resolve(userRoot, rawPath.replace(/^\//, ''));
   }
-  if (!isWithin(userRoot, abs)) throw new Error('绑定路径必须位于您的工作目录下');
+  if (abs !== userRoot && !abs.startsWith(userRoot + path.sep)) throw new Error('绑定路径必须位于您的工作目录下');
   if (!fs.existsSync(abs)) {
     if (!createIfMissing) throw new Error('路径不存在');
     try {
@@ -516,6 +520,8 @@ const CLUSTER_OVERVIEW_RANGES_MS: Record<string, number> = {
   '72h': 72 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
+  // 前端「全部」档 (TIME_RANGE_OPTIONS 的 'all'), 与前端保持一致 (10 年).
+  all: 10 * 365 * 24 * 60 * 60 * 1000,
 };
 
 function hasOwn(obj: any, key: string): boolean {
@@ -1011,6 +1017,13 @@ const GIT_REPO_SCAN_MAX_DEPTH = 3;
 const GIT_REPO_SCAN_MAX_DIRS = 500;
 const GIT_COMMIT_LIMIT_DEFAULT = 12;
 const GIT_COMMIT_LIMIT_MAX = 30;
+const ARCHITECTURE_ISSUE_TITLE = '项目结构绘制';
+const ARCHITECTURE_ISSUE_DESCRIPTION = [
+  '自动生成或刷新项目系统结构剖析图。',
+  `请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html。`,
+  '如需兼容截图或封面，也可以额外输出 arch.svg、arch.png、arch.jpg、arch.jpeg、arch.webp 等常见预览格式。',
+].join('\n');
+const ARCHITECTURE_FIGURE_EXTENSIONS = ['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const GIT_FIELD_SEPARATOR = '\x1f';
 const GIT_RECORD_SEPARATOR = '\x1e';
 const PACKAGE_ZIP_RELATIVE_DIR = path.join(HIDDEN_FOLDER_NAME, 'package_zip');
@@ -1724,6 +1737,89 @@ function buildUserContextWhitelistPayload(projectId: string, userId: string): Us
   };
 }
 
+function findArchitectureIssue(projectId: string): any {
+  return Issues.findByProjectAndTitle(projectId, ARCHITECTURE_ISSUE_TITLE);
+}
+
+function ensureArchitectureIssue(projectId: string, userId: string): { issue: any; created: boolean } {
+  const existing = findArchitectureIssue(projectId);
+  if (existing) return { issue: existing, created: false };
+  const issueId = uuid().slice(0, 8);
+  Issues.insert({
+    id: issueId,
+    project_id: projectId,
+    title: ARCHITECTURE_ISSUE_TITLE,
+    description: ARCHITECTURE_ISSUE_DESCRIPTION,
+    created_by: userId,
+    use_worktree: false,
+    worktree_branch: '',
+  } as any);
+  return { issue: Issues.findById(issueId), created: true };
+}
+
+function toIdList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v: any) => String(v).trim()).filter(Boolean);
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function contentTypeForFigure(file: string): string {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'text/html; charset=utf-8';
+  if (ext === '.svg') return 'image/svg+xml; charset=utf-8';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.bmp') return 'image/bmp';
+  return 'application/octet-stream';
+}
+
+function figureKind(file: string): 'html' | 'svg' | 'image' {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'html';
+  if (ext === '.svg') return 'svg';
+  return 'image';
+}
+
+interface ArchitectureFigure {
+  absPath: string;
+  name: string;
+  ext: string;
+  stat: fs.Stats;
+}
+
+function findArchitectureFigure(project: any): ArchitectureFigure | null {
+  const bindPath = (project?.bind_path || '').trim();
+  if (!bindPath) return null;
+  const dir = path.resolve(bindPath, HIDDEN_FOLDER_NAME, 'generated_figures');
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile())
+      .map((entry): ArchitectureFigure | null => {
+        const absPath = path.join(dir, entry.name);
+        const ext = path.extname(entry.name).toLowerCase();
+        if (!ARCHITECTURE_FIGURE_EXTENSIONS.includes(ext)) return null;
+        if (path.basename(entry.name, ext).toLowerCase() !== 'arch') return null;
+        const stat = fs.statSync(absPath);
+        return { absPath, name: entry.name, ext, stat };
+      })
+      .filter((x): x is ArchitectureFigure => x !== null)
+      .sort((a, b) => {
+        const pa = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(a.ext);
+        const pb = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(b.ext);
+        if (pa !== pb) return pa - pb;
+        return b.stat.mtimeMs - a.stat.mtimeMs;
+      });
+    return entries[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 function readableProjectsForUser(user: any): any[] {
   return Projects.listAll(user.id).filter((project: any) => canReadProject(user, project));
 }
@@ -1757,8 +1853,7 @@ function sendProjectSearch(req: express.Request, res: express.Response): void {
 
 function sendProjectHierarchySearch(req: express.Request, res: express.Response): void {
   const user = userOf(req);
-  // ?project_id=: 限定在单个项目内搜索 (项目内页/搜索弹窗的范围切换); 缺省跨全部项目.
-  const result = searchProjectHierarchy(req.query.q ?? req.query.search ?? '', user, req.query.project_id);
+  const result = searchProjectHierarchy(req.query.q ?? req.query.search ?? '', user);
   const projects = result.projects.map((group) => group.project);
   auditAdminProjectList(req, 'search_project_hierarchy', projects);
   res.json({
@@ -2011,65 +2106,6 @@ router.get('/:id/sessions-overview', auth, (req: express.Request, res: express.R
   res.json({ issues, researches });
 });
 
-// 项目页「列表」密度: 按活跃顺序返回项目内的会话 (scope=issue|research), 而不是父级任务/研究.
-// Project page list density: sessions of one scope ordered by activity instead of parent items.
-router.get('/:id/sessions', auth, (req: express.Request, res: express.Response) => {
-  const user = userOf(req);
-  const projectId = String(req.params.id);
-  const project = Projects.findById(projectId);
-  if (!project || !canReadProject(user, project) || isHidden(user.id, 'project', project.id)) {
-    res.status(404).json({ error: '未找到' });
-    return;
-  }
-
-  const scope: 'issue' | 'research' = String(req.query.scope || '') === 'research' ? 'research' : 'issue';
-  if (scope === 'research' && !project.research_enabled) {
-    res.json({ sessions: [], truncated: false });
-    return;
-  }
-  const rawLimit = Number(req.query.limit || 500);
-  const limit = Math.max(1, Math.min(500, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 500));
-
-  // 父级可读性: 会话本身可见但父级不可见的行不返回 (与会话搜索同口径).
-  // Parent readability: skip sessions whose parent issue/research is not readable.
-  const readableIssueIds = new Set(Issues.listForProject(project.id, undefined, user?.id)
-    .filter((issue: any) => canReadIssue(user, issue))
-    .map((issue: any) => String(issue.id)));
-  const readableResearchIds = new Set(Researches.listForProject(project.id)
-    .filter((research: any) => canReadResearch(user, research))
-    .map((research: any) => String(research.id)));
-
-  // 权限过滤会丢弃部分行, 多取一段再截断, 避免结果被挤空.
-  // Permission filtering may drop rows; over-fetch a little before truncating.
-  const rows = Sessions.listByProjectScopeActivity(projectId, scope, Math.min(1000, limit * 2) + 1)
-    .filter((session: any) => {
-      if (!canReadSession(user, session)) return false;
-      if (session.scope_type === 'issue') return readableIssueIds.has(String(session.issue_id || ''));
-      return readableResearchIds.has(String(session.research_id || ''));
-    });
-
-  const sessions = rows.slice(0, limit).map((session: any) => ({
-    session_id: session.session_id,
-    name: session.name || '',
-    scope_type: session.scope_type,
-    issue_id: session.issue_id || null,
-    research_id: session.research_id || null,
-    research_role: session.research_role || null,
-    status: session.status,
-    agent_status: session.agent_status,
-    created_at: session.created_at,
-    completed_at: session.completed_at,
-    last_active: session.last_active,
-    message_count: Number(session.message_count || 0),
-    user_display_name: session.user_display_name || '',
-    parent_title: session.parent_title || '',
-    parent_status: session.parent_status || null,
-  }));
-
-  auditAdminProjectList(req, 'list_project_sessions', [project]);
-  res.json({ sessions, truncated: rows.length > limit });
-});
-
 router.get('/:id/session-matches', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const projectId = String(req.params.id);
@@ -2278,6 +2314,7 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
 // ===== 项目组成员管理 (project membership) =====
 // 与"项目可见性 / allowlist"是两个层次: 成员是协作层 (有角色, 可读可写可管理),
 // 可见性是共享层 (只读). 写操作统一要求 owner/manager (canManage); reader 仅能 GET 列表.
+const ACTIVE_USER_SQL_FOR_QUERY = "(deleted_at IS NULL OR deleted_at = '')";
 
 router.get('/:id/members', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
@@ -2295,18 +2332,25 @@ router.get('/:id/members', auth, (req: express.Request, res: express.Response) =
   });
 });
 
-// 项目团队管理者可搜的候选员工; 只返回 id/display_name/already_member,
+// 项目团队管理者可搜的候选员工; 只返回 id/display_name/groups/already_member,
 // 绝不暴露 password/work_dir/preference/管理员字段.
-// 名册查询走 services/user-directory: 管理员可包含匹配, 普通用户 (即使他有本项目
-// 管理权限) 也只能按完整账号 id / 完整昵称精确解析, 拿不到全站账号列表.
 router.get('/:id/member-candidates', auth, (req: express.Request, res: express.Response) => {
   const user = userOf(req);
   const id = String(req.params.id);
   const project = Projects.findById(id);
   if (!project || (user.role !== 'admin' && !canReadProject(user, project))) return res.status(404).json({ error: '未找到' });
   if (!ProjectMemberships.canManage(id, user)) return res.status(403).json({ error: '需要项目管理权限' });
+  const q = String(req.query.q || '').trim();
+  const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
   const memberIds = new Set(ProjectMemberships.list(id).map((m) => m.user_id));
-  const candidates = searchDirectory(user, req.query.q, 30).map((r) => ({
+  const rows = db.prepare(
+    `SELECT id, display_name FROM users
+     WHERE ${ACTIVE_USER_SQL_FOR_QUERY}
+       AND (id LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')
+     ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, display_name COLLATE NOCASE ASC
+     LIMIT 30`
+  ).all(like, like, q) as Array<{ id: string; display_name: string }>;
+  const candidates = rows.map((r) => ({
     id: r.id,
     display_name: r.display_name || r.id,
     already_member: memberIds.has(r.id),
@@ -2814,32 +2858,6 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
   let queriedSourceCount = 0;
   try {
     const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
-    // ✨ 会话绑定的 aimux bridge 设备恒为第一优先远程源: bridge 连接名随客户端重连而变,
-    // 项目清单里登记的旧名字会变成"失联但状态仍是 connected"的幽灵条目, 以会话实时绑定为准.
-    // ✨ The session-bound aimux bridge device is always the first remote source: bridge names
-    // change when a client reconnects, so inventory entries go stale while still saying "connected".
-    const bridge = sessionAimuxBridgeDevice(req, req.query.session);
-    const remoteTargets: Array<{ name: string; remotePath: string; status: string; hostname: string; bridge: boolean }> = [];
-    if (bridge) {
-      remoteTargets.push({
-        name: bridge.aimuxId,
-        remotePath: bridge.localPath,
-        status: 'connected',
-        hostname: '',
-        bridge: true,
-      });
-    }
-    for (const remote of inventory) {
-      const name = String(remote?.name || '').trim();
-      if (!name || name === bridge?.aimuxId) continue;
-      remoteTargets.push({
-        name,
-        remotePath: String(remote?.remote_path || '').trim(),
-        status: String(remote?.status || ''),
-        hostname: String(remote?.hostname || ''),
-        bridge: false,
-      });
-    }
     const remember = (key: string, source: any): any => {
       const expiresAt = Date.now() + GIT_SOURCES_CACHE_TTL_MS;
       const entry = { expiresAt, scannedAt: new Date().toISOString(), source: { ...source, cache_expires_at: expiresAt } };
@@ -2876,24 +2894,14 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
       }));
     }
 
-    const remoteSources = await Promise.all(remoteTargets.map(async (target) => {
-      const name = target.name;
-      const requestedPath = target.remotePath || '~';
+    const remoteSources = await Promise.all(inventory.map(async (remote: any) => {
+      const name = String(remote?.name || '').trim();
+      const requestedPath = String(remote?.remote_path || '').trim() || '~';
+      if (!name) return null;
       let rootPath = '';
       try {
-        // ✨ bridge 设备不做绝对化解析: 它的 file list 不回显解析后的根目录 (相对根返回相对条目),
-        // 而 bridge 客户端本身就把 '.' 与相对路径按自己的工作目录展开, 照原样传给它即可.
-        // ✨ Bridge sources skip absolute-path resolution: a bridge never echoes the resolved root,
-        // and the client itself resolves '.' / relative roots against its own working directory.
-        rootPath = target.bridge ? (target.remotePath || '.') : await resolveAbsoluteRemotePath(name, requestedPath);
+        rootPath = await resolveAbsoluteRemotePath(name, requestedPath);
       } catch (e) {
-        const message = (e as Error).message || '';
-        // ✨ 名字既不在 ssh config 也不在 bridge registry = 这台机器彻底失联 (bridge 设备重连会换名,
-        // 项目清单里冻结的旧名字就会永久查不到). 原样把 aimux 的英文报错甩给用户没有意义,
-        // 同时清掉清单里那份早已过期的 connected 快照, 避免卡片自相矛盾.
-        // ✨ The name resolves nowhere: the machine is gone (bridge names change on reconnect), so the
-        // frozen inventory snapshot is stale — say so in plain words and drop the bogus "connected".
-        const lostRemote = /not found in ~\/\.ssh\/config or bridge registry/i.test(message);
         return {
           id: `remote:${name}`,
           kind: 'remote',
@@ -2902,12 +2910,9 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           branch: null,
           head: null,
           path: isAbsoluteRemotePath(requestedPath) ? requestedPath : '',
-          status: lostRemote ? '' : target.status,
-          hostname: target.hostname,
-          bridge: target.bridge,
-          reason: lostRemote
-            ? '机器已离线或名称已变更（bridge 重连会换名）'
-            : (message || '无法解析远端 Git 路径为绝对路径'),
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
+          reason: (e as Error).message || '无法解析远端 Git 路径为绝对路径',
         };
       }
       const remoteCacheKey = gitSourceCacheKey(name, rootPath);
@@ -2918,9 +2923,8 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           id: `remote:${name}`,
           label: name,
           path: rootPath,
-          status: target.status,
-          hostname: target.hostname,
-          bridge: target.bridge,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
         };
       }
       const unavailable = (reason: string) => ({
@@ -2931,9 +2935,8 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
         branch: null,
         head: null,
         path: rootPath,
-        status: target.status,
-        hostname: target.hostname,
-        bridge: target.bridge,
+        status: String(remote?.status || ''),
+        hostname: String(remote?.hostname || ''),
         reason,
       });
       try {
@@ -2957,9 +2960,8 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
           branch: branchMatch?.[1]?.trim() || null,
           head: detachedHead,
           path: rootPath,
-          status: target.status,
-          hostname: target.hostname,
-          bridge: target.bridge,
+          status: String(remote?.status || ''),
+          hostname: String(remote?.hostname || ''),
           reason: branchMatch ? '' : (detachedHead ? '游离 HEAD，当前没有分支' : '已检测到 Git，但无法从 HEAD 解析分支'),
         });
       } catch (e) {
@@ -2972,7 +2974,7 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
     const payload = {
       project_id: project.id,
       sources,
-      registered_remote_names: remoteTargets.map(target => target.name),
+      registered_remote_names: inventory.map((remote: any) => String(remote?.name || '').trim()).filter(Boolean),
       scanned_at: new Date().toISOString(),
     };
     const expiresAt = cacheEntries.length ? Math.min(...cacheEntries.map(entry => entry.expiresAt)) : Date.now();
@@ -3180,6 +3182,99 @@ router.post('/:id/package/download', auth, (req: express.Request, res: express.R
   });
 });
 
+function handleArchitectureSessionPresetContextPreview(req: express.Request, res: express.Response): void {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const src = (req.method === 'POST' && req.body && typeof req.body === 'object')
+    ? req.body : req.query;
+  const draftSession = {
+    name: typeof src.name === 'string' ? src.name : '',
+    description: typeof src.description === 'string' ? src.description : '',
+    pc_client_metadata: src.pc_client_metadata ?? null,
+  };
+  const excludedSkillIds = toIdList(src.excluded_skill_ids);
+  const excludedMemoryIds = toIdList(src.excluded_memory_ids);
+  const language = src.language === 'en' ? 'en' : 'zh';
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const includeBody = !falseFlag((src as any).include_body);
+  const includeItemBodies = !falseFlag((src as any).include_item_bodies);
+  const existingIssue = findArchitectureIssue(project.id);
+  const ctx = existingIssue
+    ? buildIssueContextPreview(user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language, { includeBody })
+    : buildProjectIssueContextPreview(
+      user,
+      project.id,
+      { title: ARCHITECTURE_ISSUE_TITLE, description: ARCHITECTURE_ISSUE_DESCRIPTION },
+      draftSession,
+      excludedSkillIds,
+      excludedMemoryIds,
+      language,
+      { includeBody },
+    );
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  const includeDefaults = boolFlag((src as any).include_defaults);
+  const defaults = includeDefaults
+    ? existingIssue
+      ? buildIssueSelectionDefaults(user, existingIssue.id, canReuseSourcesForDefaults ? ctx.sources : undefined)
+      : buildProjectIssueSelectionDefaults(user, project.id, {
+        title: ARCHITECTURE_ISSUE_TITLE,
+        description: ARCHITECTURE_ISSUE_DESCRIPTION,
+      }, canReuseSourcesForDefaults ? ctx.sources : undefined)
+    : null;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(includeDefaults ? { defaults } : {}),
+  });
+}
+
+router.get('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
+router.post('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
+
+router.get('/:id/architecture-session-preset/session-selection-defaults', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const existingIssue = findArchitectureIssue(project.id);
+  if (existingIssue) return res.json(buildIssueSelectionDefaults(user, existingIssue.id));
+  res.json(buildProjectIssueSelectionDefaults(user, project.id, {
+    title: ARCHITECTURE_ISSUE_TITLE,
+    description: ARCHITECTURE_ISSUE_DESCRIPTION,
+  }));
+});
+
+router.post('/:id/architecture-issue', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!canCreateIssue(user, project)) return res.status(403).json({ error: '无权在此项目创建 Issue' });
+  const result = ensureArchitectureIssue(project.id, user.id);
+  res.json(result);
+});
+
+router.get('/:id/architecture-figure', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const figure = findArchitectureFigure(project);
+  if (!figure) return res.status(404).json({ error: '项目结构图不存在或正在绘制中' });
+  const kind = figureKind(figure.name);
+  res.setHeader('Content-Type', contentTypeForFigure(figure.name));
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Architecture-Figure-Name', encodeURIComponent(figure.name));
+  res.setHeader('X-Architecture-Figure-Kind', kind);
+  res.setHeader('X-Architecture-Figure-Updated-At', figure.stat.mtime.toISOString());
+  if (kind === 'html' || kind === 'svg') {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; script-src 'none'"
+    );
+  }
+  res.sendFile(figure.absPath);
+});
+
 // 项目设置中的"用户级 Skill 与 Memory 白名单".
 // 只影响当前用户的用户级条目和平台内置 Skill; 项目级 Skill/Memory 始终保留.
 router.get('/:id/user-context-whitelist', auth, (req: express.Request, res: express.Response) => {
@@ -3241,7 +3336,6 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
       bind_path: '', vscode_web_url: '', vscode_web_url_legacy: VSCODE_WEB_URL || '',
       vscode_workspace_path: '',
       bind_path_writable: false, cs_url_token_required: true,
-      code_server_allowed: codeServerAllowedFor(user),
       path: '/', entries: [],
     });
   }
@@ -3280,8 +3374,6 @@ router.get('/:id/files', auth, (req: express.Request, res: express.Response) => 
       vscode_workspace_path: vscodeWorkspacePath,
       bind_path_writable: writable,
       cs_url_token_required: true,
-      // landlock 模式下普通用户为 false: 前端据此把「代码 / 在 VSCode 中打开」改为激活原生文件编辑器.
-      code_server_allowed: codeServerAllowedFor(user),
       path: relPath,
       entries,
     });
@@ -3336,6 +3428,13 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
   const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
+  const inventoryRemotes = inventory.map((entry: any) => ({
+    name: String(entry.name || ''),
+    status: String(entry.status || ''),
+    remote_path: String(entry.remote_path || ''),
+    hostname: String(entry.hostname || ''),
+    hardware: String(entry.hardware || ''),
+  })).filter((entry: any) => entry.name);
   const bridgeRemotes = bridge ? [{
     name: bridge.aimuxId,
     status: 'connected',
@@ -3344,22 +3443,6 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
     hardware: '',
     bridge: true,
   }] : [];
-  // 清单里与 bridge 设备同名的旧条目会被 bridge 行顶替, 必须剔除否则下拉框出现两条一样的机器.
-  // Inventory rows sharing the bridge device name are superseded by the bridge row; drop them or the list duplicates.
-  const seenNames = new Set(bridgeRemotes.map(remote => remote.name));
-  const inventoryRemotes: any[] = [];
-  for (const entry of inventory) {
-    const name = String(entry?.name || '');
-    if (!name || seenNames.has(name)) continue;
-    seenNames.add(name);
-    inventoryRemotes.push({
-      name,
-      status: String(entry.status || ''),
-      remote_path: String(entry.remote_path || ''),
-      hostname: String(entry.hostname || ''),
-      hardware: String(entry.hardware || ''),
-    });
-  }
   res.json({ remotes: [...bridgeRemotes, ...inventoryRemotes] });
 });
 
@@ -3412,24 +3495,11 @@ router.post('/:id/remote-file', auth, async (req: express.Request, res: express.
   }
 });
 
-// 项目内文件读写的符号链接护栏: 逐段 lstat, 任一环是链接即拒 (防止链接把真实路径引出项目根).
-// 路径不存在时返回 false, 交由调用方后续 stat 给出 404, 保持原有响应语义。
-async function rejectIfSymlinked(res: express.Response, root: string, absPath: string, message: string): Promise<boolean> {
-  try {
-    await assertNoSymlink(root, absPath);
-    return false;
-  } catch (e) {
-    if ((e as FileOpError)?.code === 'NOT_FOUND') return false;
-    res.status(403).json({ error: message });
-    return true;
-  }
-}
-
 // 读取项目 bind_path 下单个文件内容 (代码对话 v2 的"代码浏览"用).
 // 复用 resolveProjectPath 做路径穿越防护; 限制: 必须是文件, ≤ 1.5MB (超出截断 + truncated:true),
 // 含 NUL 字节视为二进制不返回内容. 只读, 不写.
 const FILE_READ_MAX_BYTES = 1.5 * 1024 * 1024;
-router.get('/:id/file', auth, async (req: express.Request, res: express.Response) => {
+router.get('/:id/file', auth, (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
@@ -3437,8 +3507,7 @@ router.get('/:id/file', auth, async (req: express.Request, res: express.Response
   const resolved = resolveProjectPath(project.bind_path, req.query.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
-  // assertNoSymlink 是异步的: 必须 await, 否则拒绝变成未处理的 rejection 而被静默跳过。
-  if (await rejectIfSymlinked(res, resolved.root, absPath, '不支持读取符号链接')) return;
+  try { assertNoSymlink(resolved.root, absPath); } catch { return res.status(403).json({ error: '不支持读取符号链接' }); }
   let stat: fs.Stats;
   try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
   if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
@@ -3463,7 +3532,7 @@ router.get('/:id/file', auth, async (req: express.Request, res: express.Response
 // 复用 resolveProjectPath 防穿越; 限制: 必须是已存在文件 (不新建, 避免任意路径写),
 // content 为字符串且 ≤ 5MB, 同步覆盖写. 不处理并发冲突 (last-write-wins, 编辑器场景可接受).
 const FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
-router.post('/:id/file', auth, async (req: express.Request, res: express.Response) => {
+router.post('/:id/file', auth, (req: express.Request, res: express.Response) => {
   const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   if (!project.bind_path) return res.status(400).json({ error: '项目未绑定路径' });
@@ -3471,8 +3540,6 @@ router.post('/:id/file', auth, async (req: express.Request, res: express.Respons
   const resolved = resolveProjectPath(project.bind_path, req.body?.path || '/');
   if ('error' in resolved) return res.status(400).json({ error: resolved.error });
   const { absPath, relPath } = resolved;
-  // 与 GET 对称: 读写都不许经过符号链接, 否则写会顺着链接落到项目根之外。
-  if (await rejectIfSymlinked(res, resolved.root, absPath, '不支持写入符号链接')) return;
   let stat: fs.Stats;
   try { stat = fs.statSync(absPath); } catch { return res.status(404).json({ error: 'Not found' }); }
   if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
@@ -3724,7 +3791,7 @@ router.post('/:id/files/move', auth, async (req: express.Request, res: express.R
     }
     const baseName = path.basename(srcAbs);
     const dstAbs = path.join(tgtAbs, baseName);
-    if (!isWithin(root, dstAbs)) {
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     // 已在目标目录 (源父目录 === 目标): 空操作, 视为成功 (与复制语义对齐, 避免误报).
@@ -3775,7 +3842,7 @@ router.post('/:id/files/mkdir', auth, async (req: express.Request, res: express.
       return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
     }
     const dstAbs = path.join(parentAbs, name);
-    if (!isWithin(root, dstAbs)) {
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
@@ -3820,7 +3887,7 @@ router.post('/:id/files/create', auth, async (req: express.Request, res: express
       return res.status(403).json({ error: '目录只读或无写权限', code: 'READ_ONLY' });
     }
     const dstAbs = path.join(parentAbs, name);
-    if (!isWithin(root, dstAbs)) {
+    if (dstAbs !== root && !dstAbs.startsWith(root + path.sep)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
@@ -3863,7 +3930,7 @@ router.post('/:id/files/rename', auth, async (req: express.Request, res: express
     const parentAbs = path.dirname(absPath);
     const newAbs = path.join(parentAbs, newName);
     // newName 已确保无分隔符, 父目录在根内, 新路径必在根内; 仍防御性校验。
-    if (!isWithin(root, newAbs)) {
+    if (newAbs !== root && !newAbs.startsWith(root + path.sep)) {
       return res.status(400).json({ error: '新路径越出项目根目录', code: 'OUTSIDE_ROOT' });
     }
     try {
@@ -3901,7 +3968,6 @@ router.get('/:id/main-project-port', auth, (req: express.Request, res: express.R
 });
 
 router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.Response) => {
-  const user = userOf(req);
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
 
@@ -3915,9 +3981,6 @@ router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.
   if (!sshPort) missing.push('MOBIUS_SSH_PORT');
   if (!key.privateKeyExists) missing.push('ssh_private_key');
 
-  // 私钥本体是服务器 forward 账号的登录凭据: 只要给出去就等于交出主机访问权,
-  // 所以只有管理员能拿到; 普通项目成员只看到"有没有配好"和连接参数.
-  const isAdmin = user?.role === 'admin';
   res.json({
     enabled: missing.length === 0,
     ssh_url: MOBIUS_SSH_URL || '',
@@ -3925,8 +3988,8 @@ router.get('/:id/ssh-forward-config', auth, (req: express.Request, res: express.
     port: sshPort,
     mobius_ssh_port: MOBIUS_SSH_PORT || null,
     user: MOBIUS_SSH_FORWARD_USER,
-    private_key: isAdmin ? key.privateKey : '',
-    private_key_path: isAdmin ? (MOBIUS_SSH_PRIVATE_KEY_PATH || '') : '',
+    private_key: key.privateKey,
+    private_key_path: MOBIUS_SSH_PRIVATE_KEY_PATH || '',
     private_key_exists: key.privateKeyExists,
     missing,
   });
