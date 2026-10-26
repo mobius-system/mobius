@@ -567,24 +567,25 @@ export function isFunctionCallOutputPayload(payload: any): boolean {
   return payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output'
 }
 
-// 从 reasoning payload 提取可读思考正文 (response_item.payload.type === 'reasoning').
-// OpenAI Responses / Codex 的 reasoning 常同时带 content[] 明文 (reasoning_text/summary_text)
-// 与 encrypted_content 引用; 只有 content 无可读文本时才真算"加密不可解". 返回空串 = 无可读正文.
+/* Extract readable text from Codex reasoning content or summary blocks. */
 export function reasoningText(payload: any): string {
-  const content = payload?.content
-  if (typeof content === 'string') return content.trim()
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((b: any) => {
-      if (!b || typeof b !== 'object') return ''
-      if (typeof b.text === 'string') return b.text
-      if (typeof b.reasoning === 'string') return b.reasoning
-      if (typeof b.summary === 'string') return b.summary
-      return ''
-    })
-    .filter((t: string) => t.trim())
-    .join('\n')
-    .trim()
+  const readBlocks = (value: any): string => {
+    if (typeof value === 'string') return value.trim()
+    if (!Array.isArray(value)) return ''
+    return value
+      .map((block: any) => {
+        if (!block || typeof block !== 'object') return ''
+        if (typeof block.text === 'string') return block.text
+        if (typeof block.reasoning === 'string') return block.reasoning
+        if (typeof block.summary === 'string') return block.summary
+        return ''
+      })
+      .filter((text: string) => text.trim())
+      .join('\n')
+      .trim()
+  }
+
+  return readBlocks(payload?.content) || readBlocks(payload?.summary)
 }
 
 function decodeJsString(raw: string): string {
