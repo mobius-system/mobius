@@ -5,7 +5,7 @@
  */
 import { useMemo } from 'react'
 import { splitDiffValue, basename } from './utils'
-import { CodePreviewRows, WRITE_PREVIEW_LINE_LIMIT } from './text-preview'
+import { CodePreviewRows, ExpandableRestLines, WRITE_PREVIEW_LINE_LIMIT } from './text-preview'
 import { JsonlDownloadButton } from './JsonlDownloadButton'
 import type { WriteToolCall } from './types'
 
@@ -34,12 +34,9 @@ export function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall 
         <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
           <CodePreviewRows lines={previewLines} />
           {restLines.length > 0 && (
-            <details className="border-t border-[var(--border-color)]/60">
-              <summary className="cursor-pointer px-2 py-1.5 text-[length:var(--fs-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
-                展开剩余 {restLines.length} 行
-              </summary>
+            <ExpandableRestLines count={restLines.length}>
               <CodePreviewRows lines={restLines} startLine={WRITE_PREVIEW_LINE_LIMIT + 1} />
-            </details>
+            </ExpandableRestLines>
           )}
         </div>
       </div>

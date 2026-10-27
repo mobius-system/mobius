@@ -9,7 +9,7 @@
  */
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { splitDiffValue, codeFence } from './utils'
-import { CodePreviewRows, ResultTextPreview, CompactPlainTextFallback, WRITE_PREVIEW_LINE_LIMIT } from './text-preview'
+import { CodePreviewRows, ExpandableRestLines, ResultTextPreview, CompactPlainTextFallback, WRITE_PREVIEW_LINE_LIMIT } from './text-preview'
 import { JsonlCopyButton } from './JsonlCopyButton'
 import type { BashToolResult } from './types'
 import type { BashCall } from '../jsonl-bash-helpers'
@@ -88,16 +88,13 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
         {restLines.length > 0 ? (
           <div className="min-w-max py-1 font-mono text-[length:var(--fs-sm)] leading-[1.45]">
             <CodePreviewRows lines={previewLines} />
-            <details className="border-t border-[var(--border-color)]/60">
-              <summary className="cursor-pointer px-2 py-1.5 text-[length:var(--fs-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
-                展开剩余 {restLines.length} 行 (含高亮)
-              </summary>
+            <ExpandableRestLines count={restLines.length} suffix=" (含高亮)">
               <div className="jsonl-compact-md !text-[length:var(--fs-sm)]">
                 <Suspense fallback={<CompactPlainTextFallback text={call.command} />}>
                   <CompactMarkdown text={markdownSource} />
                 </Suspense>
               </div>
-            </details>
+            </ExpandableRestLines>
           </div>
         ) : (
           <div className="jsonl-compact-md !text-[length:var(--fs-sm)]">
