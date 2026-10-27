@@ -5,7 +5,6 @@ import {
   BarChart3,
   Boxes,
   BrainCircuit,
-  Cable,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -28,16 +27,14 @@ import {
   Plus,
   Pencil,
   Puzzle,
-  Radar,
   Search as SearchIcon,
   Search,
   Sparkles,
-  StickyNote,
+  SquarePen,
   Trash2,
   Undo2,
   Users,
   WandSparkles,
-  Workflow,
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -948,21 +945,23 @@ export default function EasyModePage() {
           className="easy-sidebar flex flex-col"
         >
           <div className="easy-sidebar-primary">
-            <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'welcome' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'welcome' ? 'page' : undefined} onClick={openWelcome} title="对话">
-              <StickyNote className="easy-nav-icon" />
-              <span>对话</span>
+            {/* 导航图标与名称恢复为用户熟悉的组合 (issue 2026-10-27, 参考截图):
+                  新任务 SquarePen · 全局纵观 Network · 项目与拓展 Boxes · 跨设备 MonitorSmartphone */}
+            <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'welcome' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'welcome' ? 'page' : undefined} onClick={openWelcome} title="新任务">
+              <SquarePen className="easy-nav-icon" />
+              <span>新任务</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'overview' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'overview' ? 'page' : undefined} onClick={() => selectPanel('overview')}>
-              <Radar className="easy-nav-icon" />
-              <span>总览</span>
+              <Network className="easy-nav-icon" />
+              <span>全局纵观</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'extensions' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'extensions' ? 'page' : undefined} onClick={() => selectPanel('extensions')}>
-              <Workflow className="easy-nav-icon" />
-              <span>工作区</span>
+              <Boxes className="easy-nav-icon" />
+              <span>项目与拓展</span>
             </button>
             <button type="button" className={`easy-sidebar-nav ${activePrimaryNav === 'devices' ? 'is-active' : ''}`} aria-current={activePrimaryNav === 'devices' ? 'page' : undefined} onClick={() => selectPanel('devices')}>
-              <Cable className="easy-nav-icon" />
-              <span>设备</span>
+              <MonitorSmartphone className="easy-nav-icon" />
+              <span>跨设备</span>
             </button>
           </div>
 
@@ -1039,7 +1038,7 @@ export default function EasyModePage() {
           </main>
         ) : activePanel === 'extensions' ? (
           <main className="easy-content" data-testid="easy-extensions-panel">
-            <div className="easy-content-header"><Boxes className="h-5 w-5" /><div><h1>工作区</h1><p>项目与拓展应用</p></div><span>{normalProjects.length + extensionProjects.length}</span></div>
+            <div className="easy-content-header"><Boxes className="h-5 w-5" /><div><h1>项目与拓展</h1><p>项目与拓展应用</p></div><span>{normalProjects.length + extensionProjects.length}</span></div>
             <div className="easy-workspace-search">
               <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
               <input
