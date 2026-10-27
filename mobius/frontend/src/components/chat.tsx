@@ -3021,7 +3021,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     }
   }, [])
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (e.currentTarget === e.target) setIsDraggingFile(false)
+    // 用 relatedTarget 判定「还在框内」: 指针从输入框空白处移到 textarea 等子元素时,
+    // dragleave 的 target 仍是容器本身, 用 target 判定会误判成已离开, 遮罩闪一下就没了.
+    const related = e.relatedTarget as Node | null
+    if (related && e.currentTarget.contains(related)) return
+    setIsDraggingFile(false)
   }, [])
   const handleDrop = useCallback((e: React.DragEvent) => {
     setIsDraggingFile(false)
@@ -4602,6 +4606,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   stopFeedbackActive={stopFeedbackActive}
                   onChange={handleChatInputChange}
                   onPaste={handlePaste}
+                  onDrop={handleDrop}
                   onFocus={() => setInputFocused(true)}
                   onBlur={(event) => {
                     const nextTarget = event.relatedTarget as Node | null

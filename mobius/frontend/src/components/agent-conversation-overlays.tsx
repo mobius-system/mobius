@@ -253,6 +253,8 @@ function updateVisibleEntries(setState: (updater: (prev: OverlayState) => Overla
 
 function SessionOverlay({ session, state, compact, setState, onClose, onOpenSession, positionRef, transformRef, register }: { session: OverlaySession; state: OverlayState; compact: boolean; setState: (updater: (prev: OverlayState) => OverlayState) => void; onClose: () => void; onOpenSession: () => void; positionRef: MutableRefObject<Record<string, OverlayPosition>>; transformRef: MutableRefObject<OverlayTransform>; register: (id: string, panel: HTMLDivElement | null, line: SVGLineElement | null) => void }) {
   const [mentionDrawerOpen, setMentionDrawerOpen] = useState(false)
+  // 拖拽文件悬停态: 输入框高亮提示「松手上传」(issue 2026-10-26)
+  const [dragOver, setDragOver] = useState(false)
   const [selectedAgentMentions, setSelectedAgentMentions] = useState<Array<{ sessionId: string; name: string; mode: AgentMentionMode }>>([])
   const start = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -409,6 +411,18 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
       setState((prev) => ({ ...prev, draft: `${prev.draft}${prev.draft ? '\n' : ''}${paths.join('\n')}` }))
     } catch (e: any) { setState((prev) => ({ ...prev, error: e?.message || '文件上传失败' })) }
   }
+  // 拖拽文件 → 与粘贴同一条链路: 上传后把路径写进草稿 (issue 2026-10-26)
+  const onDrop = async (event: React.DragEvent<HTMLTextAreaElement>) => {
+    setDragOver(false)
+    const files = Array.from(event.dataTransfer?.files || [])
+    if (!files.length) return
+    event.preventDefault()
+    try {
+      const uploaded = await Promise.all(files.map((file) => uploadAttachmentFile(file, session.projectId)))
+      const paths = uploaded.map((item) => item.path).filter(Boolean)
+      setState((prev) => ({ ...prev, draft: `${prev.draft}${prev.draft ? '\n' : ''}${paths.join('\n')}` }))
+    } catch (e: any) { setState((prev) => ({ ...prev, error: e?.message || '文件上传失败' })) }
+  }
   const insertDrawerText = (value: string) => {
     const currentValue = inputRef.current?.value ?? state.draft
     const range = mentionRangeRef.current
@@ -498,6 +512,18 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
               }
             }}
             onPaste={onPaste}
+            onDragOver={event => {
+              // 只拦文件拖拽, 拖文字选区保持浏览器默认行为
+              if (!event.dataTransfer?.types?.includes('Files')) return
+              event.preventDefault()
+              setDragOver(true)
+            }}
+            onDragLeave={event => {
+              const related = event.relatedTarget as Node | null
+              if (related && event.currentTarget.contains(related)) return // 还在框内
+              setDragOver(false)
+            }}
+            onDrop={onDrop}
             onKeyDown={async (event) => {
               if (event.key === 'ArrowUp' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
                 const recall = inputRecallRef.current
@@ -545,7 +571,7 @@ function SessionOverlay({ session, state, compact, setState, onClose, onOpenSess
             }}
             placeholder="发送指令… @引用 · ↑回溯"
             className={`agent-conversation-overlay__input w-full resize-none bg-transparent px-1 outline-none placeholder:text-[var(--text-muted)] ${compact ? 'min-h-[24px] py-0 leading-3' : 'min-h-[42px] py-1 leading-5'}`}
-            style={{ color: 'var(--text-primary)' }}
+            style={{ color: 'var(--text-primary)', borderRadius: 6, boxShadow: dragOver ? `0 0 0 2px ${session.color}66` : undefined }}
           />
           <div className={`flex items-center justify-between ${compact ? 'pt-0.5' : 'pt-1'}`}>
             <span className="agent-conversation-overlay__status truncate" style={{ color: state.error ? '#f87171' : state.sending ? session.color : 'var(--text-muted)' }}>{state.error || (state.sending ? '发送中…' : `${session.projectName} · 最近 ${state.entries.length} 条`)}</span>

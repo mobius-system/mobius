@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Zap } from 'lucide-react'
+import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, Zap } from 'lucide-react'
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
 import { EasySessionToolMenu, type EasySessionLite, type EasyProjectOption } from './easy-session-tool-menu'
@@ -77,6 +77,8 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   /** 当前会话 id (供工具菜单高亮) */
   sessionId?: string
   onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
+  /** 拖拽文件到输入框直接上传为附件 (会话页同样支持, issue 2026-10-26) */
+  onDrop: (event: DragEvent<HTMLDivElement>) => void
   onFocus: () => void
   onBlur: (event: FocusEvent<HTMLDivElement>) => void
   onToggleVoice: () => void
@@ -145,6 +147,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const { input, inputPlaceholder, theme, onChange, onKeyDown, onSend } = props
   // 欢迎页没有会话上下文，focus 状态留在组件内部，调用方只需要传 mode。
   const [standaloneFocused, setStandaloneFocused] = useState(false)
+  // 拖拽文件悬停态: 输入框高亮提示可松手上传 (issue 2026-10-26)
+  const [fileDragOver, setFileDragOver] = useState(false)
   const follow = props.mode === 'follow_session_mode' ? props : null
   const inputFocused = follow ? follow.inputFocused : standaloneFocused
 
@@ -212,10 +216,56 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
 
   const inputHeight = Math.min(maxInputHeight, Math.max(baseInputHeight, textAreaHeight + chromeHeight))
 
+  // 拖拽文件 → 直接上传为附件 (issue 2026-10-26)
+  // 只有 dataTransfer.types 里有 'Files' 才当文件拖拽处理, 拖文字选区保持浏览器默认行为 (可直接放进输入框).
+  const dragHasFiles = (event: DragEvent<HTMLDivElement>) => !!event.dataTransfer?.types?.includes('Files')
+  // 「是否还在框内」用 relatedTarget 判定, 不用 currentTarget===target:
+  // 指针从输入框空白处移到 textarea/按钮等子元素时, dragleave 的 target 仍是容器本身,
+  // 用 target 判定会误判成「已离开」, 高亮刚亮起就灭掉.
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+    setFileDragOver(true)
+  }
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(event)) return
+    // 不 preventDefault 的话浏览器不会派发 drop 事件
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    const related = event.relatedTarget as Node | null
+    if (related && event.currentTarget.contains(related)) return // 还在框内 (只是移到了子元素上)
+    setFileDragOver(false)
+  }
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    setFileDragOver(false)
+    if (!dragHasFiles(event)) return
+    // 阻止浏览器直接把被拖入的文件当作导航打开
+    event.preventDefault()
+    if (follow) follow.onDrop(event)
+    else if (props.mode === 'create_session_mode') props.onDrop(event)
+    // 拖完就把焦点交回输入框, 用户可以直接接着打字
+    measureRef.current?.focus()
+  }
+  // 防呆: 拖拽被中途取消 (Esc) 或拖到窗口外结束时兜底清高亮, 免得遮罩卡住不消失
+  useEffect(() => {
+    if (!fileDragOver) return
+    const clear = () => setFileDragOver(false)
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+    }
+  }, [fileDragOver])
+
   return (
     <div
       data-tour="session-chat-input"
       data-mode={props.mode}
+      data-drag-over={fileDragOver ? 'true' : undefined}
       className="easy-session-chat-input relative min-w-0 w-full overflow-hidden rounded-[18px] transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
       style={{
         height: inputHeight,
@@ -224,16 +274,22 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         // 比外层页面背景略浅, 形成轻微抬升感 (issue 2026-10-13 参考图)
         // 浅色主题: 略暗于页面 (rgba 黑 0.04), 模拟 Codex 灰白卡片
         background: isDark ? 'rgba(45, 52, 64, 0.65)' : 'rgba(0, 0, 0, 0.04)',
-        border: `1px solid ${border}`,
-        boxShadow: inputFocused
-          ? '0 4px 20px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.02) inset'
-          : '0 2px 12px rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.02) inset',
+        // 拖拽文件悬停: accent 边框 + 蓝色光晕, 明确「松手即上传」(issue 2026-10-26)
+        // 边框宽度保持 1px 不变 —— 改成 2px 会让整块输入框在悬停瞬间跳动一下
+        border: `1px solid ${fileDragOver ? (isDark ? '#60a5fa' : '#2563eb') : border}`,
+        boxShadow: fileDragOver
+          ? '0 0 0 4px rgba(59,130,246,0.15), 0 4px 20px rgba(0,0,0,0.28)'
+          : inputFocused
+            ? '0 4px 20px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.02) inset'
+            : '0 2px 12px rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.02) inset',
         backdropFilter: 'blur(22px)',
         WebkitBackdropFilter: 'blur(22px)',
       } as CSSProperties}
       onPaste={follow ? follow.onPaste : props.onPaste}
-      onDragOver={props.mode === 'create_session_mode' ? event => event.preventDefault() : undefined}
-      onDrop={props.mode === 'create_session_mode' ? props.onDrop : undefined}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       onFocusCapture={follow ? follow.onFocus : () => setStandaloneFocused(true)}
       onBlurCapture={follow ? follow.onBlur : (event) => {
         const nextTarget = event.relatedTarget as Node | null
@@ -241,6 +297,25 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         setStandaloneFocused(false)
       }}
     >
+      {/* 拖拽文件悬停遮罩: 与标准输入框同一套视觉语言 (虚线框 + 「松开以添加文件」),
+          盖住整块输入框, 明确告诉用户松手就会变成附件 (issue 2026-10-26) */}
+      {fileDragOver && (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-1"
+          style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.18))', borderRadius: 'inherit' }}
+        >
+          <div
+            className="flex items-center gap-2 rounded-[14px] border border-dashed px-3 py-1.5 text-[length:var(--fs-md)] font-medium"
+            style={{
+              borderColor: isDark ? 'rgba(96,165,250,0.6)' : 'rgba(37,99,235,0.5)',
+              color: isDark ? '#93c5fd' : '#2563eb',
+            }}
+          >
+            <Upload className="h-4 w-4 flex-shrink-0" strokeWidth={2} />
+            <span>松开以添加文件</span>
+          </div>
+        </div>
+      )}
       {props.mode === 'create_session_mode' && props.attachments.length > 0 && (
         <div className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
           {props.attachments.map(attachment => (
