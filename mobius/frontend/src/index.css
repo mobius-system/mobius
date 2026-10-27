@@ -6613,6 +6613,14 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
+/* 徽标默认全部中性 (issue 2026-10-27): 原来按项目 id 哈希出 8 种颜色,
+   项目一多就是一屏彩虹, 颜色既不承载语义也不帮助识别 —— 改为统一中性底,
+   只在悬停时给一点强调色, 让"颜色"重新变成有意义的状态信号. */
+[data-page="easy-mode"] .easy-extension-card:hover:not(:disabled) .easy-extension-card__icon {
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 32%, transparent);
+}
 [data-page="easy-mode"] .easy-extension-card strong,
 [data-page="easy-mode"] .easy-extension-card small,
 [data-page="easy-mode"] .easy-device-row strong,

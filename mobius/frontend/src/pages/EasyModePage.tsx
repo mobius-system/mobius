@@ -134,13 +134,6 @@ const WELCOME_SUGGESTIONS: WelcomeSuggestion[] = [
   { label: '深度调研', prompt: '做一次深度调研并输出调研报告', icon: Search, color: '#38bdf8' },
   { label: '功能开发', prompt: '实现这个功能并补上测试', icon: Code2, color: '#fbbf24' },
 ]
-// 工作区卡片图标色板 (项目/拓展首字母徽标用, 哈希取色)
-const WORKSPACE_AVATAR_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#06b6d4', '#a855f7', '#ef4444', '#ec4899', '#84cc16']
-function workspaceAvatarColor(key: string) {
-  let h = 0
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
-  return WORKSPACE_AVATAR_COLORS[h % WORKSPACE_AVATAR_COLORS.length]
-}
 // 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
 // 用户没有显式选择项目/任务时，复用 let-us-chat / a random chat，缺失则按需创建。
 const EASY_DEFAULT_PROJECT_NAME = 'let-us-chat'
@@ -1071,7 +1064,7 @@ export default function EasyModePage() {
                   </div>
                 ) : visibleNormalProjects.map((project: any) => (
                   <button key={project.id} type="button" className="easy-extension-card" onClick={() => selectProjectFilter(project.id)} title="打开项目并查看会话">
-                    <span className="easy-extension-card__icon" style={{ background: `${workspaceAvatarColor(project.id)}22`, color: workspaceAvatarColor(project.id) }}>{String(project.name || '?').charAt(0).toUpperCase()}</span>
+                    <span className="easy-extension-card__icon">{String(project.name || '?').charAt(0).toUpperCase()}</span>
                     <span className="min-w-0 flex-1"><strong>{project.name}</strong><small>{project.description || '莫比乌斯项目'}</small></span>
                     {typeof project.issue_count === 'number' && <span className="easy-workspace-count" title={`${project.issue_count} 个任务`}>{project.issue_count} 任务</span>}
                     <ChevronRight className="h-4 w-4" />
@@ -1087,7 +1080,7 @@ export default function EasyModePage() {
                   <div className="easy-list-empty"><Puzzle className="h-5 w-5" strokeWidth={1.8} /><span>{workspaceQuery ? '没有匹配的拓展' : '当前没有可用拓展'}</span></div>
                 ) : visibleExtensionProjects.map((project: any) => (
                   <button key={project.id} type="button" className="easy-extension-card" disabled={project.disabled} title={project.disabled ? '该拓展已禁用' : '在新标签页打开拓展'} onClick={() => window.open(`/extension/${encodeURIComponent(project.extension_name)}/`, '_blank', 'noopener,noreferrer')}>
-                    <span className="easy-extension-card__icon" style={{ background: `${workspaceAvatarColor(project.id)}22`, color: workspaceAvatarColor(project.id) }}>{String(project.name || project.extension_name || '?').charAt(0).toUpperCase()}</span>
+                    <span className="easy-extension-card__icon">{String(project.name || project.extension_name || '?').charAt(0).toUpperCase()}</span>
                     <span className="min-w-0 flex-1"><strong>{project.name || project.extension_name}</strong><small>{project.description || '莫比乌斯拓展应用'}</small></span>
                     <ArrowUpRight className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                   </button>
