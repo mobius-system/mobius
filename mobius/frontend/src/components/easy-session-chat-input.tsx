@@ -435,7 +435,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           {follow && (
             <EasySessionModelPill
               isDark={isDark}
-              compact={canStop}
               modelLabel={follow.sessionModelLabel || ''}
               modelKey={follow.sessionModelKey || ''}
               onChange={async (model: string) => {
@@ -613,16 +612,13 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
  *
  * 显示文案: 优先用服务端给的 label, 否则查 model-options 拿 title + sub (例如 "GLM-5.3 (最新) · DeepSeek 高").
  */
-function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled, compact }: {
+function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled }: {
   isDark: boolean
   modelLabel: string
   modelKey: string
   onChange: (model: string) => void
   disabled?: boolean
-  /** 运行时收窄 (给 ⚡/■ 让位) */
-  compact?: boolean
 }) {
-  const modelPillMaxWidth = compact ? 'max-w-[132px]' : 'max-w-[280px]'
   const { options, stats } = useSessionModelOptions()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -712,8 +708,7 @@ function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled
         disabled={disabled}
         title={disabled ? '当前不可切换模型' : `当前模型: ${displayText || modelKey || '(未设置)'}`}
         onClick={() => setOpen(v => !v)}
-        // 运行中工具行多出 ⚡/■ 两个键, 模型 pill 收窄让位 (文字截断, 完整名在 title 里)
-        className={`easy-icon-btn easy-icon-btn--model inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${modelPillMaxWidth}`}
+        className="easy-icon-btn easy-icon-btn--model inline-flex h-9 max-w-[280px] min-w-0 items-center gap-1.5 rounded-full px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         style={{
           color: isDark ? '#e5e7eb' : '#1f2937',
           background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
