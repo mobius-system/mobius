@@ -2275,6 +2275,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   }, [])
 
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 运行中发送 = 入队 (后端 queue 路径). 记一个时间戳, 简易模式输入框据此闪一下「已排队」,
+  // 让用户立刻知道这条已被接收 (消息区另有「排队」卡). Enter / 按钮 / 语音三条路径都经这里.
+  const [queuedSentAt, setQueuedSentAt] = useState<number | null>(null)
   // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
   // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
   // 故加急时跳过该条件 (只靠 !alive / 8s 兜底). ref 不参与渲染, 无需进 deps.
@@ -3637,6 +3640,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
+    // 运行中 + 非加急 = 排队 (后端 noPauseCurrentAndQueueQueryAtSession): 记时间戳给输入框反馈
+    if (!urgent && backendAlive && backendWorking) setQueuedSentAt(Date.now())
     setTyping(true)
     // 记录发送尝试而不是等待服务端成功回执。网络超时、响应丢失或后端暂时不可达时，
     // 这条本地记录仍可通过 ↑ /“回放输入”召回，并在刷新页面后继续存在。
@@ -4378,6 +4383,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                   inputFocused={inputFocused}
                   theme={theme}
                   currentProjectId={currentProjectId}
+                  queuedAt={queuedSentAt}
                   attachments={attachments}
                   onRemoveAttachment={removeAttachment}
                   onPreviewAttachment={openAttachmentImagePreview}

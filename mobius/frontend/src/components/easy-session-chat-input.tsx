@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowUp, ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, Zap } from 'lucide-react'
+import { ArrowUp, ChevronDown, Clock, Mic, Paperclip, Plus, RefreshCw, Search, Square, Upload, Zap } from 'lucide-react'
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
 import { EasySessionToolMenu, type EasySessionLite } from './easy-session-tool-menu'
@@ -92,8 +92,10 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   sessionModelLabel?: string
   /** 切换当前会话模型 (复用 PATCH /api/sessions/:id/model) */
   onChangeSessionModel?: (model: string) => Promise<void> | void
-  /** 智能体是否正在工作 (用于合并按钮的 send → stop 切换) */
+  /** 智能体是否正在工作 (决定停止键是否出现, 以及发送是「排队」还是「立即」) */
   agentWorking?: boolean
+  /** 运行中发送的时间戳: 变化时按钮闪「已排队」琥珀态 (由父级在发送时写入) */
+  queuedAt?: number | null
   /** 工具菜单: 近期会话列表 (用于「切换会话」子菜单) */
   recentSessions?: EasySessionLite[]
   /** 当前会话所属项目 id (只用于「注入 Git / 项目知识」的可用性判断, 不提供项目切换) */
@@ -149,6 +151,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const [standaloneFocused, setStandaloneFocused] = useState(false)
   // 拖拽文件悬停态: 输入框高亮提示可松手上传 (issue 2026-10-26)
   const [fileDragOver, setFileDragOver] = useState(false)
+  // 排队反馈: 运行中发送后按钮短暂显示「已排队」(1.6s), 让用户立刻知道这条已入队
+  const [queuedFlash, setQueuedFlash] = useState(false)
   const follow = props.mode === 'follow_session_mode' ? props : null
   const inputFocused = follow ? follow.inputFocused : standaloneFocused
 
@@ -158,23 +162,25 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
     : (!input.trim() && !props.hasReadyAttachments) || props.anyUploading || submitBlocked
   const isDark = theme !== 'light'
   const border = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'
-  // 合并 send + stop: 智能体运行时同一个按钮变为终止, 其它时候仍为发送 (蓝色圆形 Codex 风格).
+  // 停止是独立键 (只在运行中出现), 发送键恒定蓝 —— 红色只属于破坏性动作.
   const canStop = !!follow && !!follow.agentWorking
   // 蓝色 send 按钮: 不可用时灰底灰字; 可用时蓝底白字.
-  const sendBg = canStop
-    ? (follow.stopFeedbackActive ? '#b91c1c' : '#ef4444')
-    : disabled
-      ? (isDark ? '#3f3f46' : '#cbd5e1')
-      : '#2563eb'
-  const sendFg = canStop
-    ? '#ffffff'
-    : disabled
-      ? (isDark ? '#71717a' : '#94a3b8')
-      : '#ffffff'
+  const sendBg = disabled
+    ? (isDark ? '#3f3f46' : '#cbd5e1')
+    : '#2563eb'
+  const sendFg = disabled
+    ? (isDark ? '#71717a' : '#94a3b8')
+    : '#ffffff'
   const sendTip = follow
-    ? canStop
-      ? (follow.stopFeedbackActive ? '终止指令已发送' : '终止当前任务')
-      : follow.voiceBusy ? follow.voiceTip : follow.hasPendingSend || follow.messageSubmitting ? '正在提交上一条消息...' : '发送 (Enter)'
+    ? queuedFlash
+      ? '已排队 · 当前任务结束后执行'
+      : follow.voiceBusy
+        ? follow.voiceTip
+        : follow.hasPendingSend || follow.messageSubmitting
+          ? '正在提交上一条消息...'
+          : canStop
+            ? '排队发送 · 当前任务结束后执行 (Enter)'
+            : '发送 (Enter)'
     : (props.mode === 'create_session_mode' && props.submitTooltip) || '开始新会话'
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -267,6 +273,15 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
     // 拖完就把焦点交回输入框, 用户可以直接接着打字
     measureRef.current?.focus()
   }
+  // 排队反馈: 父级在「运行中发送」时给一个时间戳, 这里闪一下「已排队」琥珀态 (1.6s).
+  // 由父级驱动而非组件内自造, 这样 Enter 键发送、按钮点击、语音发送三条路径都会走到.
+  useEffect(() => {
+    if (!follow?.queuedAt) return
+    setQueuedFlash(true)
+    const timer = window.setTimeout(() => setQueuedFlash(false), 1600)
+    return () => window.clearTimeout(timer)
+  }, [follow?.queuedAt])
+
   // 防呆: 拖拽被中途取消 (Esc) 或拖到窗口外结束时兜底清高亮, 免得遮罩卡住不消失
   useEffect(() => {
     if (!fileDragOver) return
@@ -420,6 +435,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           {follow && (
             <EasySessionModelPill
               isDark={isDark}
+              compact={canStop}
               modelLabel={follow.sessionModelLabel || ''}
               modelKey={follow.sessionModelKey || ''}
               onChange={async (model: string) => {
@@ -471,22 +487,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               {props.welcomeVoiceState === 'recording' ? <Square className="h-3.5 w-3.5" fill="currentColor" /> : props.welcomeVoiceState === 'transcribing' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px]" strokeWidth={2} />}
             </button>
           )}
-          {/* 欢迎页: 加急发送按钮 (⚡, 与会话页同款; 欢迎页无输出可打断, 语义 = 直接提交) */}
-          {props.mode === 'create_session_mode' && (
-            <button
-              type="button"
-              onClick={() => onSend(true)}
-              disabled={disabled}
-              data-tour="session-chat-send-urgent"
-              aria-label="加急发送"
-              title="发送（加急）"
-              data-testid="easy-welcome-urgent"
-              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ color: '#f59e0b' }}
-            >
-              <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
-            </button>
-          )}
+          {/* 欢迎页不设 ⚡ 插队键 (issue 2026-10-27, 三键规则):
+              欢迎页没有正在跑的任务, ⚡ 无从"打断"; 而它与 ↑ 发送在欢迎页完全同效
+              (submitWelcomePrompt 不接 urgent 参数) —— 两个键做同一件事是反模式, 删掉. */}
           {follow && (
             <button
               type="button"
@@ -517,21 +520,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               {follow.voiceState === 'recording' ? <Square className="h-3.5 w-3.5" fill="currentColor" /> : follow.voiceState === 'transcribing' ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Mic className="h-[18px] w-[18px]" strokeWidth={2} />}
             </button>
           )}
-          {/* 加急发送 (闪电): 打断当前输出并立即发送, 沿用 AdvancedSessionActions 行为 */}
-          {follow && (
-            <button
-              type="button"
-              onClick={() => onSend(true)}
-              disabled={disabled}
-              data-tour="session-chat-send-urgent"
-              aria-label="加急发送"
-              title="发送（加急）— 打断当前输出并立即发送"
-              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ color: '#f59e0b' }}
-            >
-              <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
-            </button>
-          )}
           {/* 欢迎页: 发送 = 圆形 ↑ 按钮 (参考千问办公 / Codex 的发送键形态, issue 2026-10-26).
               仍是首要动作 (impeccable P0): 强调色实心 + 禁用态灰, 位置固定在工具行最右. */}
           {!follow && (
@@ -542,39 +530,74 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               aria-label="开始新会话"
               title={sendTip}
               data-tour="session-chat-send"
-              className="easy-send-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              className="easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               style={{
                 background: sendBg,
                 color: sendFg,
                 cursor: disabled ? 'not-allowed' : 'pointer',
               }}
             >
-              <ArrowUp className="h-[17px] w-[17px]" strokeWidth={2.4} />
+              <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
             </button>
           )}
-          {/* 会话内: 发送/终止合并按钮 (保持 28px 圆钮, 运行态变红色 stop) */}
+          {/* 会话内三个动作键 (issue 2026-10-27, impeccable P0 — 综合规划 ⚡/■/↑):
+                ↑ 发送 = 主键, 位置与图标恒定; 空闲立即执行, 运行中排队 (后端 noPauseCurrentAndQueueQueryAtSession),
+                  肌肉记忆不被"发送↔停止"的形态切换打断;
+                ⚡ 插队 = 打断当前并立即执行这句 (仅运行时出现 —— 空闲时普通发送本就是立即的);
+                ■ 停止 = 打断当前且不发新话 (仅运行时出现, 破坏性动作).
+              布局: [⚡][↑] 紧邻成「发送组」(都是把话递出去), [■] 与发送组隔开独立成破坏键,
+              避免误触 —— 红色只属于停止, 蓝色只属于发送. */}
           {follow && (
+            <div className="flex flex-shrink-0 items-center gap-1">
+              {canStop && (
+                <button
+                  type="button"
+                  onClick={() => onSend(true)}
+                  disabled={disabled}
+                  data-tour="session-chat-send-urgent"
+                  aria-label="加急发送"
+                  title="加急 · 打断当前任务并立即执行这句"
+                  className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ color: '#f59e0b' }}
+                >
+                  <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onSend()}
+                disabled={disabled}
+                aria-label="发送"
+                title={sendTip}
+                data-tour="session-chat-send"
+                className="easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 disabled:cursor-not-allowed"
+                style={{
+                  background: queuedFlash ? '#d97706' : sendBg,
+                  color: queuedFlash ? '#ffffff' : sendFg,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {queuedFlash ? (
+                  <Clock className="h-3.5 w-3.5" strokeWidth={2.4} />
+                ) : follow.anyUploading || follow.voiceState === 'transcribing' ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="h-[15px] w-[15px]" strokeWidth={2.4} />
+                )}
+              </button>
+            </div>
+          )}
+          {follow && canStop && (
             <button
               type="button"
-              onClick={canStop ? follow!.onStop : () => onSend()}
-              disabled={!canStop && disabled}
-              aria-label={canStop ? '终止当前任务' : '发送'}
-              title={sendTip}
-              data-tour={canStop ? 'session-chat-stop' : 'session-chat-send'}
-              className={`easy-send-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${canStop ? 'easy-send-btn--stop' : ''} ${follow?.stopFeedbackActive ? 'easy-send-btn--active' : ''}`}
-              style={{
-                background: sendBg,
-                color: sendFg,
-                cursor: !canStop && disabled ? 'not-allowed' : 'pointer',
-              }}
+              onClick={follow.onStop}
+              aria-label="终止当前任务"
+              title="终止当前任务"
+              data-tour="session-chat-stop"
+              className={`easy-send-btn easy-send-btn--stop inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 ${follow.stopFeedbackActive ? 'easy-send-btn--active' : ''}`}
+              style={{ background: '#ef4444', color: '#ffffff', cursor: 'pointer' }}
             >
-              {canStop ? (
-                <Square className="h-3 w-3" fill="currentColor" />
-              ) : follow.anyUploading || follow.voiceState === 'transcribing' ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <SendHorizontal className="h-[15px] w-[15px]" strokeWidth={2.4} />
-              )}
+              <Square className="h-3 w-3" fill="currentColor" />
             </button>
           )}
         </div>
@@ -590,13 +613,16 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
  *
  * 显示文案: 优先用服务端给的 label, 否则查 model-options 拿 title + sub (例如 "GLM-5.3 (最新) · DeepSeek 高").
  */
-function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled }: {
+function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled, compact }: {
   isDark: boolean
   modelLabel: string
   modelKey: string
   onChange: (model: string) => void
   disabled?: boolean
+  /** 运行时收窄 (给 ⚡/■ 让位) */
+  compact?: boolean
 }) {
+  const modelPillMaxWidth = compact ? 'max-w-[132px]' : 'max-w-[280px]'
   const { options, stats } = useSessionModelOptions()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -686,7 +712,8 @@ function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled
         disabled={disabled}
         title={disabled ? '当前不可切换模型' : `当前模型: ${displayText || modelKey || '(未设置)'}`}
         onClick={() => setOpen(v => !v)}
-        className="easy-icon-btn easy-icon-btn--model inline-flex h-9 max-w-[280px] min-w-0 items-center gap-1.5 rounded-full px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        // 运行中工具行多出 ⚡/■ 两个键, 模型 pill 收窄让位 (文字截断, 完整名在 title 里)
+        className={`easy-icon-btn easy-icon-btn--model inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${modelPillMaxWidth}`}
         style={{
           color: isDark ? '#e5e7eb' : '#1f2937',
           background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
