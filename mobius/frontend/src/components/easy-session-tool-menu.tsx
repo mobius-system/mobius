@@ -1,7 +1,7 @@
 // =====================================================================
 // 简易模式会话页: 输入框左侧的「会话工具」按钮 (issue 2026-10-13 改造).
 // 点击展开小弹窗, 包含 9 类工具 (3 个子菜单 + 6 个直执行):
-//   ▸ 子菜单: 切换会话 / 切换项目 / 语言
+//   ▸ 子菜单: 切换会话 / 语言
 //   ▸ 直执行: 文件改动 / Bash 命令 / 终端 / 知识 / 注入 Skill/Memory/Git
 // 附件上传 (Paperclip) 已移至输入框右侧独立按钮.
 // =====================================================================
@@ -20,12 +20,6 @@ export type EasySessionLite = {
   message_count?: number
 }
 
-export type EasyProjectOption = {
-  id: string
-  name: string
-  kind?: string
-}
-
 export type EasyToolMenuProps = {
   isDark: boolean
   /** 近期会话列表, 用于「切换会话」子菜单 */
@@ -34,12 +28,6 @@ export type EasyToolMenuProps = {
   currentSessionId?: string
   /** 切换会话回调 */
   onSwitchSession?: (sessionId: string) => void
-  /** 项目列表, 用于「切换项目」子菜单 */
-  projects?: EasyProjectOption[]
-  /** 当前项目 id */
-  currentProjectId?: string
-  /** 切换项目回调 (传 null = 清除项目) */
-  onSwitchProject?: (projectId: string | null) => void
   /** 当前语言 ('zh' | 'en') */
   language?: 'zh' | 'en'
   /** 切换语言回调 */

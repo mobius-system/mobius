@@ -12,8 +12,8 @@
 // 拖拽 / Ctrl+V 粘贴 / 点击上传三合一, 与快捷菜单的融合输入框形态一致.
 // =====================================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Paperclip, X } from 'lucide-react'
+import type { CSSProperties, ReactNode } from 'react'
+import { Paperclip, X, ZoomIn } from 'lucide-react'
 
 export type Attachment = {
   id: string
@@ -34,6 +34,134 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// 多种常见扩展名 → 简短分类标签 (用于无缩略图的文件芯片)
+export function fileExtBadge(name: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  if (!ext || ext === name.toLowerCase()) return 'FILE'
+  return ext.slice(0, 4).toUpperCase()
+}
+
+export type AttachmentImagePreview = {
+  id: string
+  name: string
+  src: string
+}
+
+// 输入框附件芯片: 图片缩略图 (点击放大) / 文件短标签 + 删除按钮 + 上传状态.
+// 欢迎页 / 简易会话内 / 专业模式三处共用同一个芯片 —— 位置与样式必须一致,
+// 否则同一个附件在不同页面长得不一样 (issue 2026-10-26).
+export function AttachmentChip({ att, theme, onRemove, onPreview }: {
+  att: Attachment
+  theme: 'dark' | 'light' | 'purple'
+  onRemove: () => void
+  onPreview?: (preview: AttachmentImagePreview) => void
+}) {
+  const isImage = att.kind === 'image' && att.previewUrl
+  const isDark = theme !== 'light'
+  const baseStyle: CSSProperties = {
+    background: isDark ? '#111827' : '#ffffff',
+    border: `1px solid ${isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)'}`,
+  }
+  const fileLabel = fileExtBadge(att.name).slice(0, 2)
+  return (
+    <div className="relative group flex-shrink-0" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
+      {isImage ? (
+        <button
+          type="button"
+          onClick={() => onPreview?.({ id: att.id, name: att.name, src: att.previewUrl! })}
+          className="w-6 h-6 rounded-md overflow-hidden relative block text-left focus:outline-none focus:ring-2 focus:ring-blue-500/35 cursor-zoom-in"
+          style={baseStyle}
+          title={`${att.name} · 点击预览`}
+          aria-label={`预览图片 ${att.name}`}>
+          <img src={att.previewUrl} alt={att.name} className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/35 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity inline-flex items-center justify-center">
+            <ZoomIn className="w-3 h-3" strokeWidth={2.2} />
+          </div>
+          {att.status === 'uploading' && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+              <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+              </svg>
+            </div>
+          )}
+          {att.status === 'error' && (
+            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[length:var(--fs-xs)] font-semibold" title={att.error}>
+              失败
+            </div>
+          )}
+        </button>
+      ) : (
+        <div
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[length:var(--fs-2xs)] font-semibold leading-none"
+          style={{ ...baseStyle, color: isDark ? '#bfdbfe' : '#2563eb' }}>
+          <span>{fileLabel}</span>
+          {att.status === 'uploading' && (
+            <div className="absolute inset-0 rounded-md flex items-center justify-center bg-black/50">
+              <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+              </svg>
+            </div>
+          )}
+          {att.status === 'error' && (
+            <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[length:var(--fs-2xs)] font-semibold" title={att.error}>
+              !
+            </div>
+          )}
+        </div>
+      )}
+      <button type="button" onClick={(e) => { e.stopPropagation(); onRemove() }}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-white shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ background: '#1f2937' }}
+        title="移除">
+        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6L18 18" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+// 图片放大预览弹层 (点击附件缩略图打开)
+export function AttachmentImagePreviewModal({ preview, onClose }: {
+  preview: AttachmentImagePreview
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
+      <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
+      <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
+        <div className="min-w-0 text-[length:var(--fs-lg)] font-medium truncate">{preview.name}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="关闭"
+          aria-label="关闭"
+          className="h-8 w-8 rounded-full inline-flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
+          <X className="w-4 h-4" strokeWidth={2} />
+        </button>
+      </div>
+      <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6 pointer-events-none">
+        <img
+          src={preview.src}
+          alt={preview.name}
+          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-auto"
+          onClick={(event) => event.stopPropagation()}
+        />
+      </div>
+    </div>
+  )
 }
 
 // 上传单文件到 /api/upload (FormData field 'file'); 不能复用 store.api (它默认 JSON header).

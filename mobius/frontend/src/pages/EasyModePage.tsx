@@ -55,7 +55,7 @@ import { ResizablePanel } from '../components/resizable-panel'
 import { Loading, TopNav, timeAgoPrecise } from '../components/shell'
 import { ToastCard } from '../components/toast-card'
 import { MobiusLogo } from '../components/mobius-logo'
-import { appendAttachmentsToDesc, newAttId, uploadAttachmentFile, type Attachment } from '../components/attachments'
+import { appendAttachmentsToDesc, newAttId, uploadAttachmentFile, AttachmentImagePreviewModal, type Attachment, type AttachmentImagePreview } from '../components/attachments'
 
 const EmbeddedOverviewCluster = lazy(() => import('./MobiusOverviewClusterPage'))
 
@@ -242,6 +242,8 @@ export default function EasyModePage() {
   const [showWelcome, setShowWelcome] = useState(() => !search.get('session'))
   const [welcomePrompt, setWelcomePrompt] = useState('')
   const [welcomeAttachments, setWelcomeAttachments] = useState<Attachment[]>([])
+  // 附件图片放大预览 (与会话内同一套弹层)
+  const [welcomeImagePreview, setWelcomeImagePreview] = useState<AttachmentImagePreview | null>(null)
   // 欢迎页语音输入: 录音 → 转写 → 追加进输入框 (与会话页同一转写链路 /api/assistant/transcribe)
   const [welcomeErrorNotice, setWelcomeErrorNotice] = useState('')
   const welcomeVoice = useVoiceInput({
@@ -1162,12 +1164,13 @@ export default function EasyModePage() {
                   inputPlaceholder="描述你想让莫比乌斯完成的任务…"
                   theme={theme}
                   attachments={welcomeAttachments}
+                  onRemoveAttachment={removeWelcomeAttachment}
+                  onPreviewAttachment={setWelcomeImagePreview}
                   anyUploading={welcomeAttachmentsUploading}
                   hasReadyAttachments={welcomeAttachmentsReady}
                   onUpload={() => welcomeFileInputRef.current?.click()}
                   onPaste={handleWelcomePaste}
                   onDrop={handleWelcomeDrop}
-                  onRemoveAttachment={removeWelcomeAttachment}
                   onChange={event => setWelcomePrompt(event.target.value)}
                   onSend={submitWelcomePrompt}
                   submitDisabled={welcomeCreating || (welcomeSelection.createProject && !welcomeSelection.projectName.trim())}
@@ -1198,6 +1201,10 @@ export default function EasyModePage() {
                   }
                 />
                 </div>
+                {/* 附件图片放大预览 (与会话内同一套弹层) */}
+                {welcomeImagePreview && (
+                  <AttachmentImagePreviewModal preview={welcomeImagePreview} onClose={() => setWelcomeImagePreview(null)} />
+                )}
                 {/* 示例任务建议: 给新用户一个可点的起点 (issue 2026-10-26, impeccable P2) */}
                 <div className="easy-welcome-suggestions" aria-label="示例任务">
                   {WELCOME_SUGGESTIONS.map(suggestion => (
@@ -1231,13 +1238,6 @@ export default function EasyModePage() {
             <ChatArea
               layout="easy"
               onMessageSent={scheduleRefreshAfterSend}
-              easyProjectControl={{
-                selectedProjectId: effectiveProject || selectedSession?.project_id || undefined,
-                selectedProjectName: selectedProjectOption?.name || selectedSession?.project_name || projects.find((project: any) => project.id === selectedSession?.project_id)?.name,
-                projects: projectOptions,
-                onSelectProject: selectProjectFilter,
-                onCreateProject: () => setCreateKind('project'),
-              }}
             />
           </Suspense>
         ) : (

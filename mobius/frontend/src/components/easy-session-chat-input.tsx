@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, Zap } from 'lucide-react'
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
-import { EasySessionToolMenu, type EasySessionLite, type EasyProjectOption } from './easy-session-tool-menu'
+import { EasySessionToolMenu, type EasySessionLite } from './easy-session-tool-menu'
+import { AttachmentChip, type Attachment, type AttachmentImagePreview } from './attachments'
 import type { VoiceInputState } from '../services/assistant-voice'
-import type { Attachment } from './attachments'
 
 /**
  * create_session_mode: 欢迎页还没有会话，输入框只负责收集任务描述，提交后进入完整的新建会话配置。
@@ -28,6 +28,12 @@ type EasySessionChatInputCommonProps = {
   onKeyDown?: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
   /** 底部工具栏左侧的插槽: 欢迎页放 EasySessionConfigBar, 会话内放 EasySessionToolBar */
   toolbar?: ReactNode
+  /** 附件列表: 渲染在输入框内部 (框内顶部), 欢迎页与会话内同一位置 (issue 2026-10-26) */
+  attachments: Attachment[]
+  /** 移除附件 */
+  onRemoveAttachment: (id: string) => void
+  /** 点击图片附件放大预览 (不传则点击无动作) */
+  onPreviewAttachment?: (preview: AttachmentImagePreview) => void
 }
 
 type CreateSessionModeProps = EasySessionChatInputCommonProps & {
@@ -35,13 +41,11 @@ type CreateSessionModeProps = EasySessionChatInputCommonProps & {
   /** 欢迎页在选齐项目和任务前不能提交 */
   submitDisabled?: boolean
   submitTooltip?: string
-  attachments: Attachment[]
   anyUploading: boolean
   hasReadyAttachments: boolean
   onUpload: () => void
   onPaste: (event: ClipboardEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
-  onRemoveAttachment: (id: string) => void
   /** 欢迎页右下: 当前所选模型 key (来自 EasySessionConfigBar selection.model) */
   welcomeModelKey?: string
   /** 欢迎页右下: 切换模型回调 (写入 EasySessionConfigBar selection.model) */
@@ -92,14 +96,10 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   agentWorking?: boolean
   /** 工具菜单: 近期会话列表 (用于「切换会话」子菜单) */
   recentSessions?: EasySessionLite[]
-  /** 工具菜单: 项目列表 (用于「切换项目」子菜单) */
-  projects?: EasyProjectOption[]
-  /** 工具菜单: 当前项目 id (高亮) */
+  /** 当前会话所属项目 id (只用于「注入 Git / 项目知识」的可用性判断, 不提供项目切换) */
   currentProjectId?: string
   /** 工具菜单: 切换会话回调 */
   onSwitchSession?: (sessionId: string) => void
-  /** 工具菜单: 切换项目回调 (传 null 清除) */
-  onSwitchProject?: (projectId: string | null) => void
   /** 工具菜单: 当前语言 */
   language?: 'zh' | 'en'
   /** 工具菜单: 切换语言回调 */
@@ -187,7 +187,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
     onSend()
   }
 
-  const hasCreateAttachments = props.mode === 'create_session_mode' && props.attachments.length > 0
   // 输入框随内容长高, 封顶 = 初始高度的 3 倍 (会话内 96→288, 欢迎页 144→432), 超出后 textarea 内部滚动
   const isCreateMode = props.mode === 'create_session_mode'
   // 欢迎页与会话页同一套尺寸 (issue 2026-10-17 用户要求两者一致)
@@ -215,6 +214,25 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   }, [input, baseTextAreaHeight, maxInputHeight, chromeHeight])
 
   const inputHeight = Math.min(maxInputHeight, Math.max(baseInputHeight, textAreaHeight + chromeHeight))
+
+  // 附件芯片渲染在卡片内部 (框内顶部), 卡片高度必须跟着芯片行长高,
+  // 否则会被 overflow-hidden 裁掉. 用 ResizeObserver 量真实高度 (芯片多行换行时高度会变).
+  const chipsRef = useRef<HTMLDivElement | null>(null)
+  const [chipsHeight, setChipsHeight] = useState(0)
+  useLayoutEffect(() => {
+    const el = chipsRef.current
+    if (!el) {
+      setChipsHeight(0)
+      return
+    }
+    const update = () => setChipsHeight(el.offsetHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [props.attachments.length])
+  // 卡片总高 = 内容高 (文本区 + 上下留白 + 工具栏) + 芯片行高
+  const cardHeight = inputHeight + chipsHeight
 
   // 拖拽文件 → 直接上传为附件 (issue 2026-10-26)
   // 只有 dataTransfer.types 里有 'Files' 才当文件拖拽处理, 拖文字选区保持浏览器默认行为 (可直接放进输入框).
@@ -268,9 +286,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
       data-drag-over={fileDragOver ? 'true' : undefined}
       className="easy-session-chat-input relative min-w-0 w-full overflow-hidden rounded-[18px] transition-all focus-within:ring-2 focus-within:ring-blue-500/15"
       style={{
-        height: inputHeight,
+        height: cardHeight,
         minHeight: 0,
-        maxHeight: inputHeight,
+        maxHeight: cardHeight,
         // 比外层页面背景略浅, 形成轻微抬升感 (issue 2026-10-13 参考图)
         // 浅色主题: 略暗于页面 (rgba 黑 0.04), 模拟 Codex 灰白卡片
         background: isDark ? 'rgba(45, 52, 64, 0.65)' : 'rgba(0, 0, 0, 0.04)',
@@ -316,21 +334,25 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           </div>
         </div>
       )}
-      {props.mode === 'create_session_mode' && props.attachments.length > 0 && (
-        <div className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
-          {props.attachments.map(attachment => (
-            <div key={attachment.id} className="group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--input-border)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} title={attachment.error || attachment.name}>
-              {attachment.kind === 'image' && attachment.previewUrl ? <img src={attachment.previewUrl} alt={attachment.name} className="h-7 w-7 rounded object-cover" /> : <Plus className="h-3 w-3 flex-shrink-0" />}
-              <span className="max-w-[150px] truncate">{attachment.name}</span>
-              {attachment.status === 'uploading' ? <RefreshCw className="h-3 w-3 animate-spin" /> : attachment.status === 'error' ? <span className="text-red-400">失败</span> : null}
-              <button type="button" onClick={() => props.onRemoveAttachment(attachment.id)} className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[length:var(--fs-sm)] opacity-70 hover:bg-red-500/20 hover:text-red-300" aria-label={`移除附件 ${attachment.name}`}>×</button>
-            </div>
+      {/* 附件芯片: 渲染在输入框内部 (框内顶部), 欢迎页与会话内同一位置同一组件
+          (issue 2026-10-26: 上传的附件统一显示在输入框中) */}
+      {props.attachments.length > 0 && (
+        <div ref={chipsRef} className="flex max-h-16 flex-wrap items-start gap-1.5 overflow-y-auto px-3 pt-2.5">
+          {props.attachments.map(att => (
+            <AttachmentChip
+              key={att.id}
+              att={att}
+              theme={isDark ? 'dark' : 'light'}
+              onRemove={() => props.onRemoveAttachment(att.id)}
+              onPreview={props.onPreviewAttachment}
+            />
           ))}
         </div>
       )}
       <div className="px-3 pt-3 pb-2.5">
         {follow && !input && (
-          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)' }}>
+          // 提示行是浮在文本区上方的绝对定位层: 框内有附件芯片时要往下让出芯片行的高度, 否则会压在芯片上
+          <div className="pointer-events-none absolute inset-x-3 z-10 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)', top: chipsHeight + 12 }}>
             <span className="flex-shrink-0">发送指令：</span>
             <span className="flex min-w-0 items-center gap-2 truncate">
               <span className="flex-shrink-0">· Shift+Enter 换行</span>
@@ -369,10 +391,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               isDark={isDark}
               recentSessions={follow.recentSessions}
               currentSessionId={follow.sessionId}
-              projects={follow.projects}
-              currentProjectId={follow.currentProjectId}
               onSwitchSession={follow.onSwitchSession}
-              onSwitchProject={follow.onSwitchProject}
               language={follow.language}
               onChangeLanguage={follow.onChangeLanguage}
               onInjectSkill={follow.onInjectSkill}

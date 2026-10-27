@@ -37,7 +37,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { EasySessionChatInput } from './easy-session-chat-input'
-import { EasySessionProjectSelector } from './easy-session-project-selector'
+import { AttachmentChip, AttachmentImagePreviewModal, type Attachment as SharedAttachment, type AttachmentImagePreview } from './attachments'
 import { AdvancedSessionActions } from './advanced-session-actions'
 import { UnifiedButtonGroup, type VisibilityOption } from './unified-button-group'
 import { EasySessionToolBar } from './easy-session-tool-bar'
@@ -549,22 +549,9 @@ function permissionReplyText(value: string) {
 // =====================================================================
 // 附件 (粘贴 / 拖放 / 上传按钮 三入口共用)
 // =====================================================================
-type AttachmentStatus = 'uploading' | 'done' | 'error'
-type Attachment = {
-  id: string
-  name: string
-  size: number
-  kind: 'image' | 'file'
-  previewUrl?: string      // 仅 image: 本地 ObjectURL, 用作缩略图
-  status: AttachmentStatus
-  remotePath?: string      // 上传成功后的服务端绝对路径 (用于 prompt 拼接)
-  error?: string
-}
-
-type AttachmentImagePreview = {
-  id: string
-  name: string
-  src: string
+// 共享附件类型 (attachments.tsx) + 会话内额外记录的 remotePath (上传成功后的服务端绝对路径, 用于 prompt 拼接)
+type Attachment = SharedAttachment & {
+  remotePath?: string
 }
 
 type SessionFileFeature = {
@@ -611,21 +598,6 @@ function attachmentKindOf(file: File): 'image' | 'file' {
 // 参考截图粘贴的同一路径: 转成 .txt 附件走 /api/upload 上传.
 const PASTE_TEXT_AS_FILE_THRESHOLD = 100 * 1024
 
-function formatFileSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
-}
-
-// 多种常见扩展名 → 简短分类标签 (用于无缩略图的文件芯片)
-function fileExtBadge(name: string): string {
-  const ext = (name.split('.').pop() || '').toLowerCase()
-  if (!ext || ext === name.toLowerCase()) return 'FILE'
-  return ext.slice(0, 4).toUpperCase()
-}
-
 // 上传单个文件到 /api/upload (multer 接收 field 名 'file').
 // 不能复用 store 里的 api(), 它默认设了 Content-Type: application/json — FormData 必须留空 Content-Type.
 async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ path: string; name: string; size: number }> {
@@ -641,118 +613,6 @@ async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ p
   const data = await res.json().catch(() => ({} as any))
   if (!res.ok) throw new Error(data?.error || `上传失败 (HTTP ${res.status})`)
   return { path: data.path, name: data.name, size: data.size }
-}
-
-// 输入框内的紧凑附件芯片. 图片缩略图 / 文件短标签 + 删除按钮 + 上传状态.
-function AttachmentChip({ att, theme, onRemove, onPreview }: {
-  att: Attachment
-  theme: 'dark' | 'light' | 'purple'
-  onRemove: () => void
-  onPreview?: (preview: AttachmentImagePreview) => void
-}) {
-  const isImage = att.kind === 'image' && att.previewUrl
-  const isDark = theme !== 'light'
-  const baseStyle: React.CSSProperties = {
-    background: isDark ? '#111827' : '#ffffff',
-    border: `1px solid ${isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)'}`,
-  }
-  const fileLabel = fileExtBadge(att.name).slice(0, 2)
-  return (
-    <div className="relative group flex-shrink-0" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
-      {isImage ? (
-        <button
-          type="button"
-          onClick={() => onPreview?.({ id: att.id, name: att.name, src: att.previewUrl! })}
-          className="w-6 h-6 rounded-md overflow-hidden relative block text-left focus:outline-none focus:ring-2 focus:ring-blue-500/35 cursor-zoom-in"
-          style={baseStyle}
-          title={`${att.name} · 点击预览`}
-          aria-label={`预览图片 ${att.name}`}>
-          <img src={att.previewUrl} alt={att.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/35 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity inline-flex items-center justify-center">
-            <ZoomIn className="w-3 h-3" strokeWidth={2.2} />
-          </div>
-          {att.status === 'uploading' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-              <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-              </svg>
-            </div>
-          )}
-          {att.status === 'error' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[length:var(--fs-xs)] font-semibold" title={att.error}>
-              失败
-            </div>
-          )}
-        </button>
-      ) : (
-        <div
-          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[length:var(--fs-2xs)] font-semibold leading-none"
-          style={{ ...baseStyle, color: isDark ? '#bfdbfe' : '#2563eb' }}>
-          <span>{fileLabel}</span>
-            {att.status === 'uploading' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-black/50">
-                <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-                </svg>
-              </div>
-            )}
-            {att.status === 'error' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[length:var(--fs-2xs)] font-semibold" title={att.error}>
-                !
-              </div>
-            )}
-        </div>
-      )}
-      <button type="button" onClick={(e) => { e.stopPropagation(); onRemove() }}
-        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-white shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-        style={{ background: '#1f2937' }}
-        title="移除">
-        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  )
-}
-
-function AttachmentImagePreviewModal({ preview, onClose }: {
-  preview: AttachmentImagePreview
-  onClose: () => void
-}) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
-      <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
-      <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
-        <div className="min-w-0 text-[length:var(--fs-lg)] font-medium truncate">{preview.name}</div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          aria-label="关闭"
-          className="h-8 w-8 rounded-full inline-flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
-          <X className="w-4 h-4" strokeWidth={2} />
-        </button>
-      </div>
-      <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6 pointer-events-none">
-        <img
-          src={preview.src}
-          alt={preview.name}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-auto"
-          onClick={(event) => event.stopPropagation()}
-        />
-      </div>
-    </div>
-  )
 }
 
 const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建会话。'
@@ -1866,13 +1726,6 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
-type EasyProjectOption = {
-  id: string
-  name: string
-  count?: number
-  runningCount?: number
-}
-
 type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
 
 // 简易模式右侧文件编辑栏: 复用代码对话 v2 的 CodeConversationPane (variant='sidebar'),
@@ -1880,18 +1733,11 @@ type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
 const EasyFilesPane = lazy(() => import('./workspace/code-conversation-pane').then(module => ({ default: module.CodeConversationPane })))
 const EASY_FILES_OPEN_KEY = 'mobius:ui:easy-files-sidebar:open'
 
-export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easyProjectControl }: {
+export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
   // 消息提交成功后的回调 (所有发送路径共用)。外层用它把「会话已开始执行」尽快同步到侧栏。
   onMessageSent?: () => void
-  easyProjectControl?: {
-    selectedProjectId?: string
-    selectedProjectName?: string
-    projects: EasyProjectOption[]
-    onSelectProject: (projectId: string | null) => void
-    onCreateProject: () => void
-  }
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const navigate = useNavigate()
@@ -2011,8 +1857,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
   const [easyToolsOpen, setEasyToolsOpen] = useState(false)
-  const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
-  const [easyProjectQuery, setEasyProjectQuery] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
@@ -2023,8 +1867,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsRef = useRef<HTMLDivElement | null>(null)
   const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
-  const easyProjectMenuRef = useRef<HTMLDivElement | null>(null)
-  const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLDivElement>(null)
@@ -2055,38 +1897,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [easyToolsOpen])
-
-  useEffect(() => {
-    if (!easyProjectMenuOpen) return
-    const closeOnOutside = (event: MouseEvent) => {
-      if (!easyProjectMenuRef.current?.contains(event.target as Node)) setEasyProjectMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setEasyProjectMenuOpen(false)
-      easyProjectButtonRef.current?.focus()
-    }
-    document.addEventListener('mousedown', closeOnOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [easyProjectMenuOpen])
-
-  useEffect(() => {
-    setEasyProjectMenuOpen(false)
-    setEasyProjectQuery('')
-  }, [currentSession?.session_id])
-
-  const easyFilteredProjects = useMemo(() => {
-    const query = easyProjectQuery.trim().toLocaleLowerCase('zh-CN')
-    if (!query) return easyProjectControl?.projects || []
-    return (easyProjectControl?.projects || []).filter(project => (
-      project.name.toLocaleLowerCase('zh-CN').includes(query)
-      || project.id.toLocaleLowerCase('zh-CN').includes(query)
-    ))
-  }, [easyProjectControl?.projects, easyProjectQuery])
 
   // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
   // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
@@ -4560,33 +4370,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           )}
           {layout === 'easy' && (
             <div className="easy-session-chat-input-shell min-w-0 flex-shrink-0 p-3">
-              {/* 附件芯片: 标准输入框整块在简易模式下隐藏, 芯片若留在那里面, 上传/粘贴后就没有任何可见反馈. */}
-              {attachments.length > 0 && (
-                <div className="mb-2 flex max-h-20 flex-wrap items-start gap-1.5 overflow-y-auto pr-1">
-                  {attachments.map(att => (
-                    <AttachmentChip
-                      key={att.id}
-                      att={att}
-                      theme={theme as 'dark' | 'light' | 'purple'}
-                      onRemove={() => removeAttachment(att.id)}
-                      onPreview={openAttachmentImagePreview}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* 项目选择入口: 「更改此聊天的项目」按钮 (issue 2026-10-13) */}
-              {easyProjectControl && (
-                <div className="mb-2">
-                  <EasySessionProjectSelector
-                    isDark={theme !== 'light'}
-                    selectedProjectId={easyProjectControl.selectedProjectId}
-                    selectedProjectName={easyProjectControl.selectedProjectName}
-                    projects={easyProjectControl.projects}
-                    onSelectProject={easyProjectControl.onSelectProject}
-                    onCreateProject={easyProjectControl.onCreateProject}
-                  />
-                </div>
-              )}
               <EasySessionChatInput
                 mode="follow_session_mode"
                 input={input}
@@ -4594,6 +4377,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   inputPlaceholder={inputPlaceholder}
                   inputFocused={inputFocused}
                   theme={theme}
+                  currentProjectId={currentProjectId}
+                  attachments={attachments}
+                  onRemoveAttachment={removeAttachment}
+                  onPreviewAttachment={openAttachmentImagePreview}
                   voiceState={voiceState}
                   voiceTip={voiceTip}
                   voiceBusy={voiceBusy}
@@ -4621,16 +4408,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   sessionModelLabel={currentModelLabel}
                   agentWorking={!!(backendAlive && backendWorking)}
                   recentSessions={(useStore.getState().sessions || []).slice(0, 20) as any}
-                  projects={(easyProjectControl as any)?.projects as any}
-                  currentProjectId={(easyProjectControl as any)?.selectedProjectId || currentProjectId}
                   onSwitchSession={(sid) => {
                     if (!sid) return
                     const search = new URLSearchParams(location.search)
                     search.set('session', sid)
                     navigate(`${location.pathname}?${search.toString()}${location.hash}`, { replace: true })
-                  }}
-                  onSwitchProject={(pid) => {
-                    (easyProjectControl as any)?.onSelectProject(pid)
                   }}
                   language={(currentSession as any)?.language === 'en' ? 'en' : 'zh'}
                   onChangeLanguage={(next) => {
