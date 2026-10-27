@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, ShieldAlert, Square, Zap } from 'lucide-react'
+import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Zap } from 'lucide-react'
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
 import { EasySessionToolMenu, type EasySessionLite, type EasyProjectOption } from './easy-session-tool-menu'
@@ -12,7 +12,7 @@ import type { Attachment } from './attachments'
  * follow_session_mode: 会话内的持续对话，带语音输入与加急发送等完整交互。
  *
  * UI 参考 issue 2026-10-13 用户截图 (MoneyPrinterTurbo) — 走扁平图标路线:
- *   左侧 = + (选择文件/图片入口)  +  「完全访问」状态指示 (橙色盾牌, 仅 pc_client_metadata 存在时)
+ *   左侧 = + (选择文件/图片入口)
  *   右侧 = 当前模型 (文字+chevron) | 语音输入 | 发送 (蓝色圆形)
  *   智能体运行时 → 同一个按钮变为停止 (保持圆形 + 红色填充)
  */
@@ -88,10 +88,6 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   onChangeSessionModel?: (model: string) => Promise<void> | void
   /** 智能体是否正在工作 (用于合并按钮的 send → stop 切换) */
   agentWorking?: boolean
-  /** 是否显示「完全访问」状态指示 (pc_client_metadata 存在时为 true) */
-  showContextAccess?: boolean
-  /** 完全访问模式文案 (默认 "完全访问", 后续可派生 hub/local 等) */
-  contextAccessLabel?: string
   /** 工具菜单: 近期会话列表 (用于「切换会话」子菜单) */
   recentSessions?: EasySessionLite[]
   /** 工具菜单: 项目列表 (用于「切换项目」子菜单) */
@@ -280,7 +276,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         />
       </div>
       {/* 底部按钮行: 扁平图标路线 (issue 2026-10-13 用户截图, 与 Codex 一致)
-            左侧: + 选择文件 + 「完全访问」状态指示
+            左侧: 选择文件
             右侧: 模型切换 (文字+chevron) | 语音 | 发送 (蓝色圆形, 运行时变红色停止)
             注意: 此行不能 overflow-hidden — 语音/终止按钮的脉冲光晕 (box-shadow) 需要溢出显示;
             长文案裁切由内部各子容器自身的 overflow-hidden 负责 (config-bar / hint 行)。 */}
@@ -322,17 +318,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               hasSession={!!follow.sessionId}
               hasProject={!!follow.currentProjectId}
             />
-          )}
-          {/* 完全访问状态指示: 仅在会话内有 pc_client_metadata 时显示 */}
-          {follow && follow.showContextAccess && (
-            <span
-              className="easy-context-access-chip inline-flex items-center gap-1.5 text-[length:var(--fs-sm)] font-medium"
-              style={{ color: isDark ? '#fb923c' : '#ea580c' }}
-              title={`当前会话上下文模式: ${follow.contextAccessLabel || '完全访问'}`}
-            >
-              <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} />
-              <span className="truncate">{follow.contextAccessLabel || '完全访问'}</span>
-            </span>
           )}
         </div>
         {/* 右侧: 模型切换 | 附件上传 (Paperclip) | 语音 | 加急 | 发送/终止 (合并, 蓝色圆形 Codex 风格)
