@@ -491,11 +491,17 @@ router.patch('/:id/model', auth, async (req: express.Request, res: express.Respo
   res.json({ ok: true, model: resolved.sessionModelValue, label: resolved.label || resolved.sessionModelValue });
 });
 
-// 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击切换).
-// 覆盖 pc_client_metadata.aimux_id, 保留 work_mode/is_tui/add_remote_aimux_mcp/local_path 等其余字段.
+// 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击切换, 会话工具 → 协作设备).
+// 覆盖 pc_client_metadata.aimux_id, 保留 work_mode/is_tui/local_path 等其余字段.
 // 首次切换时把"切换前"的设备惰性记为 initial_aimux_id, 之后保持不变 (可撤回的锚点).
 // 权限同 PATCH /:id (findSessionOperable = owner/admin/project-owner); 前端只从 /aimux_bridge/api/remotes
 // 的 live 列表里挑可选项, 故这里只做非空校验, 不再重复查 bridge.
+//
+// add_remote_aimux_mcp 一并置 true: aimuxRemoteNameFromMeta 用它决定要不要给
+// agent 注入 remote_* MCP 工具. 只写 aimux_id 而不写这个旗标, 绑定就是空转 ——
+// 会话"绑了设备"但 agent 手里没有工具.
+// work_mode 只在会话还没有模式时补成 'pc' (在设备上干活); 已经有 'hub'/'dual' 的
+// 会话保持原样, 不替用户改他选过的工作模式.
 router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
@@ -509,7 +515,15 @@ router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Resp
   const initialAimuxId = (typeof meta.initial_aimux_id === 'string' && meta.initial_aimux_id.trim())
     ? meta.initial_aimux_id.trim()
     : previousAimuxId;
-  const updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId };
+  const updated: Record<string, unknown> = {
+    ...meta,
+    aimux_id: newAimuxId,
+    initial_aimux_id: initialAimuxId,
+    add_remote_aimux_mcp: true,
+  };
+  // 没有工作模式的会话 (网页创建) 补成 'pc' —— 用户把设备绑到这个会话上, 意图就是
+  // 让 agent 在那台机器上干活. 已有模式的会话不动它.
+  if (!updated.work_mode) updated.work_mode = 'pc';
   Sessions.updatePcClientMetadata(id, updated);
   auditSessionAccess(user, 'switch_session_aimux_device', session);
   res.json({ ok: true, pc_client_metadata: updated, previous_aimux_id: previousAimuxId, initial_aimux_id: initialAimuxId });

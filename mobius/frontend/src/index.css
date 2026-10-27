@@ -6643,6 +6643,35 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 /* SSH 探测的第三种状态: 网络通但密钥没配好. 归到「离线」会让人以为机器挂了. */
 [data-page="easy-mode"] .easy-device-row__status.is-warn { color: #f59e0b; }
 [data-page="easy-mode"] .easy-device-row__status.is-warn i { background: #f59e0b; }
+/* 探测中: 流式扫描的中间态, 名字已知但连通性还没测出来. */
+[data-page="easy-mode"] .easy-device-row__status.is-pending { color: var(--text-muted); }
+[data-page="easy-mode"] .easy-device-row__status.is-pending i { animation: easy-device-probe 1.2s ease-in-out infinite; }
+@keyframes easy-device-probe {
+  0%, 100% { opacity: .3; }
+  50% { opacity: 1; }
+}
+/* 加载占位: 扫 SSH 主机要真连一次远端, 这段时间显示骨架而不是先闪一个空态. */
+[data-page="easy-mode"] .easy-device-row--skeleton { pointer-events: none; }
+[data-page="easy-mode"] .easy-device-skeleton__line {
+  display: block;
+  height: 10px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--bg-card-hover), color-mix(in srgb, var(--bg-card-hover) 65%, var(--text-muted) 18%), var(--bg-card-hover));
+  background-size: 220% 100%;
+  animation: easy-device-skeleton-pulse 1.4s ease-in-out infinite;
+}
+[data-page="easy-mode"] .easy-device-skeleton__line--title { width: 38%; }
+[data-page="easy-mode"] .easy-device-skeleton__line--sub { width: 22%; height: 8px; margin-bottom: 0; }
+[data-page="easy-mode"] .easy-device-skeleton__line:last-child { margin-bottom: 0; }
+@keyframes easy-device-skeleton-pulse {
+  0% { background-position: 220% 0; }
+  100% { background-position: -220% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-page="easy-mode"] .easy-device-skeleton__line,
+  [data-page="easy-mode"] .easy-device-row__status.is-pending i { animation: none; }
+}
 /* 客户端与服务端版本不一致 —— 该提示会影响能否正常协作, 不能埋在日志里. */
 [data-page="easy-mode"] .easy-device-row__warn {
   flex-shrink: 0;

@@ -83,7 +83,7 @@ router.post('/remotes', auth, async (req: express.Request, res: express.Response
 // 只删「莫比乌斯添加」的 Host 块; 手写进 ~/.ssh/config 的主机一律拒绝, 不替用户改配置.
 router.delete('/remotes/:name', auth, async (req: express.Request, res: express.Response) => {
   try {
-    const result = aimuxRemote.removeRemote(req.params.name);
+    const result = aimuxRemote.removeRemote(String(req.params.name || ''));
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || '移除 aimux remote 失败' });

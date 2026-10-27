@@ -120,10 +120,10 @@ assert.match(
   /协作设备 <span>\{bridgeRemotes\.length\}<\/span>/,
   '协作设备必须单独分组',
 )
-// SSH 主机从 aimux 那份列表取 (type !== 'bridge'), 协作设备从 broker 那份取
+// SSH 主机从 aimux 那份列表取 (排除 bridge), 协作设备从 broker 那份取
 assert.match(
   panelSource,
-  /r\?\.type !== 'bridge'/,
+  /remote\.type === 'bridge'\) return/,
   'SSH 列表必须排除 bridge 类型 (协作设备从 broker 那侧单独取)',
 )
 assert.match(
@@ -171,7 +171,93 @@ assert.match(
   '协作设备状态必须保持 10 秒轮询',
 )
 
-// ===== 8. 面板讲清楚设备能干什么 =====
+// ===== 8. 首屏不能闪假空态 =====
+// 扫 SSH 主机要真连一次远端 (~1s). 一次性端点要等整轮探测才返回, 期间面板
+// 只能显示「暂无 SSH 主机」—— 一台都有的情况下说没有, 是假空态.
+// 改用流式端点: 名字先落地 (状态 probing), 真状态后补.
+assert.match(
+  panelSource,
+  /fetch\('\/api\/aimux\/remotes\/stream'/,
+  'SSH 主机必须走流式端点, 让名字先落地',
+)
+// 列表不能再用一次性端点 (要等整轮探测, 首屏会闪假空态).
+// 注意只查 loadSsh 这个函数体 —— 添加主机仍然走 POST /api/aimux/remotes, 那是另一回事.
+const loadSshBody = panelSource.slice(
+  panelSource.indexOf('const loadSsh = useCallback'),
+  panelSource.indexOf('const load = useCallback'),
+)
+assert.doesNotMatch(
+  loadSshBody,
+  /api\('\/api\/aimux\/remotes'/,
+  '列表不能再用一次性端点 (要等整轮探测, 首屏会闪假空态)',
+)
+assert.match(
+  panelSource,
+  /status === 'probing'/,
+  '流式扫描的中间态 (probing) 必须被认出来',
+)
+assert.match(
+  panelSource,
+  /探测中/,
+  '探测中必须有独立的文案',
+)
+// 加载中显示骨架, 而不是空态
+assert.match(
+  panelSource,
+  /sshLoading && sshRemotes\.length === 0/,
+  'SSH 组在扫描期间必须显示骨架, 不能显示「暂无」',
+)
+assert.match(
+  panelSource,
+  /bridgeLoading && bridgeRemotes\.length === 0/,
+  '协作设备组在读取期间必须显示骨架',
+)
+assert.match(
+  panelSource,
+  /easy-device-row--skeleton/,
+  '骨架必须有可辨识的类名',
+)
+assert.match(
+  cssSource,
+  /easy-device-skeleton__line/,
+  '骨架要有样式',
+)
+// 空态只在真的扫完之后才出现
+assert.match(
+  panelSource,
+  /const empty = totalCount === 0 && !anyLoading && !error/,
+  '「一台都没有」必须在两边都扫完之后才成立',
+)
+// 探测中的样式类由状态名拼出来 (is-${status.tone}), 所以查 tone 与拼接两处.
+assert.match(
+  panelSource,
+  /tone: 'pending'/,
+  '探测中要有独立的状态 tone',
+)
+assert.match(
+  panelSource,
+  /is-\$\{status\.tone\}/,
+  '状态类名必须由 tone 拼出来',
+)
+assert.match(
+  cssSource,
+  /easy-device-row__status\.is-pending/,
+  '探测中要有样式',
+)
+
+// ===== 9. 流不能叠着开: 旧流不掐掉会同时打远端, 迟到事件还会盖掉新状态 =====
+assert.match(
+  panelSource,
+  /streamAbortRef\.current\?\.abort\(\)/,
+  '开新流之前必须掐掉上一条流',
+)
+assert.match(
+  panelSource,
+  /requestId !== streamRequestRef\.current/,
+  '迟到的流事件必须被丢弃',
+)
+
+// ===== 10. 面板讲清楚设备能干什么 =====
 assert.match(
   panelSource,
   /智能体可以直接在它上面执行命令、读写文件/,

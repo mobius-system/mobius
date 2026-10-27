@@ -63,10 +63,12 @@ const EMPTY_ADD_FORM: AddForm = { name: '', host: '', user: '', port: '22', iden
 
 // SSH 探测状态 → 面板上的说法. auth-required 不是「离线」: 网络是通的, 只是密钥没配好,
 // 把它算成离线会让人以为机器挂了, 白折腾一圈.
-function sshStatusLabel(status: string): { text: string; tone: 'online' | 'warn' | 'offline' } {
+// probing 是流式扫描的中间态: 名字已经知道了, 连通性还在探测中.
+function sshStatusLabel(status: string): { text: string; tone: 'online' | 'warn' | 'offline' | 'pending' } {
   if (status === 'reachable') return { text: '可达', tone: 'online' }
   if (status === 'auth-required') return { text: '需授权', tone: 'warn' }
   if (status === 'unreachable') return { text: '不可达', tone: 'offline' }
+  if (status === 'probing') return { text: '探测中', tone: 'pending' }
   return { text: status || '未知', tone: 'offline' }
 }
 
@@ -84,11 +86,29 @@ function timeAgoShort(iso?: string): string {
   return `${Math.floor(hour / 24)} 天前`
 }
 
+/**
+ * 加载占位: 一行设备卡片的骨架 (图标 + 两行文字).
+ * 扫 SSH 主机要真连一次远端 (~1s), 这段时间得有个「正在扫」的样子,
+ * 而不是先闪一个「暂无 SSH 主机」再被内容顶掉.
+ */
+function DeviceSkeleton() {
+  return (
+    <div className="easy-device-row easy-device-row--skeleton" aria-hidden="true">
+      <span className="easy-device-row__icon"><Server className="h-5 w-5" /></span>
+      <span className="min-w-0 flex-1">
+        <i className="easy-device-skeleton__line easy-device-skeleton__line--title" />
+        <i className="easy-device-skeleton__line easy-device-skeleton__line--sub" />
+      </span>
+    </div>
+  )
+}
+
 export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
   const { getAlias, setName } = useRemoteDeviceNames()
   const [bridgeRemotes, setBridgeRemotes] = useState<BridgeRemote[]>([])
   const [sshRemotes, setSshRemotes] = useState<SshRemote[]>([])
-  const [loading, setLoading] = useState(false)
+  const [bridgeLoading, setBridgeLoading] = useState(true)
+  const [sshLoading, setSshLoading] = useState(true)
   const [error, setError] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState<AddForm>(EMPTY_ADD_FORM)
@@ -100,10 +120,12 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
   const [busyName, setBusyName] = useState<string | null>(null)
   const [rowError, setRowError] = useState('')
   const loadAbortRef = useRef<AbortController | null>(null)
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const streamRequestRef = useRef(0)
 
   // bridge 与 ssh 是两套注册表, 代价差一个数量级:
   //   bridge 走 broker 内存表, ~20ms;
-  //   ssh 走 aimux remote ls, 每台主机都要真的 SSH 探一次 (探测超时 5s).
+  //   ssh 走 aimux remote ls, 每台主机都要真的 SSH 探一次 (探测超时 5s), 整轮 ~900ms.
   // 所以两者分开轮询 —— bridge 10 秒 (连接状态变化快), ssh 60 秒 (探测贵, 少打扰远端).
   const loadBridge = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -114,34 +136,94 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
     } catch (e: any) {
       if (e?.name === 'AbortError') return
       setError(e?.message || '协作设备列表不可用')
+    } finally {
+      if (!signal?.aborted) setBridgeLoading(false)
     }
   }, [])
 
+  // SSH 主机用流式端点: 它先发 discovered (名字已知, 状态还是 probing), 再补 result (真状态).
+  // 之前用一次性端点, 名字和状态要等整轮探测 (~900ms) 一起到, 期间面板只能显示
+  // "暂无 SSH 主机" —— 一台都有的情况下说没有, 是假空态. 流式让名字先落地, 状态后补.
   const loadSsh = useCallback(async (signal?: AbortSignal) => {
+    // 每一轮都开一条新流; 上一次的流必须掐掉, 否则两轮扫描会同时打远端,
+    // 而且旧轮的迟到事件会覆盖新状态 (requestId 只挡 setState, 挡不住在途的探测).
+    streamAbortRef.current?.abort()
+    const controller = new AbortController()
+    streamAbortRef.current = controller
+    if (signal) {
+      if (signal.aborted) { controller.abort(); return }
+      signal.addEventListener('abort', () => controller.abort(), { once: true })
+    }
+    const requestId = ++streamRequestRef.current
+    const seen = new Set<string>()
+    const merge = (remote: any) => {
+      if (!remote?.name || remote.type === 'bridge') return
+      seen.add(remote.name)
+      setSshRemotes(prev => {
+        const index = prev.findIndex(item => item.name === remote.name)
+        const next = { ...remote } as SshRemote
+        if (index < 0) return [...prev, next]
+        const rows = [...prev]
+        rows[index] = next
+        return rows
+      })
+    }
     try {
-      const res = await api('/api/aimux/remotes', { signal })
-      const list = Array.isArray(res?.remotes) ? res.remotes : []
-      // bridge 设备已经从 broker 那侧拿到了, 这里只要 SSH 主机, 不重复列.
-      setSshRemotes(list.filter((r: any) => r?.name && r?.type !== 'bridge'))
+      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cc-token') : null
+      const response = await fetch('/api/aimux/remotes/stream', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      })
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      const handleEvent = (event: any) => {
+        if (requestId !== streamRequestRef.current) return
+        if (event?.event === 'error') throw new Error(event.error || '扫描 aimux remote 失败')
+        if (event?.event === 'remote') merge(event.remote)
+      }
+      const drain = () => {
+        let newline: number
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline).replace(/\r$/, '')
+          buffer = buffer.slice(newline + 1)
+          if (line.trim()) handleEvent(JSON.parse(line))
+        }
+      }
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        drain()
+      }
+      buffer += decoder.decode()
+      if (buffer.trim()) handleEvent(JSON.parse(buffer))
+      if (requestId !== streamRequestRef.current) return
+      // 流结束才算这一轮扫完: 之前探测过的主机要留下, 没出现在这轮里的删掉.
+      setSshRemotes(prev => prev.filter(item => seen.has(item.name)))
       setError('')
     } catch (e: any) {
       if (e?.name === 'AbortError') return
       setError(e?.message || 'SSH 主机列表不可用')
+    } finally {
+      if (!controller.signal.aborted && requestId === streamRequestRef.current) setSshLoading(false)
     }
   }, [])
 
   const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
     await Promise.all([loadBridge(signal), loadSsh(signal)])
-    setLoading(false)
   }, [loadBridge, loadSsh])
 
   useEffect(() => {
     const controller = new AbortController()
     loadAbortRef.current = controller
-    setLoading(true)
-    void load(controller.signal).finally(() => setLoading(false))
-    return () => controller.abort()
+    void load(controller.signal)
+    return () => {
+      controller.abort()
+      // 页面切走时把在途的流也掐掉, 别让扫描继续挂在远端上.
+      streamAbortRef.current?.abort()
+    }
   }, [load])
 
   // bridge 状态每 10 秒自己刷一次 (与页面其它面板同一节奏), 页面切走时靠 abort 收手.
@@ -259,7 +341,9 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
   }, [addForm, load])
 
   const totalCount = bridgeRemotes.length + sshRemotes.length
-  const empty = totalCount === 0 && !loading && !error
+  const anyLoading = bridgeLoading || sshLoading
+  // 只有两边都扫完且确实一台都没有, 才算空 —— 否则会把「还没扫完」说成「没有设备」.
+  const empty = totalCount === 0 && !anyLoading && !error
 
   return (
     <main className="easy-content" data-testid="easy-devices-panel">
@@ -269,7 +353,7 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
           <h1>跨设备</h1>
           <p>把智能体放到你自己的机器上干活 · SSH 主机与协作设备</p>
         </div>
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>{totalCount}</span>}
+        {anyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>{totalCount}</span>}
       </div>
 
       <div className="easy-devices-toolbar">
@@ -375,7 +459,13 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
           <section className="easy-devices-group">
             <h2>SSH 主机 <span>{sshRemotes.length}</span></h2>
             <p className="easy-devices-group__note">写在 ~/.ssh/config 里的主机，智能体可在其上执行命令与读写文件。</p>
-            {sshRemotes.length === 0 ? (
+            {sshLoading && sshRemotes.length === 0 ? (
+              // 还在扫: 先占位, 别急着说「暂无」—— 扫完可能是有主机的.
+              <div className="easy-device-list" aria-busy="true" aria-label="正在扫描 SSH 主机">
+                <DeviceSkeleton />
+                <DeviceSkeleton />
+              </div>
+            ) : sshRemotes.length === 0 ? (
               <div className="easy-list-empty">
                 <Server className="h-5 w-5" strokeWidth={1.8} />
                 <span>暂无 SSH 主机</span>
@@ -452,7 +542,11 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
           <section className="easy-devices-group">
             <h2>协作设备 <span>{bridgeRemotes.length}</span></h2>
             <p className="easy-devices-group__note">在目标机器上运行 aimux 客户端反连注册的设备，智能体通过 MCP 工具直接操作它。</p>
-            {bridgeRemotes.length === 0 ? (
+            {bridgeLoading && bridgeRemotes.length === 0 ? (
+              <div className="easy-device-list" aria-busy="true" aria-label="正在读取协作设备">
+                <DeviceSkeleton />
+              </div>
+            ) : bridgeRemotes.length === 0 ? (
               <div className="easy-list-empty">
                 <MonitorSmartphone className="h-5 w-5" strokeWidth={1.8} />
                 <span>暂无协作设备</span>
