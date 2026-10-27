@@ -1222,22 +1222,6 @@ export default function EasyModePage() {
                   <AttachmentImagePreviewModal preview={welcomeImagePreview} onClose={() => setWelcomeImagePreview(null)} />
                 )}
                 {/* 能力胶囊 (千问办公式: 图标 + 场景, 点击填入输入框; issue 2026-10-26) */}
-                {!welcomeSelection.createProject && (
-                  <div className="easy-welcome-project-row">
-                    <EasySessionProjectSelector
-                      isDark={theme !== 'light'}
-                      selectedProjectId={welcomeSelection.projectId || undefined}
-                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
-                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
-                      onSelectProject={pid => {
-                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
-                      }}
-                      onCreateProject={() => setCreateKind('project')}
-                    />
-                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务</span>
-                  </div>
-                )}
-                {/* 能力胶囊 (千问办公式: 图标 + 场景, 点击填入输入框; issue 2026-10-26) */}
                 <div className="easy-welcome-suggestions" aria-label="常用场景">
                   {WELCOME_SUGGESTIONS.map(suggestion => {
                     const Icon = suggestion.icon

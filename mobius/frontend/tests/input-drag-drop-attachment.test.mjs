@@ -121,6 +121,17 @@ assert.match(
   /mode="create_session_mode"[\s\S]*?onDrop=\{handleWelcomeDrop\}/,
   '欢迎页输入框必须把 handleWelcomeDrop 传下去',
 )
+// 欢迎页只允许一个项目选择器 (曾经因插入位置搞错渲染了两个)
+assert.equal(
+  (easyPageSource.match(/<EasySessionProjectSelector/g) || []).length,
+  1,
+  '欢迎页只能渲染一个项目选择器',
+)
+assert.equal(
+  (easyPageSource.match(/<div className="easy-welcome-project-row">/g) || []).length,
+  1,
+  '欢迎页只能有一个项目行',
+)
 assert.match(
   easyPageSource,
   /const handleWelcomeDrop = useCallback\([\s\S]*?enqueueWelcomeFiles\(event\.dataTransfer\.files\)/,
