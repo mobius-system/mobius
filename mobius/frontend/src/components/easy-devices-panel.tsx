@@ -358,7 +358,7 @@ export function EasyDevicesPanel({ isDark }: { isDark: boolean }) {
 
       <div className="easy-devices-toolbar">
         <p className="easy-devices-toolbar__hint">
-          设备接入后，智能体可以直接在它上面执行命令、读写文件；会话里用「切换协作设备」指定在哪台机器上工作。
+          设备接入后，智能体可以直接在它上面执行命令、读写文件；新建会话时在「设备」里指定，智能体就在那台机器上工作。
         </p>
         <button
           type="button"

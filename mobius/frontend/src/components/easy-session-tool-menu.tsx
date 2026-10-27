@@ -5,11 +5,10 @@
 //   ▸ 直执行: 文件改动 / Bash 命令 / 终端 / 知识 / 注入 Skill/Memory/Git
 // 附件上传 (Paperclip) 已移至输入框右侧独立按钮.
 // =====================================================================
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { BookMarked, Check, Database, Eye, FileDiff, GitBranch, Library, Laptop, Loader2, MonitorCheck, Puzzle, RotateCcw, Server, SquareTerminal, Wrench } from 'lucide-react'
+import { BookMarked, Database, Eye, FileDiff, GitBranch, Library, MonitorCheck, Puzzle, RotateCcw, Server, SquareTerminal, Wrench } from 'lucide-react'
 import { api } from '../store'
-import { useRemoteDeviceNames } from '../services/remote-device-names'
 
 export type EasySessionLite = {
   session_id: string
@@ -49,10 +48,6 @@ export type EasyToolMenuProps = {
   onOpenTerminal?: () => void
   /** 打开可合作计算机弹窗 */
   onOpenCooperablePc?: () => void
-  /** 切换会话绑定的协作设备 (aimux 反连注册的机器) */
-  onSwitchDevice?: (deviceId: string) => Promise<void>
-  /** 当前会话已绑定的协作设备 (空 = 尚未绑定) */
-  currentDeviceId?: string | null
   /** 打开知识编辑器 */
   onOpenKnowledge?: () => void
   /** 切换 JSONL 时间与序号显示 */
@@ -79,72 +74,12 @@ const PANEL_MAX_WIDTH = 320
 const PANEL_MIN_WIDTH = 260
 const VIEWPORT_MARGIN = 8
 
-/**
- * 设备连接状态 → 中文. 之前直接把 broker 的枚举值 (connected/disconnected) 打进
- * 菜单里, 跟整屏中文对不上.
- */
-function deviceConnText(status?: string): string {
-  if (status === 'connected') return '已连接'
-  if (status === 'disconnected') return '已断开'
-  return '状态未知'
-}
-
-/** 平台 → 中文系统名 (darwin/win32/linux 是 aimux 报的原始值). */
-function platformLabel(platform?: string): string {
-  if (platform === 'darwin') return 'macOS'
-  if (platform === 'win32') return 'Windows'
-  if (platform === 'linux') return 'Linux'
-  return platform || '未知平台'
-}
-
 export function EasySessionToolMenu(props: EasyToolMenuProps) {
   const { isDark } = props
-  // 设备用 per-user 别名显示 (跨设备面板里改的名字, 这儿也要看得到同一个名字).
-  const { formatName } = useRemoteDeviceNames()
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
   const popupRef = useRef<HTMLDivElement | null>(null)
-  // 协作设备列表: 展开菜单时按需拉一次 (broker 内存表, ~20ms).
-  const [devices, setDevices] = useState<Array<{ name: string; status?: string; platform?: string }>>([])
-  const [devicesLoading, setDevicesLoading] = useState(false)
-  const [switchingTo, setSwitchingTo] = useState<string | null>(null)
-  const [deviceError, setDeviceError] = useState('')
-
-  const loadDevices = useCallback(async (signal?: AbortSignal) => {
-    setDevicesLoading(true)
-    try {
-      const data: any = await api('/aimux_bridge/api/remotes', { signal })
-      setDevices(Array.isArray(data?.remotes) ? data.remotes : [])
-      setDeviceError('')
-    } catch (e: any) {
-      if (e?.name === 'AbortError') return
-      setDeviceError(e?.message || '协作设备列表不可用')
-    } finally {
-      if (!signal?.aborted) setDevicesLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!open || !props.onSwitchDevice) return
-    const controller = new AbortController()
-    void loadDevices(controller.signal)
-    return () => controller.abort()
-  }, [open, props.onSwitchDevice, loadDevices])
-
-  const pickDevice = async (deviceId: string) => {
-    if (!props.onSwitchDevice) return
-    setSwitchingTo(deviceId)
-    setDeviceError('')
-    try {
-      await props.onSwitchDevice(deviceId)
-      setOpen(false)
-    } catch (e: any) {
-      setDeviceError(e?.message || '切换协作设备失败')
-    } finally {
-      setSwitchingTo(null)
-    }
-  }
 
   useLayoutEffect(() => {
     if (!open) return
@@ -287,69 +222,6 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
                 onClick={() => { setOpen(false); props.onOpenCooperablePc?.() }}
                 isDark={isDark}
               />
-            ) : null}
-            {/* 7.3 协作设备: 指定本会话在哪台机器上工作.
-                顶栏那个设备图标只在「会话已经绑定了设备」时才渲染 (aimux-link-indicator
-                里 if (!aimuxId) return null), 所以没绑定的会话在哪儿都找不到入口.
-                这里是那个入口 —— 跨设备面板上写的「用「切换协作设备」指定在哪台机器上工作」
-                说的就是它. */}
-            {props.onSwitchDevice ? (
-              <div className="easy-tool-subgroup">
-                <div className="easy-tool-subgroup__header">
-                  <span>协作设备</span>
-                  {props.currentDeviceId && (
-                    <span className="ml-auto truncate" style={{ color: 'var(--accent-primary)' }}>
-                      {formatName(props.currentDeviceId)}
-                    </span>
-                  )}
-                </div>
-                {devicesLoading ? (
-                  <div className="easy-tool-subgroup__empty">正在读取设备…</div>
-                ) : devices.length === 0 ? (
-                  <div className="easy-tool-subgroup__empty">
-                    暂无协作设备。在目标机器上运行 aimux reverse connect 后自动出现。
-                  </div>
-                ) : (
-                  <div className="flex flex-col">
-                    {devices.map(device => {
-                      const isCurrent = props.currentDeviceId === device.name
-                      const busy = switchingTo === device.name
-                      return (
-                        <button
-                          key={device.name}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={isCurrent}
-                          disabled={!!switchingTo || !props.hasSession}
-                          onClick={() => { if (!isCurrent) void pickDevice(device.name) }}
-                          className={`aimux-mode-menu__item ${isCurrent ? 'aimux-mode-menu__item--active' : ''}`}
-                          style={busy ? { opacity: .6 } : undefined}
-                        >
-                          <span className="aimux-mode-menu__icon">
-                            <Laptop className="w-3.5 h-3.5" strokeWidth={1.75} />
-                          </span>
-                          <span className="aimux-mode-menu__text">
-                            <span className="aimux-mode-menu__label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
-                              {formatName(device.name)}
-                            </span>
-                            <span className="aimux-mode-menu__desc" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
-                              {deviceConnText(device.status)} · {platformLabel(device.platform)}
-                            </span>
-                          </span>
-                          {busy && <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
-                          {isCurrent && !busy && <Check className="aimux-mode-menu__check w-3.5 h-3.5" strokeWidth={2} />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-                {!props.hasSession && (
-                  <div className="easy-tool-subgroup__empty">需要先打开一个会话</div>
-                )}
-                {deviceError && (
-                  <div className="px-2 py-1.5 text-[length:var(--fs-xs)]" style={{ color: '#ef4444' }}>{deviceError}</div>
-                )}
-              </div>
             ) : null}
             {/* 7.4 JSONL 时间与序号显示切换 (toggle) */}
             {props.onToggleJsonlMeta ? (

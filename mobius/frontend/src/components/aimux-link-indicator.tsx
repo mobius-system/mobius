@@ -115,15 +115,6 @@ function sessionAimuxId(session: unknown): string {
   return meta?.aimux_id || ''
 }
 
-/**
- * 会话当前绑定的协作设备 id, 不看 add_remote_aimux_mcp 旗标.
- * 顶栏那个设备图标要旗标 (remoteAimuxMcpId), 但「会话工具 → 协作设备」列表
- * 得把已绑定的设备标出来 —— 哪怕旗标还没置上, 也已经绑了.
- */
-export function boundAimuxDeviceId(session: unknown): string {
-  return sessionAimuxId(session).trim()
-}
-
 function remoteAimuxMcpId(session: unknown): string {
   const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
   if (meta?.add_remote_aimux_mcp !== true) return ''

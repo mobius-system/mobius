@@ -19,7 +19,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, boundAimuxDeviceId } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -3740,10 +3740,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     // ③ 终止当前 agent (await 确认终止完成)
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
-    // 首次绑定 (oldId 为空) 与换设备 (有 oldId) 的说法不同 —— "从空变成 X" 读着别扭.
-    const content = oldId
-      ? `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
-      : `【用户把mcp连接的设备设定为${newId}，这意味着用户命令你在新设备上完成所有操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
+    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
@@ -4436,8 +4433,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                   onOpenInputReplay={() => setInputReplayOpen(true)}
                   onOpenTerminal={() => setTerminalChoiceOpen(true)}
                   onOpenCooperablePc={() => setCooperablePcOpen(true)}
-                  onSwitchDevice={(deviceId: string) => handleSwitchAimuxDevice(deviceId, boundAimuxDeviceId(currentSession ?? currentTask))}
-                  currentDeviceId={boundAimuxDeviceId(currentSession ?? currentTask)}
                   onOpenKnowledge={() => setKnowledgeEditorOpen(true)}
                   onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
                   showJsonlMeta={showJsonlMeta}

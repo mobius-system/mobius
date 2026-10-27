@@ -106,7 +106,7 @@ assert.match(
 assert.doesNotMatch(
   panelSource,
   /aimux-device/,
-  '重命名不得改动会话的设备绑定 (那是切换协作设备的事)',
+  '重命名不得改动会话的设备绑定',
 )
 
 // ===== 5. 两类设备分组, 规则不同 =====
@@ -277,6 +277,17 @@ assert.match(
   cssSource,
   /easy-devices-group__note/,
   '分组说明要有样式',
+)
+// 用途说明只能指向真实存在的入口. 会话工具里的「协作设备」已撤掉, 面板不能再引它.
+assert.doesNotMatch(
+  panelSource,
+  /切换协作设备/,
+  '面板不能指向已经撤掉的「切换协作设备」入口',
+)
+assert.match(
+  panelSource,
+  /新建会话时在「设备」里指定/,
+  '用途说明要指向真实存在的入口 (新建会话时的设备下拉)',
 )
 
 console.log('跨设备面板契约测试通过')

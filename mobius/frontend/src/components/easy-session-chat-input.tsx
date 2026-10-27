@@ -122,10 +122,6 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   onOpenTerminal?: () => void
   /** 工具菜单: 可合作计算机回调 */
   onOpenCooperablePc?: () => void
-  /** 工具菜单: 切换协作设备 (会话在哪台机器上工作) */
-  onSwitchDevice?: (deviceId: string) => Promise<void>
-  /** 工具菜单: 当前会话已绑定的协作设备 */
-  currentDeviceId?: string | null
   /** 工具菜单: 知识回调 */
   onOpenKnowledge?: () => void
   /** 工具菜单: 切换 JSONL 时间与序号 */
@@ -421,8 +417,6 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               onOpenInputReplay={follow.onOpenInputReplay}
               onOpenTerminal={follow.onOpenTerminal}
               onOpenCooperablePc={follow.onOpenCooperablePc}
-              onSwitchDevice={follow.onSwitchDevice}
-              currentDeviceId={follow.currentDeviceId}
               onOpenKnowledge={follow.onOpenKnowledge}
               onToggleJsonlMeta={follow.onToggleJsonlMeta}
               showJsonlMeta={follow.showJsonlMeta}
