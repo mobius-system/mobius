@@ -81,7 +81,52 @@ assert.match(
   '首次切换的锚点必须保留 (可撤回)',
 )
 
-// ===== 3. 接线: 菜单 → 会话输入框 → 会话页 =====
+// ===== 3. 显示: 不能把原始枚举值直接打进菜单 =====
+// broker 报的是 connected/disconnected/darwin, 整屏中文的菜单里混进这些原始值很突兀.
+assert.match(
+  menuSource,
+  /function deviceConnText/,
+  '连接状态要有中文映射',
+)
+assert.match(
+  menuSource,
+  /function platformLabel/,
+  '平台要有中文映射',
+)
+assert.match(
+  menuSource,
+  /'connected'\) return '已连接'/,
+  'connected 要显示成「已连接」',
+)
+assert.match(
+  menuSource,
+  /'darwin'\) return 'macOS'/,
+  'darwin 要显示成「macOS」',
+)
+// 设备名用 per-user 别名 (跟顶栏设备菜单、跨设备面板同一个名字)
+assert.match(
+  menuSource,
+  /useRemoteDeviceNames\(\)/,
+  '菜单必须用 per-user 别名服务',
+)
+assert.match(
+  menuSource,
+  /formatName\(device\.name\)/,
+  '设备名要用别名显示',
+)
+// 设备行沿用顶栏设备菜单那套排版, 图标才跟菜单项对齐
+assert.match(
+  menuSource,
+  /aimux-mode-menu__item/,
+  '设备行要沿用既有的设备菜单排版',
+)
+assert.match(
+  menuSource,
+  /easy-tool-subgroup__header/,
+  '分组标题要有独立的类名',
+)
+
+// ===== 4. 接线: 菜单 → 会话输入框 → 会话页 =====
 assert.match(
   inputSource,
   /onSwitchDevice=\{follow\.onSwitchDevice\}/,

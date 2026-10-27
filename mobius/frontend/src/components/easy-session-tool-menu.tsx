@@ -7,8 +7,9 @@
 // =====================================================================
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { BookMarked, Database, Eye, FileDiff, GitBranch, Library, Laptop, Loader2, MonitorCheck, Puzzle, RotateCcw, Server, SquareTerminal, Wrench } from 'lucide-react'
+import { BookMarked, Check, Database, Eye, FileDiff, GitBranch, Library, Laptop, Loader2, MonitorCheck, Puzzle, RotateCcw, Server, SquareTerminal, Wrench } from 'lucide-react'
 import { api } from '../store'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 
 export type EasySessionLite = {
   session_id: string
@@ -78,8 +79,28 @@ const PANEL_MAX_WIDTH = 320
 const PANEL_MIN_WIDTH = 260
 const VIEWPORT_MARGIN = 8
 
+/**
+ * 设备连接状态 → 中文. 之前直接把 broker 的枚举值 (connected/disconnected) 打进
+ * 菜单里, 跟整屏中文对不上.
+ */
+function deviceConnText(status?: string): string {
+  if (status === 'connected') return '已连接'
+  if (status === 'disconnected') return '已断开'
+  return '状态未知'
+}
+
+/** 平台 → 中文系统名 (darwin/win32/linux 是 aimux 报的原始值). */
+function platformLabel(platform?: string): string {
+  if (platform === 'darwin') return 'macOS'
+  if (platform === 'win32') return 'Windows'
+  if (platform === 'linux') return 'Linux'
+  return platform || '未知平台'
+}
+
 export function EasySessionToolMenu(props: EasyToolMenuProps) {
   const { isDark } = props
+  // 设备用 per-user 别名显示 (跨设备面板里改的名字, 这儿也要看得到同一个名字).
+  const { formatName } = useRemoteDeviceNames()
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
@@ -273,22 +294,23 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
                 这里是那个入口 —— 跨设备面板上写的「用「切换协作设备」指定在哪台机器上工作」
                 说的就是它. */}
             {props.onSwitchDevice ? (
-              <div className="px-1.5 py-1">
-                <div className="flex items-center gap-1.5 px-1 py-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                  <Laptop className="h-3.5 w-3.5" strokeWidth={2} />
+              <div className="easy-tool-subgroup">
+                <div className="easy-tool-subgroup__header">
                   <span>协作设备</span>
                   {props.currentDeviceId && (
-                    <span className="ml-auto truncate" style={{ color: 'var(--text-muted)' }}>{props.currentDeviceId}</span>
+                    <span className="ml-auto truncate" style={{ color: 'var(--accent-primary)' }}>
+                      {formatName(props.currentDeviceId)}
+                    </span>
                   )}
                 </div>
                 {devicesLoading ? (
-                  <div className="px-1 py-1.5 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>正在读取设备…</div>
+                  <div className="easy-tool-subgroup__empty">正在读取设备…</div>
                 ) : devices.length === 0 ? (
-                  <div className="px-1 py-1.5 text-[length:var(--fs-xs)] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  <div className="easy-tool-subgroup__empty">
                     暂无协作设备。在目标机器上运行 aimux reverse connect 后自动出现。
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-0.5">
+                  <div className="flex flex-col">
                     {devices.map(device => {
                       const isCurrent = props.currentDeviceId === device.name
                       const busy = switchingTo === device.name
@@ -300,27 +322,32 @@ export function EasySessionToolMenu(props: EasyToolMenuProps) {
                           aria-checked={isCurrent}
                           disabled={!!switchingTo || !props.hasSession}
                           onClick={() => { if (!isCurrent) void pickDevice(device.name) }}
-                          className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                          className={`aimux-mode-menu__item ${isCurrent ? 'aimux-mode-menu__item--active' : ''}`}
+                          style={busy ? { opacity: .6 } : undefined}
                         >
-                          <Laptop className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[length:var(--fs-md)]" style={{ color: 'var(--text-primary)' }}>{device.name}</span>
-                            <span className="block truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-                              {device.status === 'connected' ? '已连接' : (device.status || '断开')} · {device.platform || '未知平台'}
+                          <span className="aimux-mode-menu__icon">
+                            <Laptop className="w-3.5 h-3.5" strokeWidth={1.75} />
+                          </span>
+                          <span className="aimux-mode-menu__text">
+                            <span className="aimux-mode-menu__label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                              {formatName(device.name)}
+                            </span>
+                            <span className="aimux-mode-menu__desc" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                              {deviceConnText(device.status)} · {platformLabel(device.platform)}
                             </span>
                           </span>
-                          {busy && <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
-                          {isCurrent && !busy && <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: 'var(--accent-primary)' }}>当前</span>}
+                          {busy && <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} />}
+                          {isCurrent && !busy && <Check className="aimux-mode-menu__check w-3.5 h-3.5" strokeWidth={2} />}
                         </button>
                       )
                     })}
                   </div>
                 )}
                 {!props.hasSession && (
-                  <div className="px-1 pb-1 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>需要先打开一个会话</div>
+                  <div className="easy-tool-subgroup__empty">需要先打开一个会话</div>
                 )}
                 {deviceError && (
-                  <div className="px-1 py-1.5 text-[length:var(--fs-xs)]" style={{ color: '#ef4444' }}>{deviceError}</div>
+                  <div className="px-2 py-1.5 text-[length:var(--fs-xs)]" style={{ color: '#ef4444' }}>{deviceError}</div>
                 )}
               </div>
             ) : null}

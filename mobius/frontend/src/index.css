@@ -7735,6 +7735,33 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   outline-offset: 2px;
 }
 
+/* ===== 会话工具里的子分组 (issue 2026-10-27) =====
+ * 协作设备这类"下面挂一串子项"的分组, 不能跟普通菜单项挤在同一套排版里 ——
+ * 标题要是小号灰字, 下面又出现一个更大的设备名, 层级是反的, 看着像标题被禁用.
+ * 这里给子分组一套自己的排版: 标题小而亮, 分割线收边, 子项沿用顶栏设备菜单那套
+ * (aimux-mode-menu__item), 图标与菜单项对齐. */
+[data-testid="easy-session-tool-menu"] .easy-tool-subgroup {
+  margin: 4px 2px 6px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 6px;
+}
+[data-testid="easy-session-tool-menu"] .easy-tool-subgroup__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+[data-testid="easy-session-tool-menu"] .easy-tool-subgroup__header svg { color: var(--text-muted); }
+[data-testid="easy-session-tool-menu"] .easy-tool-subgroup__empty {
+  padding: 4px 8px 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
 /* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
  * 统一弹窗进出动画: popover 贴边弹层 fade+上滑, modal 遮罩层 fade + 内容 scale.
  * 时长 160ms ease-out (impeccable 产品动效 150-250ms). */
