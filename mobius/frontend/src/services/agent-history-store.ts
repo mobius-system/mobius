@@ -78,8 +78,10 @@ const CACHE_STORE = 'sessions'
 // LRU 上限: 最多缓存 24 个会话; 单会话条目字节预算 8MB (超预算时从最旧的已加载组开始丢弃, 元数据永留).
 const MAX_CACHED_SESSIONS = 24
 const MAX_SESSION_CACHE_BYTES = 8 * 1024 * 1024
+const HISTORY_CACHE_PROJECTION_VERSION = 2
 
 interface CacheRecord {
+  projectionVersion?: number
   sid: string
   sessionVersion: number
   updatedAt: number
@@ -373,7 +375,7 @@ export class SessionHistoryStore {
       this.groups = [...record.groups].sort((a, b) => a.seq - b.seq)
       this.sessionVersion = Number(record.sessionVersion) || 0
       this.jsonlPath = record.jsonlPath || null
-      for (const gd of record.groupsData || []) {
+      for (const gd of record.projectionVersion === HISTORY_CACHE_PROJECTION_VERSION ? record.groupsData || [] : []) {
         if (!Array.isArray(gd.entries) || gd.entries.length === 0) continue
         this.entriesByGroup.set(String(gd.gid), gd.entries)
         this.groupVersions.set(String(gd.gid), Number(gd.version) || gd.entries.length)
@@ -652,6 +654,7 @@ export class SessionHistoryStore {
     }
     void cacheWrite({
       sid: this.sid,
+      projectionVersion: HISTORY_CACHE_PROJECTION_VERSION,
       sessionVersion: this.sessionVersion,
       updatedAt: Date.now(),
       jsonlPath: this.jsonlPath,

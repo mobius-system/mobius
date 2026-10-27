@@ -25,6 +25,7 @@ import { useProxyForSession, withSessionProxyState } from '../services/session-p
 // @ts-ignore — service 仍是 .js
 import * as agents from '../agents';
 import { agentJsonlPathOf } from '../services/agent-jsonl-path';import { computeSessionRuntimeStatus, syncAgentStatusIfChanged } from '../utils/session-runtime-status';
+import { projectHistoryEntryImages } from '../services/history-image-payload';
 // @ts-ignore — repository 仍是 .js
 import { Projects } from '../repositories/projects';
 // @ts-ignore — repository 仍是 .js (通过 skills-fs / memories-fs 兼容层)
@@ -913,7 +914,13 @@ router.get('/:id/events', authOrQuery, async (req: express.Request, res: express
       } else {
         // 事件源 1 — store 广播: 开组/新条目落库即发, 原样转发.
         const unsubStore = subscribeSessionEvents(sessionId, (ev) => {
-          writeSse(res, ev.type, { event: ev.type, session_id: sessionId, ...ev.payload })
+          const payload = { ...ev.payload };
+          if (ev.type === 'entries' && Array.isArray(payload.entries)) {
+            payload.entries = payload.entries.map((entry: any) => projectHistoryEntryImages(sessionId, entry));
+          } else if (ev.type === 'pending_opener' && payload.entry) {
+            payload.entry = projectHistoryEntryImages(sessionId, payload.entry);
+          }
+          writeSse(res, ev.type, { event: ev.type, session_id: sessionId, ...payload })
             .catch(() => cleanup());
         });
         let syncTimer: ReturnType<typeof setTimeout> | null = null;

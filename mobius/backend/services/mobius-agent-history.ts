@@ -29,6 +29,7 @@ import {
 } from './task-state-reducer';
 import { DB_PATH } from '../config';
 import { MOBIUS_KIND, kindOpensRound } from './mobius-kinds';
+import { historyEntryImageAt, projectHistoryEntryImages } from './history-image-payload';
 // [legacy-migration] 懒迁移叶子模块 (冻结 .mobius.jsonl → 本库).
 // 全部会话迁移完成后: 删除该文件 + 本文件里 grep [legacy-migration] 的调用点.
 import { loadLegacyBackfill, type LegacyBackfill } from './mobius-agent-history-legacy';
@@ -57,12 +58,13 @@ function buildStatements(db: Database.Database) {
     insertRound: db.prepare(`INSERT INTO rounds (session_id, group_seq, round_opener_uuid, round_opener_ts, user_summary, entry_count, created_at)
                              VALUES (?, ?, ?, ?, ?, ?, ?)`),
     getRound: db.prepare('SELECT * FROM rounds WHERE session_id = ? AND group_seq = ?'),
+    getEntry: db.prepare('SELECT json FROM entries WHERE session_id = ? AND uuid = ? LIMIT 1'),
     updateRoundCount: db.prepare('UPDATE rounds SET entry_count = ? WHERE session_id = ? AND group_seq = ?'),
     listRounds: db.prepare('SELECT * FROM rounds WHERE session_id = ? ORDER BY group_seq ASC'),
     insertEntry: db.prepare(`INSERT OR IGNORE INTO entries (session_id, uuid, seq, group_seq, seq_in_group, round_opener, origin, ts, json)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     updateEntryGroup: db.prepare('UPDATE entries SET group_seq = ?, seq_in_group = ? WHERE session_id = ? AND uuid = ?'),
-    listGroupEntries: db.prepare('SELECT json, round_opener FROM entries WHERE session_id = ? AND group_seq = ? ORDER BY seq_in_group ASC'),
+    listGroupEntries: db.prepare('SELECT uuid, json, round_opener FROM entries WHERE session_id = ? AND group_seq = ? ORDER BY seq_in_group ASC'),
     lastEntry: db.prepare('SELECT json FROM entries WHERE session_id = ? ORDER BY seq DESC LIMIT 1'),
     deleteState: db.prepare('DELETE FROM ingest_state WHERE session_id = ?'),
     getSessionByPath: db.prepare('SELECT session_id FROM ingest_state WHERE primary_path = ? LIMIT 1'),
@@ -478,7 +480,7 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
             opener_ts: row.ts != null ? new Date(row.ts).toISOString() : null,
             user_summary: summary, version: 1, entry_count: 1,
           });
-          pushSinkRow(sink, gseq, row.entry);
+          pushSinkRow(sink, gseq, row.entry, uuid);
         }
         count = 1;
         continue;
@@ -490,7 +492,7 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
       nextSeq++;
       if (res.changes === 1) {
         count++; version++;
-        pushSinkRow(sink, gseq, row.entry);
+        pushSinkRow(sink, gseq, row.entry, uuid);
       }
     }
 
@@ -503,10 +505,10 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
   tx();
 }
 
-function pushSinkRow(sink: CommitSink, gseq: number, entry: any): void {
+function pushSinkRow(sink: CommitSink, gseq: number, entry: any, entryUuid?: string): void {
   let arr = sink.rowsByGroup.get(gseq);
   if (!arr) { arr = []; sink.rowsByGroup.set(gseq, arr); }
-  arr.push(entry);
+  arr.push(entryUuid && !entry?.uuid ? { ...entry, uuid: entryUuid } : entry);
 }
 
 function flushSink(sessionId: string, sink: CommitSink): void {
@@ -634,7 +636,10 @@ function flushPendingOpenersToSink(sessionId: string, sink: CommitSink): number 
     opener_ts: last.ts != null ? new Date(last.ts).toISOString() : null,
     user_summary: summary, version: resolved.length, entry_count: resolved.length,
   });
-  sink.rowsByGroup.set(gseq, resolved.map((r) => safeParseJson(r.json)).filter(Boolean));
+  sink.rowsByGroup.set(gseq, resolved.map((r) => {
+    const entry = safeParseJson(r.json);
+    return entry && !entry.uuid ? { ...entry, uuid: r.uuid } : entry;
+  }).filter(Boolean));
   return gseq;
 }
 
@@ -985,26 +990,31 @@ function essentialDictForRound(sessionId: string, round: any): { opener: any | n
   const st = S();
   const rows = st.listGroupEntries.all(sessionId, round.group_seq) as any[];
   let opener: any | null = null;
+  let openerUuid = '';
   if (round.round_opener_uuid) {
-    const openerRow = rows.find((row) => {
-      const entry = safeParseJson(row.json);
-      return entry?.uuid === round.round_opener_uuid;
-    });
+    const openerRow = rows.find((row) => row.uuid === round.round_opener_uuid);
     opener = openerRow ? safeParseJson(openerRow.json) : null;
+    openerUuid = openerRow?.uuid || '';
   }
   if (!opener) {
     const openerRow = rows.find((row) => Number(row.round_opener) === 1);
     opener = openerRow ? safeParseJson(openerRow.json) : null;
+    openerUuid = openerRow?.uuid || '';
   }
   let final: any | null = null;
+  let finalUuid = '';
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     const entry = safeParseJson(rows[index].json);
     if (isEssentialFinalEntry(entry)) {
       final = entry;
+      finalUuid = rows[index].uuid;
       break;
     }
   }
-  return { opener, final };
+  return {
+    opener: projectHistoryEntryImages(sessionId, opener, openerUuid),
+    final: projectHistoryEntryImages(sessionId, final, finalUuid),
+  };
 }
 
 function getGroups(sessionId: string, withEssential = false): { session_version: number; groups: GroupMeta[] } {
@@ -1029,8 +1039,7 @@ function getGroups(sessionId: string, withEssential = false): { session_version:
 }
 
 /*
- * One group's full entry list for protocol ② (expanding a round). Entries are shipped verbatim:
- * the viewer tells a round opener from the card's own mobius.kind, so nothing is tagged here.
+ * Return one group's entry list for protocol ②, replacing image payloads with resource URLs.
  */
 function getGroupEntries(sessionId: string, groupSeq: number): { group_id: string; version: number; entries: any[] } | null {
   const st = S();
@@ -1042,8 +1051,14 @@ function getGroupEntries(sessionId: string, groupSeq: number): { group_id: strin
   return {
     group_id: String(groupSeq),
     version: round.entry_count || rows.length,
-    entries: rows.map((r) => safeParseJson(r.json)).filter(Boolean),
+    entries: rows.map((r) => projectHistoryEntryImages(sessionId, safeParseJson(r.json), r.uuid)).filter(Boolean),
   };
+}
+
+function getEntryImage(sessionId: string, entryUuid: string, imageIndex: number): { mime: string; base64: string } | null {
+  const row = S().getEntry.get(sessionId, entryUuid) as { json?: string } | undefined;
+  if (!row?.json) return null;
+  return historyEntryImageAt(safeParseJson(row.json), imageIndex);
 }
 
 /** 旧 getHistory 语义的库版: 全部条目按到达序. assistant 快照 / 标题扫描仍在用. */
@@ -1107,6 +1122,7 @@ export {
   syncSession,
   getGroups,
   getGroupEntries,
+  getEntryImage,
   getPendingOpeners,
   getHistorySnapshot,
   writeMobiusCoreEntry,

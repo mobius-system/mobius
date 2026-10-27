@@ -1,6 +1,7 @@
 import { createContext, useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../store'
 import { buildVscodeUrl } from './project-files'
+import { authenticatedImageUrl } from './viewer/image-url'
 
 // =====================================================================
 // VSCodeOpenContext — supplies projectId-aware "open this absolute path
@@ -148,6 +149,7 @@ function proxyMediaUrl(src: string): string {
 //   - 相对或站内路径 => 不动 (isLikelyFilesystemPath 避免劫持它们).
 export function resolveMediaSrc(src: string): string {
   if (!src) return src
+  if (/^\/access_base64_image(?:\?|$)/.test(src)) return authenticatedImageUrl(src)
   if (/^https?:\/\//i.test(src)) return proxyMediaUrl(src)
   if (src.startsWith('//')) return proxyMediaUrl('https:' + src)
   if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/api/')) return src

@@ -138,6 +138,7 @@ app.use('/api', multiagentCommunicationRoutes);
 app.use('/api/research-blackboard', blackboardRouter);
 app.use('/api/research-graph', graphRouter);
 app.use('/api/sessions', sessionsRoutes);
+app.use('/access_base64_image', require('./backend/routes/access-base64-image').router);
 app.use('/api/session-jobs', require('./backend/routes/session-jobs').router);
 app.use('/api/internal/session-reminders', require('./backend/routes/session-reminders').router);
 app.use('/api/search', searchRoutes);

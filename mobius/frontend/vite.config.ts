@@ -70,6 +70,7 @@ export default defineConfig({
     hmr: Object.keys(hmr).length ? hmr : undefined,
     proxy: {
       '/api': apiTarget,
+      '/access_base64_image': apiTarget,
       // v2 后端没挂 code-server 反代时这条 proxy 是 noop (后端 404), 留着等以后开通
       '/code-server': { target: apiTarget, ws: true, changeOrigin: false },
       // 拓展系统: /extension/<name>/* 与 /extension/_sdk/ext.js 由后端 staticRouter 提供.

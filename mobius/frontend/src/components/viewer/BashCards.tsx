@@ -13,6 +13,7 @@ import { CodePreviewRows, ResultTextPreview, CompactPlainTextFallback, WRITE_PRE
 import { JsonlCopyButton } from './JsonlCopyButton'
 import type { BashToolResult } from './types'
 import type { BashCall } from '../jsonl-bash-helpers'
+import { authenticatedImageUrl } from './image-url'
 
 const CompactMarkdown = lazy(() => import('../jsonl-compact-markdown'))
 
@@ -186,9 +187,9 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
       {result.imageUrls && result.imageUrls.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-2.5 py-2">
           {result.imageUrls.map((url, i) => (
-            <a key={i} href={url} target="_blank" rel="noreferrer" className="block">
+            <a key={i} href={authenticatedImageUrl(url)} target="_blank" rel="noreferrer" className="block">
               <img
-                src={url}
+                src={authenticatedImageUrl(url)}
                 alt={`output image ${i + 1}`}
                 className="max-h-48 max-w-full rounded border border-[var(--border-color)] object-contain"
               />

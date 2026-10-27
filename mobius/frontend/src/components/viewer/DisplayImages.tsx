@@ -9,17 +9,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveMediaSrc } from '../jsonl-vscode-link'
 import { IMAGES_THEME } from './themes'
+import { authenticatedImageUrl } from './image-url'
 
 function displayImageSrc(src: string): { isUrl: boolean; finalSrc: string } {
   const isUrl = /^https?:\/\//i.test(src)
   // finalSrc 与 markdown 内嵌图片走同一条改写规则 (resolveMediaSrc), 保证
   // display_images 卡片和 ![](/home/...) 图片行为一致.
-  return { isUrl, finalSrc: resolveMediaSrc(src) }
+  return { isUrl, finalSrc: authenticatedImageUrl(resolveMediaSrc(src)) }
 }
 
 // 把图片源描述成 (标签, 显示文本). 对 base64 data url 只给短标签 (内嵌图片 · mime),
 // 不把十几万字符的 base64 拼进 UI (放大弹窗 header / 缩略图 caption 都会因此爆掉).
 export function describeImageSrc(src: string): { label: string; display: string } {
+  if (src.startsWith('/access_base64_image')) return { label: 'Mobius 图片', display: '按需读取' }
   if (src.startsWith('data:')) {
     const mime = (src.match(/^data:([^;,]+)/) || [])[1] || 'image'
     return { label: '内嵌图片', display: mime }

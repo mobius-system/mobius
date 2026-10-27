@@ -12,10 +12,12 @@
 import { useEffect, useState } from 'react'
 import { describeImageSrc, DisplayImagePreviewModal } from './DisplayImages'
 import { ResultTextPreview } from './text-preview'
+import { authenticatedImageUrl } from './image-url'
 
 function ImageOutputItem({ url, index, onOpen }: { url: string; index: number; onOpen: (url: string) => void }) {
   const [err, setErr] = useState(false)
   const { label, display } = describeImageSrc(url)
+  const src = authenticatedImageUrl(url)
   return (
     <figure className="m-0 flex w-56 max-w-full flex-col gap-1">
       {err ? (
@@ -25,12 +27,12 @@ function ImageOutputItem({ url, index, onOpen }: { url: string; index: number; o
       ) : (
         <button
           type="button"
-          onClick={() => onOpen(url)}
+          onClick={() => onOpen(src)}
           className="group block h-40 w-full cursor-zoom-in overflow-hidden rounded border border-[var(--border-color)] bg-[var(--prose-bg)] focus:outline-none focus:ring-2 focus:ring-teal-400/60"
           title="点击放大查看"
         >
           <img
-            src={url}
+            src={src}
             alt={`output image ${index + 1}`}
             loading="lazy"
             onError={() => setErr(true)}

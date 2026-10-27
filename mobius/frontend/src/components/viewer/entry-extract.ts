@@ -747,7 +747,8 @@ export function functionOutputImageUrls(output: any): string[] {
     if (btype !== 'input_image' && btype !== 'image' && btype !== 'image_url') continue
     const url = typeof block.image_url === 'string' ? block.image_url
       : typeof block.url === 'string' ? block.url
-      : typeof block.src === 'string' ? block.src : ''
+      : typeof block.src === 'string' ? block.src
+        : nativeImageBlockUrl(block) || ''
     if (url) out.push(url)
   }
   return out
@@ -785,7 +786,7 @@ export function functionOutputTextBody(output: any): string {
 // image_url 引用 (字符串直给或 OpenAI {url} 嵌套) → 合法图片 url, 否则空串.
 function imageRefUrl(ref: any): string {
   const url = typeof ref === 'string' ? ref : typeof ref?.url === 'string' ? ref.url : ''
-  return /^(?:data:image\/|https?:\/\/)/i.test(url) ? url : ''
+  return /^(?:data:image\/|https?:\/\/|\/access_base64_image(?:\?|$))/i.test(url) ? url : ''
 }
 
 // text 正文若是字符串化 JSON (对象或内容块数组) → 抽出其中全部图片 url. 覆盖:
@@ -824,6 +825,7 @@ function jsonValueImageUrls(value: any, depth: number): string[] {
 // 原生 image 块 (source.type === 'base64') → data url.
 function nativeImageBlockUrl(block: any): string | null {
   const source = block?.source
+  if (source?.type === 'url' && typeof source.url === 'string') return imageRefUrl(source.url) || null
   if (!source || source?.type !== 'base64') return null
   const data = typeof source?.data === 'string' ? source.data : ''
   if (!data) return null
