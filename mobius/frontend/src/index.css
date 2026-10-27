@@ -6576,12 +6576,20 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
-[data-page="easy-mode"] .easy-extension-grid,
-[data-page="easy-mode"] .easy-device-list {
+[data-page="easy-mode"] .easy-extension-grid {
   display: grid;
   max-width: 1050px;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
+  margin: 0 auto;
+}
+/* 设备列表用单列而不是卡片网格: 一行 = 一台设备, 右边对齐状态与操作,
+   像设置页那样一眼扫完; 卡片网格在只有一两台设备时右边全是空白. */
+[data-page="easy-mode"] .easy-device-list {
+  display: grid;
+  max-width: 1050px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin: 0 auto;
 }
 [data-page="easy-mode"] .easy-extension-card,
@@ -6629,9 +6637,137 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-device-row strong { overflow: hidden; color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 [data-page="easy-mode"] .easy-extension-card small,
 [data-page="easy-mode"] .easy-device-row small { overflow: hidden; margin-top: 4px; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
-[data-page="easy-mode"] .easy-device-row__status { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-device-row__status { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-sm); }
 [data-page="easy-mode"] .easy-device-row__status i { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--text-muted) 45%, transparent); }
 [data-page="easy-mode"] .easy-device-row__status.is-online i { background: #22c55e; }
+/* SSH 探测的第三种状态: 网络通但密钥没配好. 归到「离线」会让人以为机器挂了. */
+[data-page="easy-mode"] .easy-device-row__status.is-warn { color: #f59e0b; }
+[data-page="easy-mode"] .easy-device-row__status.is-warn i { background: #f59e0b; }
+/* 客户端与服务端版本不一致 —— 该提示会影响能否正常协作, 不能埋在日志里. */
+[data-page="easy-mode"] .easy-device-row__warn {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, #f59e0b 42%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #f59e0b;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+/* 行内操作: 默认隐形, 悬停/聚焦才出现 —— 平时保持行的干净, 键盘 Tab 依然可达. */
+[data-page="easy-mode"] .easy-device-row__actions { display: inline-flex; flex-shrink: 0; align-items: center; gap: 2px; }
+[data-page="easy-mode"] .easy-device-row__act {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--text-muted);
+  transition: background-color .15s ease, color .15s ease;
+}
+[data-page="easy-mode"] .easy-device-row__act:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--text-primary); }
+[data-page="easy-mode"] .easy-device-row__act:disabled { cursor: not-allowed; opacity: .4; }
+[data-page="easy-mode"] .easy-device-row__act--danger:hover:not(:disabled) { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+[data-page="easy-mode"] .easy-device-row__rename {
+  width: 100%;
+  border: 1px solid var(--accent-primary);
+  border-radius: 7px;
+  padding: 2px 7px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+}
+/* 面板顶部: 一句话说明「设备能干什么」+ 唯一的主动作. */
+[data-page="easy-mode"] .easy-devices-toolbar {
+  display: flex;
+  max-width: 1050px;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto 18px;
+}
+[data-page="easy-mode"] .easy-devices-toolbar__hint { flex: 1; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; }
+[data-page="easy-mode"] .easy-devices-add-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, transparent);
+  border-radius: 9px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  color: var(--accent-primary);
+  font-size: var(--fs-md);
+  transition: background-color .15s ease, border-color .15s ease;
+}
+[data-page="easy-mode"] .easy-devices-add-btn:hover { background: color-mix(in srgb, var(--accent-primary) 20%, transparent); }
+[data-page="easy-mode"] .easy-devices-add {
+  max-width: 1050px;
+  margin: 0 auto 20px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-radius: 12px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+}
+[data-page="easy-mode"] .easy-devices-add__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 12px; }
+[data-page="easy-mode"] .easy-devices-add__wide { grid-column: 1 / -1; }
+[data-page="easy-mode"] .easy-devices-add__grid label { display: block; min-width: 0; }
+[data-page="easy-mode"] .easy-devices-add__grid label span { display: block; margin-bottom: 4px; color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-add__grid label i { color: #ef4444; font-style: normal; }
+[data-page="easy-mode"] .easy-devices-add__grid input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+}
+[data-page="easy-mode"] .easy-devices-add__grid input:focus { border-color: var(--accent-primary); }
+[data-page="easy-mode"] .easy-devices-add__grid input:disabled { opacity: .5; }
+[data-page="easy-mode"] .easy-devices-add__actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+[data-page="easy-mode"] .easy-devices-add__submit {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, transparent);
+  border-radius: 9px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  color: var(--accent-primary);
+  font-size: var(--fs-md);
+  transition: background-color .15s ease;
+}
+[data-page="easy-mode"] .easy-devices-add__submit:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-primary) 22%, transparent); }
+[data-page="easy-mode"] .easy-devices-add__submit:disabled { cursor: not-allowed; opacity: .5; }
+[data-page="easy-mode"] .easy-devices-add__note { color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-error { margin-top: 10px; color: #ef4444; font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-error--page { max-width: 1050px; margin: 0 auto 12px; }
+[data-page="easy-mode"] .easy-devices-ok { margin-top: 10px; color: #22c55e; font-size: var(--fs-sm); }
+/* 两类设备分组: SSH 主机与协作设备的增删改规则不同, 混在一张列表里讲不清. */
+[data-page="easy-mode"] .easy-devices-groups { display: flex; max-width: 1050px; flex-direction: column; gap: 24px; margin: 0 auto; }
+[data-page="easy-mode"] .easy-devices-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+[data-page="easy-mode"] .easy-devices-group h2 span {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+[data-page="easy-mode"] .easy-devices-group__note { margin: 0 0 12px; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; }
 [data-page="easy-mode"] .easy-content-empty {
   display: flex;
   min-height: 220px;

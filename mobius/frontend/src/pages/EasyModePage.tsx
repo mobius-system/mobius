@@ -12,14 +12,12 @@ import {
   Code2,
   CircleDot,
   Cog,
-  Cpu,
   FileText,
   FolderKanban,
   Globe,
   GraduationCap,
   LayoutList,
   ListCollapse,
-  Loader2,
   MessageSquare,
   MonitorSmartphone,
   Network,
@@ -45,6 +43,7 @@ import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { useVoiceInput } from '../services/use-voice-input'
 import { EasySessionChatInput } from '../components/easy-session-chat-input'
 import { EasySessionProjectSelector } from '../components/easy-session-project-selector'
+import { EasyDevicesPanel } from '../components/easy-devices-panel'
 // 可合作计算机弹窗按需加载 (memories 模块连带 markdown 渲染栈, 欢迎页首屏不该背上)
 const RemoteComputeMemoryModal = lazyWithRetry(() => import('../components/memories').then(module => ({ default: module.RemoteComputeMemoryModal })))
 import {
@@ -274,9 +273,6 @@ export default function EasyModePage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionListMode, setSessionListMode] = useState<SessionListMode>(readListMode)
   const [contextTab, setContextTab] = useState<'skills' | 'memories'>('skills')
-  const [remotes, setRemotes] = useState<any[]>([])
-  const [remotesLoading, setRemotesLoading] = useState(false)
-  const [remotesError, setRemotesError] = useState('')
   const projectFilterButtonRef = useRef<HTMLButtonElement | null>(null)
   const welcomeFileInputRef = useRef<HTMLInputElement | null>(null)
   const messageSentRefreshTimerRef = useRef<number | null>(null)
@@ -462,26 +458,6 @@ export default function EasyModePage() {
     const timer = window.setTimeout(() => setCreateErrorToast(null), CREATE_SUCCESS_TOAST_MS)
     return () => window.clearTimeout(timer)
   }, [createErrorToast])
-
-  const loadRemotes = useCallback((signal?: AbortSignal) => {
-    setRemotesLoading(true)
-    setRemotesError('')
-    return api('/aimux_bridge/api/remotes', { signal })
-      .then((data: any) => setRemotes(Array.isArray(data?.remotes) ? data.remotes : []))
-      .catch((err: any) => {
-        if (err?.name === 'AbortError') return
-        setRemotes([])
-        setRemotesError(err?.message || '跨设备连接信息暂时不可用')
-      })
-      .finally(() => {
-        if (!signal?.aborted) setRemotesLoading(false)
-      })
-  }, [])
-
-  useEffect(() => {
-    if (activePanel !== 'devices') return
-    return pollRecursive((signal) => loadRemotes(signal), 10_000, 10_000)
-  }, [activePanel, loadRemotes])
 
   const handleSessionCreated = (session: RecentSession) => {
     setCreateSuccessToast({ name: session?.name || '新会话' })
@@ -1088,25 +1064,7 @@ export default function EasyModePage() {
             </section>
           </main>
         ) : activePanel === 'devices' ? (
-          <main className="easy-content" data-testid="easy-devices-panel">
-            <div className="easy-content-header"><Network className="h-5 w-5" /><div><h1>跨设备</h1><p>AIMUX 可协作设备与连接状态</p></div>{remotesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>{remotes.length}</span>}</div>
-            {remotesError ? <div className="easy-content-empty"><Cpu className="h-8 w-8" /><span>{remotesError}</span></div> : (
-              <div className="easy-device-list">
-                {remotes.length === 0 && !remotesLoading ? <div className="easy-content-empty"><MonitorSmartphone className="h-8 w-8" /><span>暂无已登记的协作设备</span></div> : remotes.map((remote: any, index) => {
-                  // 在线判定与 memories.tsx 的 canBrowseRemote 同口径:
-                  // SSH 探测通过的 reachable, 或经 aimux bridge 反连且已上线的 connected
-                  // (bridge 设备如 cozy_valley 只会是 connected, 之前漏判成离线).
-                  const st = String(remote.status || '')
-                  const connected = remote.reachable === true || remote.connected === true
-                    || remote.event_stream_connected === true
-                    || st === 'reachable' || st === 'connected'
-                  const name = remote.name || remote.identifier || remote.host || `设备 ${index + 1}`
-                  const detail = [remote.user && remote.hostname ? `${remote.user}@${remote.hostname}` : remote.hostname || remote.host, remote.port ? `:${remote.port}` : '', remote.rtt || remote.latency].filter(Boolean).join(' ')
-                  return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{name}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
-                })}
-              </div>
-            )}
-          </main>
+          <EasyDevicesPanel isDark={theme !== 'light'} />
         ) : activePanel === 'context' ? (
           <main className="easy-content easy-content--context" data-testid="easy-context-panel">
             <div className="easy-content-header"><BrainCircuit className="h-5 w-5" /><div><h1>记忆与技能</h1><p>管理新会话默认可用的个人上下文</p></div></div>

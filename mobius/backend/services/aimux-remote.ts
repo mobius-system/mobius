@@ -521,6 +521,65 @@ async function addRemote({ host, user, port, name, identity, timeout }: any = {}
   };
 }
 
+/**
+ * 移除一台由「莫比乌斯添加」的 SSH 主机.
+ *
+ * aimux 的 CLI 只有 remote ls/test/hardware/add, 没有 remove —— 增删不对称,
+ * 而 ~/.ssh/config 里的 Host 块是唯一事实来源, 所以这里直接改那个文件.
+ *
+ * 只删我们自己写进去的块 (块前带 "# Added by aimux at <ts>" 标记):
+ * 手写进 ~/.ssh/config 的主机 (公司跳板机、git 用的那台) 不是莫比乌斯建的,
+ * 删掉会破坏用户自己的 ssh 配置, 因此明确拒绝, 让用户手动改.
+ *
+ * 写之前先备份, 与 aimux remote add 的做法一致.
+ */
+function removeRemote(name: string): any {
+  const remoteName = cleanRemoteName(name);
+  const configPath = path.join(os.homedir(), '.ssh', 'config');
+  if (!fs.existsSync(configPath)) throw new Error('未找到 SSH 配置文件, 无法移除该主机');
+  const original = fs.readFileSync(configPath, 'utf8');
+  const lines = original.split('\n');
+
+  // 找 "Host <name>" 行. 只认独占一行的模式列表 (aimux 追加时就是这么写的);
+  // "Host a b" 这种共享块删掉会连带干掉 b, 一律不碰.
+  let hostIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*Host\s+(.+?)\s*$/i);
+    if (!m) continue;
+    const patterns = m[1].split(/\s+/).filter(Boolean);
+    if (patterns.length === 1 && patterns[0] === remoteName) { hostIdx = i; break; }
+  }
+  if (hostIdx < 0) throw new Error(`SSH 配置里没有主机 ${remoteName}`);
+
+  // 往上找最近的非空行 —— aimux 追加块时紧挨着写的是 "# Added by aimux at <ts>".
+  let markerIdx = -1;
+  for (let i = hostIdx - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    if (lines[i].trim().startsWith('# Added by aimux at ')) markerIdx = i;
+    break;
+  }
+  if (markerIdx < 0) {
+    throw new Error(`${remoteName} 不是通过莫比乌斯添加的, 请手动编辑 ~/.ssh/config 处理`);
+  }
+
+  // 块尾 = 下一个 Host 行 (或文件末尾). 中间的缩进选项行一并删掉.
+  let endIdx = hostIdx + 1;
+  while (endIdx < lines.length && !/^\s*Host\s+/i.test(lines[endIdx])) endIdx++;
+
+  // 块前 aimux 还会写一个空行, 一起删掉, 免得留下连续空行.
+  let startIdx = markerIdx;
+  if (startIdx > 0 && !lines[startIdx - 1].trim()) startIdx--;
+
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const backupPath = `${configPath}.aimux.bak.${ts}`;
+  fs.copyFileSync(configPath, backupPath);
+
+  const kept = lines.slice(0, startIdx).concat(lines.slice(endIdx));
+  fs.writeFileSync(configPath, kept.join('\n'), { encoding: 'utf8', mode: 0o600 });
+  try { fs.chmodSync(configPath, 0o600); } catch { /* 权限收紧失败不阻塞删除 */ }
+  return { ok: true, name: remoteName, backup: backupPath };
+}
+
 export {
   listRemotes,
   streamRemotes,
@@ -531,4 +590,5 @@ export {
   readRemoteFile,
   writeRemoteFile,
   addRemote,
+  removeRemote,
 };
