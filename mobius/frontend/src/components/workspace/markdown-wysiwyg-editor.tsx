@@ -4,6 +4,10 @@ import StarterKit from '@tiptap/starter-kit'
 import { Link } from '@tiptap/extension-link'
 import { TaskList } from '@tiptap/extension-task-list'
 import { TaskItem } from '@tiptap/extension-task-item'
+import { Table } from '@tiptap/extension-table'
+import { TableRow } from '@tiptap/extension-table-row'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { TableCell } from '@tiptap/extension-table-cell'
 import { Markdown } from 'tiptap-markdown'
 import type { CSSProperties } from 'react'
 import type { CodeSkinKey } from './code-mirror-editor'
@@ -27,6 +31,8 @@ const WYSIWYG_VARS: Record<CodeSkinKey, CSSProperties> = {
     '--code-text': '#c9c9c9',
     '--code-border': '#1f222a',
     '--border-color': '#1f222a',
+    '--prose-border': '#2b303a',
+    '--prose-bg': '#0f1116',
   } as CSSProperties,
   light: {
     background: '#ffffff',
@@ -41,6 +47,8 @@ const WYSIWYG_VARS: Record<CodeSkinKey, CSSProperties> = {
     '--code-text': '#2c2c2c',
     '--code-border': '#e6e6e6',
     '--border-color': '#e6e6e6',
+    '--prose-border': '#e5e5e5',
+    '--prose-bg': '#f7f7f7',
   } as CSSProperties,
 }
 
@@ -68,6 +76,12 @@ export function MarkdownWysiwygEditor({ value, skin, onChange }: Props) {
       }),
       TaskList,
       TaskItem.configure({ nested: true }),   // GFM 任务列表
+      // GFM 表格: 缺这组扩展时 markdown 表格只会以原始竖线文本呈现
+      // GFM tables: without these extensions markdown tables render as raw pipe text
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Markdown.configure({
         html: true,                 // 保留粘贴富文本里的内联 HTML
         breaks: false,              // 单换行不转 <br> (markdown 惯例, 避免无意断行)
