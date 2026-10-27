@@ -36,9 +36,20 @@ function collectImages(
   foundBase64Field: { value: boolean },
 ): void {
   if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        collectImages(JSON.parse(trimmed), images, indexes, seen, foundBase64Field);
+        return;
+      } catch {}
+    }
     const image = imageFromDataUrl(value);
     if (image) {
       addImage(image, images, indexes);
+      return;
+    }
+    if (/^data:image\//i.test(trimmed)) {
+      foundBase64Field.value = true;
       return;
     }
     let match: RegExpExecArray | null;
@@ -47,10 +58,6 @@ function collectImages(
       foundBase64Field.value = true;
     }
     DATA_IMAGE_GLOBAL_PATTERN.lastIndex = 0;
-    const trimmed = value.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try { collectImages(JSON.parse(trimmed), images, indexes, seen, foundBase64Field); } catch {}
-    }
     return;
   }
   if (!value || typeof value !== 'object' || seen.has(value)) return;
@@ -98,11 +105,18 @@ function projectNode(
 ): any {
   if (typeof value === 'string') {
     if (path[path.length - 1] === 'base64') return UNUSED_BASE64_PLACEHOLDER;
+    const trimmed = value.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.stringify(projectNode(JSON.parse(trimmed), sessionId, entryUuid, indexes, path));
+      } catch {}
+    }
     const image = imageFromDataUrl(value);
     if (image) {
       const index = indexes.get(imageKey(image));
       return index === undefined ? UNUSED_BASE64_PLACEHOLDER : imageUrl(sessionId, entryUuid, index);
     }
+    if (/^data:image\//i.test(trimmed)) return UNUSED_BASE64_PLACEHOLDER;
     const projectedText = value.replace(DATA_IMAGE_GLOBAL_PATTERN, (_match, mime: string, base64: string) => {
       const index = indexes.get(imageKey({ mime, base64 }));
       return index === undefined ? UNUSED_BASE64_PLACEHOLDER : imageUrl(sessionId, entryUuid, index);
@@ -110,14 +124,6 @@ function projectNode(
     DATA_IMAGE_GLOBAL_PATTERN.lastIndex = 0;
     if (projectedText !== value) return projectedText;
     if (/data:image\//i.test(value)) return UNUSED_BASE64_PLACEHOLDER;
-    const trimmed = value.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        const projected = projectNode(parsed, sessionId, entryUuid, indexes, path);
-        return JSON.stringify(projected);
-      } catch {}
-    }
     return value;
   }
   if (Array.isArray(value)) {

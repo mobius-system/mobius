@@ -689,7 +689,7 @@ function stripExecOutputPreamble(text: string): string {
 
 export function functionOutputBody(output: any): string {
   if (typeof output === 'string') {
-    return stripExecOutputPreamble(output)
+    return stripExecOutputPreamble(functionOutputImageText(output))
   }
   if (output == null) return ''
   // codex 偶尔把 output 写成结构化数组 (例如 [{type:'input_image', image_url:'data:...', detail:'high'}]).
@@ -724,7 +724,7 @@ export function functionOutputBody(output: any): string {
       if (textField) { parts.push(textField); continue }
       try { parts.push(JSON.stringify(block)) } catch { /* ignore */ }
     }
-    const joined = parts.filter(Boolean).join('\n')
+    const joined = parts.map(functionOutputImageText).filter(Boolean).join('\n')
     // 仅当首个文本块就是 "Wall time: …" 头时才剥前缀, 避免误伤正文里恰好含 "Output:" 的输出.
     // Strip only when the first block is that header, so real output containing "Output:" survives.
     return /^\s*Wall time:/i.test(parts[0] || '') ? stripExecOutputPreamble(joined) : joined
@@ -739,40 +739,59 @@ export function functionOutputBody(output: any): string {
 
 // 从 codex function_call_output 数组里提取第一张图片的 data url, 用于卡片正文直接渲染.
 export function functionOutputImageUrls(output: any): string[] {
+  if (typeof output === 'string') return Array.from(new Set(jsonTextImageUrls(output)))
   const out: string[] = []
   if (!Array.isArray(output)) return out
   for (const block of output) {
+    if (typeof block === 'string') { out.push(...jsonTextImageUrls(block)); continue }
     if (!block || typeof block !== 'object') continue
     const btype = block.type
+    if (btype === 'input_text' || btype === 'text' || btype === 'output_text') {
+      const text = typeof block.text === 'string' ? block.text : block.output_text
+      if (typeof text === 'string') out.push(...jsonTextImageUrls(text))
+      continue
+    }
     if (btype !== 'input_image' && btype !== 'image' && btype !== 'image_url') continue
-    const url = typeof block.image_url === 'string' ? block.image_url
-      : typeof block.url === 'string' ? block.url
+    const url = imageRefUrl(block.image_url)
+      || (typeof block.url === 'string' ? block.url
       : typeof block.src === 'string' ? block.src
-        : nativeImageBlockUrl(block) || ''
+        : nativeImageBlockUrl(block) || '')
     if (url) out.push(url)
   }
-  return out
+  return Array.from(new Set(out))
+}
+
+function functionOutputImageText(text: string): string {
+  if (jsonTextImageUrls(text).length > 0) return ''
+  try {
+    const value = JSON.parse(text)
+    if (value?.image_url === '[base64 omitted]' || value?.image_url?.url === '[base64 omitted]') {
+      return '图片数据已截断或省略，无法预览。'
+    }
+  } catch {}
+  return text
 }
 
 // 从 codex function_call_output 数组里提取"非图片" block 的文本 (图片 block 已由
 // functionOutputImageUrls 单独抽出渲染成 <img>, 不再混进文本). 纯图片 output 返回空串,
 // 让图片面板只渲染图片; 含文字说明的 output 把文字附在图片下方.
 export function functionOutputTextBody(output: any): string {
-  if (typeof output === 'string') return output.trim()
+  if (typeof output === 'string') return functionOutputImageText(output).trim()
   if (!Array.isArray(output)) return ''
   const parts: string[] = []
   for (const block of output) {
     if (block == null) continue
-    if (typeof block === 'string') { parts.push(block); continue }
+    if (typeof block === 'string') { parts.push(functionOutputImageText(block)); continue }
     const btype = block.type
     if (btype === 'input_image' || btype === 'image' || btype === 'image_url') continue
-    if (btype === 'text' && typeof block.text === 'string') { parts.push(block.text); continue }
-    if (btype === 'output_text' && typeof block.output_text === 'string') { parts.push(block.output_text); continue }
+    if ((btype === 'text' || btype === 'input_text') && typeof block.text === 'string') { parts.push(functionOutputImageText(block.text)); continue }
+    if (btype === 'output_text' && typeof block.output_text === 'string') { parts.push(functionOutputImageText(block.output_text)); continue }
     const textField = typeof block.text === 'string' ? block.text
       : typeof block.output_text === 'string' ? block.output_text : ''
     if (textField) parts.push(textField)
   }
-  return parts.filter(Boolean).join('\n').trim()
+  const joined = parts.filter(Boolean).join('\n')
+  return (/^\s*Wall time:/i.test(parts[0] || '') ? stripExecOutputPreamble(joined) : joined).trim()
 }
 
 // ── Claude tool_result 内嵌图片 (MCP 图像返回) 解析 ──────────────────────

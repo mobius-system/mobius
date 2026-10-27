@@ -28,6 +28,22 @@ const entry = {
 }
 assert.deepEqual(extractors.claudeToolResultImageOutput(entry)?.imageUrls, [imageUrl])
 
+const codexOutput = [
+  { type: 'input_text', text: 'Wall time: 1.3492 seconds\nOutput:' },
+  { type: 'input_text', text: JSON.stringify({ detail: 'high', image_url: imageUrl }) },
+]
+assert.deepEqual(extractors.functionOutputImageUrls(codexOutput), [imageUrl])
+assert.equal(extractors.functionOutputTextBody(codexOutput), '')
+assert.equal(extractors.functionOutputBody(codexOutput), '')
+assert.deepEqual(extractors.functionOutputImageUrls(codexOutput[1].text), [imageUrl])
+assert.equal(extractors.functionOutputTextBody(codexOutput[1].text), '')
+assert.deepEqual(extractors.functionOutputImageUrls([{ type: 'input_image', image_url: { url: imageUrl } }]), [imageUrl])
+const omittedOutput = [{ type: 'input_text', text: JSON.stringify({ detail: 'high', image_url: '[base64 omitted]' }) }]
+assert.deepEqual(extractors.functionOutputImageUrls(omittedOutput), [])
+assert.equal(extractors.functionOutputTextBody(omittedOutput), '图片数据已截断或省略，无法预览。')
+assert.equal(extractors.functionOutputBody(omittedOutput), '图片数据已截断或省略，无法预览。')
+assert.equal(extractors.functionOutputTextBody([...codexOutput, { type: 'input_text', text: 'caption' }]), 'caption')
+
 globalThis.window = { location: { origin: 'https://mobius.test' }, localStorage: { getItem: () => 'jwt-token' } }
 assert.equal(imageUrlHelpers.authenticatedImageUrl(imageUrl), `${imageUrl}&token=jwt-token`)
 assert.equal(imageUrlHelpers.authenticatedImageUrl('/access_base64_image?token=old'), '/access_base64_image?token=jwt-token')

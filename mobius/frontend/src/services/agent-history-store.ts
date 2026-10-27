@@ -78,7 +78,7 @@ const CACHE_STORE = 'sessions'
 // LRU 上限: 最多缓存 24 个会话; 单会话条目字节预算 8MB (超预算时从最旧的已加载组开始丢弃, 元数据永留).
 const MAX_CACHED_SESSIONS = 24
 const MAX_SESSION_CACHE_BYTES = 8 * 1024 * 1024
-const HISTORY_CACHE_PROJECTION_VERSION = 2
+const HISTORY_CACHE_PROJECTION_VERSION = 3
 
 interface CacheRecord {
   projectionVersion?: number

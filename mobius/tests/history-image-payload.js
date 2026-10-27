@@ -40,6 +40,15 @@ assert.strictEqual(projectedWrappedEnvelope.message.content.includes(base64), fa
 const unusedOnly = projectHistoryEntryImages('image-session-test', { toolUseResult: { file: { base64 } } })
 assert.strictEqual(unusedOnly.toolUseResult.file.base64, '[base64 omitted]')
 
+const truncatedEntry = {
+  payload: { output: [{ type: 'input_text', text: JSON.stringify({ detail: 'high', image_url: `data:image/png;base64,${base64}…1499722 chars truncated…${base64}` }) }] },
+}
+const truncatedProjection = projectHistoryEntryImages('image-session-test', truncatedEntry, 'truncated')
+assert.deepStrictEqual(JSON.parse(truncatedProjection.payload.output[0].text), { detail: 'high', image_url: '[base64 omitted]' })
+assert.strictEqual(JSON.stringify(truncatedProjection).includes(base64), false)
+assert.strictEqual(historyEntryImageAt(truncatedEntry, 0), null)
+assert.strictEqual(projectHistoryEntryImages('image-session-test', truncatedProjection, 'truncated'), truncatedProjection)
+
 const uuidFallback = projectHistoryEntryImages('image-session-test', {
   message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } }] },
 }, 'sha1:stored-row')
