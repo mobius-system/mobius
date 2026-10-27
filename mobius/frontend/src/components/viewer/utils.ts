@@ -124,6 +124,40 @@ export function formatTs(raw: any): string | null {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+/*
+ * Relative/absolute timestamp like timeAgoPrecise (components/shell.tsx), but every
+ * clock time keeps seconds: 刚刚 / N分钟前 / 今天 HH:MM:SS / 昨天 HH:MM:SS /
+ * MM-DD HH:MM:SS / YYYY-MM-DD HH:MM:SS.
+ */
+export function formatTsAgoPrecise(raw: any): string | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return null
+  const now = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const hhmmss = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  // 同一天内先给相对时间, 超过一小时再落到带秒的时刻
+  // Relative wording within the same day, then a second-precise clock time past one hour
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  if (sameDay) {
+    const diffMs = now.getTime() - d.getTime()
+    if (diffMs < 60 * 1000) return '刚刚'
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 60) return `${diffMin}分钟前`
+    return `今天 ${hhmmss}`
+  }
+  // 昨天的判断按日历日回退一天, 不用 24 小时窗口
+  // Yesterday is a calendar-day step back, not a 24-hour window
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (d.getFullYear() === yesterday.getFullYear() && d.getMonth() === yesterday.getMonth() && d.getDate() === yesterday.getDate()) {
+    return `昨天 ${hhmmss}`
+  }
+  const mmdd = `${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  if (d.getFullYear() === now.getFullYear()) return `${mmdd} ${hhmmss}`
+  return `${d.getFullYear()}-${mmdd} ${hhmmss}`
+}
+
 // 沉默时长格式化: 0~59s → "Ns", 1~59m → "Xm Ys", 1h+ → "Xh Ym"
 export function formatDuration(sec: number): string {
   if (sec < 60) return `${sec}s`

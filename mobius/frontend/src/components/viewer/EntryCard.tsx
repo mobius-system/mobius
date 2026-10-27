@@ -38,7 +38,7 @@ import {
   INITIAL_THEME,
   IMAGES_THEME,
 } from './themes'
-import { formatTs } from './utils'
+import { formatTs, formatTsAgoPrecise } from './utils'
 import { consumeFreshEntry } from '../../services/agent-history-store'
 import {
   extractCodeEdit,
@@ -352,6 +352,9 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
   const easyHideType = easyOpener || easyFlat
   const easyMicroTitle = EASY_MICRO_TITLES[theme.label] || theme.label
   const ts = entry?.timestamp ? formatTs(entry.timestamp) : null
+  // 悬停时间用相对口径并精确到秒, 与头部"显示时间与序号"的紧凑格式分开
+  // Hover time uses the relative wording with seconds, separate from the compact header meta
+  const hoverTs = entry?.timestamp ? formatTsAgoPrecise(entry.timestamp) : null
   // 仅 summary 被截断时才提供"精简模式"入口; 没截断的卡片只有字段模式
   const canCompact = headerSummary.canCompact
   // 各专属视图的数据是否在手: plan 来自顶层 taskPlans 映射 (会被任务推进簇去重摘走), 其余来自本卡自身解析.
@@ -513,11 +516,11 @@ function JsonEntryCardInner({ entry, lineNo, forceOpen = false, searchHighlighte
         {/* 精简模式展开时正文已渲染完整摘要 (headerSummary.full), header 顶部 short 与之重复 → 隐藏;
             折叠态或 code/field/plan/image 等其它模式仍保留 short 作预览.
             任务工具卡用 effectiveHeaderSummary (累积快照的 "计划 · X/N · 标题"). */}
-        {/* 悬停摘要行时在预览文字前补出该条目时间, 平时不占位也不截短摘要 */}
-        {/* Hovering the preview line shows the entry time in front of it, taking no space when idle */}
+        {/* 悬停摘要行时用该条目时间替换摘要文字, 平时只显示摘要且时间不占位 */}
+        {/* Hovering the preview line swaps the summary text for the entry time; idle keeps only the summary */}
         <span className={`jsonl-entry-summary-preview ${easyOpener ? 'jsonl-entry-summary-preview--easy-opener' : ''} text-[var(--text-muted)] ${easyOpener ? 'flex-1' : 'truncate flex-1'}`}>
-          {ts && <span className="jsonl-entry-summary-meta hidden whitespace-nowrap font-normal text-[var(--text-muted)] group-hover/preview:inline">{ts}{'  '}</span>}
-          {!(open && mode === 'compact') && (easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short)}
+          {hoverTs && <span className="jsonl-entry-summary-meta hidden whitespace-nowrap font-normal text-[var(--text-muted)] group-hover/preview:inline">{hoverTs}</span>}
+          {!(open && mode === 'compact') && <span className={hoverTs ? 'group-hover/preview:hidden' : undefined}>{easyOpener ? effectiveHeaderSummary.full : effectiveHeaderSummary.short}</span>}
         </span>
       </summary>
       {hasHeaderAction && (
