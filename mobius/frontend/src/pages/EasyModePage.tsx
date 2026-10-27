@@ -1093,7 +1093,13 @@ export default function EasyModePage() {
             {remotesError ? <div className="easy-content-empty"><Cpu className="h-8 w-8" /><span>{remotesError}</span></div> : (
               <div className="easy-device-list">
                 {remotes.length === 0 && !remotesLoading ? <div className="easy-content-empty"><MonitorSmartphone className="h-8 w-8" /><span>暂无已登记的协作设备</span></div> : remotes.map((remote: any, index) => {
-                  const connected = remote.reachable === true || remote.connected === true || remote.status === 'reachable' || remote.event_stream_connected === true
+                  // 在线判定与 memories.tsx 的 canBrowseRemote 同口径:
+                  // SSH 探测通过的 reachable, 或经 aimux bridge 反连且已上线的 connected
+                  // (bridge 设备如 cozy_valley 只会是 connected, 之前漏判成离线).
+                  const st = String(remote.status || '')
+                  const connected = remote.reachable === true || remote.connected === true
+                    || remote.event_stream_connected === true
+                    || st === 'reachable' || st === 'connected'
                   const name = remote.name || remote.identifier || remote.host || `设备 ${index + 1}`
                   const detail = [remote.user && remote.hostname ? `${remote.user}@${remote.hostname}` : remote.hostname || remote.host, remote.port ? `:${remote.port}` : '', remote.rtt || remote.latency].filter(Boolean).join(' ')
                   return <div key={name} className="easy-device-row"><span className="easy-device-row__icon"><MonitorSmartphone className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong>{name}</strong><small>{detail || 'AIMUX remote'}</small></span><span className={`easy-device-row__status ${connected ? 'is-online' : ''}`}><i />{connected ? '在线' : '离线'}</span></div>
