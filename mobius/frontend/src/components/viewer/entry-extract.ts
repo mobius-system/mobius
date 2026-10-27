@@ -230,7 +230,11 @@ export function extractBashCalls(entry: AnyEntry): BashCall[] {
     if (!cmd) return []
     const args = functionCallArguments(payload) || {}
     const name = typeof payload?.name === 'string' ? payload.name : ''
-    if (name && name !== 'exec' && name !== 'exec_command' && name !== 'bash' && name !== 'shell') return []
+    // aimux MCP 远程命令与本地 exec 同等处理: codex 把它写成 namespace=mcp__aimux + name=remote_exec_command,
+    // 归一后与 Claude 的 mcp__aimux__remote_exec_command 同名, 后续即可按 call_id 把结果合并回同一张卡片.
+    // Codex namespaced MCP command calls follow the same path as local exec so their output merges into one card.
+    const isAimuxCommand = isAimuxCommandToolUseName(functionCallToolName(payload))
+    if (name && name !== 'exec' && name !== 'exec_command' && name !== 'bash' && name !== 'shell' && !isAimuxCommand) return []
 
     const cwd = stringField(args.workdir) || stringField(args.cwd) || stringField(args?.input?.workdir) || stringField(args?.input?.cwd) || stringField(entry?.cwd)
     let commandSource: BashCall['commandSource'] = 'command'
@@ -254,6 +258,12 @@ export function isBashToolUse(entry: AnyEntry): boolean {
 }
 
 export function isAimuxCommandToolUse(entry: AnyEntry): boolean {
+  // codex 的 MCP 调用把服务名放在 payload.namespace 上: 归一成 Claude 口径后, 同样是
+  // "协作执行" 卡片 (远程命令 + 合并后的返回), 与 Claude 后端的观感保持一致.
+  // Codex keeps the MCP server in payload.namespace; normalized, it renders as the same 协作执行 card.
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload)) {
+    return isAimuxCommandToolUseName(functionCallToolName(entry.payload)) && !!functionCallCommand(entry.payload)
+  }
   if (entry?.type !== 'assistant') return false
   const content = entry?.message?.content
   if (!Array.isArray(content)) return false
@@ -656,11 +666,30 @@ export function functionCallCommand(payload: any): string | null {
   return null
 }
 
+/*
+ * Codex keeps the MCP server in `namespace` while Claude folds it into the tool name
+ * (`mcp__aimux__remote_exec_command`). Normalize to Claude's form so the shared name
+ * predicates work for both backends.
+ */
+export function functionCallToolName(payload: any): string {
+  const name = stringField(payload?.name).trim()
+  if (!name) return ''
+  const namespace = stringField(payload?.namespace).trim()
+  return namespace ? `${namespace}__${name}` : name
+}
+
+// codex 的 exec 返回会在真正内容前垫一行 "Wall time: 3.3 seconds" + "Output:";
+// 丢掉这段前缀, 否则合并进命令卡片后 stdout 第一行是元信息而不是命令输出.
+// Codex prefixes exec output with a wall-time header; drop it so merged stdout starts at real content.
+function stripExecOutputPreamble(text: string): string {
+  const marker = 'Output:'
+  const idx = text.indexOf(marker)
+  return idx >= 0 ? text.slice(idx + marker.length).trimStart() : text
+}
+
 export function functionOutputBody(output: any): string {
   if (typeof output === 'string') {
-    const marker = 'Output:'
-    const idx = output.indexOf(marker)
-    return idx >= 0 ? output.slice(idx + marker.length).trimStart() : output
+    return stripExecOutputPreamble(output)
   }
   if (output == null) return ''
   // codex 偶尔把 output 写成结构化数组 (例如 [{type:'input_image', image_url:'data:...', detail:'high'}]).
@@ -695,7 +724,10 @@ export function functionOutputBody(output: any): string {
       if (textField) { parts.push(textField); continue }
       try { parts.push(JSON.stringify(block)) } catch { /* ignore */ }
     }
-    return parts.filter(Boolean).join('\n')
+    const joined = parts.filter(Boolean).join('\n')
+    // 仅当首个文本块就是 "Wall time: …" 头时才剥前缀, 避免误伤正文里恰好含 "Output:" 的输出.
+    // Strip only when the first block is that header, so real output containing "Output:" survives.
+    return /^\s*Wall time:/i.test(parts[0] || '') ? stripExecOutputPreamble(joined) : joined
   }
   if (typeof output === 'object') {
     if (typeof output.text === 'string') return output.text
