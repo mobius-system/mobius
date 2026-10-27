@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowUpRight,
+  BarChart3,
   Boxes,
   BrainCircuit,
   Cable,
@@ -9,10 +10,13 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Code2,
   CircleDot,
   Cog,
   Cpu,
+  FileText,
   FolderKanban,
+  Globe,
   GraduationCap,
   LayoutList,
   ListCollapse,
@@ -26,10 +30,12 @@ import {
   Puzzle,
   Radar,
   Search as SearchIcon,
+  Search,
   Sparkles,
   StickyNote,
   Trash2,
   Undo2,
+  Users,
   WandSparkles,
   Workflow,
   X,
@@ -117,8 +123,17 @@ const ALWAYS_EXPANDED_SESSION_GROUP_COUNT = 5
 const MESSAGE_SENT_REFRESH_DELAY_MS = 1000
 const CREATE_SUCCESS_TOAST_MS = 4000
 const EASY_LIST_MODE_KEY = 'mobius:easy-mode:session-list-mode'
-// 欢迎页示例任务建议 (点击填入输入框), 给新用户一个可点的起点 (issue 2026-10-26)
-const WELCOME_SUGGESTIONS = ['帮我搭建一个网页应用', '分析一份数据并生成报告', '给项目写一份周报']
+// 欢迎页能力胶囊 (issue 2026-10-26, 参考千问办公): 图标 + 场景名, 点击填入对应提示词.
+// 图标色取自品牌色系但压低饱和, 避免在 Codex 式中性底上跳色.
+type WelcomeSuggestion = { label: string; prompt: string; icon: typeof FileText; color: string }
+const WELCOME_SUGGESTIONS: WelcomeSuggestion[] = [
+  { label: '文档创作', prompt: '帮我写一份项目周报', icon: FileText, color: '#60a5fa' },
+  { label: '数据分析', prompt: '分析这份数据并生成报告', icon: BarChart3, color: '#34d399' },
+  { label: '网页应用', prompt: '帮我搭建一个网页应用', icon: Globe, color: '#a78bfa' },
+  { label: '多智能体协作', prompt: '组建一支多智能体团队协作完成这个任务', icon: Users, color: '#f472b6' },
+  { label: '深度调研', prompt: '做一次深度调研并输出调研报告', icon: Search, color: '#38bdf8' },
+  { label: '功能开发', prompt: '实现这个功能并补上测试', icon: Code2, color: '#fbbf24' },
+]
 // 工作区卡片图标色板 (项目/拓展首字母徽标用, 哈希取色)
 const WORKSPACE_AVATAR_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#06b6d4', '#a855f7', '#ef4444', '#ec4899', '#84cc16']
 function workspaceAvatarColor(key: string) {
@@ -1118,18 +1133,18 @@ export default function EasyModePage() {
         ) : showWelcome ? (
           <main className="easy-content easy-content--welcome" data-testid="easy-welcome-panel">
             <div className="easy-welcome-card">
-              {/* 品牌行: Logo + 产品名 + 定位标签 水平排列 (issue 2026-10-19 重设计) */}
-              <div className="easy-welcome-brand">
-                <MobiusLogo size={34} className="easy-welcome-brand__logo" />
-                <span className="easy-welcome-brand__name">Mobius</span>
-                <span className="easy-welcome-brand__divider" aria-hidden="true" />
-                <span className="easy-welcome-brand__tag">多智能体 · 自进化</span>
+              {/* 问候区 (issue 2026-10-26, 排版参考千问办公): 全部左对齐 ——
+                  品牌行 → 问候语 → 主标题, 自上而下三行, 输入框仍是页面第一动作. */}
+              <div className="easy-welcome-greet">
+                <div className="easy-welcome-brand">
+                  <MobiusLogo size={30} className="easy-welcome-brand__logo" />
+                  <span className="easy-welcome-brand__name">Mobius</span>
+                  <span className="easy-welcome-brand__divider" aria-hidden="true" />
+                  <span className="easy-welcome-brand__tag">多智能体 · 自进化</span>
+                </div>
+                <p className="easy-welcome-hello">{timeGreeting(user?.display_name)}</p>
+                <h1 className="easy-welcome-headline">有什么需要我搞定的？</h1>
               </div>
-              {/* 主标题: 直接说价值; 问候语降为副标题一行 */}
-              <h1 className="easy-welcome-headline">把任务交给一支智能体团队</h1>
-              <p className="easy-welcome-sub">
-                {timeGreeting(user?.display_name)}。描述你的目标，莫比乌斯负责拆解、编排与执行。
-              </p>
               <div id="easy-welcome-composer">
                 <input
                   ref={welcomeFileInputRef}
@@ -1141,23 +1156,8 @@ export default function EasyModePage() {
                     event.target.value = ''
                   }}
                 />
-                {/* 项目选择 pill (与会话页输入框上方同款): 选中写入 welcomeSelection.projectId, 换项目清空任务与排除集 */}
-                {!welcomeSelection.createProject && (
-                  <div className="mb-2">
-                    <EasySessionProjectSelector
-                      isDark={theme !== 'light'}
-                      selectedProjectId={welcomeSelection.projectId || undefined}
-                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
-                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
-                      onSelectProject={pid => {
-                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
-                      }}
-                      onCreateProject={() => setCreateKind('project')}
-                    />
-                  </div>
-                )}
-                {/* 流光描边容器 (方案 5): 亮弧沿边巡游, 聚焦增强 */}
-                <div className="easy-input-glow">
+                {/* 输入框卡片 (Codex 式: 中性深灰底 + 极淡边框 + 大圆角) */}
+                <div className="easy-welcome-composer__card">
                 <EasySessionChatInput
                   mode="create_session_mode"
                   input={welcomePrompt}
@@ -1201,15 +1201,53 @@ export default function EasyModePage() {
                   }
                 />
                 </div>
+                {/* 项目行 (千问办公: 输入框下方一行): 选中写入 welcomeSelection.projectId, 换项目清空任务与排除集 */}
+                {!welcomeSelection.createProject && (
+                  <div className="easy-welcome-project-row">
+                    <EasySessionProjectSelector
+                      isDark={theme !== 'light'}
+                      selectedProjectId={welcomeSelection.projectId || undefined}
+                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
+                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
+                      onSelectProject={pid => {
+                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
+                      }}
+                      onCreateProject={() => setCreateKind('project')}
+                    />
+                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务</span>
+                  </div>
+                )}
                 {/* 附件图片放大预览 (与会话内同一套弹层) */}
                 {welcomeImagePreview && (
                   <AttachmentImagePreviewModal preview={welcomeImagePreview} onClose={() => setWelcomeImagePreview(null)} />
                 )}
-                {/* 示例任务建议: 给新用户一个可点的起点 (issue 2026-10-26, impeccable P2) */}
-                <div className="easy-welcome-suggestions" aria-label="示例任务">
-                  {WELCOME_SUGGESTIONS.map(suggestion => (
-                    <button key={suggestion} type="button" onClick={() => setWelcomePrompt(suggestion)}>{suggestion}</button>
-                  ))}
+                {/* 能力胶囊 (千问办公式: 图标 + 场景, 点击填入输入框; issue 2026-10-26) */}
+                {!welcomeSelection.createProject && (
+                  <div className="easy-welcome-project-row">
+                    <EasySessionProjectSelector
+                      isDark={theme !== 'light'}
+                      selectedProjectId={welcomeSelection.projectId || undefined}
+                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
+                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
+                      onSelectProject={pid => {
+                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
+                      }}
+                      onCreateProject={() => setCreateKind('project')}
+                    />
+                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务</span>
+                  </div>
+                )}
+                {/* 能力胶囊 (千问办公式: 图标 + 场景, 点击填入输入框; issue 2026-10-26) */}
+                <div className="easy-welcome-suggestions" aria-label="常用场景">
+                  {WELCOME_SUGGESTIONS.map(suggestion => {
+                    const Icon = suggestion.icon
+                    return (
+                      <button key={suggestion.label} type="button" onClick={() => setWelcomePrompt(suggestion.prompt)}>
+                        <Icon className="easy-welcome-suggestions__icon" style={{ color: suggestion.color }} aria-hidden="true" />
+                        <span>{suggestion.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
               {/* 可合作计算机弹窗 (会话工具同款): 声明文本追加进任务描述, 随首次消息一起发送 */}

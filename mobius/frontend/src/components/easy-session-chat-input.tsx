@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, Zap } from 'lucide-react'
+import { ArrowUp, ChevronDown, Mic, Paperclip, Plus, RefreshCw, Search, SendHorizontal, Square, Upload, Zap } from 'lucide-react'
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
 import { EasySessionToolMenu, type EasySessionLite } from './easy-session-tool-menu'
@@ -532,7 +532,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               <Zap className="h-[18px] w-[18px]" strokeWidth={2} fill="currentColor" />
             </button>
           )}
-          {/* 欢迎页: 发送 = 「开始」胶囊按钮 (首要动作, 加大 + 文字, impeccable P0) */}
+          {/* 欢迎页: 发送 = 圆形 ↑ 按钮 (参考千问办公 / Codex 的发送键形态, issue 2026-10-26).
+              仍是首要动作 (impeccable P0): 强调色实心 + 禁用态灰, 位置固定在工具行最右. */}
           {!follow && (
             <button
               type="button"
@@ -541,15 +542,14 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               aria-label="开始新会话"
               title={sendTip}
               data-tour="session-chat-send"
-              className="easy-send-btn inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-4 transition-all active:scale-95"
+              className="easy-send-btn inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               style={{
                 background: sendBg,
                 color: sendFg,
                 cursor: disabled ? 'not-allowed' : 'pointer',
               }}
             >
-              <SendHorizontal className="h-4 w-4" strokeWidth={2.4} />
-              <span className="text-[length:var(--fs-md)] font-medium">开始</span>
+              <ArrowUp className="h-[17px] w-[17px]" strokeWidth={2.4} />
             </button>
           )}
           {/* 会话内: 发送/终止合并按钮 (保持 28px 圆钮, 运行态变红色 stop) */}
