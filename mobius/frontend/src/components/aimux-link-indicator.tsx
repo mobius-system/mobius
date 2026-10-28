@@ -115,6 +115,15 @@ function sessionAimuxId(session: unknown): string {
   return meta?.aimux_id || ''
 }
 
+/**
+ * 会话当前绑定的运行设备 id (空串 = 跑在中枢上).
+ * 不看 add_remote_aimux_mcp 旗标 —— 输入框里的「运行设备」pill 要如实显示绑了哪台,
+ * 哪怕旗标还没置上 (设备已绑, 只是 agent 还没拿到 remote_* 工具).
+ */
+export function boundAimuxDeviceId(session: unknown): string {
+  return sessionAimuxId(session).trim()
+}
+
 function remoteAimuxMcpId(session: unknown): string {
   const meta = parsePcMeta((session as { pc_client_metadata?: unknown })?.pc_client_metadata)
   if (meta?.add_remote_aimux_mcp !== true) return ''

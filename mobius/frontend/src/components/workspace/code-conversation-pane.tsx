@@ -52,6 +52,9 @@ type CodeConversationPaneProps = {
   vscodeWebUrl?: string
   // 当前会话 id: 用于后端把该会话绑定的 aimux bridge 设备 (元素1) 注入远程文件源 (元素2)。
   sessionId?: string
+  // 当前会话的运行设备 (绑定的 aimux bridge 设备 id, 空 = 中枢).
+  // 设备一换, 远程文件源就得重拉 —— 否则文件树还停在上一台设备的目录上.
+  sessionDeviceId?: string
   // variant='page' (默认): 整页代码对话 v2 的左+中两栏, 编辑器列宽度可拖.
   // variant='sidebar': 嵌入窄容器 (简易模式右侧文件栏). 宽度记忆与 page 模式分开,
   // 编辑器列改 flex-1 占满剩余宽度 (拖拽由外层侧栏承担), 文件树范围收窄一档.
@@ -191,7 +194,7 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
+export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, sessionDeviceId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
   const { formatName } = useRemoteDeviceNames()
   const compact = variant === 'sidebar'
   const blueprint = mode === 'blueprint'
@@ -350,7 +353,24 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         setRemoteSourcesLoaded(true)
       })
     return () => { cancelled = true }
-  }, [projectId, remoteSourcesVersion, sessionId, blueprint])
+    // sessionDeviceId 也在依赖里: 运行设备一换, 后端注入的 bridge 远程文件源就换了人,
+    // 不重拉的话文件树还停在上一台设备的目录上.
+  }, [projectId, remoteSourcesVersion, sessionId, sessionDeviceId, blueprint])
+
+  // 运行设备变了 → 文件树跟着走 (强绑定).
+  // 远程文件源是「会话绑定的设备」这一条线, 用户换设备就是要换工作机; 设备变了还留在
+  // 上一台机器的目录上, 看着像没切换成功. 绑了设备就落到「远程」(由上面的 bridge 优先
+  // 规则选中新设备); 解绑回中枢就落回「中枢」—— 这时远程源里已经没有这台设备了,
+  // 硬留在「远程」会选到一个空值.
+  const prevDeviceIdRef = useRef<string | undefined>(sessionDeviceId)
+  useEffect(() => {
+    const prev = prevDeviceIdRef.current
+    prevDeviceIdRef.current = sessionDeviceId
+    if (prev === undefined || prev === sessionDeviceId) return
+    const next: FileSource = sessionDeviceId ? 'remote' : 'hub'
+    setSourceState(next)
+    try { localStorage.setItem(fileSourceStorageKey(projectId), next) } catch { /* 静默 */ }
+  }, [sessionDeviceId, projectId])
 
   // 切换远程机器时换用该机器记住的根目录覆盖值 (按 项目+机器 隔离), 并退出编辑态。
   // Switching remote machines swaps in that machine's remembered root and leaves edit mode

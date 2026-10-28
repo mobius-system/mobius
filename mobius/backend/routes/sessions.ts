@@ -491,25 +491,38 @@ router.patch('/:id/model', auth, async (req: express.Request, res: express.Respo
   res.json({ ok: true, model: resolved.sessionModelValue, label: resolved.label || resolved.sessionModelValue });
 });
 
-// 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击切换).
-// 覆盖 pc_client_metadata.aimux_id, 保留 work_mode/is_tui/add_remote_aimux_mcp/local_path 等其余字段.
+// 切换会话的运行设备 (aimux 协作设备).
+//   aimux_id 非空 = 绑到那台设备上跑; aimux_id 为空 = 解绑, 回到中枢跑.
+//
+// 绑定时必须同时置 add_remote_aimux_mcp: aimuxRemoteNameFromMeta 靠它决定要不要给
+// agent 注入 remote_* 工具. 只写 aimux_id 的话, 会话显示"跑在设备上"但 agent 手里
+// 没有工具, 绑定等于空转. work_mode 沿用网页端新建会话时的口径 (显式选了设备 → 双侧).
+// 解绑时反过来: 收回旗标, 工作模式回中枢, 于是 remote-file-sources 也不再把它
+// 当远程文件源, 右侧文件树跟着回到中枢.
+//
 // 首次切换时把"切换前"的设备惰性记为 initial_aimux_id, 之后保持不变 (可撤回的锚点).
 // 权限同 PATCH /:id (findSessionOperable = owner/admin/project-owner); 前端只从 /aimux_bridge/api/remotes
-// 的 live 列表里挑可选项, 故这里只做非空校验, 不再重复查 bridge.
+// 的 live 列表里挑可选项, 故这里不再重复查 bridge.
 router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到或无权修改' }); return; }
   const newAimuxId = String(req.body?.aimux_id || '').trim();
-  if (!newAimuxId) { res.status(400).json({ error: 'aimux_id 不能为空' }); return; }
   const meta = parsePcClientMetadata(session.pc_client_metadata) ?? {};
   const previousAimuxId = typeof meta.aimux_id === 'string' ? meta.aimux_id.trim() : '';
   // 已有 initial 锚点则保持不变; 否则用"切换前"的设备做锚点 (第一次切换).
   const initialAimuxId = (typeof meta.initial_aimux_id === 'string' && meta.initial_aimux_id.trim())
     ? meta.initial_aimux_id.trim()
     : previousAimuxId;
-  const updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId };
+  let updated: Record<string, unknown>;
+  if (newAimuxId) {
+    updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: true };
+    // 网页端新建会话时显式选设备走的是双侧 (work_mode), 这里保持同一口径.
+    if (!updated.work_mode) updated.work_mode = 'dual';
+  } else {
+    updated = { ...meta, aimux_id: '', initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: false, work_mode: 'hub' };
+  }
   Sessions.updatePcClientMetadata(id, updated);
   auditSessionAccess(user, 'switch_session_aimux_device', session);
   res.json({ ok: true, pc_client_metadata: updated, previous_aimux_id: previousAimuxId, initial_aimux_id: initialAimuxId });

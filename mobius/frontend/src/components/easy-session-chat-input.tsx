@@ -4,6 +4,7 @@ import { ArrowUp, ChevronDown, Clock, Mic, Paperclip, Plus, RefreshCw, Search, S
 import { SessionModelDropdown } from './quick-create-session'
 import { useSessionModelOptions, promptBackendKeyForOption, PROMPT_BACKEND_LABEL } from './session-model-picker'
 import { EasySessionToolMenu, type EasySessionLite } from './easy-session-tool-menu'
+import { EasySessionDevicePill } from './easy-session-device-pill'
 import { AttachmentChip, type Attachment, type AttachmentImagePreview } from './attachments'
 import type { VoiceInputState } from '../services/assistant-voice'
 
@@ -92,6 +93,10 @@ type FollowSessionModeProps = EasySessionChatInputCommonProps & {
   sessionModelLabel?: string
   /** 切换当前会话模型 (复用 PATCH /api/sessions/:id/model) */
   onChangeSessionModel?: (model: string) => Promise<void> | void
+  /** 当前会话绑定的运行设备 id (空串 = 跑在中枢上) */
+  sessionDeviceId?: string
+  /** 切换运行设备 (复用 PATCH /api/sessions/:id/aimux-device); 传空串表示回到中枢 */
+  onChangeSessionDevice?: (deviceId: string) => Promise<void> | void
   /** 智能体是否正在工作 (决定停止键是否出现, 以及发送是「排队」还是「立即」) */
   agentWorking?: boolean
   /** 运行中发送的时间戳: 变化时按钮闪「已排队」琥珀态 (由父级在发送时写入) */
@@ -433,16 +438,31 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             欢迎页与会话页同一套顺序与样式 (issue 2026-10-17 用户要求) */}
         <div className="flex min-w-0 items-center gap-3">
           {follow && (
-            <EasySessionModelPill
-              isDark={isDark}
-              modelLabel={follow.sessionModelLabel || ''}
-              modelKey={follow.sessionModelKey || ''}
-              onChange={async (model: string) => {
-                if (!follow.onChangeSessionModel) return
-                await follow.onChangeSessionModel(model)
-              }}
-              disabled={!follow.modelAvailable || follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
-            />
+            <>
+              <EasySessionModelPill
+                isDark={isDark}
+                modelLabel={follow.sessionModelLabel || ''}
+                modelKey={follow.sessionModelKey || ''}
+                onChange={async (model: string) => {
+                  if (!follow.onChangeSessionModel) return
+                  await follow.onChangeSessionModel(model)
+                }}
+                disabled={!follow.modelAvailable || follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
+              />
+              {/* 运行设备 pill: 只画图标, 名字留到展开后的列表里 —— 设备名又长又占宽度,
+                  而这一行右边同时站着模型 pill 和四个动作键. */}
+              {follow.onChangeSessionDevice && (
+                <EasySessionDevicePill
+                  isDark={isDark}
+                  deviceId={follow.sessionDeviceId || ''}
+                  onChange={async (deviceId: string) => {
+                    if (!follow.onChangeSessionDevice) return
+                    await follow.onChangeSessionDevice(deviceId)
+                  }}
+                  disabled={follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
+                />
+              )}
+            </>
           )}
           {/* 欢迎页: 模型 pill (与会话页同款), 选中写入 EasySessionConfigBar selection.model */}
           {props.mode === 'create_session_mode' && props.welcomeModelKey !== undefined && (

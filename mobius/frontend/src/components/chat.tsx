@@ -19,7 +19,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, boundAimuxDeviceId } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -3716,7 +3716,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       .finally(() => setMessageSubmitting(false))
   }, [sessionId, messageSubmitting, addMessage, setTyping, postSessionMessage])
 
-  // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发).
+  // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发,
+  // 以及输入框里的「运行设备」pill). newId 为空 = 回到中枢, 不绑任何设备.
   // 顺序: ① 更新 DB 绑定 → ② 同步本地 currentSession 元数据 → ③ 终止当前 agent(等待确认)
   // → ④ 走"唤醒文字"路径发一条消息, 让新设备上重新 spawn 的 agent 先去 hostname 确认新环境.
   const handleSwitchAimuxDevice = useCallback(async (newId: string, oldId: string) => {
@@ -3737,10 +3738,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     if (tsk?.task_id === sessionId && meta) {
       store.setCurrentTask({ ...tsk, pc_client_metadata: meta })
     }
-    // ③ 终止当前 agent (await 确认终止完成)
+    // ③ 终止当前 agent (await 确认终止完成).
+    //    remote_* 工具是在 agent spawn 时按 pc_client_metadata 注入的, 已经在跑的 agent
+    //    手里的 MCP 服务器还指着旧设备, 所以换设备必须换进程.
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
-    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
+    const content = newId
+      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
+      : `【用户把mcp连接的设备解除了（从${oldId}变回中枢），这意味着后续工作回到莫比乌斯中枢上完成。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
@@ -4412,6 +4417,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                   sessionId={sessionId}
                   sessionModelKey={(currentSession as any)?.model || (currentTask as any)?.model || ''}
                   sessionModelLabel={currentModelLabel}
+                  sessionDeviceId={boundAimuxDeviceId(currentSession ?? currentTask)}
+                  onChangeSessionDevice={async (deviceId: string) => {
+                    await handleSwitchAimuxDevice(deviceId, boundAimuxDeviceId(currentSession ?? currentTask))
+                  }}
                   agentWorking={!!(backendAlive && backendWorking)}
                   recentSessions={(useStore.getState().sessions || []).slice(0, 20) as any}
                   onSwitchSession={(sid) => {
@@ -4813,6 +4822,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                 bindPath={easyFilesBindPath || projectForSession?.bind_path || ''}
                 vscodeWebUrl={easyFilesVscodeUrl}
                 sessionId={currentSession?.session_id || sessionId}
+                sessionDeviceId={boundAimuxDeviceId(currentSession ?? currentTask)}
                 openFileRequest={displayFileRequest || undefined}
               />
             </Suspense>
