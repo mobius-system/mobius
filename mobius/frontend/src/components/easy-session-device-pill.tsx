@@ -163,7 +163,8 @@ export function EasySessionDevicePill({
               color: deviceId ? '#60a5fa' : (isDark ? '#d1d5db' : '#374151'),
             }
           : {
-              color: isDark ? '#e5e7eb' : '#1f2937',
+              /* 图标形态: 选中设备后变蓝 (与「选中变蓝」同一套语义), 否则中性. */
+              color: deviceId ? '#60a5fa' : (isDark ? '#e5e7eb' : '#1f2937'),
               background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
             }}
       >

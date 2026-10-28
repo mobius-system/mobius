@@ -363,6 +363,7 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
             size="sm"
             icon={<ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />}
             disabled={taskOptions.length === 0}
+            selectedAccent
             placeholder="选择任务"
             emptyText={projectId ? '该项目下暂无任务' : '先选项目, 这里会列出它的任务'}
           />

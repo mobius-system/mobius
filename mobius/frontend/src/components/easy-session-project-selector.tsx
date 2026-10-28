@@ -162,19 +162,19 @@ export function EasySessionProjectSelector({
         style={isDark
           ? {
               background: open ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'var(--text-secondary)',
+              border: selectedProjectId ? '1px solid rgba(59,130,246,0.55)' : '1px solid rgba(255,255,255,0.08)',
+              color: selectedProjectId ? '#60a5fa' : 'var(--text-secondary)',
             }
           : {
               /* 浅色: 白底 + 中性边框 (深色透明背景在浅色页面上不可见, issue 2026-10-26) */
               background: open ? 'rgba(59,130,246,0.10)' : '#ffffff',
-              border: `1px solid ${open ? 'rgba(37,99,235,0.45)' : 'rgba(15,23,42,0.16)'}`,
-              color: 'var(--text-secondary)',
+              border: `1px solid ${open || selectedProjectId ? 'rgba(37,99,235,0.45)' : 'rgba(15,23,42,0.16)'}`,
+              color: selectedProjectId ? '#2563eb' : 'var(--text-secondary)',
               boxShadow: '0 1px 2px rgba(15,23,42,0.05)',
             }}
         title={selectedProjectId ? `当前项目: ${selectedProjectName || '项目'} · 点击可修改` : '未指定项目 · 点击选择'}
       >
-        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: open ? '#60a5fa' : 'var(--text-muted)' }} />
+        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: open || selectedProjectId ? '#60a5fa' : 'var(--text-muted)' }} />
         <span className="truncate font-medium">
           {selectedProjectId
             ? (selectedProjectName || '项目')

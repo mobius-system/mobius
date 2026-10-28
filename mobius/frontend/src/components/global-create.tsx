@@ -216,7 +216,7 @@ export type DropdownOption = {
   badge?: { text: string; color: string; bg: string }
 }
 export function DropdownSelect({
-  value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch, panelAction, icon, size = 'md', iconOnly = false,
+  value, onChange, options, placeholder, dark, disabled, emptyText, forceSearch, panelAction, icon, size = 'md', iconOnly = false, selectedAccent = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -233,6 +233,8 @@ export function DropdownSelect({
   size?: 'md' | 'sm'
   /** 仅显示前置图标；有有效选项时用高亮边框与图标表示已经选择 */
   iconOnly?: boolean
+  /** 选中后文字/边框变蓝 (与「技能和记忆」同一套「选中变蓝」语义, 欢迎页配置条用) */
+  selectedAccent?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -304,12 +306,12 @@ export function DropdownSelect({
         className={`${size === 'sm' ? (iconOnly ? 'h-7 w-7 flex-shrink-0 rounded-lg p-0 text-[length:var(--fs-sm)]' : 'max-w-[168px] h-7 px-2 gap-1 rounded-lg text-[length:var(--fs-sm)]') : 'w-full h-10 px-2.5 gap-2 rounded-xl text-[length:var(--fs-lg)]'} text-left flex items-center justify-between focus:outline-none focus:border-blue-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors hover:border-[var(--border-color-strong,#475569)]`}
         style={{
           background: 'var(--input-bg)',
-          border: open || (iconOnly && hasValidValue) ? '1px solid rgba(59,130,246,0.72)' : '1px solid var(--input-border)',
-          color: dark ? '#f1f5f9' : '#1e293b',
-          boxShadow: iconOnly && hasValidValue ? '0 0 0 1px rgba(59,130,246,0.08)' : undefined,
+          border: open || (iconOnly && hasValidValue) || (selectedAccent && hasValidValue) ? '1px solid rgba(59,130,246,0.72)' : '1px solid var(--input-border)',
+          color: (selectedAccent && hasValidValue) ? '#60a5fa' : (dark ? '#f1f5f9' : '#1e293b'),
+          boxShadow: (iconOnly || selectedAccent) && hasValidValue ? '0 0 0 1px rgba(59,130,246,0.08)' : undefined,
         }}>
         <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${iconOnly ? 'justify-center' : ''}`}>
-          {icon && <span className="flex-shrink-0" style={{ color: iconOnly && hasValidValue ? '#60a5fa' : 'var(--text-muted)' }}>{icon}</span>}
+          {icon && <span className="flex-shrink-0" style={{ color: (iconOnly || selectedAccent) && hasValidValue ? '#60a5fa' : 'var(--text-muted)' }}>{icon}</span>}
           {!iconOnly && <span className={`truncate ${selected ? '' : 'opacity-60'}`}>
             {selected ? selected.label : (placeholder || '— 请选择 —')}
           </span>}

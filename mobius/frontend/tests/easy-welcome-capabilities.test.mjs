@@ -23,6 +23,7 @@ const pillSource = readSource('src/components/easy-session-device-pill.tsx')
 const pageSource = readSource('src/pages/EasyModePage.tsx')
 const inputSource = readSource('src/components/easy-session-chat-input.tsx')
 const createSource = readSource('src/components/global-create.tsx')
+const projectSelectorSource = readSource('src/components/easy-session-project-selector.tsx')
 
 // ===== 1. 五项能力都要在欢迎页露出来 =====
 
@@ -128,6 +129,35 @@ assert.match(
   barSource,
   /const taskOptions: DropdownOption\[\]/,
   '任务下拉的数据源要保留',
+)
+
+// ===== 5. 「选中变蓝」统一语义 =====
+// 技能和记忆用蓝色表达「有激活值」, 项目/任务/运行中枢之前只换文字不变色, 语言不统一.
+// 现在三个控件选中后也变蓝, 与技能和记忆同一套颜色.
+assert.match(
+  projectSelectorSource,
+  /selectedProjectId \? '#60a5fa'/,
+  '项目选中后要变蓝',
+)
+assert.match(
+  barSource,
+  /selectedAccent/,
+  '任务下拉要开「选中变蓝」',
+)
+assert.match(
+  createSource,
+  /selectedAccent\?: boolean/,
+  'DropdownSelect 要支持选中变蓝',
+)
+assert.match(
+  createSource,
+  /\(selectedAccent && hasValidValue\) \? '#60a5fa'/,
+  'DropdownSelect 选中后文字要变蓝',
+)
+assert.match(
+  pillSource,
+  /deviceId \? '#60a5fa'/,
+  '运行中枢选中设备后要变蓝',
 )
 
 console.log('欢迎页能力清单契约测试通过')
