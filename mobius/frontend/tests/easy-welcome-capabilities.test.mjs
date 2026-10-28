@@ -26,13 +26,24 @@ const createSource = readSource('src/components/global-create.tsx')
 
 // ===== 1. 五项能力都要在欢迎页露出来 =====
 
-// ① 项目: 输入框下方的 EasySessionProjectSelector
+// ① 项目: 在输入框左下角 (跟「选择任务」两步连在一起)
 assert.match(
-  pageSource,
+  barSource,
   /<EasySessionProjectSelector/,
   '欢迎页要有项目选择',
 )
-// ② 任务 (Issue): 下拉回来了, 且没项目时置灰并说明原因
+assert.match(
+  barSource,
+  /onCreateProject=\{onCreateProject\}/,
+  '项目选择器要能新建项目',
+)
+// 项目不再单独占输入框下方一行 (拆散了「选项目→选任务」两步)
+assert.doesNotMatch(
+  pageSource,
+  /easy-welcome-project-row/,
+  '项目选择不能留在输入框下方那一行',
+)
+// ② 任务 (Issue): 下拉, 没项目时置灰并说明原因
 assert.match(
   barSource,
   /<DropdownSelect[\s\S]*?options=\{taskOptions\}/,
@@ -59,21 +70,16 @@ assert.doesNotMatch(
   /iconOnlyTrigger/,
   'skill & memory 不能只留一个没字的光图标',
 )
-// ④ 运行中枢: 带文字的胶囊 (欢迎页是能力清单, 文字要说清楚这是啥)
+// ④ 运行中枢: 在模型左侧 (输入框右下), 与会话页同款图标
 assert.match(
-  barSource,
-  /<EasySessionDevicePill[\s\S]*?variant="chip"/,
-  '欢迎页要有运行中枢选择, 且用带文字的形态',
+  inputSource,
+  /props\.mode === 'create_session_mode' && props\.onChangeWelcomeDevice[\s\S]*?<EasySessionDevicePill/,
+  '欢迎页要有运行中枢选择, 放在输入框右下',
 )
 assert.match(
   pillSource,
   /variant\?: 'icon' \| 'chip'/,
-  '运行中枢控件要支持两种形态 (执行页图标 / 欢迎页文字)',
-)
-assert.match(
-  pillSource,
-  /运行中枢 /,
-  '胶囊形态要写出「运行中枢」这几个字',
+  '运行中枢控件要支持两种形态',
 )
 // ⑤ 模型选型: 欢迎页输入框右下角的模型 pill (与执行页同款)
 assert.match(
@@ -82,7 +88,24 @@ assert.match(
   '欢迎页要有模型选型',
 )
 
-// ===== 2. 选了运行中枢, 建会话时要真的带上设备绑定 =====
+// ===== 2. 声明可合作计算机已经从欢迎页去掉 =====
+assert.doesNotMatch(
+  pageSource,
+  /welcomeCooperablePcOpen/,
+  '欢迎页不能再有「声明可合作计算机」的状态',
+)
+assert.doesNotMatch(
+  pageSource,
+  /RemoteComputeMemoryModal/,
+  '欢迎页不能再有「声明可合作计算机」的弹窗',
+)
+assert.doesNotMatch(
+  barSource,
+  /onOpenCooperablePc/,
+  '配置条不能再有「声明可合作计算机」按钮',
+)
+
+// ===== 3. 选了运行中枢, 建会话时要真的带上设备绑定 =====
 // 后端靠 add_remote_aimux_mcp 决定要不要给 agent 注入 remote_* 工具, 缺了就是空绑定.
 assert.match(
   pageSource,
@@ -95,7 +118,7 @@ assert.match(
   '选择里要有设备字段',
 )
 
-// ===== 3. 任务选完, 模型与上下文要跟着变 (config bar 原有联动不能被破坏) =====
+// ===== 4. 任务选完, 模型与上下文要跟着变 (config bar 原有联动不能被破坏) =====
 assert.match(
   barSource,
   /const taskOptions: DropdownOption\[\]/,

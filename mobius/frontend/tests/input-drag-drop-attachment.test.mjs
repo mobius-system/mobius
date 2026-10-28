@@ -121,16 +121,19 @@ assert.match(
   /mode="create_session_mode"[\s\S]*?onDrop=\{handleWelcomeDrop\}/,
   '欢迎页输入框必须把 handleWelcomeDrop 传下去',
 )
-// 欢迎页只允许一个项目选择器 (曾经因插入位置搞错渲染了两个)
+// 欢迎页只允许一个项目选择器 (曾经因插入位置搞错渲染了两个).
+// 项目选择器现已移进输入框左下角的配置条 (easy-session-config-bar), 页面本身不再渲染它.
+const configBarSource = readSource('src/components/easy-session-config-bar.tsx')
 assert.equal(
-  (easyPageSource.match(/<EasySessionProjectSelector/g) || []).length,
+  (configBarSource.match(/<EasySessionProjectSelector/g) || []).length,
   1,
   '欢迎页只能渲染一个项目选择器',
 )
-assert.equal(
-  (easyPageSource.match(/<div className="easy-welcome-project-row">/g) || []).length,
-  1,
-  '欢迎页只能有一个项目行',
+// 项目行已移除: 项目选择不再单独占输入框下方一行
+assert.doesNotMatch(
+  easyPageSource,
+  /easy-welcome-project-row/,
+  '欢迎页不能再有输入框下方的项目行',
 )
 assert.match(
   easyPageSource,

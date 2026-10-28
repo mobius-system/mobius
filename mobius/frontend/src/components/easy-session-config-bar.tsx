@@ -9,12 +9,12 @@
 //   记忆和技能: 复用 SkillMemoryPicker 的单入口弹窗形态, 默认排除集取任务级 context-preview
 // =====================================================================
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, FolderKanban, FolderOpen, Languages, ListChecks, Share2, Type } from 'lucide-react'
+import { Brain, FolderKanban, FolderOpen, Languages, ListChecks, Type } from 'lucide-react'
 import { api } from '../store'
 import { createPortal } from 'react-dom'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
-import { EasySessionDevicePill } from './easy-session-device-pill'
+import { EasySessionProjectSelector } from './easy-session-project-selector'
 
 // 路径选择弹窗只有点"浏览"才出现, 按需加载 — 否则欢迎页配置条会把整个 modals 模块
 // (连带 markdown 渲染栈)算进简易模式首屏.
@@ -131,14 +131,14 @@ export function EasySessionModeTabs({ selection, onChange }: {
   )
 }
 
-export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark, onOpenCooperablePc }: {
+export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark, onCreateProject }: {
   selection: EasySessionSelection
   onChange: (next: EasySessionSelection) => void
   projects: ProjectLite[]
   recentSessions: RecentSessionLite[]
   dark: boolean
-  /** 打开「可合作计算机」弹窗 (会话工具同款功能的欢迎页入口) */
-  onOpenCooperablePc?: () => void
+  /** 打开「新建项目」弹窗 (项目选择器的 + 入口) */
+  onCreateProject: () => void
 }) {
   const [pathPickerOpen, setPathPickerOpen] = useState(false)
   const [projectIssues, setProjectIssues] = useState<any[]>([])
@@ -338,10 +338,20 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         </>
       ) : (
         <>
-          {/* 项目选择已移至输入框上方的 EasySessionProjectSelector.
-              任务下拉回来了 (issue 2026-10-28): 欢迎页要和执行页一样把「有哪些能力」
-              摆出来 —— 任务不选也能建 (自动定位最近任务), 但用户得看得见这一项存在,
-              看得见才能挑. 没有项目时置灰, 顺带把「先选项目」讲明白. */}
+          {/* 项目选择移进了输入框左下角 (issue 2026-10-28): 它跟「选择任务」是连在一起的
+              两步, 放在输入框下方那一行反而把它们拆散了. 这里用项目选择器把「选项目」摆出来,
+              项目决定任务列表, 任务决定模型与上下文. */}
+          <EasySessionProjectSelector
+            isDark={dark}
+            selectedProjectId={projectId || undefined}
+            selectedProjectName={projects.find((p: any) => String(p.id) === projectId)?.name}
+            projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
+            onSelectProject={pid => onChange({ ...selection, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] })}
+            onCreateProject={onCreateProject}
+          />
+          {/* 任务下拉 (issue 2026-10-28): 欢迎页要和执行页一样把「有哪些能力」摆出来 ——
+              任务不选也能建 (自动定位最近任务), 但用户得看得见这一项存在, 看得见才能挑.
+              没有项目时置灰, 顺带把「先选项目」讲明白. */}
           <DropdownSelect
             value={issueId}
             onChange={v => {
@@ -356,27 +366,6 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
             placeholder="选择任务"
             emptyText={projectId ? '该项目下暂无任务' : '先选项目, 这里会列出它的任务'}
           />
-          {/* 运行中枢: 新会话跑在哪台设备上. 欢迎页用带文字的胶囊 (这是一份「能力清单」,
-              文字要说明白); 执行页用图标 (那一行宽度紧张). */}
-          <EasySessionDevicePill
-            isDark={dark}
-            variant="chip"
-            deviceId={selection.deviceId || ''}
-            onChange={deviceId => onChange({ ...selection, deviceId })}
-          />
-          {onOpenCooperablePc && (
-            <button
-              type="button"
-              onClick={onOpenCooperablePc}
-              aria-label="可合作计算机"
-              title="声明可合作计算机 (勾选 aimux remote, 生成声明随任务发送)"
-              data-testid="easy-welcome-cooperable-pc"
-              className="easy-icon-btn inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[var(--bg-card-hover)]"
-              style={{ color: dark ? '#d1d5db' : '#374151' }}
-            >
-              <Share2 className="h-[18px] w-[18px]" strokeWidth={2} />
-            </button>
-          )}
         </>
       )}
       {/* 模型选择已移至输入框右下的模型 pill (EasySessionModelPill), 语言默认 zh 不再展示 */}

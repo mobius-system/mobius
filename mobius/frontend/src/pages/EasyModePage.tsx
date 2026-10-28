@@ -42,10 +42,7 @@ import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { useVoiceInput } from '../services/use-voice-input'
 import { EasySessionChatInput } from '../components/easy-session-chat-input'
-import { EasySessionProjectSelector } from '../components/easy-session-project-selector'
 import { EasyDevicesPanel } from '../components/easy-devices-panel'
-// 可合作计算机弹窗按需加载 (memories 模块连带 markdown 渲染栈, 欢迎页首屏不该背上)
-const RemoteComputeMemoryModal = lazyWithRetry(() => import('../components/memories').then(module => ({ default: module.RemoteComputeMemoryModal })))
 import {
   EasySessionConfigBar,
   EMPTY_EASY_SESSION_SELECTION,
@@ -255,7 +252,6 @@ export default function EasyModePage() {
     onError: msg => setWelcomeErrorNotice(msg),
   })
   // 欢迎页「可合作计算机」弹窗 (会话工具同款): 声明文本追加进任务描述随首次消息发送
-  const [welcomeCooperablePcOpen, setWelcomeCooperablePcOpen] = useState(false)
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(() => ({
     ...EMPTY_EASY_SESSION_SELECTION,
@@ -1144,6 +1140,8 @@ export default function EasyModePage() {
                       : '开始新会话'}
                   welcomeModelKey={welcomeSelection.model}
                   onChangeWelcomeModel={model => setWelcomeSelection(prev => ({ ...prev, model }))}
+                  welcomeDeviceId={welcomeSelection.deviceId}
+                  onChangeWelcomeDevice={deviceId => setWelcomeSelection(prev => ({ ...prev, deviceId }))}
                   welcomeVoiceState={welcomeVoice.voiceState}
                   welcomeVoiceTip={welcomeVoice.voiceState === 'recording'
                     ? `停止录音并转写 ${welcomeVoice.recordingSeconds}s`
@@ -1161,27 +1159,11 @@ export default function EasyModePage() {
                       projects={projects}
                       recentSessions={sessions}
                       dark={theme !== 'light'}
-                      onOpenCooperablePc={() => setWelcomeCooperablePcOpen(true)}
+                      onCreateProject={() => setCreateKind('project')}
                     />
                   }
                 />
                 </div>
-                {/* 项目行 (千问办公: 输入框下方一行): 选中写入 welcomeSelection.projectId, 换项目清空任务与排除集 */}
-                {!welcomeSelection.createProject && (
-                  <div className="easy-welcome-project-row">
-                    <EasySessionProjectSelector
-                      isDark={theme !== 'light'}
-                      selectedProjectId={welcomeSelection.projectId || undefined}
-                      selectedProjectName={projects.find((p: any) => String(p.id) === welcomeSelection.projectId)?.name}
-                      projects={projects.map((p: any) => ({ id: String(p.id), name: String(p.name || p.id), kind: p.kind, default_model: p.default_model }))}
-                      onSelectProject={pid => {
-                        setWelcomeSelection(prev => ({ ...prev, projectId: pid || '', issueId: '', issueTitle: '', excludedSkills: [], excludedMemories: [] }))
-                      }}
-                      onCreateProject={() => setCreateKind('project')}
-                    />
-                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务，也可在输入框左下角自行挑选</span>
-                  </div>
-                )}
                 {/* 附件图片放大预览 (与会话内同一套弹层) */}
                 {welcomeImagePreview && (
                   <AttachmentImagePreviewModal preview={welcomeImagePreview} onClose={() => setWelcomeImagePreview(null)} />
@@ -1199,20 +1181,6 @@ export default function EasyModePage() {
                   })}
                 </div>
               </div>
-              {/* 可合作计算机弹窗 (会话工具同款): 声明文本追加进任务描述, 随首次消息一起发送 */}
-              {welcomeCooperablePcOpen && (
-                <Suspense fallback={null}>
-                  <RemoteComputeMemoryModal
-                    baseUrl={`/api/projects/${welcomeSelection.projectId || ''}/memories`}
-                    mode="announce"
-                    onClose={() => setWelcomeCooperablePcOpen(false)}
-                    onAnnounce={(body) => {
-                      setWelcomePrompt(prev => (prev ? `${prev}\n\n${body}` : body))
-                      setWelcomeCooperablePcOpen(false)
-                    }}
-                  />
-                </Suspense>
-              )}
             </div>
           </main>
         ) : loading ? (

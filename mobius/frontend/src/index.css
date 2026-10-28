@@ -7034,21 +7034,6 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-welcome-brand { justify-content: flex-start; margin-bottom: 16px; }
 [data-page="easy-mode"] .easy-welcome-brand__name { font-size: 15px; color: var(--text-secondary); }
 [data-page="easy-mode"] .easy-welcome-brand__tag { font-size: var(--fs-xs); }
-/* 项目行 (千问办公: 输入框下方一行) */
-[data-page="easy-mode"] .easy-welcome-project-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  min-width: 0;
-}
-[data-page="easy-mode"] .easy-welcome-project-row__hint {
-  color: var(--text-muted);
-  font-size: var(--fs-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* 能力胶囊 (千问办公最底一排: 图标 + 场景名) */
 [data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; justify-content: flex-start; }
 [data-page="easy-mode"] .easy-welcome-suggestions button {

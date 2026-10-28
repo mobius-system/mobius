@@ -57,6 +57,10 @@ type CreateSessionModeProps = EasySessionChatInputCommonProps & {
   welcomeVoiceTip?: string
   /** 欢迎页右下: 切换语音录音 */
   onToggleWelcomeVoice?: () => void
+  /** 欢迎页右下: 运行中枢 (新会话跑在哪台设备上, 空 = 中枢) */
+  welcomeDeviceId?: string
+  /** 欢迎页右下: 切换运行中枢 */
+  onChangeWelcomeDevice?: (deviceId: string) => void
   /** 嵌入模式: 去掉自己的圆角+边框, 由外层容器统一 */
   embedded?: boolean
 }
@@ -463,6 +467,15 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
                 />
               )}
             </>
+          )}
+          {/* 欢迎页: 运行中枢 (放在模型左侧, 与会话页同款图标; 名字在展开后的列表里).
+              这里用图标不用带字胶囊 —— 这一行右边还站着模型 pill 和三个动作键, 写名字会挤. */}
+          {props.mode === 'create_session_mode' && props.onChangeWelcomeDevice && (
+            <EasySessionDevicePill
+              isDark={isDark}
+              deviceId={props.welcomeDeviceId || ''}
+              onChange={deviceId => props.onChangeWelcomeDevice?.(deviceId)}
+            />
           )}
           {/* 欢迎页: 模型 pill (与会话页同款), 选中写入 EasySessionConfigBar selection.model */}
           {props.mode === 'create_session_mode' && props.welcomeModelKey !== undefined && (
