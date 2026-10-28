@@ -38,6 +38,7 @@ export function EasySessionDevicePill({
   deviceId,
   onChange,
   disabled,
+  variant = 'icon',
 }: {
   isDark: boolean
   /** 当前绑定的设备 id; 空串 = 跑在中枢上 */
@@ -45,6 +46,11 @@ export function EasySessionDevicePill({
   /** 切换运行设备; 传空串表示回到中枢 */
   onChange: (deviceId: string) => Promise<void> | void
   disabled?: boolean
+  /**
+   * icon = 只画图标 (执行页: 那一行右边已经站着模型 pill 和四个动作键, 名字写不下);
+   * chip = 带文字的胶囊 (欢迎页: 那一行是「我们有哪些能力」的清单, 文字要说清楚这是啥).
+   */
+  variant?: 'icon' | 'chip'
 }) {
   const { formatName } = useRemoteDeviceNames()
   const [open, setOpen] = useState(false)
@@ -148,15 +154,29 @@ export function EasySessionDevicePill({
         disabled={disabled}
         title={`运行设备: ${currentLabel}`}
         onClick={() => setOpen(v => !v)}
-        className="easy-icon-btn easy-icon-btn--device inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        style={{
-          color: isDark ? '#e5e7eb' : '#1f2937',
-          background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
-        }}
+        className={variant === 'chip'
+          ? 'easy-device-chip inline-flex h-7 min-w-0 max-w-[220px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[length:var(--fs-sm)] transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50'
+          : 'easy-icon-btn easy-icon-btn--device inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50'}
+        style={variant === 'chip'
+          ? {
+              borderColor: deviceId ? 'rgba(59,130,246,0.72)' : 'var(--input-border)',
+              color: deviceId ? '#60a5fa' : (isDark ? '#d1d5db' : '#374151'),
+            }
+          : {
+              color: isDark ? '#e5e7eb' : '#1f2937',
+              background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
+            }}
       >
         {deviceId
-          ? <DeviceIcon platform={currentPlatform} className="h-[18px] w-[18px]" />
-          : <Server className="h-[18px] w-[18px]" strokeWidth={1.75} />}
+          ? <DeviceIcon platform={currentPlatform} className="h-[16px] w-[16px] flex-shrink-0" />
+          : <Server className="h-[16px] w-[16px] flex-shrink-0" strokeWidth={1.75} />}
+        {variant === 'chip' && (
+          <span className="min-w-0 truncate">
+            <span style={{ color: 'var(--text-muted)' }}>运行中枢 </span>
+            {currentLabel}
+          </span>
+        )}
+        {variant === 'chip' && <span className="flex-shrink-0 text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>▾</span>}
       </button>
       {open && pos && createPortal(
         <div

@@ -9,11 +9,12 @@
 //   记忆和技能: 复用 SkillMemoryPicker 的单入口弹窗形态, 默认排除集取任务级 context-preview
 // =====================================================================
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, FolderKanban, FolderOpen, Languages, Share2, Type } from 'lucide-react'
+import { Brain, FolderKanban, FolderOpen, Languages, ListChecks, Share2, Type } from 'lucide-react'
 import { api } from '../store'
 import { createPortal } from 'react-dom'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
+import { EasySessionDevicePill } from './easy-session-device-pill'
 
 // 路径选择弹窗只有点"浏览"才出现, 按需加载 — 否则欢迎页配置条会把整个 modals 模块
 // (连带 markdown 渲染栈)算进简易模式首屏.
@@ -42,6 +43,8 @@ export type EasySessionSelection = {
   projectPath: string
   projectPathManual?: boolean
   projectName: string
+  /** 新会话跑在哪台设备上 (空 = 跑在中枢) */
+  deviceId: string
 }
 
 export const EMPTY_EASY_SESSION_SELECTION: EasySessionSelection = {
@@ -55,6 +58,7 @@ export const EMPTY_EASY_SESSION_SELECTION: EasySessionSelection = {
   excludedMemories: [],
   projectPath: '',
   projectName: '',
+  deviceId: '',
 }
 
 type ProjectLite = { id: string; name?: string; default_model?: string | null; can_create_session?: boolean }
@@ -334,7 +338,32 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         </>
       ) : (
         <>
-          {/* 项目选择已移至输入框上方的 EasySessionProjectSelector; 任务下拉已移除 (按需从项目选择后自动定位最近任务) */}
+          {/* 项目选择已移至输入框上方的 EasySessionProjectSelector.
+              任务下拉回来了 (issue 2026-10-28): 欢迎页要和执行页一样把「有哪些能力」
+              摆出来 —— 任务不选也能建 (自动定位最近任务), 但用户得看得见这一项存在,
+              看得见才能挑. 没有项目时置灰, 顺带把「先选项目」讲明白. */}
+          <DropdownSelect
+            value={issueId}
+            onChange={v => {
+              const issue = projectIssues.find((i: any) => String(i.id) === v)
+              onChange({ ...selection, issueId: v, issueTitle: String(issue?.title || '') })
+            }}
+            options={taskOptions}
+            dark={dark}
+            size="sm"
+            icon={<ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />}
+            disabled={taskOptions.length === 0}
+            placeholder="选择任务"
+            emptyText={projectId ? '该项目下暂无任务' : '先选项目, 这里会列出它的任务'}
+          />
+          {/* 运行中枢: 新会话跑在哪台设备上. 欢迎页用带文字的胶囊 (这是一份「能力清单」,
+              文字要说明白); 执行页用图标 (那一行宽度紧张). */}
+          <EasySessionDevicePill
+            isDark={dark}
+            variant="chip"
+            deviceId={selection.deviceId || ''}
+            onChange={deviceId => onChange({ ...selection, deviceId })}
+          />
           {onOpenCooperablePc && (
             <button
               type="button"
@@ -353,7 +382,6 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
       {/* 模型选择已移至输入框右下的模型 pill (EasySessionModelPill), 语言默认 zh 不再展示 */}
       <SkillMemoryPicker
         singleTrigger
-        iconOnlyTrigger
         dark={dark}
         skills={availSkills}
         memories={availMemories}

@@ -806,6 +806,15 @@ export default function EasyModePage() {
           excluded_skill_ids: keepsSelectedContext ? excludedSkills : [],
           excluded_memory_ids: keepsSelectedContext ? excludedMemories : [],
           name_touched: false,
+          // 选了运行中枢的设备 → 这个会话就绑在那台机器上跑.
+          // work_mode 用网页端新建会话的同一口径 (双侧); add_remote_aimux_mcp 必须为 true,
+          // 否则后端不会给 agent 注入 remote_* 工具, 设备选了也白选.
+          ...(welcomeSelection.deviceId ? { pc_client_metadata: {
+            work_mode: 'dual',
+            aimux_id: welcomeSelection.deviceId,
+            is_tui: false,
+            add_remote_aimux_mcp: true,
+          } } : {}),
         }),
       })
       if (session?.error) throw new Error(session.error)
@@ -1170,7 +1179,7 @@ export default function EasyModePage() {
                       }}
                       onCreateProject={() => setCreateKind('project')}
                     />
-                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务</span>
+                    <span className="easy-welcome-project-row__hint">选择项目后自动定位最近任务，也可在输入框左下角自行挑选</span>
                   </div>
                 )}
                 {/* 附件图片放大预览 (与会话内同一套弹层) */}
