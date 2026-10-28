@@ -4283,6 +4283,9 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ key: string; session_model: string } | null>(null)
+  const [testingModel, setTestingModel] = useState(false)
+  const [modelTestResult, setModelTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const modelTestVersion = useRef(0)
   const [revealSecret, setRevealSecret] = useState(false)
   // 订阅路径第6步 (登录·上传方式): auth.json 已成功上传才放行"下一步". 设备码方式靠"我已登录"自证.
   const [subAuthUploaded, setSubAuthUploaded] = useState(false)
@@ -4398,10 +4401,30 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
   }
 
   const reset = () => {
+    modelTestVersion.current += 1
+    setTestingModel(false)
+    setModelTestResult(null)
     setWizard(initialWizardState())
     setError('')
     setCreated(null)
     setRevealSecret(false)
+  }
+
+  const testCreatedModel = async () => {
+    if (!created || testingModel) return
+    const version = ++modelTestVersion.current
+    setTestingModel(true)
+    setModelTestResult(null)
+    try {
+      const result = await api('/api/admin/model-access/test', {
+        method: 'POST', body: JSON.stringify({ session_model: created.session_model }),
+      }) as { ok: boolean; text: string }
+      if (version === modelTestVersion.current) setModelTestResult(result)
+    } catch (e: any) {
+      if (version === modelTestVersion.current) setModelTestResult({ ok: false, text: e?.message || String(e) })
+    } finally {
+      if (version === modelTestVersion.current) setTestingModel(false)
+    }
   }
 
   // 第5步: 组装 payload 调旧后端 API. settings/TOML 均由向导字段模板化生成,
@@ -4509,11 +4532,24 @@ function ModelAccessWizard({ onCreated }: { onCreated?: () => void }) {
             <div>会话模型: <span className="font-mono">{created.session_model}</span></div>
             <div>现在可在新建 Session 时选择该模型, 也可切换到"文件配置"Tab 继续微调.</div>
           </div>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+          <button type="button" onClick={testCreatedModel} disabled={testingModel}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-4 text-[length:var(--fs-md)] font-medium transition-colors hover:bg-blue-500/10 disabled:cursor-wait disabled:opacity-60">
+            {testingModel ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+            {testingModel ? '测试中…' : '测试模型'}
+          </button>
           <button type="button" onClick={reset}
-            className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[length:var(--fs-md)] font-medium text-white transition-colors hover:bg-blue-500">
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-4 text-[length:var(--fs-md)] font-medium text-white transition-colors hover:bg-blue-500">
             <Plus className="h-3.5 w-3.5" />
             再接入一个模型
           </button>
+          </div>
+          {modelTestResult && (
+            <div role="status" className={`w-full max-w-xl rounded-md border px-3 py-2 text-left text-[length:var(--fs-sm)] ${modelTestResult.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
+              <div className="font-medium">{modelTestResult.ok ? '测试成功' : '测试失败'}</div>
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">{modelTestResult.text}</pre>
+            </div>
+          )}
         </div>
       )
     }
