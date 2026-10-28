@@ -14,7 +14,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, api } from '../store'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { PROJECTS_SCOPE, issuesScope } from '../services/warm-create-lists'
+import { PROJECTS_SCOPE, issuesScope, BRIDGE_DEVICES_SCOPE } from '../services/warm-create-lists'
+import { readListCache, writeListCache } from '../services/list-swr-cache'
 import { fetchGlobalDefaultModel, resolveDefaultModelKey } from '../services/global-default-model'
 import { ErrBanner } from './error-banner'
 import { PcTaskModeSection } from './pc-task-mode-section'
@@ -43,6 +44,10 @@ const GLOBAL_DEFAULT_MODEL = 'codex'
 
 const SESSION_NAME_PLACEHOLDER = '请填写会话名称'
 
+// 协作设备 (aimux bridge /api/remotes) 的最小字段集 —— 与设备下拉的渲染需要一一对应
+// Minimal bridge-device shape used by the device dropdown and its browser cache
+type BridgeDevice = { name: string; status?: string; platform?: string; gui?: { available?: boolean } }
+
 // 顶栏快捷新建会话 · 「恢复上次选择」快照: 记录上次成功提交的项目/任务/语言/Skill·Memory 排除集.
 // 与工作草稿 gc:new-session 区分 —— 草稿提交即清, 此快照持久保留, 仅作"一键回填上次"用途.
 // 刻意不存 model: 模型由目标任务"上次所选"三级默认自动还原 (与 CreateSessionForm 模型隔离哲学一致, 不跨作用域泄漏).
@@ -67,13 +72,17 @@ function saveLastSelection(snap: LastSessionSelection) {
 // 会话模型下拉 (紧凑形态): 与 grid 版 SessionModelPicker 共用同一份数据源, 配额信息内联进选项,
 // 超额模型禁用; 选择模型后下方用小字展示传统 NewSessionModal 的提示 —— 管理员限额 + 渠道活跃窗口/tmux 状态.
 // Compact model dropdown; quota details live inside the options, with the legacy hints below in small text.
-export function SessionModelDropdown({ value, onChange, dark, quotaEnabled = true }: {
+export function SessionModelDropdown({ value, onChange, dark, quotaEnabled = true, showLabel = true }: {
   value: string
   onChange: (key: string) => void
   dark: boolean
   quotaEnabled?: boolean
+  /** 是否由本组件渲染「模型」标题行 (含刷新按钮); 外部已有标题时关掉 */
+  showLabel?: boolean
 }) {
-  const { options, stats } = useSessionModelOptions()
+  // 选项走浏览器缓存, 刷新按钮手动重拉 (与设备下拉同一个 LabelWithRefresh 形态)
+  // Options come from the browser cache; the refresh button revalidates them on demand
+  const { options, stats, loading, refresh } = useSessionModelOptions()
   const usageOf = (key: string) => stats?.model_usage_limits?.models?.[key] || null
   const items: DropdownOption[] = options.map(opt => {
     const usage = usageOf(opt.key)
@@ -102,6 +111,11 @@ export function SessionModelDropdown({ value, onChange, dark, quotaEnabled = tru
   const selectedLabel = selectedOption?.title || selectedOption?.label || selectedBackendLabel
   return (
     <div>
+      {showLabel && (
+        <SectionLabel>
+          <LabelWithRefresh label="模型" loading={loading} onRefresh={refresh} />
+        </SectionLabel>
+      )}
       <DropdownSelect value={value} onChange={onChange} dark={dark} placeholder="— 选择模型 —" emptyText="暂无可用模型" options={items} />
       {/* 选择模型后的小字提示 — 与传统菜单同文案: 管理员限额 + 活跃后台窗口/tmux 状态 */}
       {usage?.limit != null && (
@@ -237,18 +251,29 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
   // GUI 授权变体: 选中 "xxx (授权操作图形界面)" 时置 true, 随 pc_client_metadata.gui_authorized 下发
   // GUI-authorized variant: set when the "(授权操作图形界面)" option is picked, sent as gui_authorized
   const [guiAuthorized, setGuiAuthorized] = useState(!!initialDevice?.guiAuthorized)
-  const [bridgeDevices, setBridgeDevices] = useState<Array<{ name: string; status?: string; platform?: string; gui?: { available?: boolean } }>>([])
+  // 设备清单同样落浏览器缓存: 再次打开菜单时首帧就有设备可选, 展开后后台校准
+  // Device list is cached in the browser too, so a reopened menu paints device options instantly
+  const [bridgeDevices, setBridgeDevices] = useState<BridgeDevice[]>(() => readListCache<BridgeDevice>(BRIDGE_DEVICES_SCOPE, user?.id)?.list || [])
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [devicesLoaded, setDevicesLoaded] = useState(false)
+  const devicesCacheOwner = user?.id
   // 拉取 bridge 设备清单 (与会话头部切换设备同一数据源); 供展开「更多会话设置」与标题栏刷新按钮共用
   // Loads the bridge device list; shared by the section-expand effect and the label's refresh button
   const loadDevices = useCallback(() => {
     setDevicesLoading(true)
     api('/aimux_bridge/api/remotes')
-      .then((data: any) => setBridgeDevices(Array.isArray(data?.remotes) ? data.remotes.filter((d: any) => d?.name) : []))
-      .catch(() => setBridgeDevices([]))
+      // ✨ 拉到新清单后写浏览器缓存, 下次打开菜单直接命中
+      // ✨ Refresh the browser cache right after the list lands
+      .then((data: any) => {
+        const list: BridgeDevice[] = Array.isArray(data?.remotes) ? data.remotes.filter((d: any) => d?.name) : []
+        setBridgeDevices(list)
+        writeListCache(BRIDGE_DEVICES_SCOPE, devicesCacheOwner, list)
+      })
+      // 失败保留缓存旧列表 (清空会让已选设备临时从下拉消失)
+      // Keep the cached list on failure; clearing it would hide the already-selected device
+      .catch(() => { /* 保留缓存 */ })
       .finally(() => { setDevicesLoading(false); setDevicesLoaded(true) })
-  }, [])
+  }, [devicesCacheOwner])
   // 展开时才首次拉取 (未展开不产生请求); 之后「更多会话设置」折叠再展开不会重复拉, 要新数据点标题栏刷新
   useEffect(() => { if (moreOpen && !devicesLoaded) loadDevices() }, [moreOpen, devicesLoaded, loadDevices])
 
@@ -679,7 +704,8 @@ export function CreateSessionForm({ onClose, onDone, onNavigate, defaultProjectI
                   Model + language share one row as dropdowns; they stack on narrow screens */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3.5">
                 <div>
-                  <SectionLabel>模型</SectionLabel>
+                  {/* 标题行由下拉自己渲染, 好让刷新按钮与「设备」保持同一形态
+                      The dropdown renders its own label row so the refresh button matches the device field */}
                   <SessionModelDropdown value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
                 </div>
                 <div>

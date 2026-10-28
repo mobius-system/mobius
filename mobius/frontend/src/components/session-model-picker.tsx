@@ -7,8 +7,10 @@
 //   3. 超额模型 disabled (usage.blocked), 标红 "已达限额 · 暂不可选".
 // 传统与顶栏快捷共用此组件, 行为统一.
 // =====================================================================
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../store'
+import { readListCache, writeListCache } from '../services/list-swr-cache'
+import { MODEL_OPTIONS_SCOPE, MODEL_OPTIONS_CACHE_OWNER } from '../services/warm-create-lists'
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 
 export type SessionModelOption = {
@@ -92,28 +94,45 @@ function useResponsiveModelColumns() {
 }
 
 // 模型选项 + 配额统计的拉取: grid 卡片 (SessionModelPicker) 与下拉形态 (SessionModelDropdown) 共用一份数据源.
-// Shared data source for both the grid picker and the dropdown variant.
-export function useSessionModelOptions(): { options: SessionModelOption[]; stats: PromptStats | null } {
-  const [options, setOptions] = useState<SessionModelOption[]>(FALLBACK_OPTIONS)
+// 选项清单与项目/设备列表同款策略 —— 首帧读浏览器缓存立即出真实模型, 网络回来后再无感覆盖;
+// refresh() 供标题栏刷新按钮手动重拉 (清单 + 配额统计一起刷新).
+// Options follow the same stale-while-revalidate cache as the project/device lists; refresh() revalidates both.
+export function useSessionModelOptions(): { options: SessionModelOption[]; stats: PromptStats | null; loading: boolean; refresh: () => void } {
+  // 首帧同步读缓存, 避免"先兜底两项再跳变"; 缓存未命中时用 FALLBACK_OPTIONS 兜底
+  // Seed synchronously from the browser cache so the first paint already has the real models
+  const [options, setOptions] = useState<SessionModelOption[]>(
+    () => readListCache<SessionModelOption>(MODEL_OPTIONS_SCOPE, MODEL_OPTIONS_CACHE_OWNER)?.list || FALLBACK_OPTIONS)
   const [stats, setStats] = useState<PromptStats | null>(null)
+  const [loading, setLoading] = useState(false)
+  // 连点刷新只认最后一次请求; 卸载后也用它拦截迟到响应
+  // Only the newest refresh may commit its result
+  const seqRef = useRef(0)
 
-  useEffect(() => {
-    let alive = true
-    api('/api/sessions/model-options').then((arr: any) => {
-      if (!alive || !Array.isArray(arr) || arr.length === 0) return
+  const refresh = useCallback(() => {
+    const seq = ++seqRef.current
+    setLoading(true)
+    const optionsReq = api('/api/sessions/model-options').then((arr: any) => {
+      // ✨ 清单写入浏览器缓存, 下次打开菜单直接命中
+      // ✨ Persist the list into the browser cache for the next open
+      if (seq !== seqRef.current || !Array.isArray(arr) || arr.length === 0) return
       setOptions(arr as SessionModelOption[])
-    }).catch(() => { /* 保留 FALLBACK_OPTIONS */ })
-    return () => { alive = false }
+      writeListCache(MODEL_OPTIONS_SCOPE, MODEL_OPTIONS_CACHE_OWNER, arr)
+    }).catch(() => { /* 保留缓存/兜底列表 */ })
+    const statsReq = api('/api/sessions/prompt-stats').then((s: any) => {
+      if (seq === seqRef.current) setStats(s as PromptStats)
+    }).catch(() => { /* 失败就不显示配额徽标, 不影响创建流程 */ })
+    // 两路都返回 (成功或失败) 才停止转圈
+    // Stop the spinner once both requests settle, success or failure
+    Promise.allSettled([optionsReq, statsReq]).then(() => {
+      if (seq === seqRef.current) setLoading(false)
+    })
   }, [])
 
-  useEffect(() => {
-    let alive = true
-    api('/api/sessions/prompt-stats').then((s: any) => { if (alive) setStats(s as PromptStats) })
-      .catch(() => { /* 失败就不显示配额徽标, 不影响创建流程 */ })
-    return () => { alive = false }
-  }, [])
+  // 挂载即后台校准一次: 缓存可能过期 (新增/下线模型), 无缓存时这就等同于首次拉取
+  // Revalidate on mount; this doubles as the first fetch when the cache is empty
+  useEffect(() => { refresh() }, [refresh])
 
-  return { options, stats }
+  return { options, stats, loading, refresh }
 }
 
 export function SessionModelPicker({ value, onChange, dark, quotaEnabled = true, collapsedRows = 3 }: {

@@ -13,6 +13,11 @@ import { readListCache, writeListCache } from './list-swr-cache'
 export const PROJECTS_SCOPE = 'projects-all'
 export const issuesScope = (projectId: string) => `issues-active:${projectId}`
 export const researchesScope = (projectId: string) => `researches-active:${projectId}`
+// 模型清单是全局数据 (与登录用户无关), 用固定占位 owner 落同一份浏览器缓存
+// The model list is global, so a fixed pseudo owner keeps one shared browser-cache entry
+export const MODEL_OPTIONS_SCOPE = 'session-model-options'
+export const MODEL_OPTIONS_CACHE_OWNER = '__all__'
+export const BRIDGE_DEVICES_SCOPE = 'bridge-devices'
 
 const pick = (r: any, key: string): any[] => (Array.isArray(r) ? r : (r?.[key] || []))
 
@@ -22,6 +27,14 @@ const pick = (r: any, key: string): any[] => (Array.isArray(r) ? r : (r?.[key] |
 export function warmCreateMenuLists(userId?: string, projectId?: string) {
   if (!readListCache(PROJECTS_SCOPE, userId)) {
     api('/api/projects').then((r: any) => writeListCache(PROJECTS_SCOPE, userId, pick(r, 'projects'))).catch(() => {})
+  }
+  // 模型清单同样预热: 首次打开「更多会话设置」时下拉也能直接出真实模型, 而不是兜底两项
+  // Warm the model list too, so the very first dropdown open already shows the real models
+  if (!readListCache(MODEL_OPTIONS_SCOPE, MODEL_OPTIONS_CACHE_OWNER)) {
+    api('/api/sessions/model-options').then((r: any) => {
+      const list = pick(r, 'options')
+      if (list.length) writeListCache(MODEL_OPTIONS_SCOPE, MODEL_OPTIONS_CACHE_OWNER, list)
+    }).catch(() => {})
   }
   if (!projectId) return
   // 只预热"当前所在项目"的任务/研究: 菜单默认就落在当前项目, 其余项目打开时再拉
