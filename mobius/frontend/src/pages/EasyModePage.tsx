@@ -255,7 +255,6 @@ export default function EasyModePage() {
   // 欢迎页输入框下方的项目/任务/模型/语言/记忆和技能选择, 提交时一次性带给创建接口
   const [welcomeSelection, setWelcomeSelection] = useState<EasySessionSelection>(() => ({
     ...EMPTY_EASY_SESSION_SELECTION,
-    ...readEasyLastSelection(),
   }))
   const [welcomeCreating, setWelcomeCreating] = useState(false)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
@@ -614,7 +613,7 @@ export default function EasyModePage() {
     setShowWelcome(true)
     setWelcomePrompt('')
     clearWelcomeAttachments()
-    setWelcomeSelection(current => ({ ...current, ...readEasyLastSelection(), createProject: false }))
+    setWelcomeSelection(current => ({ ...EMPTY_EASY_SESSION_SELECTION, createProject: false }))
     setCurrentSession(null)
     setCurrentTask(null)
     setCurrentIssue(null)
