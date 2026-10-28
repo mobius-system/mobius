@@ -70,11 +70,16 @@ assert.doesNotMatch(
   /iconOnlyTrigger/,
   'skill & memory 不能只留一个没字的光图标',
 )
-// ④ 运行中枢: 在模型左侧 (输入框右下), 与会话页同款图标
+// ④ 运行中枢: 在模型左侧 (输入框右下), 与会话页同款图标, 与模型紧挨着 (gap-1.5)
 assert.match(
   inputSource,
-  /props\.mode === 'create_session_mode' && props\.onChangeWelcomeDevice[\s\S]*?<EasySessionDevicePill/,
-  '欢迎页要有运行中枢选择, 放在输入框右下',
+  /props\.mode === 'create_session_mode' && \([\s\S]*?onChangeWelcomeDevice[\s\S]*?<EasySessionDevicePill[\s\S]*?welcomeModelKey[\s\S]*?<EasySessionModelPill/,
+  '欢迎页要有运行中枢选择, 放在输入框右下、紧挨模型',
+)
+assert.match(
+  inputSource,
+  /gap-1\.5/,
+  '运行中枢与模型要收紧成一个整体',
 )
 assert.match(
   pillSource,
@@ -84,7 +89,7 @@ assert.match(
 // ⑤ 模型选型: 欢迎页输入框右下角的模型 pill (与执行页同款)
 assert.match(
   inputSource,
-  /props\.mode === 'create_session_mode' && props\.welcomeModelKey !== undefined[\s\S]*?<EasySessionModelPill/,
+  /welcomeModelKey !== undefined[\s\S]*?<EasySessionModelPill/,
   '欢迎页要有模型选型',
 )
 

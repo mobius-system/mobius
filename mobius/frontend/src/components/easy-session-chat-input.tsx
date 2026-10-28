@@ -468,23 +468,27 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
               )}
             </>
           )}
-          {/* 欢迎页: 运行中枢 (放在模型左侧, 与会话页同款图标; 名字在展开后的列表里).
-              这里用图标不用带字胶囊 —— 这一行右边还站着模型 pill 和三个动作键, 写名字会挤. */}
-          {props.mode === 'create_session_mode' && props.onChangeWelcomeDevice && (
-            <EasySessionDevicePill
-              isDark={isDark}
-              deviceId={props.welcomeDeviceId || ''}
-              onChange={deviceId => props.onChangeWelcomeDevice?.(deviceId)}
-            />
-          )}
-          {/* 欢迎页: 模型 pill (与会话页同款), 选中写入 EasySessionConfigBar selection.model */}
-          {props.mode === 'create_session_mode' && props.welcomeModelKey !== undefined && (
-            <EasySessionModelPill
-              isDark={isDark}
-              modelLabel=""
-              modelKey={props.welcomeModelKey}
-              onChange={model => props.onChangeWelcomeModel?.(model)}
-            />
+          {/* 欢迎页: 运行中枢 + 模型选型 (两个都是「这个会话是什么」的选择, 紧挨着放.
+              设备用图标、模型用文字, 但两者之间收窄到 gap-1.5, 让它们读成一个整体,
+              而不是两个散开的按钮. 名字留到展开后的列表里 —— 写名字会挤窄模型 pill. */}
+          {props.mode === 'create_session_mode' && (
+            <span className="flex flex-shrink-0 items-center gap-1.5">
+              {props.onChangeWelcomeDevice && (
+                <EasySessionDevicePill
+                  isDark={isDark}
+                  deviceId={props.welcomeDeviceId || ''}
+                  onChange={deviceId => props.onChangeWelcomeDevice?.(deviceId)}
+                />
+              )}
+              {props.welcomeModelKey !== undefined && (
+                <EasySessionModelPill
+                  isDark={isDark}
+                  modelLabel=""
+                  modelKey={props.welcomeModelKey}
+                  onChange={model => props.onChangeWelcomeModel?.(model)}
+                />
+              )}
+            </span>
           )}
           {/* 欢迎页: 附件上传按钮 (Paperclip, 与会话页同款) */}
           {props.mode === 'create_session_mode' && (
