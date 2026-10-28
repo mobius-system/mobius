@@ -1557,7 +1557,7 @@ router.delete('/model-access/bestapi/models', adminAuth, async (req: express.Req
 
 router.post('/model-access/test', adminAuth, async (req: express.Request, res: express.Response) => {
   try {
-    const { testAccessModel } = await import('../services/model-access-test');
+    const { testAccessModel } = require('../services/model-access-test') as typeof import('../services/model-access-test');
     res.json(await testAccessModel(String(req.body?.session_model || '')));
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || String(e) });
