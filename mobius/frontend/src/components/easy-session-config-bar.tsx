@@ -64,14 +64,6 @@ export const EMPTY_EASY_SESSION_SELECTION: EasySessionSelection = {
 type ProjectLite = { id: string; name?: string; default_model?: string | null; can_create_session?: boolean }
 
 /** 近期活跃任务的数据源: /api/tasks/recent 返回的会话行 */
-type RecentSessionLite = {
-  issue_id?: string | null
-  issue_title?: string | null
-  project_id?: string | null
-  project_name?: string | null
-}
-
-type TaskOption = { id: string; title: string; projectId?: string; projectName?: string; active?: boolean }
 type ModelOption = { key: string; label?: string; title?: string; sub?: string; is_default?: boolean }
 
 const LANGUAGE_OPTIONS: DropdownOption[] = [
@@ -131,11 +123,10 @@ export function EasySessionModeTabs({ selection, onChange }: {
   )
 }
 
-export function EasySessionConfigBar({ selection, onChange, projects, recentSessions, dark, onCreateProject }: {
+export function EasySessionConfigBar({ selection, onChange, projects, dark, onCreateProject }: {
   selection: EasySessionSelection
   onChange: (next: EasySessionSelection) => void
   projects: ProjectLite[]
-  recentSessions: RecentSessionLite[]
   dark: boolean
   /** 打开「新建项目」弹窗 (项目选择器的 + 入口) */
   onCreateProject: () => void
@@ -236,21 +227,8 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
     }
   }, [createProject, scopeLastModel, selectedProject?.default_model, globalDefaultModel, modelOptions])
 
-  // 未选项目时的任务候选: 近期会话里出现过的任务, 按最近活跃排序, 同一任务只留一条
-  const recentTasks = useMemo<TaskOption[]>(() => {
-    const seen = new Set<string>()
-    const out: TaskOption[] = []
-    for (const s of recentSessions) {
-      const id = s.issue_id ? String(s.issue_id) : ''
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      out.push({ id, title: s.issue_title || id, projectId: s.project_id || undefined, projectName: s.project_name || undefined })
-      if (out.length >= 30) break
-    }
-    return out
-  }, [recentSessions])
-
   const selectedProjectName = selectedProject?.name || ''
+  // 任务必须先在项目里选: 没选项目时下拉置灰 (提示「先选项目」), 不再提供「近期任务」兜底.
   const taskOptions: DropdownOption[] = useMemo(() => (
     projectId
       ? projectIssues.map((i: any) => ({
@@ -258,12 +236,8 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
         label: String(i.title || i.id),
         description: i.status === 'active' ? selectedProjectName : `${selectedProjectName} · 已完成`,
       }))
-      : recentTasks.map(t => ({
-        value: t.id,
-        label: t.title,
-        description: t.projectName,
-      }))
-  ), [projectId, projectIssues, recentTasks, selectedProjectName])
+      : []
+  ), [projectId, projectIssues, selectedProjectName])
 
   // 后端在每个项目上带 can_create_session (按项目成员角色判定): 只读项目选进去也建不了
   // 会话, 会在提交时拿到 403「无权在此 Issue 创建 Session」, 所以这里直接置灰并说明原因,
@@ -362,10 +336,10 @@ export function EasySessionConfigBar({ selection, onChange, projects, recentSess
             dark={dark}
             size="sm"
             icon={<ListChecks className="h-3.5 w-3.5" strokeWidth={1.8} />}
-            disabled={taskOptions.length === 0}
+            disabled={!projectId || taskOptions.length === 0}
             selectedAccent
-            placeholder="选择任务"
-            emptyText={projectId ? '该项目下暂无任务' : '先选项目, 这里会列出它的任务'}
+            placeholder={projectId ? '选择任务' : '先选项目'}
+            emptyText={projectId ? '该项目下暂无任务' : '先选项目'}
           />
         </>
       )}

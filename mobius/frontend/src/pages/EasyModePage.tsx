@@ -1157,7 +1157,6 @@ export default function EasyModePage() {
                         setWelcomeSelection(restored)
                       }}
                       projects={projects}
-                      recentSessions={sessions}
                       dark={theme !== 'light'}
                       onCreateProject={() => setCreateKind('project')}
                     />

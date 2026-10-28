@@ -44,7 +44,7 @@ assert.doesNotMatch(
   /easy-welcome-project-row/,
   '项目选择不能留在输入框下方那一行',
 )
-// ② 任务 (Issue): 下拉, 没项目时置灰并说明原因
+// ② 任务 (Issue): 下拉, 但必须先选项目 —— 没项目时置灰提示「先选项目」, 不能先选任务
 assert.match(
   barSource,
   /<DropdownSelect[\s\S]*?options=\{taskOptions\}/,
@@ -52,13 +52,13 @@ assert.match(
 )
 assert.match(
   barSource,
-  /disabled=\{taskOptions\.length === 0\}/,
-  '没有可选任务时下拉要置灰 (而不是消失)',
+  /disabled=\{!projectId \|\| taskOptions\.length === 0\}/,
+  '没选项目时任务下拉要置灰',
 )
 assert.match(
   barSource,
-  /先选项目, 这里会列出它的任务/,
-  '置灰时要说清楚为什么',
+  /placeholder=\{projectId \? '选择任务' : '先选项目'\}/,
+  '没选项目时占位要写成「先选项目」',
 )
 // ③ skill & Memory: 不能是光图标, 得看得见是什么
 assert.match(
