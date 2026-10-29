@@ -7876,6 +7876,22 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
     border-top-left-radius: 16px;
     border-top-right-radius: 16px;
   }
+  /* 记忆和技能 (SkillMemoryPicker) 桌面端是居中弹窗, 手机上改成底部 actionsheet.
+     注意 ≤480px 有一条更具体的「居中模态改顶部对齐」规则 (见 480px 媒体查询),
+     会盖过这里的 align-items, 故必须 !important. */
+  [data-testid="skill-memory-overlay"] {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+  [data-testid="skill-memory-panel"] {
+    width: 100%;
+    max-width: none;
+    max-height: 72dvh;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* ===== 列表空态规范 (issue 2026-10-23, impeccable) =====

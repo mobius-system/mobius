@@ -627,8 +627,8 @@ export function SkillMemoryPicker({
       {/* 走 portal: 调用方可能位于 backdrop-filter/overflow:hidden 的容器内 (简易模式输入框),
           那种祖先会成为 fixed 定位的包含块并把浮层裁掉. */}
       {panel && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={close}>
-          <div className="flex max-h-[min(600px,calc(100vh-64px))] w-[min(520px,calc(100vw-32px))] flex-col rounded-2xl shadow-2xl"
+        <div data-testid="skill-memory-overlay" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={close}>
+          <div data-testid="skill-memory-panel" className="flex max-h-[min(600px,calc(100vh-64px))] w-[min(520px,calc(100vw-32px))] flex-col rounded-2xl shadow-2xl"
             onClick={e => e.stopPropagation()} style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0">
