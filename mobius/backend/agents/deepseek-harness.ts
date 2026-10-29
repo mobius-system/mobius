@@ -362,17 +362,22 @@ class DeepSeekHarnessBackend extends AgentBackend {
     })
   }
 
-  // Stop the running runtime, then either clear the running flag (empty prompt) or relaunch
-  // it with the new prompt.
+  // Stop the running runtime, then relaunch it with the expedited prompt.
   pauseCurrentAndResumeFromSession(opts: HarnessStartOpts & { sessionId: string; prompt: string }) {
+    return this._withLock(opts.sessionId, async () => {
+      if (!String(opts.prompt || '').trim()) throw new Error('urgent send requires prompt')
+      const old = this.runtime.get(opts.sessionId)
+      if (old && this.isAlive(opts.sessionId)) await this._stopRuntime(old, false)
+      await this._start(opts.sessionId, { ...old, ...opts, agentSessionId: old?.agentSessionId || opts.agentSessionId }, opts.prompt)
+    })
+  }
+
+  // Hard-stop the runtime and wait for process exit while retaining resume metadata.
+  pauseCurrentAndTerminateSession(opts: HarnessStartOpts & { sessionId: string }) {
     return this._withLock(opts.sessionId, async () => {
       const old = this.runtime.get(opts.sessionId)
       if (old && this.isAlive(opts.sessionId)) await this._stopRuntime(old, false)
-      if (!String(opts.prompt || '').trim()) {
-        safeRemoveRunningFlag(opts.flagRoot || old?.flagRoot || old?.cwd || opts.cwd, opts.sessionId, this.name)
-        return
-      }
-      await this._start(opts.sessionId, { ...old, ...opts, agentSessionId: old?.agentSessionId || opts.agentSessionId }, opts.prompt)
+      safeRemoveRunningFlag(opts.flagRoot || old?.flagRoot || old?.cwd || opts.cwd, opts.sessionId, this.name)
     })
   }
 

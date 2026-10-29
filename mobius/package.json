@@ -10,6 +10,8 @@
     "test:session-context-parity": "node --require tsx/cjs tests/session-context-parity.js",
     "test:agent-jsonl-path": "node --require tsx/cjs tests/agent-jsonl-path.js",
     "test:agent-backend-contract": "node tests/agent-backend-contract.js",
+    "test:session-stop-backend-contract": "node tests/session-stop-backend-contract.js",
+    "test:session-stop-tmux-barrier": "node --require tsx/cjs tests/session-stop-tmux-barrier.js",
     "test:launch-command": "node --require tsx/cjs tests/launch-command.js",
     "test:mobius-cli": "node tests/mobius-cli.js",
     "test:scheduled-wakeups": "node --require tsx/cjs tests/scheduled-wakeups.js",

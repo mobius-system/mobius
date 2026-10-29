@@ -54,7 +54,8 @@ import { maybeHealDangerPermission } from './claude-code-utils/danger-heal'
 import { pendingInputTexts, resolveJsonlPath, restoreRuntime } from './claude-code-utils/runtime-store'
 import {
   createSession,
-  pauseSession,
+  pauseSessionAndNextPrompt,
+  pauseSessionAndTerminate,
   queueSession,
   terminateSession as terminateSessionImpl,
   writeMobiusPromptEarly,
@@ -125,7 +126,14 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    */
   pauseCurrentAndResumeFromSession(opts: ClaudeDispatchOpts) {
     writeMobiusPromptEarly(this, opts)
-    return this._withLock(opts?.sessionId, () => pauseSession(this, opts))
+    return this._withLock(opts?.sessionId, () => pauseSessionAndNextPrompt(this, opts))
+  }
+  /*
+   * Hard-stop the current TUI while preserving enough runtime metadata for the next message to
+   * respawn and resume it. The lock is held until the old tmux window is confirmed absent.
+   */
+  pauseCurrentAndTerminateSession(opts: ClaudeDispatchOpts) {
+    return this._withLock(opts?.sessionId, () => pauseSessionAndTerminate(this, opts))
   }
   /*
    * Queue path: append a prompt to a running session without interrupting it, so the agent picks it

@@ -84,7 +84,7 @@ export function invalidatePaneTail(sessionId: string) {
  * Two busy anchors count: the elapsed-time status line, and "Waiting for N
  * background agents to finish", the one state the jsonl cannot express.
  *
- * This only escalates a stop that already failed. _pauseImpl asks twice
+ * This only reports whether a pane appears busy; callers decide how to react.
  * before killing, so a hit alone never kills anything; a failed or empty
  * capture returns false (no escalation), so a normally soft-stopped window
  * is never killed.

@@ -16,7 +16,7 @@ import { sleep, sendMaybeInitialContextPrompt } from './prompt'
 import { clearRunning, markRunning } from './running-flags'
 import { ensureWatcher } from './runtime-store'
 import { ensureProjectTrusted, jsonlPathOf } from './session-paths'
-import { ensureHub, invalidatePaneTail, claudePaneStillBusy, windowExists } from './tmux-window'
+import { ensureHub, invalidatePaneTail, windowExists } from './tmux-window'
 import { waitForTuiReady } from './tui-ready'
 import { resolveClaudeProxyMode, unpackLaunch } from './proxy'
 import { sandboxCommand } from '../../services/agent-sandbox'
@@ -161,30 +161,19 @@ export async function queueSession(backend: ClaudeBackendHost, opts: ClaudeDispa
 }
 
 /*
- * Pause path for a live window: interrupt the running turn, then either stop for good (no prompt,
- * clear the running flag) or hand the new prompt to the queue path.
- *
- * Two interrupt flavours, both measured on the real TUI: urgent sends a single C-c (enough to break
- * a turn), /stop sends three (a lone C-c is regularly swallowed). Neither may wait with
- * spawnSync('sleep'): that blocks the event loop and freezes the whole backend, so the pauses use
- * await setTimeout.
- *
- * The /stop hard-stop fallback is safe to escalate because a killed window is respawned by
- * queueSession on the next message, so the session itself continues.
- *
- * An absent window is not an error: the caller asked to stop something that is already not running.
+ * Interrupt the current turn and immediately submit the expedited prompt. This is intentionally
+ * separate from /stop: it must preserve the TUI window and its measured key timing.
  */
-export async function pauseSession(backend: ClaudeBackendHost, opts: ClaudeDispatchOpts) {
-  const { sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null } = opts
+export async function pauseSessionAndNextPrompt(backend: ClaudeBackendHost, opts: ClaudeDispatchOpts) {
+  const { sessionId, prompt, urgent = false, mobiusPromptRecord = null } = opts
   if (!sessionId) throw new Error('需要 sessionId')
+  if (!prompt) throw new Error('加急发送需要 prompt')
   const persisted = backend.runtime.get(sessionId)
 
   if (windowExists(sessionId)) {
     if (urgent) {
       // 加急只发一次C-c即可打断，实测一次就够
       // Urgent sends one C-c; one press is enough in practice
-      // 不要用spawnSync睡眠，会阻塞事件循环
-      // Use await setTimeout; spawnSync('sleep') blocks the event loop
       tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
       await sleep(250)
       // 旧输入可能回到输入框，先Alt+Enter分隔
@@ -192,40 +181,14 @@ export async function pauseSession(backend: ClaudeBackendHost, opts: ClaudeDispa
       tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'M-Enter'])
       await sleep(80)
     } else {
-      // /stop连发3次C-c，TUI会吞掉其中一次
-      // /stop fires 3 C-c; the TUI swallows one of them
+      // 非加急的内部恢复调用保留原有三次C-c时序
+      // Internal non-urgent resume calls retain their original three-C-c timing
       for (let i = 0; i < 3; i++) {
         tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
         if (i < 2) await sleep(50)
       }
-      // 等TUI消化这次打断
-      // Give the TUI a moment to digest the interrupt
       await sleep(300)
-      // 停不掉就kill-window硬停，保证生效
-      // Escalate to kill-window so /stop always stops the agent
-      // 只有空提示词的软停走这里，带新提示词不杀窗口
-      // Only the empty-prompt soft stop escalates; a new prompt keeps the window
-      // 二次确认加700ms等待，避免误杀已软停的窗口
-      // Double confirmation with a 700ms wait avoids killing a soft-stopped window
-      if (!prompt) {
-        invalidatePaneTail(sessionId)
-        if (claudePaneStillBusy(sessionId)) {
-          await sleep(700)
-          invalidatePaneTail(sessionId)
-          if (windowExists(sessionId) && claudePaneStillBusy(sessionId)) {
-            tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
-            log(`[tmux-claude-code] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
-          }
-        }
-      }
     }
-  }
-
-  if (!prompt) {
-    clearRunning(flagRoot || persisted?.flagRoot || persisted?.cwd || cwd, sessionId)
-    // 空提示词=只打断不发送，同时清掉运行标记
-    // An empty prompt means interrupt only; clear the running flag
-    return
   }
 
   // 走队列路径，死窗口会在里面重开
@@ -244,6 +207,49 @@ export async function pauseSession(backend: ClaudeBackendHost, opts: ClaudeDispa
     isInitialContextPrompt: false,
     mobiusPromptRecord,
   })
+}
+
+/*
+ * Hard-stop one Claude TUI without forgetting its resumable session metadata. The interrupt grace
+ * gives the TUI time to write its aborted-turn tail; the final live probe is the lock-release
+ * barrier that prevents a following send from targeting the disappearing old window.
+ */
+export async function pauseSessionAndTerminate(backend: ClaudeBackendHost, opts: ClaudeDispatchOpts) {
+  const { sessionId, cwd, flagRoot } = opts
+  if (!sessionId) throw new Error('需要 sessionId')
+  const persisted = backend.runtime.get(sessionId)
+
+  if (windowExists(sessionId)) {
+    // 先用原有C-c节奏给TUI一秒收尾，尽量保留中止事件和最后一段转录
+    // Keep the original C-c rhythm and one-second grace so the TUI can flush its aborted turn
+    for (let i = 0; i < 3; i++) {
+      tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
+      if (i < 2) await sleep(50)
+    }
+    await sleep(300)
+    if (windowExists(sessionId)) await sleep(700)
+    // ✨ /stop是硬停，宽限后仍存在的旧窗口必须被移除
+    // /stop is a hard stop; the old window must be removed after the grace period ✨
+    if (windowExists(sessionId)) {
+      const killed = tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
+      if (killed.status !== 0 && windowExists(sessionId)) {
+        throw new Error(`tmux kill-window 失败: ${killed.stderr || sessionId}`)
+      }
+      log(`[tmux-claude-code] /stop: killed window=${sessionId}`)
+    }
+    // kill-window是同步命令，但沙箱路由的窗口快照可能稍后才收敛，锁内实时确认
+    // kill-window is synchronous, but a sandbox route may converge later; confirm live under lock
+    for (let i = 0; i < 20 && windowExists(sessionId); i++) await sleep(50)
+    if (windowExists(sessionId)) throw new Error(`终止后 tmux window 仍存在: ${sessionId}`)
+  }
+
+  // 旧窗口不再产出，停止旧监听以免下次重建覆盖runtime时泄漏watcher
+  // The dead window emits no more; stop its watcher before a respawn overwrites the runtime row
+  if (persisted?.watch?.stop) { try { persisted.watch.stop() } catch {} }
+  if (persisted) persisted.watch = null
+  invalidatePaneTail(sessionId)
+  clearWindowOwner(sessionId)
+  clearRunning(flagRoot || persisted?.flagRoot || persisted?.cwd || cwd, sessionId)
 }
 
 /*

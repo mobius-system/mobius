@@ -201,24 +201,6 @@ function findCodexRecentErrorInPane(paneText: string) {
   return null
 }
 
-// Hard-kill safety net for /stop: capture the newest pane text (bypassing the 5s cache so it shows
-// the real post-C-c state) and decide whether the codex TUI is still running a turn. Busy anchor =
-// CODEX_STATUS_LINE_RE ("(<elapsed> • esc to interrupt)" etc.).
-//   - hit:           C-c×3 did not take, still working
-//   - miss/failure:  back to idle, C-c worked
-//   - failure/empty: false, so nothing escalates and a window that stopped softly is not killed
-function codexPaneStillBusy(sessionId: string) {
-  let text = ''
-  try {
-    const pane = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-J', '-S', '-15'])
-    if (pane.status === 0 && pane.stdout) {
-      text = pane.stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    }
-  } catch { /* best-effort: a failure means not busy, so no escalation */ }
-  if (!text) return false
-  return text.split('\n').some((l) => CODEX_STATUS_LINE_RE.test(l))
-}
-
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 25000
 const READY_SENTINELS = [
@@ -915,7 +897,14 @@ class TmuxCodexBackend extends AgentBackend {
   }
   pauseCurrentAndResumeFromSession(opts: CodexDispatchOpts) {
     this._writeMobiusPromptEarly(opts)
-    return this._withLock(opts?.sessionId, () => this._pauseImpl(opts))
+    return this._withLock(opts?.sessionId, () => this.pauseSessionAndNextPrompt(opts))
+  }
+  /*
+   * Hard-stop the current Codex TUI and hold the per-session lock until its old window is gone.
+   * Runtime metadata remains available so the next ordinary message can resume the same thread.
+   */
+  pauseCurrentAndTerminateSession(opts: CodexDispatchOpts) {
+    return this._withLock(opts?.sessionId, () => this.pauseSessionAndTerminate(opts))
   }
   noPauseCurrentAndQueueQueryAtSession(opts: CodexDispatchOpts) {
     this._writeMobiusPromptEarly(opts)
@@ -1373,56 +1362,34 @@ class TmuxCodexBackend extends AgentBackend {
     }
   }
 
-  // Pause path for a live window: two flavours of interrupt, then either stop for good (no prompt,
-  // clears the running flag) or queue the new prompt through _queueImpl.
-  async _pauseImpl({ sessionId, prompt, cwd, flagRoot, urgent = false, mobiusPromptRecord = null }: CodexDispatchOpts) {
+  /*
+   * Interrupt the current turn and immediately submit the expedited prompt. The measured C-c,
+   * M-Enter and delay sequence is deliberately unchanged by the hard-stop fix.
+   */
+  async pauseSessionAndNextPrompt({ sessionId, prompt, urgent = false, mobiusPromptRecord = null }: CodexDispatchOpts) {
     if (!sessionId) throw new Error('sessionId required')
+    if (!prompt) throw new Error('urgent send requires prompt')
     const persisted = this.runtime.get(sessionId)
 
     if (windowExists(sessionId)) {
       if (urgent) {
-        // Urgent: a single C-c interrupts the current turn (measured: one is enough). Spacing uses
-        // await setTimeout; spawnSync('sleep') would block the event loop and freeze the node process.
+        // 加急沿用实测按键时序，一次C-c打断后用Alt+Enter隔开旧输入
+        // Urgent keeps the measured sequence: one C-c, then Alt+Enter separates old input
         tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
         await new Promise((r) => setTimeout(r, 250))
-        // After the interrupt the old input may return to the input area: Alt+Enter first to
-        // separate it, otherwise it fuses with the new prompt
         tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'M-Enter'])
         await new Promise((r) => setTimeout(r, 80))
       } else {
-        // /stop: three C-c presses interrupt the current turn without killing the window (measured:
-        // the TUI swallows a single one).
+        // 非加急的内部恢复调用保留原有三次C-c时序
+        // Internal non-urgent resume calls retain their original three-C-c timing
         for (let i = 0; i < 3; i++) {
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
           if (i < 2) await new Promise((r) => setTimeout(r, 50))
         }
-        if (persisted) persisted.working = false
         await new Promise((r) => setTimeout(r, 300))
-        // Safety net: C-c×3 is occasionally swallowed by the TUI and the turn keeps running. For a
-        // soft stop with an empty prompt (/stop) escalate to tmux kill-window as a hard stop, so
-        // /stop always stops the background agent (a dead window respawns on the next message, so
-        // the session still continues). The urgent + new-prompt path must keep the window for new
-        // input and never hard-kills. Double confirmation (capture busy → wait 700ms for the TUI to
-        // settle → still busy) avoids killing a window that stopped softly but still shows a stale
-        // status line.
-        if (!prompt) {
-          _realTimeInfoCache.delete(sessionId)
-          if (codexPaneStillBusy(sessionId)) {
-            await new Promise((r) => setTimeout(r, 700))
-            _realTimeInfoCache.delete(sessionId)
-            if (windowExists(sessionId) && codexPaneStillBusy(sessionId)) {
-              tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
-              log(`[tmux-codex] /stop fallback: C-c×3 未停止, kill-window=${sessionId}`)
-            }
-          }
-        }
       }
     }
 
-    if (!prompt) {
-      clearRunning(flagRoot || persisted?.flagRoot || persisted?.cwd || cwd, sessionId)
-      return
-    }
     await this._queueImpl({
       sessionId,
       prompt,
@@ -1437,6 +1404,50 @@ class TmuxCodexBackend extends AgentBackend {
       agentSessionId: persisted?.agentSessionId,
       mobiusPromptRecord,
     })
+  }
+
+  /*
+   * Hard-stop one Codex TUI while retaining the thread metadata needed for a later respawn. The
+   * method resolves only after a live tmux probe confirms the old window is absent.
+   */
+  async pauseSessionAndTerminate({ sessionId, cwd, flagRoot }: CodexDispatchOpts) {
+    if (!sessionId) throw new Error('sessionId required')
+    const persisted = this.runtime.get(sessionId)
+
+    if (windowExists(sessionId)) {
+      // 先沿用原有C-c节奏并留一秒收尾，尽量让Codex写出中止事件和末尾转录
+      // Keep the old C-c rhythm and one-second grace so Codex can flush the aborted turn
+      for (let i = 0; i < 3; i++) {
+        tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'C-c'])
+        if (i < 2) await new Promise((r) => setTimeout(r, 50))
+      }
+      if (persisted) persisted.working = false
+      await new Promise((r) => setTimeout(r, 300))
+      if (windowExists(sessionId)) await new Promise((r) => setTimeout(r, 700))
+      // ✨ /stop硬终止宽限后仍存在的旧窗口
+      // Hard-stop the old /stop window after its grace period ✨
+      if (windowExists(sessionId)) {
+        const killed = tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
+        if (killed.status !== 0 && windowExists(sessionId)) {
+          throw new Error(`tmux kill-window failed: ${killed.stderr || sessionId}`)
+        }
+        log(`[tmux-codex] /stop: killed window=${sessionId}`)
+      }
+      // 沙箱路由可能稍后收敛，在同一把锁内轮询实时存在性
+      // A sandbox route may converge later, so poll live existence under the same lock
+      for (let i = 0; i < 20 && windowExists(sessionId); i++) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      if (windowExists(sessionId)) throw new Error(`tmux window still exists after stop: ${sessionId}`)
+    }
+
+    // 停掉旧JSONL监听，下一条消息重建runtime时不会泄漏watcher
+    // Stop the old JSONL watcher so the next runtime replacement cannot leak it
+    if (persisted?.watch?.stop) { try { persisted.watch.stop() } catch {} }
+    if (persisted) persisted.watch = null
+    _realTimeInfoCache.delete(sessionId)
+    clearWindowOwner(sessionId)
+    clearRunning(flagRoot || persisted?.flagRoot || persisted?.cwd || cwd, sessionId)
   }
 
   // Stop the watcher, remove the per-session withproxy file, drop the runtime + persisted rows,

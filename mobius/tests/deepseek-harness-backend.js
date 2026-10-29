@@ -116,7 +116,7 @@ async function main() {
     await waitFor(() => !backend.isWorking(sessionId))
     assert.equal(backend.getHistory(sessionId).entries.filter((entry) => entry.type === 'assistant').length, 3)
 
-    await backend.pauseCurrentAndResumeFromSession({ sessionId, cwd, flagRoot, prompt: '' })
+    await backend.pauseCurrentAndTerminateSession({ sessionId, cwd, flagRoot })
     assert.equal(backend.isAlive(sessionId), false)
     assert.equal(backend.listSessions().length, 0)
     assert.equal(backend.isJobGoalAccomplished(sessionId), true)

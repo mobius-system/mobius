@@ -759,9 +759,8 @@ router.post('/:id/stop', auth, async (req: express.Request, res: express.Respons
 
   let ok = true;
   try {
-    await backend.pauseCurrentAndResumeFromSession({
+    await backend.pauseCurrentAndTerminateSession({
       sessionId,
-      prompt: '',
       cwd: workDir || undefined,
       flagRoot: flagRoot || workDir || undefined,
     });
@@ -774,7 +773,7 @@ router.post('/:id/stop', auth, async (req: express.Request, res: express.Respons
   try {
     Messages.insertSystem(
       sessionId,
-      ok ? '已发 C-c × 3 给后台智能体 (软停).' : 'Stop 失败.',
+      ok ? '已终止后台智能体当前执行。' : '终止执行失败。',
       null as any,
       '终止执行',
     );

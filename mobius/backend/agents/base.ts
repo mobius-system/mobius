@@ -5,7 +5,7 @@
  * data/agents-<name>.json, so mappings survive a backend reload.
  *
  * Subclasses must implement createNewSession, pauseCurrentAndResumeFromSession,
- * noPauseCurrentAndQueueQueryAtSession, terminateSession, isAlive, isWorking and
+ * pauseCurrentAndTerminateSession, noPauseCurrentAndQueueQueryAtSession, terminateSession, isAlive, isWorking and
  * listSessions. Every other method here is an optional hook defaulting to a no-op.
  */
 const fs = require('fs')

@@ -45,6 +45,7 @@ export interface ClaudeBackendHost {
   getPendingRequests(sessionId: string): any[]
   isWorking(sessionId: string): boolean
   pauseCurrentAndResumeFromSession(opts: ClaudeDispatchOpts): any
+  pauseCurrentAndTerminateSession(opts: ClaudeDispatchOpts): any
 }
 
 /** Dispatch contract: the arg shape shared by createNewSession / queue / pause. */
