@@ -11,7 +11,7 @@ import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
-import { ResizablePanel } from './resizable-panel'
+import { ResizablePanel, useIsMobile } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -1740,6 +1740,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   onMessageSent?: () => void
 } = {}) {
   const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -4318,7 +4319,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       <div
         ref={chatBodyRef}
         className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
-        style={layout === 'easy' ? { paddingLeft: '10%', paddingRight: easyFilesOpen ? '0' : '10%', transition: 'padding .2s ease' } : undefined}
+        style={layout === 'easy' ? { paddingLeft: isMobile ? '12px' : '10%', paddingRight: easyFilesOpen ? '0' : (isMobile ? '12px' : '10%'), transition: 'padding .2s ease' } : undefined}
       >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。
             快照订阅在面板内部 (Chat 不随每条数据重渲染); 条目驱动的自动滚底由旁边的 EntriesAutoScroll 承担. */}
@@ -4804,9 +4805,12 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
           minWidth={easyFilesSidebarMinWidth}
           maxWidth={easyFilesSidebarMaxWidth}
           side="right"
-          className={`border-l flex overflow-hidden${layout === 'easy' && !easyFilesOpen ? ' hidden' : ''}`}
+          // 移动端右侧栏走抽屉 (覆盖式, 不占位), 开合由 easyFilesOpen 驱动; 桌面端仍靠 hidden 隐藏
+          className={`border-l flex overflow-hidden${layout === 'easy' && !isMobile && !easyFilesOpen ? ' hidden' : ''}`}
           style={{ borderColor: 'var(--border-color)' }}
           data-testid="easy-files-sidebar"
+          mobileOpen={isMobile ? easyFilesOpen : undefined}
+          onMobileClose={() => setEasyFilesOpen(false)}
         >
           {(easyFilesBindPath || projectForSession?.bind_path) ? (
             <Suspense

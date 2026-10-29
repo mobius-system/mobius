@@ -97,6 +97,10 @@ type ResizablePanelProps = {
   'data-tour'?: string
   'data-testid'?: string
   children: ReactNode
+  // 右侧栏在移动端也走抽屉 (从左/右侧滑入覆盖内容, 不占位). 左侧栏的开合由 store.mobileNavOpen
+  // 统一驱动 (汉堡按钮); 右侧栏 (如简易模式文件编辑栏) 的开合各自不同, 由调用方传入.
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
 function clampWidth(value: number, min: number, max: number) {
@@ -127,6 +131,8 @@ export function ResizablePanel({
   'data-tour': dataTour,
   'data-testid': dataTestId,
   children,
+  mobileOpen,
+  onMobileClose,
 }: ResizablePanelProps) {
   const [width, setWidth] = useState<number>(() => readStoredWidth(storageKey, defaultWidth, minWidth, maxWidth))
   const isMobile = useIsMobile()
@@ -295,6 +301,48 @@ export function ResizablePanel({
             className="mobius-drawer-close"
             onClick={() => setMobileNavOpen(false)}
             aria-label="关闭侧栏"
+            title="关闭"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          {children}
+        </aside>
+      </>
+    )
+    return createPortal(drawer, document.body)
+  }
+
+  // ===== 移动端 + 右侧栏: 从右侧滑入的抽屉 (覆盖内容不占位), 开合由调用方 mobileOpen 驱动.
+  // 桌面端右侧栏仍走固定宽度 flex 面板; 手机上固定 420px 的文件栏会把对话挤到只剩一条缝,
+  // 所以改成覆盖式抽屉. =====
+  if (isMobile && side === 'right') {
+    const open = mobileOpen ?? false
+    const close = onMobileClose ?? (() => {})
+    const drawer = (
+      <>
+        {open && (
+          <div className="mobius-drawer-backdrop" onClick={close} aria-hidden="true" />
+        )}
+        <aside
+          data-tour={dataTour}
+          data-testid={dataTestId}
+          className={[
+            'mobius-resizable',
+            'mobius-drawer',
+            'mobius-drawer--right',
+            open ? 'mobius-drawer--open' : '',
+            className || '',
+          ].filter(Boolean).join(' ')}
+          style={{ width: 'min(420px, 92vw)', ...style }}
+          aria-hidden={!open}
+        >
+          <button
+            type="button"
+            className="mobius-drawer-close"
+            onClick={close}
+            aria-label="关闭文件编辑栏"
             title="关闭"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
