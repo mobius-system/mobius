@@ -472,9 +472,11 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           )}
           {/* 欢迎页: 运行中枢 + 模型选型 (两个都是「这个会话是什么」的选择, 紧挨着放.
               设备用图标、模型用文字, 但两者之间收窄到 gap-1.5, 让它们读成一个整体,
-              而不是两个散开的按钮. 名字留到展开后的列表里 —— 写名字会挤窄模型 pill. */}
+              而不是两个散开的按钮. 名字留到展开后的列表里 —— 写名字会挤窄模型 pill.
+              min-w-0 (而非 flex-shrink-0): 手机窄屏时这个分组要能收缩, 让模型 pill
+              的 truncate 截断名称, 否则 195px 的模型名会把整组挤出屏幕. */}
           {props.mode === 'create_session_mode' && (
-            <span className="flex flex-shrink-0 items-center gap-1.5">
+            <span className="flex min-w-0 items-center gap-1.5">
               {props.onChangeWelcomeDevice && (
                 <EasySessionDevicePill
                   isDark={isDark}
@@ -753,7 +755,12 @@ function EasySessionModelPill({ isDark, modelLabel, modelKey, onChange, disabled
           background: open ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
         }}
       >
-        <span className="truncate text-[length:var(--fs-md)] font-medium">{displayText || '模型'}</span>
+        <span className="truncate text-[length:var(--fs-md)] font-medium">
+          {friendlyTitle || '模型'}
+          {/* 渠道副标签 (· Claude Code): 移动端隐藏, 只留模型名 —— 副标签是次要信息,
+              手机上留着它会把 pill 撑宽, 挤掉右侧动作键 (issue 2026-10-29). */}
+          {subFirst && matched && <span className="easy-model-sub"> · {subFirst}</span>}
+        </span>
         <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && pos && createPortal(

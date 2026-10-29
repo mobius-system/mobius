@@ -7735,6 +7735,8 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
     min-height: 36px;
     min-width: 36px;
   }
+  /* 模型 pill 只留模型名, 隐藏渠道副标签 (· Claude Code), 避免撑宽挤掉动作键 */
+  .easy-model-sub { display: none; }
 }
 
 /* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
