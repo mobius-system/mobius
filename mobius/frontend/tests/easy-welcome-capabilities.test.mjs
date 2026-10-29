@@ -24,6 +24,7 @@ const pageSource = readSource('src/pages/EasyModePage.tsx')
 const inputSource = readSource('src/components/easy-session-chat-input.tsx')
 const createSource = readSource('src/components/global-create.tsx')
 const projectSelectorSource = readSource('src/components/easy-session-project-selector.tsx')
+const cssSource = readSource('src/index.css')
 
 // ===== 1. 五项能力都要在欢迎页露出来 =====
 
@@ -158,6 +159,23 @@ assert.match(
   pillSource,
   /deviceId \? '#60a5fa'/,
   '运行中枢选中设备后要变蓝',
+)
+
+// ===== 6. 移动端 (≤768px): 桌面快捷键提示行隐藏, 纯图标按钮触控热区放大 =====
+assert.match(
+  inputSource,
+  /easy-session-input-hint/,
+  '提示行要有可隐藏的类名',
+)
+assert.match(
+  cssSource,
+  /easy-session-input-hint \{ display: none; \}/,
+  '移动端要隐藏桌面快捷键提示行 (Ctrl/⌘+V 手机用不上)',
+)
+assert.match(
+  cssSource,
+  /\.easy-icon-btn:not\(\.easy-icon-btn--model\)[\s\S]*?min-width: 36px/,
+  '移动端纯图标按钮要放大到 36px 触控热区 (模型 pill 除外)',
 )
 
 console.log('欢迎页能力清单契约测试通过')

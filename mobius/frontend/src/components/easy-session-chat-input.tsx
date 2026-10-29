@@ -375,8 +375,10 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
       )}
       <div className="px-3 pt-3 pb-2.5">
         {follow && !input && (
-          // 提示行是浮在文本区上方的绝对定位层: 框内有附件芯片时要往下让出芯片行的高度, 否则会压在芯片上
-          <div className="pointer-events-none absolute inset-x-3 z-10 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)', top: chipsHeight + 12 }}>
+          // 提示行是浮在文本区上方的绝对定位层: 框内有附件芯片时要往下让出芯片行的高度, 否则会压在芯片上.
+          // 移动端隐藏 (easy-session-input-hint): 这一串 Ctrl/⌘+V / ↑键回溯 是桌面快捷键,
+          // 手机上既用不上又占一行还横向截断.
+          <div className="easy-session-input-hint pointer-events-none absolute inset-x-3 z-10 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] leading-[1.35]" style={{ color: 'var(--placeholder-color)', top: chipsHeight + 12 }}>
             <span className="flex-shrink-0">发送指令：</span>
             <span className="flex min-w-0 items-center gap-2 truncate">
               <span className="flex-shrink-0">· Shift+Enter 换行</span>

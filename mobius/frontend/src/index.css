@@ -7720,6 +7720,23 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   outline-offset: 2px;
 }
 
+/* ===== 简易模式输入框 · 移动端 (issue 2026-10-29) =====
+ * 手机窄屏下输入框底行站了 8 个控件 (工具菜单 + 模型 + 设备 + 附件/语音/加急/发送/终止),
+ * 28px 的图标按钮既难点又挤. 移动端把纯图标按钮的触控热区拉到 36px, 并收起桌面专属的
+ * 快捷键提示行 (Ctrl/⌘+V / ↑键回溯 手机用不上, 显示出来只会横向截断).
+ * 模型 pill 是文字按钮 (有 h-9), 不套 min-width —— 保留 min-w-0 让它按需收缩,
+ * 名称过长由 truncate 截断, 否则 375px 下会跟 8 个控件抢宽度抢到只剩一个图标. */
+@media (max-width: 768px) {
+  /* 桌面快捷键提示行: 手机隐藏 */
+  .easy-session-input-hint { display: none; }
+  /* 纯图标按钮触控热区: min-height/min-width 会盖过 h-7/w-7 的固定 28px */
+  [data-page="easy-mode"] .easy-session-chat-input .easy-icon-btn:not(.easy-icon-btn--model),
+  [data-page="easy-mode"] .easy-session-chat-input .easy-send-btn {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
+
 /* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
  * 统一弹窗进出动画: popover 贴边弹层 fade+上滑, modal 遮罩层 fade + 内容 scale.
  * 时长 160ms ease-out (impeccable 产品动效 150-250ms). */
