@@ -341,7 +341,7 @@ export function ResizablePanel({
             open ? 'mobius-drawer--open' : '',
             className || '',
           ].filter(Boolean).join(' ')}
-          style={{ width: 'min(420px, 92vw)', ...style }}
+          style={{ width: 'min(420px, 100vw)', maxWidth: 'none', ...style }}
           aria-hidden={!open}
         >
           <button
