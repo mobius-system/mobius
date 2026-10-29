@@ -7844,6 +7844,40 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   .easy-popover-in, .easy-modal-overlay-in, .easy-modal-panel-in { animation: none; }
 }
 
+/* ===== 移动端选择器 actionsheet (issue 2026-10-29) =====
+ * 项目 / 模型 / 会话工具 / 运行设备 四个选择器桌面端是贴着触发按钮向上弹的 popover,
+ * 手机上改成从底部滑出的 actionsheet: 全宽、顶部圆角、限高滚动, 符合移动端选择菜单的习惯. */
+@keyframes easy-actionsheet-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 768px) {
+  [data-testid="easy-session-project-menu"],
+  [data-testid="easy-session-model-picker"],
+  [data-testid="easy-session-tool-menu"],
+  [data-testid="easy-session-device-picker"] {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-height: 72dvh;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: 0 !important;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.4) !important;
+    animation: easy-actionsheet-in .22s cubic-bezier(.2, .8, .2, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* 搜索框 / 头部不随圆角裁掉 */
+  [data-testid="easy-session-project-menu"] > :first-child,
+  [data-testid="easy-session-model-picker"] > :first-child,
+  [data-testid="easy-session-tool-menu"] > :first-child,
+  [data-testid="easy-session-device-picker"] > :first-child {
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+  }
+}
+
 /* ===== 列表空态规范 (issue 2026-10-23, impeccable) =====
  * 弹窗/下拉内的小空态统一为「图标 + 一句说明」, 替代零散纯文字. */
 .easy-list-empty {
