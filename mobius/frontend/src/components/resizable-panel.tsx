@@ -320,9 +320,9 @@ export function ResizablePanel({
     return createPortal(drawer, document.body)
   }
 
-  // ===== 移动端 + 右侧栏: 从右侧滑入的抽屉 (覆盖内容不占位), 开合由调用方 mobileOpen 驱动.
-  // 桌面端右侧栏仍走固定宽度 flex 面板; 手机上固定 420px 的文件栏会把对话挤到只剩一条缝,
-  // 所以改成覆盖式抽屉. =====
+  // ===== 移动端 + 右侧栏: 从底部滑出的半弹窗 (覆盖内容不占位), 开合由调用方 mobileOpen 驱动.
+  // 桌面端右侧栏仍走固定宽度 flex 面板; 手机上固定宽度的文件栏会把对话挤到只剩一条缝,
+  // 所以改成底部半弹窗 (issue 2026-10-29). =====
   if (isMobile && side === 'right' && !noMobileDrawer) {
     const open = mobileOpen ?? false
     const close = onMobileClose ?? (() => {})
@@ -337,11 +337,11 @@ export function ResizablePanel({
           className={[
             'mobius-resizable',
             'mobius-drawer',
-            'mobius-drawer--right',
+            'mobius-drawer--bottom',
             open ? 'mobius-drawer--open' : '',
             className || '',
           ].filter(Boolean).join(' ')}
-          style={{ width: 'min(420px, 100vw)', maxWidth: 'none', ...style }}
+          style={{ ...style }}
           aria-hidden={!open}
         >
           <button

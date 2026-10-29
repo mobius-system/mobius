@@ -5879,6 +5879,34 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
+/* 底部半弹窗变体: 简易模式文件编辑栏在手机上从底部滑出 (约 65% 屏高),
+   保留顶部圆角与顶部把手感; 文件树 + 编辑器竖排在里面. */
+.mobius-drawer--bottom {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 65dvh;
+  max-width: none;
+  max-height: 65dvh;
+  border-top: 1px solid var(--border-color-strong) !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 16px 16px 0 0;
+  transform: translateY(100%);
+  padding-top: 0;
+  /* 底部弹窗不需要避开顶部刘海, 保留底部 Home 条 */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.mobius-drawer--bottom.mobius-drawer--open {
+  transform: translateY(0);
+}
+.mobius-drawer--bottom .mobius-drawer-close {
+  top: .7rem;
+  right: .7rem;
+}
+
 /* 抽屉关闭按钮: 浮在右上角 */
 .mobius-drawer-close {
   position: absolute;
