@@ -5880,6 +5880,13 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
+/* 左侧导航抽屉要压过右侧抽屉 / 底部弹窗: 三者 z-index 相同 (9000), 但 portal 到 body 的顺序
+   是左导航先、文件栏后, DOM 靠后的底部弹窗会盖住左导航. 打开左导航时若底部弹窗还没收起,
+   用户会看到「代码浏览」而不是导航. 这里把左导航抬到 9001, 恒在最上. */
+.mobius-drawer:not(.mobius-drawer--right):not(.mobius-drawer--bottom) {
+  z-index: 9001;
+}
+
 /* 底部半弹窗变体: 简易模式文件编辑栏在手机上从底部滑出 (约 65% 屏高),
    保留顶部圆角与顶部把手感; 文件树 + 编辑器竖排在里面. */
 .mobius-drawer--bottom {
