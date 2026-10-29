@@ -7,6 +7,7 @@ import { EasySessionToolMenu, type EasySessionLite } from './easy-session-tool-m
 import { EasySessionDevicePill } from './easy-session-device-pill'
 import { AttachmentChip, type Attachment, type AttachmentImagePreview } from './attachments'
 import type { VoiceInputState } from '../services/assistant-voice'
+import { useIsMobile } from './resizable-panel'
 
 /**
  * create_session_mode: 欢迎页还没有会话，输入框只负责收集任务描述，提交后进入完整的新建会话配置。
@@ -164,6 +165,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   const [queuedFlash, setQueuedFlash] = useState(false)
   const follow = props.mode === 'follow_session_mode' ? props : null
   const inputFocused = follow ? follow.inputFocused : standaloneFocused
+  const isMobile = useIsMobile()
 
   const submitBlocked = props.mode === 'create_session_mode' && !!props.submitDisabled
   const disabled = follow
@@ -207,7 +209,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
   // 欢迎页与会话页同一套尺寸 (issue 2026-10-17 用户要求两者一致)
   const baseInputHeight = 110
   const baseTextAreaHeight = 56
-  const chromeHeight = baseInputHeight - baseTextAreaHeight
+  // 移动端欢迎页底行换行成两行 (配置条一行 + 动作键一行), 非文本区高度要多出一行
+  const mobileBottomRowExtra = isMobile && isCreateMode ? 40 : 0
+  const chromeHeight = baseInputHeight - baseTextAreaHeight + mobileBottomRowExtra
   const maxInputHeight = baseInputHeight * 3
   const [textAreaHeight, setTextAreaHeight] = useState(baseTextAreaHeight)
   // 测高必须用组件私有 ref, 且绝不能再写回外部 inputRef:
@@ -403,9 +407,9 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
             右侧: 模型切换 (文字+chevron) | 语音 | 发送 (蓝色圆形, 运行时变红色停止)
             注意: 此行不能 overflow-hidden — 语音/终止按钮的脉冲光晕 (box-shadow) 需要溢出显示;
             长文案裁切由内部各子容器自身的 overflow-hidden 负责 (config-bar / hint 行)。 */}
-      <div className="absolute bottom-0 left-0 right-0 flex h-10 min-w-0 items-center justify-between gap-2 px-3 pb-1.5">
+      <div className="easy-session-input-row absolute bottom-0 left-0 right-0 flex h-10 min-w-0 items-center justify-between gap-2 px-3 pb-1.5">
         {/* 左侧: 配置条 (欢迎页: 项目/任务/Skill·Memory) — 设备中枢选择 + Skill/Memory 注入 */}
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="easy-session-input-left flex min-w-0 items-center gap-3">
           {/* 欢迎页: 配置条 (项目下拉 = 设备中枢选择, + SkillMemoryPicker) */}
           {props.toolbar && props.mode === 'create_session_mode' && (
             <div className="flex min-w-0 items-center gap-1.5 overflow-hidden easy-session-config-bar">{props.toolbar}</div>

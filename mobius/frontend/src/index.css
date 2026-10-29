@@ -7802,6 +7802,19 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   .easy-model-sub { display: none; }
   /* 记忆和技能的 17/17 计数在手机上隐藏, 给右侧动作键让出宽度 */
   .easy-skill-memory-count { display: none; }
+  /* 欢迎页输入框底行换行成两行: 配置条 (项目/任务/记忆和技能) 一行, 动作键一行.
+     原来 8 个控件挤在一行, 项目选择器被挤成只有图标看不到. */
+  [data-mode="create_session_mode"] .easy-session-input-row {
+    flex-wrap: wrap;
+    height: auto;
+    padding-top: 8px;
+  }
+  [data-mode="create_session_mode"] .easy-session-input-left {
+    width: 100%;
+  }
+  [data-mode="create_session_mode"] .easy-session-input-right {
+    margin-left: auto;
+  }
 }
 
 /* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
