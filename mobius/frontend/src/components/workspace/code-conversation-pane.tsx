@@ -1447,6 +1447,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         minWidth={compact ? 0 : codeEditorMinWidth}
         maxWidth={compact ? 0 : codeEditorMaxWidth}
         side="left"
+        // 简易模式文件侧栏嵌在底部抽屉里, 编辑器也不能抽屉化 —— 否则作为关闭的抽屉渲染到屏幕外,
+        // 只看到文件树看不到文件内容 (与左侧文件浏览器同款 noMobileDrawer 处理).
+        noMobileDrawer={compact}
         className="flex flex-col"
         // 蓝图变体: 预览区吃掉文件树之外的剩余宽度, 否则固定宽度会在卡片右侧留一条空带
         // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip

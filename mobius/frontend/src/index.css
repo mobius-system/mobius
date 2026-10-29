@@ -5888,7 +5888,9 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* 底部半弹窗变体: 简易模式文件编辑栏在手机上从底部滑出 (约 65% 屏高),
-   保留顶部圆角与顶部把手感; 文件树 + 编辑器竖排在里面. */
+   保留顶部圆角与顶部把手感. 里面是 CodeConversationPane (文件树 + 编辑器), 它的根是
+   display:contents, 所以文件树/编辑器直接成了本抽屉的 flex 子项 —— 必须横向排 (row),
+   否则继承基类的 column 会把它们竖着叠, 编辑器被挤出屏幕, 只看到文件树看不到内容. */
 .mobius-drawer--bottom {
   top: auto;
   bottom: 0;
@@ -5898,6 +5900,7 @@ body.mobius-resizing .mobius-resizable-handle {
   height: 65dvh;
   max-width: none;
   max-height: 65dvh;
+  flex-direction: row;
   border-top: 1px solid var(--border-color-strong) !important;
   border-right: 0 !important;
   border-bottom: 0 !important;
