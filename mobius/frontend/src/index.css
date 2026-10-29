@@ -5823,6 +5823,10 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-drawer-backdrop {
   position: fixed;
   inset: 0;
+  /* 顶栏 (h-9 = 36px) 留在遮罩之上、可点: #root 自身 z-index:1 会压住应用内所有元素的 z-index,
+     没法靠给顶栏加 z-index 盖过 portal 出来的遮罩 (8999). 只能让遮罩不覆盖顶栏,
+     这样右侧文件抽屉开着时汉堡按钮仍能点 → 能切到左侧导航. */
+  top: 36px;
   z-index: 8999;
   background: rgba(2, 6, 23, .52);
   -webkit-backdrop-filter: blur(2px);

@@ -1739,7 +1739,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   // 消息提交成功后的回调 (所有发送路径共用)。外层用它把「会话已开始执行」尽快同步到侧栏。
   onMessageSent?: () => void
 } = {}) {
-  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme, mobileNavOpen } = useStore()
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
@@ -2106,6 +2106,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     return () => window.removeEventListener('mobius:request-open-file-in-sidebar', openFile)
   }, [currentProjectId, sessionId])
   useEffect(() => { if (easyFilesOpen) setEasyFilesMounted(true) }, [easyFilesOpen])
+  // 左侧导航抽屉打开时收起文件抽屉 (两个抽屉不能同时开, 否则遮罩互相叠, 点不到东西)
+  useEffect(() => {
+    if (mobileNavOpen) setEasyFilesOpen(false)
+  }, [mobileNavOpen])
   const toggleEasyFiles = useCallback(() => {
     setEasyFilesOpen(previous => {
       const next = !previous
