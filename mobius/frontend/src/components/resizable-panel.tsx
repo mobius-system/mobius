@@ -167,10 +167,12 @@ export function ResizablePanel({
   }, [storageKey])
 
   // 路由变化 (例如在抽屉里点了一个项目) 时自动收起抽屉.
+  // 简易模式的面板/会话切换只改 ?panel= / ?session= 等 query (pathname 不变),
+  // 所以这里必须同时监听 search, 否则点了「新任务/全局纵观/跨设备」抽屉还开着.
   const location = useLocation()
   useEffect(() => {
     setMobileNavOpen(false)
-  }, [location.pathname, setMobileNavOpen])
+  }, [location.pathname, location.search, setMobileNavOpen])
 
   // Esc 键收起抽屉
   useEffect(() => {
