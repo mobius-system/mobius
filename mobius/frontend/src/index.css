@@ -7800,6 +7800,11 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   }
   /* 模型 pill 只留模型名, 隐藏渠道副标签 (· Claude Code), 避免撑宽挤掉动作键 */
   .easy-model-sub { display: none; }
+  /* 会话内底行右侧控件收紧间距 (12px → 6px): 运行中会多出 ⚡/■ 两个键,
+     7 个控件挤一行会把模型 pill 挤成 16px, 收紧后能给模型名腾出更多宽度 */
+  [data-page="easy-mode"] .easy-session-chat-input .easy-session-input-right {
+    gap: 6px;
+  }
   /* 记忆和技能的 17/17 计数在手机上隐藏, 给右侧动作键让出宽度 */
   .easy-skill-memory-count { display: none; }
   /* 欢迎页输入框底行换行成两行: 配置条 (项目/任务/记忆和技能) 一行, 动作键一行.
