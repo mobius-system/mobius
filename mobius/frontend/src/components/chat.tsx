@@ -2081,6 +2081,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   // 开关状态存本浏览器; easyFilesMounted 首次打开后保活 (文件树展开/选中/未保存草稿不丢),
   // 关闭仅 display:none — 与 IssuePage 的 editorMounted/v2Mounted 同一模式.
   const [easyFilesOpen, setEasyFilesOpen] = useState<boolean>(() => {
+    // 移动端文件栏是底部半弹窗, 覆盖大半个屏幕; 若上次开过 (localStorage 存 1) 就每次进页面
+    // 自动弹出来, 很扰人 —— 手机上默认收起, 桌面端仍记住上次的展开状态.
+    if (isMobile) return false
     try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
   })
   const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
