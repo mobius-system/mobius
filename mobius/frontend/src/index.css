@@ -7036,6 +7036,11 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-welcome-brand__tag { font-size: var(--fs-xs); }
 /* 能力胶囊 (千问办公最底一排: 图标 + 场景名) */
 [data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; justify-content: flex-start; }
+/* 移动端: 六个场景胶囊挤在一排/两排, 图标贴着图标. 拉开间距, 让每颗胶囊都有呼吸空间. */
+@media (max-width: 768px) {
+  [data-page="easy-mode"] .easy-welcome-suggestions { gap: 10px; }
+  [data-page="easy-mode"] .easy-welcome-suggestions button { padding: 8px 15px; }
+}
 [data-page="easy-mode"] .easy-welcome-suggestions button {
   display: inline-flex;
   align-items: center;
