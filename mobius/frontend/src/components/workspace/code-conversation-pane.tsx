@@ -1,11 +1,11 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass, ChevronLeft } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import { useRemoteDeviceNames } from '../../services/remote-device-names'
-import { ResizablePanel } from '../resizable-panel'
+import { ResizablePanel, useIsMobile } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
@@ -198,6 +198,11 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const { formatName } = useRemoteDeviceNames()
   const compact = variant === 'sidebar'
   const blueprint = mode === 'blueprint'
+  const isMobile = useIsMobile()
+  // 移动端 + 侧栏变体: 文件树 / 编辑器 二选一全宽展示 (适合手机的单列交互),
+  // 而不是桌面端并排的 190px 树 + 窄编辑器. 打开文件时切到编辑器, 点「返回」回到文件树.
+  const mobileListMode = isMobile && compact
+  const [mobileShowTree, setMobileShowTree] = useState(true)
   // 蓝图变体的树根: <HIDDEN_FOLDER_NAME>/blueprints (相对 bind_path); 工作区模式仍为项目根.
   const treeRoot = blueprint ? `/${HIDDEN_FOLDER_NAME}/blueprints` : '/'
   const desktop = getDesktopBridge()
@@ -557,6 +562,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const onSelectFile = useCallback(async (entry: Entry) => {
     if (entry.type !== 'file') return
     const key = entry.abs_path
+    // 移动端单列交互: 选中文件后从「文件树」切到「编辑器」全宽
+    if (mobileListMode) setMobileShowTree(false)
     // 已打开的文件 → 仅激活对应 Tab (内容/未保存修改都留在各自 Tab 里, 不再需要切换确认)
     if (tabsRef.current.some(t => t.key === key) || openingRef.current.has(key)) {
       setActiveKey(key)
@@ -597,7 +604,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     } finally {
       openingRef.current.delete(key)
     }
-  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab])
+  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab, mobileListMode])
 
   // 蓝图变体: 仅初始加载时自动打开第一张蓝图 (根下直连 .html 优先, 否则第一个 module 的首张),
   // 打开即有内容, 消除右侧大片空白; 用户手动关掉全部 Tab 后不再强开.
@@ -1190,7 +1197,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const htmlFile = !!selected && /\.html?$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
   return (
-    <div className={blueprint ? 'flex h-full min-h-0 w-full' : 'contents'}>
+    <div className={blueprint ? 'flex h-full min-h-0 w-full' : `contents${mobileListMode ? (mobileShowTree ? ' cc-mobile-list' : ' cc-mobile-editor') : ''}`}>
       {/* ===== 左: 文件浏览器 ===== */}
       <ResizablePanel
         storageKey={`mobius:ui:${blueprint ? 'blueprint-tree' : (compact ? 'easy-files-tree' : 'split:cc-files')}:${projectId}`}
@@ -1455,6 +1462,20 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip
         style={{ background: cc.bg, color: cc.fg, ...(blueprint ? { flexGrow: 1, flexBasis: 0, maxWidth: 'none' } : {}) }}
       >
+        {/* 移动端单列交互: 从编辑器返回文件树 (顶部左侧返回按钮) */}
+        {mobileListMode && (
+          <button
+            type="button"
+            onClick={() => setMobileShowTree(true)}
+            aria-label="返回文件列表"
+            title="返回文件列表"
+            className="inline-flex h-8 flex-shrink-0 items-center gap-1 border-b px-2 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-secondary)', borderColor: cc.border }}
+          >
+            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            文件
+          </button>
+        )}
         {/* ★ 多 Tab 标签栏: 每个打开的文件一个 Tab; 点击切换, 中键或 × 关闭, 圆点 = 未保存 */}
         {tabs.length > 0 && (
           <div

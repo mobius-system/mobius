@@ -5913,6 +5913,21 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-drawer--bottom.mobius-drawer--open {
   transform: translateY(0);
 }
+
+/* 移动端文件编辑器单列交互: 文件树 / 编辑器 二选一全宽, 而不是并排的 190px 树 + 窄编辑器.
+   打开文件时切到编辑器 (cc-mobile-editor), 点「返回」回到文件树 (cc-mobile-list). */
+.cc-mobile-list > .mobius-resizable:not(.mobius-resizable--fill) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+.cc-mobile-list > .mobius-resizable--fill {
+  display: none !important;
+}
+.cc-mobile-editor > .mobius-resizable:not(.mobius-resizable--fill) {
+  display: none !important;
+}
+
 .mobius-drawer--bottom .mobius-drawer-close {
   top: .7rem;
   right: .7rem;
