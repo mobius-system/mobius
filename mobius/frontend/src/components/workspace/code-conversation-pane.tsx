@@ -1198,6 +1198,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         minWidth={compact ? 140 : 160}
         maxWidth={compact ? 300 : 360}
         side="left"
+        // 简易模式文件侧栏嵌在右侧抽屉里, 内层文件树不能再抽屉化 (否则作为关闭的抽屉渲染到屏幕外)
+        noMobileDrawer={compact}
         className="border-r flex flex-col"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>

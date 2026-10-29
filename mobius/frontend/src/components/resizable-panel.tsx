@@ -101,6 +101,9 @@ type ResizablePanelProps = {
   // 统一驱动 (汉堡按钮); 右侧栏 (如简易模式文件编辑栏) 的开合各自不同, 由调用方传入.
   mobileOpen?: boolean
   onMobileClose?: () => void
+  // 嵌套在另一个移动端抽屉里的面板要关掉抽屉化: 否则内外两层都变抽屉,
+  // 内层 (如文件侧栏里的文件树) 会作为「关闭的抽屉」渲染到屏幕外, 打开外抽屉什么也看不到.
+  noMobileDrawer?: boolean
 }
 
 function clampWidth(value: number, min: number, max: number) {
@@ -133,6 +136,7 @@ export function ResizablePanel({
   children,
   mobileOpen,
   onMobileClose,
+  noMobileDrawer = false,
 }: ResizablePanelProps) {
   const [width, setWidth] = useState<number>(() => readStoredWidth(storageKey, defaultWidth, minWidth, maxWidth))
   const isMobile = useIsMobile()
@@ -277,7 +281,7 @@ export function ResizablePanel({
   }, [handleMouseMove, handleMouseUp])
 
   // ===== 移动端 + 左侧栏: 渲染成从左滑入的抽屉 (portal 到 body, 避免被父级 overflow/transform 裁切) =====
-  if (isMobile && side === 'left') {
+  if (isMobile && side === 'left' && !noMobileDrawer) {
     const drawer = (
       <>
         {mobileNavOpen && (
@@ -319,7 +323,7 @@ export function ResizablePanel({
   // ===== 移动端 + 右侧栏: 从右侧滑入的抽屉 (覆盖内容不占位), 开合由调用方 mobileOpen 驱动.
   // 桌面端右侧栏仍走固定宽度 flex 面板; 手机上固定 420px 的文件栏会把对话挤到只剩一条缝,
   // 所以改成覆盖式抽屉. =====
-  if (isMobile && side === 'right') {
+  if (isMobile && side === 'right' && !noMobileDrawer) {
     const open = mobileOpen ?? false
     const close = onMobileClose ?? (() => {})
     const drawer = (
