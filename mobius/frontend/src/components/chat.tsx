@@ -1731,7 +1731,6 @@ type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
 // 简易模式右侧文件编辑栏: 复用代码对话 v2 的 CodeConversationPane (variant='sidebar'),
 // 按需加载避免简易模式首屏背上 CodeMirror 的 bundle.
 const EasyFilesPane = lazy(() => import('./workspace/code-conversation-pane').then(module => ({ default: module.CodeConversationPane })))
-const EASY_FILES_OPEN_KEY = 'mobius:ui:easy-files-sidebar:open'
 
 export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   layout?: 'default' | 'stacked' | 'easy'
@@ -2080,15 +2079,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   // ===== 简易模式右侧文件编辑栏 (复用代码对话 v2 的文件树 + CodeMirror 编辑器) =====
   // 开关状态存本浏览器; easyFilesMounted 首次打开后保活 (文件树展开/选中/未保存草稿不丢),
   // 关闭仅 display:none — 与 IssuePage 的 editorMounted/v2Mounted 同一模式.
-  const [easyFilesOpen, setEasyFilesOpen] = useState<boolean>(() => {
-    // 移动端文件栏是底部半弹窗, 覆盖大半个屏幕; 若上次开过 (localStorage 存 1) 就每次进页面
-    // 自动弹出来, 很扰人 —— 手机上默认收起, 桌面端仍记住上次的展开状态.
-    if (isMobile) return false
-    try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
-  })
-  const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
-    try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
-  })
+  // 文件栏开关不再持久化到 localStorage: 每次进页面都默认收起, 不记住上次的展开/关闭状态.
+  // easyFilesMounted 只在本次会话内保活 (首次打开后挂载, 保留文件树展开/未保存草稿), 不跨页面.
+  const [easyFilesOpen, setEasyFilesOpen] = useState(false)
+  const [easyFilesMounted, setEasyFilesMounted] = useState(false)
   // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
   const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
@@ -2102,7 +2096,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       setDisplayFilesOpen(true)
       setEasyFilesMounted(true)
       setEasyFilesOpen(true)
-      try { localStorage.setItem(EASY_FILES_OPEN_KEY, '1') } catch { /* ignore */ }
       window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:open-file-in-sidebar', { detail })), 250)
     }
     window.addEventListener('mobius:request-open-file-in-sidebar', openFile)
@@ -2114,11 +2107,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     if (mobileNavOpen) setEasyFilesOpen(false)
   }, [mobileNavOpen])
   const toggleEasyFiles = useCallback(() => {
-    setEasyFilesOpen(previous => {
-      const next = !previous
-      try { localStorage.setItem(EASY_FILES_OPEN_KEY, next ? '1' : '0') } catch { /* 静默 */ }
-      return next
-    })
+    setEasyFilesOpen(previous => !previous)
   }, [])
   // bind_path 与代码对话模式同源 (useEditorAvailability 模块级缓存, 同项目只发一次请求).
   const filesPaneEnabled = (layout === 'easy' ? easyFilesMounted : displayFilesOpen) && !!currentProjectId && !!currentSession
