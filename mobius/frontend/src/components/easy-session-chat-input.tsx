@@ -442,7 +442,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         </div>
         {/* 右侧: 模型切换 | 附件上传 (Paperclip) | 语音 | 加急 | 发送/终止 (合并, 蓝色圆形 Codex 风格)
             欢迎页与会话页同一套顺序与样式 (issue 2026-10-17 用户要求) */}
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="easy-session-input-right flex min-w-0 items-center gap-3">
           {follow && (
             <>
               <EasySessionModelPill
