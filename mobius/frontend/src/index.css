@@ -7812,9 +7812,6 @@ body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
   [data-mode="create_session_mode"] .easy-session-input-left {
     width: 100%;
   }
-  [data-mode="create_session_mode"] .easy-session-input-right {
-    margin-left: auto;
-  }
 }
 
 /* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
