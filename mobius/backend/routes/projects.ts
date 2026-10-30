@@ -7,7 +7,7 @@ import multer from 'multer';
 import { extractArchiveFile, removeIfExists, detectArchiveKind } from '../services/context-import-utils';
 import { v4 as uuid } from 'uuid';
 import { db } from '../../db';
-import { auth } from '../middleware/auth';
+import { auth, downloadAuth } from '../middleware/auth';
 import { Projects } from '../repositories/projects';
 import { ProjectMemberships, PROJECT_ROLE_LABELS } from '../repositories/project-memberships';
 import { ProjectTodos } from '../repositories/project-todos';
@@ -3410,6 +3410,34 @@ router.post('/:id/remote-file', auth, async (req: express.Request, res: express.
   } catch (e) {
     res.status(400).json({ error: (e as Error).message || '保存远程文件失败' });
   }
+});
+
+// 远程文件下载: window.open 直下无法带 Authorization 头, 故走 downloadAuth (token 可走 query),
+// 其余 remote/root/session 解析与 GET /:id/remote-file 完全一致 (同一套 bridge/清单派发).
+router.get('/:id/remote-file/download', downloadAuth, async (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const bridge = sessionAimuxBridgeDevice(req, req.query.session);
+  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
+  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
+  let buffer: Buffer;
+  try {
+    // 根目录同读取接口, 相对路径才能对齐; 越界符号已由 normalizeRemoteRelativePath 拒绝
+    // Same root override as the read API so relative paths stay aligned
+    const root = remoteRootOverride(req.query.root) || remote.remote_path;
+    buffer = await aimuxRemote.readRemoteFileRaw(remote.name, root, req.query.path || '/');
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message || '下载远程文件失败' });
+    return;
+  }
+  // ✨ 名字取 path 末段而非远程 basename 工具: 中间已统一斜杠口径, 这里只兜底空值
+  // ✨ Name from the last path segment; only the empty case needs a fallback here
+  const rawPath = String(req.query.path || '');
+  const fileName = rawPath.split(/[\\/]/).filter(Boolean).pop() || 'remote-file';
+  res.setHeader('Content-Type', contentTypeFor(fileName));
+  res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+  res.setHeader('Content-Length', String(buffer.length));
+  res.end(buffer);
 });
 
 // 项目内文件读写的符号链接护栏: 逐段 lstat, 任一环是链接即拒 (防止链接把真实路径引出项目根).

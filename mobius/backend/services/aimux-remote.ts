@@ -20,6 +20,8 @@ const MAX_BUFFER = 1024 * 1024;
 const REMOTE_FILE_READ_MAX_BYTES = Math.floor(1.5 * 1024 * 1024);
 const REMOTE_FILE_WRITE_MAX_BYTES = 5 * 1024 * 1024;
 const REMOTE_FILE_OUTPUT_MAX_BYTES = 3 * 1024 * 1024;
+const REMOTE_FILE_DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024;
+const REMOTE_FILE_DOWNLOAD_TIMEOUT_MS = 600000;
 
 function aimuxBin(): string {
   for (const candidate of AIMUX_BIN_CANDIDATES) {
@@ -454,6 +456,45 @@ async function readRemoteFile(name: any, rootPath: any, relPath: any): Promise<a
   };
 }
 
+/*
+ * Fetch one remote file as raw bytes for download.
+ * Unlike readRemoteFile (preview: 1.5MB cap, binary refused) this returns the
+ * full buffer up to a 50MB download cap, so tar.gz / zip / binaries work.
+ * stat is checked first so oversized files fail fast with a clear message.
+ */
+async function readRemoteFileRaw(name: any, rootPath: any, relPath: any): Promise<Buffer> {
+  const remoteName = cleanRemoteName(name);
+  const relativePath = normalizeRemoteRelativePath(relPath);
+  if (relativePath === '/') throw new Error('请选择远程文件');
+  const targetPath = joinRemotePath(rootPath, relativePath);
+  const statResult = await runAimux(
+    ['file', 'stat', remoteName, '--path', targetPath, '--json'],
+    { timeoutMs: 70000 },
+  );
+  const stat = parseJsonOutput(statResult);
+  if (!statResult.ok) throw new Error(resultMessage(statResult));
+  if (!stat?.exists) throw new Error('远程文件不存在');
+  if (stat.type !== 'file') throw new Error('目标不是文件');
+  const size = Number(stat.size || 0);
+  if (size > REMOTE_FILE_DOWNLOAD_MAX_BYTES) {
+    throw new Error(`远程文件过大 (${size} 字节)，超过 ${REMOTE_FILE_DOWNLOAD_MAX_BYTES} 下载上限`);
+  }
+  // ✨ maxBuffer 必须覆盖 base64 展宽 (4/3) 再留余量, 否则文件还没读完就被截断
+  // ✨ maxBuffer must cover the base64 inflation (4/3) plus headroom, or the read is truncated mid-flight
+  const readResult = await runAimux(
+    ['file', 'read', remoteName, '--path', targetPath, '--b64'],
+    { timeoutMs: REMOTE_FILE_DOWNLOAD_TIMEOUT_MS, maxBuffer: Math.ceil(size * 2) + 1024 },
+  );
+  if (!readResult.ok) throw new Error(resultMessage(readResult));
+  let buffer: Buffer;
+  try { buffer = Buffer.from(readResult.stdout || '', 'base64'); }
+  catch { throw new Error('aimux 返回的远程文件内容格式异常'); }
+  if (size > 0 && buffer.length !== size) {
+    throw new Error(`远程文件读取不完整 (${buffer.length}/${size} 字节)`);
+  }
+  return buffer;
+}
+
 async function writeRemoteFile(name: any, rootPath: any, relPath: any, content: any): Promise<any> {
   const remoteName = cleanRemoteName(name);
   const relativePath = normalizeRemoteRelativePath(relPath);
@@ -529,6 +570,7 @@ export {
   browseRemotePath,
   listRemoteFiles,
   readRemoteFile,
+  readRemoteFileRaw,
   writeRemoteFile,
   addRemote,
 };

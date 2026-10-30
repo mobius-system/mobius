@@ -5,6 +5,21 @@ import type { DisplayFileRef } from './entry-extract'
 import { DisplayFileContext } from './DisplayFileContext'
 import { fileDownloadUrl } from './JsonlDownloadButton'
 
+/*
+ * 远程文件下载 URL: 复用后端 GET /api/projects/:id/remote-file/download
+ * (token 走 query, window.open 直下; remote/root/session 与 remote-file 读接口同参)。
+ */
+function remoteFileDownloadUrl(projectId: string, file: DisplayFileRef, sessionId?: string): string {
+  const params = new URLSearchParams()
+  params.set('remote', file.remote || '')
+  params.set('path', file.path)
+  if (file.root) params.set('root', file.root)
+  if (sessionId) params.set('session', sessionId)
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '') : ''
+  if (token) params.set('token', token)
+  return `/api/projects/${encodeURIComponent(projectId)}/remote-file/download?${params.toString()}`
+}
+
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -30,6 +45,15 @@ function localAbsolutePath(file: DisplayFileRef, bindPath: string): string | nul
     return file.path === root || file.path.startsWith(`${root}/`) ? file.path : null
   }
   return `${root}/${file.path}`
+}
+
+/**
+ * 远程条目是否可下载: 路径必须相对根且不含 .. (与预览按钮同一口径)。
+ * Remote entries download through the project relay, so only the relative-path
+ * rule applies — same predicate the preview button uses.
+ */
+function remoteDownloadable(file: DisplayFileRef): boolean {
+  return !file.path.startsWith('/') && !file.path.split(/[\\/]/).some(part => part === '..')
 }
 
 export function DisplayFilesCard({ files, projectId, sessionId, easyMode = false }: {
@@ -110,6 +134,17 @@ export function DisplayFilesCard({ files, projectId, sessionId, easyMode = false
                 title="下载文件"
                 aria-label="下载文件"
                 onClick={() => window.open(fileDownloadUrl(downloadPath), '_blank')}
+              >
+                <Download size={15} aria-hidden="true" />
+              </button>
+            )}
+            {!downloadPath && file.remote && projectId && remoteDownloadable(file) && (
+              <button
+                type="button"
+                className="display-files-card__download"
+                title="下载文件"
+                aria-label="下载文件"
+                onClick={() => window.open(remoteFileDownloadUrl(projectId, file, sessionId), '_blank')}
               >
                 <Download size={15} aria-hidden="true" />
               </button>
