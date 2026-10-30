@@ -2682,6 +2682,11 @@ export function NewSessionModal({
                               <span className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)', color: isDark ? '#86efac' : '#15803d' }}>
                                 {SCOPE_LABEL_WIZ[m.scope] || m.scope}
                               </span>
+                              {typeof m.body === 'string' && (
+                                <span title={`该 Memory 正文 ${m.body.length} 字`} className="px-1.5 py-0.5 rounded text-[length:var(--fs-xs)] shrink-0" style={{ background: isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)', color: isDark ? '#93c5fd' : '#1d4ed8' }}>
+                                  {m.body.length} 字
+                                </span>
+                              )}
                             </div>
                           </div>
                         )
