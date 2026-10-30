@@ -15,7 +15,7 @@ for required in bash awk curl node python3 install; do
 done
 mkdir -p -- "$PREFIX"
 
-for cmd in multiagent_send declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display_files display_images mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all; do
+for cmd in multiagent_send declare_job_done declare_job_failed research_blackboard_read research_blackboard_write display_files display_images mobius_session_reminder mobius_schedule_wake_me_up mobius_schedule_list mobius_schedule_cancel_all make_file_public_access; do
   src="$SRC_DIR/$cmd"
   [[ -f "$src" ]] || { echo "ERROR: source not found: $src" >&2; exit 1; }
   install -m 755 -- "$src" "$PREFIX/$cmd"
@@ -23,6 +23,7 @@ for cmd in multiagent_send declare_job_done declare_job_failed research_blackboa
 done
 install -m 755 -- "$SRC_DIR/research_blackboard_cli.js" "$PREFIX/.research_blackboard_cli"
 install -m 755 -- "$SRC_DIR/mobius_schedule_cli.js" "$PREFIX/.mobius_schedule_cli"
+install -m 755 -- "$SRC_DIR/make_file_public_access_cli.js" "$PREFIX/.make_file_public_access_cli"
 echo
 echo "Done. Safe verification examples:"
 echo "  multiagent_send --help"
@@ -36,6 +37,7 @@ echo "  mobius_session_reminder --help"
 echo "  mobius_schedule_wake_me_up --help"
 echo "  mobius_schedule_list --help"
 echo "  mobius_schedule_cancel_all --help"
+echo "  make_file_public_access --help"
 case ":$PATH:" in
   *":$PREFIX:"*) ;;
   *) echo; echo "Note: PATH does not contain $PREFIX; add: export PATH=\"$PREFIX:\$PATH\"" ;;

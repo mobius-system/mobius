@@ -54,7 +54,8 @@ function main() {
     'research_blackboard_read', 'research_blackboard_write',
     'display_files', 'display_images', 'mobius_session_reminder',
     'mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all',
-    '.research_blackboard_cli', '.mobius_schedule_cli',
+    'make_file_public_access',
+    '.research_blackboard_cli', '.mobius_schedule_cli', '.make_file_public_access_cli',
   ];
   for (const name of installed) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755, `${name} must be executable`);
@@ -107,6 +108,21 @@ function main() {
   assert.match(run(path.join(binDir, 'mobius_schedule_list'), ['--help']).stdout, /--json/);
   assert.match(run(path.join(binDir, 'mobius_schedule_cancel_all'), ['--help']).stdout, /--session-id/);
   assert.match(run(path.join(binDir, 'declare_job_failed'), ['--help']).stdout, /failure_reason/);
+
+  // 静态分享 CLI: 参数齐全但没有会话环境时必须先失败在配置上, 不能发请求
+  const shareHelp = run(path.join(binDir, 'make_file_public_access'), ['--help']);
+  assert.match(shareHelp.stdout, /--at-dir/);
+  assert.match(shareHelp.stdout, /--file-name/);
+  assert.match(shareHelp.stdout, /--expire/);
+  const sampleFile = path.join(tempRoot, 'sample.txt');
+  fs.writeFileSync(sampleFile, 'hello');
+  const shareNoEnv = run(path.join(binDir, 'make_file_public_access'), ['--path', sampleFile], { env: CLEAN_ENV });
+  assert.strictEqual(shareNoEnv.status, 3, `make_file_public_access must exit 3 without the session environment: ${shareNoEnv.stderr}`);
+  assert.match(shareNoEnv.stderr, /MOBIUS_BASE is unset|MOBIUS_CLI_JWT is unset/);
+  const shareMissingFile = run(path.join(binDir, 'make_file_public_access'), ['--path', path.join(tempRoot, 'nope.txt')], { env: CLEAN_ENV });
+  assert.strictEqual(shareMissingFile.status, 2);
+  const shareBadName = run(path.join(binDir, 'make_file_public_access'), ['--path', sampleFile, '--file-name', 'a..b'], { env: CLEAN_ENV });
+  assert.strictEqual(shareBadName.status, 2);
 
   console.log('mobius cli contract: ok');
   fs.rmSync(tempRoot, { recursive: true, force: true });

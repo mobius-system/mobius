@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+CLI="$SCRIPT_DIR/.make_file_public_access_cli"
+[[ -f "$CLI" ]] || CLI="$SCRIPT_DIR/make_file_public_access_cli.js"
+exec node "$CLI" "$@"

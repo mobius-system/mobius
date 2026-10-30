@@ -40,6 +40,19 @@ export const BUILTIN_MEMORIES: BuiltinMemory[] = [
       '  display_images https://example.com/photo.jpg',
     ].join('\n'),
   },
+  {
+    scope: 'builtin',
+    name: '把文件发布成公开链接',
+    description: 'make_file_public_access: 上传本地文件到 Mobius 静态分享，得到免登录公开链接。',
+    body: [
+      '需要把 HTML / 图片 / 压缩包等文件变成"任何人都能打开"的链接时使用：',
+      '`make_file_public_access --path=<本地文件> [--file-name=<链接里的名字>] [--at-dir=<目录>] [--expire=<天数>]`',
+      '- `--path` 必填，本地文件路径；`--file-name` 默认取文件名；`--at-dir` 默认放在分享根目录；`--expire` 默认 7 天，最长 3650 天。',
+      '- 限制：公开文件不超过 10MB；文件名和每一级目录只允许中文、英文、数字、下划线和单点（不支持连字符/空格），文件名不超过 50 字符，目录路径总计不超过 50 字符。',
+      '- 成功时打印 `Public URL:`，把该链接直接给用户即可；同名文件已存在会报错，换个文件名或目录重试。',
+      '- 需要程序化处理时加 `--json`，返回完整响应。',
+    ].join('\n'),
+  },
   // {
   //   scope: 'builtin',
   //   name: '向用户呈现中枢文件',
