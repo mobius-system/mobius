@@ -505,6 +505,31 @@ CREATE TABLE IF NOT EXISTS session_conflicts (
   FOREIGN KEY (right_change_id) REFERENCES session_changes(id) ON DELETE CASCADE
 );
 
+-- 静态网页 / 文件分享的元数据 (文件本体在 MOBIUS_DATA_PATH/static_share/<owner>/...).
+-- scope: private = 仅所有者 (需登录), public = 任何人凭链接可访问.
+-- 唯一索引承担"重复文件直接报错"的原子判定, 不依赖先查后写.
+CREATE TABLE IF NOT EXISTS static_share_files (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  owner_name TEXT NOT NULL,
+  file_path TEXT NOT NULL DEFAULT '',
+  file_name TEXT NOT NULL,
+  rel_path TEXT NOT NULL,
+  storage_rel TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  mime_type TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK(scope IN ('private','public')),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_static_share_owner_path
+  ON static_share_files(owner_id, file_path, file_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_static_share_public_path
+  ON static_share_files(file_path, file_name) WHERE scope = 'public';
+CREATE INDEX IF NOT EXISTS idx_static_share_expires ON static_share_files(expires_at);
+CREATE INDEX IF NOT EXISTS idx_static_share_owner ON static_share_files(owner_id, created_at DESC);
+
 -- ===== 索引 =====
 CREATE INDEX IF NOT EXISTS idx_issues_project ON issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_issue ON sessions(issue_id);

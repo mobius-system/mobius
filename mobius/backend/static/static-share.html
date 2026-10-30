@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>静态分享 · Mobius</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #fafbfc;
+    --text: #16181d;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --danger: #dc2626;
+    --ok: #059669;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 8px 24px -12px rgba(16, 24, 40, .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1013;
+      --panel: #16191f;
+      --panel-2: #1b1f26;
+      --text: #e9ebef;
+      --muted: #9aa3b2;
+      --line: #262b33;
+      --accent: #8b8cf7;
+      --accent-soft: #1e2138;
+      --danger: #f87171;
+      --ok: #34d399;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px -16px rgba(0, 0, 0, .8);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 72px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+  h1 .dot { color: var(--accent); }
+  header a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  header a:hover { color: var(--text); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--text); }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  .drop {
+    border: 1.5px dashed var(--line);
+    border-radius: 12px;
+    background: var(--panel-2);
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { display: block; font-weight: 600; margin-bottom: 4px; }
+  .drop span { color: var(--muted); font-size: 12.5px; }
+  .drop input { display: none; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .grid .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  input[type="text"], input[type="number"] {
+    width: 100%; padding: 9px 11px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font: inherit; outline: none;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .segmented { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .segmented label {
+    flex: 1; margin: 0; padding: 9px 10px; text-align: center; cursor: pointer;
+    color: var(--muted); font-size: 13px; background: var(--panel-2);
+  }
+  .segmented input { display: none; }
+  .segmented input:checked + span { color: var(--text); }
+  .segmented label:has(input:checked) { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+  .segmented label + label { border-left: 1px solid var(--line); }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+  button.primary {
+    appearance: none; border: 0; border-radius: 10px; padding: 10px 18px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .55; cursor: not-allowed; }
+  .ghost {
+    appearance: none; border: 1px solid var(--line); border-radius: 9px; padding: 6px 12px;
+    background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer;
+    white-space: nowrap; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .ghost:hover { color: var(--text); border-color: var(--accent); }
+  .msg { margin-top: 14px; font-size: 13px; display: none; padding: 10px 12px; border-radius: 9px; }
+  .msg.show { display: block; }
+  .msg.err { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .msg.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .result { display: none; margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+  .result.show { display: block; }
+  .linkrow { display: flex; gap: 8px; margin-top: 6px; }
+  .linkrow input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; min-width: 0; flex: 1; }
+  .filelist { display: flex; flex-direction: column; gap: 8px; }
+  .filerow {
+    display: flex; align-items: center; gap: 12px; padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+  }
+  .filerow .meta { min-width: 0; flex: 1; }
+  .filerow .name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filerow .sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.pub { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .badge.expired { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  a.inline { color: var(--accent); text-decoration: none; }
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+    .wrap { padding: 24px 14px 56px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>静态分享<span class="dot">.</span></h1>
+    <a href="/">← 返回 Mobius</a>
+  </header>
+
+  <div id="loginGate" class="card" style="display:none">
+    <h2>需要先登录</h2>
+    <p class="hint">上传和查看“仅自己”的文件需要登录 Mobius。请先<a class="inline" href="/">登录</a>，再回到本页。</p>
+  </div>
+
+  <div id="app" style="display:none">
+    <section class="card">
+      <h2>上传文件</h2>
+      <label class="drop" id="dropZone">
+        <input type="file" id="fileInput" />
+        <strong id="dropTitle">点击选择文件，或拖拽到这里</strong>
+        <span id="dropSub">公开文件 ≤ 10MB · 私有文件 ≤ 500MB</span>
+      </label>
+
+      <div class="grid">
+        <div>
+          <label for="fileName">文件名</label>
+          <input type="text" id="fileName" placeholder="例如 report.html" maxlength="50" />
+          <div class="hint" style="margin-top:4px">仅中文/英文/数字/下划线/单点，≤50 字符</div>
+        </div>
+        <div>
+          <label for="filePath">文件路径（可选，可多级用 / 分隔）</label>
+          <input type="text" id="filePath" placeholder="例如 demo/v1" maxlength="50" />
+          <div class="hint" style="margin-top:4px">字符规则同上，≤50 字符，建议留空</div>
+        </div>
+        <div>
+          <label for="expireDays">有效期（天）</label>
+          <input type="number" id="expireDays" value="7" min="1" max="3650" step="1" />
+        </div>
+        <div>
+          <label>访问范围</label>
+          <div class="segmented">
+            <label><input type="radio" name="scope" value="private" /><span>仅自己</span></label>
+            <label><input type="radio" name="scope" value="public" checked /><span>任何人</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="uploadBtn" disabled>上传</button>
+        <span class="hint" id="progressText"></span>
+      </div>
+      <div class="msg" id="msg"></div>
+
+      <div class="result" id="result">
+        <div class="hint" id="resultMeta"></div>
+        <div class="linkrow">
+          <input type="text" id="resultUrl" readonly />
+          <button class="ghost" id="copyBtn">复制</button>
+          <a class="ghost" id="openBtn" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">打开</a>
+        </div>
+        <div class="hint" id="resultWarn" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>我的分享 <span class="hint" id="usageText" style="font-weight:400"></span></h2>
+      <div class="filelist" id="fileList"><div class="empty">加载中…</div></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TOKEN_KEY = 'cc-token';
+  var token = localStorage.getItem(TOKEN_KEY) || '';
+  var selectedFile = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var loginGate = $('loginGate');
+  var app = $('app');
+  var fileInput = $('fileInput');
+  var dropZone = $('dropZone');
+  var fileNameInput = $('fileName');
+  var filePathInput = $('filePath');
+  var expireInput = $('expireDays');
+  var uploadBtn = $('uploadBtn');
+  var msg = $('msg');
+  var result = $('result');
+  var resultUrl = $('resultUrl');
+  var resultMeta = $('resultMeta');
+  var resultWarn = $('resultWarn');
+  var openBtn = $('openBtn');
+  var fileList = $('fileList');
+  var usageText = $('usageText');
+  var progressText = $('progressText');
+
+  function fmtBytes(n) {
+    if (!n && n !== 0) return '-';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var p = function (x) { return String(x).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function showMsg(text, kind) {
+    msg.textContent = text;
+    msg.className = 'msg show ' + (kind || 'err');
+  }
+  function hideMsg() { msg.className = 'msg'; }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    if (token) headers.Authorization = 'Bearer ' + token;
+    opts.headers = headers;
+    return fetch(path, opts).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (!res.ok) {
+          var err = new Error(body.error || ('HTTP ' + res.status));
+          err.status = res.status;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
+  // 登录态: 用 token 拉一次自己的文件列表, 401 就退回登录提示
+  function boot() {
+    if (!token) { loginGate.style.display = 'block'; return; }
+    api('/static_share/api/files').then(function () {
+      loginGate.style.display = 'none';
+      app.style.display = 'block';
+      refreshList();
+    }).catch(function (err) {
+      if (err.status === 401) {
+        loginGate.style.display = 'block';
+      } else {
+        loginGate.style.display = 'block';
+        loginGate.querySelector('p').textContent = '无法连接服务器: ' + err.message;
+      }
+    });
+  }
+
+  function setSelectedFile(file) {
+    selectedFile = file || null;
+    if (!selectedFile) {
+      $('dropTitle').textContent = '点击选择文件，或拖拽到这里';
+      $('dropSub').textContent = '公开文件 ≤ 10MB · 私有文件 ≤ 500MB';
+      uploadBtn.disabled = true;
+      return;
+    }
+    $('dropTitle').textContent = selectedFile.name;
+    $('dropSub').textContent = fmtBytes(selectedFile.size);
+    fileNameInput.value = selectedFile.name;
+    uploadBtn.disabled = false;
+    hideMsg();
+  }
+
+  fileInput.addEventListener('change', function () { setSelectedFile(fileInput.files[0]); });
+
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    dropZone.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    dropZone.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.remove('over'); });
+  });
+  dropZone.addEventListener('drop', function (e) {
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) setSelectedFile(file);
+  });
+
+  uploadBtn.addEventListener('click', function () {
+    if (!selectedFile) return;
+    hideMsg();
+    result.className = 'result';
+    var scopeEl = document.querySelector('input[name="scope"]:checked');
+    var scope = scopeEl ? scopeEl.value : 'public';
+
+    var form = new FormData();
+    form.append('file', selectedFile);
+    form.append('filename', fileNameInput.value.trim() || selectedFile.name);
+    form.append('file_path', filePathInput.value.trim());
+    form.append('expires_in_days', String(expireInput.value || '7'));
+    form.append('scope', scope);
+
+    uploadBtn.disabled = true;
+    progressText.textContent = '上传中…';
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/static_share/upload');
+    if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) {
+        progressText.textContent = '上传中 ' + Math.round((e.loaded / e.total) * 100) + '%';
+      }
+    };
+    xhr.onload = function () {
+      uploadBtn.disabled = false;
+      progressText.textContent = '';
+      var body = {};
+      try { body = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) {
+        showMsg('上传成功', 'ok');
+        showResult(body);
+        refreshList();
+      } else {
+        showMsg(body.error || ('上传失败 (HTTP ' + xhr.status + ')'), 'err');
+      }
+    };
+    xhr.onerror = function () {
+      uploadBtn.disabled = false;
+      progressText.textContent = '';
+      showMsg('网络错误，上传失败', 'err');
+    };
+    xhr.send(form);
+  });
+
+  function showResult(body) {
+    // 用页面自身的 origin 生成链接, 反向代理下也不会拿到内网地址
+    // Build the link from the page origin so proxied deployments stay correct
+    var url = window.location.origin + (body.access_url || '');
+    // 私有文件: 把登录 token 拼进链接, 浏览器直接打开才能通过鉴权
+    if (body.token_required && token) {
+      url += (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+    }
+    resultUrl.value = url;
+    resultMeta.textContent = '有效期至 ' + fmtTime(body.expires_at) + ' · ' + fmtBytes(body.size) + ' · ' +
+      (body.scope === 'public' ? '任何人可访问' : '仅自己可访问');
+    resultWarn.textContent = body.warning || (body.token_required ? '链接里已带上你的登录凭证，请勿转发给他人。' : '');
+    openBtn.href = url;
+    result.className = 'result show';
+  }
+
+  $('copyBtn').addEventListener('click', function () {
+    resultUrl.select();
+    resultUrl.setSelectionRange(0, 99999);
+    var text = resultUrl.value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { showMsg('链接已复制', 'ok'); });
+    } else {
+      document.execCommand('copy');
+      showMsg('链接已复制', 'ok');
+    }
+  });
+
+  function refreshList() {
+    api('/static_share/api/files').then(function (data) {
+      usageText.textContent = data.usage.files + ' 个文件 · ' + fmtBytes(data.usage.bytes) +
+        ' / ' + fmtBytes(data.usage.quota_bytes);
+      fileList.textContent = '';
+      if (!data.files.length) {
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = '还没有分享文件';
+        fileList.appendChild(empty);
+        return;
+      }
+      data.files.forEach(function (f) { fileList.appendChild(renderRow(f)); });
+    }).catch(function (err) {
+      fileList.textContent = '';
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '加载失败: ' + err.message;
+      fileList.appendChild(empty);
+    });
+  }
+
+  function renderRow(f) {
+    var row = document.createElement('div');
+    row.className = 'filerow';
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    var name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = f.file_name;
+    var sub = document.createElement('div');
+    sub.className = 'sub';
+    sub.textContent = (f.file_path ? f.file_path + ' / ' : '') + fmtBytes(f.size) + ' · 到期 ' + fmtTime(f.expires_at);
+    meta.appendChild(name);
+    meta.appendChild(sub);
+
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (f.expired ? 'expired' : (f.scope === 'public' ? 'pub' : ''));
+    badge.textContent = f.expired ? '已过期' : (f.scope === 'public' ? '公开' : '仅自己');
+
+    var actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '6px';
+
+    if (!f.expired) {
+      var open = document.createElement('a');
+      open.className = 'ghost';
+      open.textContent = '打开';
+      open.target = '_blank';
+      open.rel = 'noopener';
+      open.style.textDecoration = 'none';
+      var url = f.access_url;
+      if (f.scope === 'private' && token) url += '?token=' + encodeURIComponent(token);
+      open.href = url;
+      actions.appendChild(open);
+    }
+
+    var del = document.createElement('button');
+    del.className = 'ghost';
+    del.textContent = '删除';
+    del.addEventListener('click', function () {
+      if (!confirm('确定删除 ' + f.file_name + ' ?')) return;
+      api('/static_share/api/files/' + encodeURIComponent(f.id), { method: 'DELETE' }).then(function () {
+        refreshList();
+      }).catch(function (err) { showMsg('删除失败: ' + err.message, 'err'); });
+    });
+    actions.appendChild(del);
+
+    row.appendChild(meta);
+    row.appendChild(badge);
+    row.appendChild(actions);
+    return row;
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

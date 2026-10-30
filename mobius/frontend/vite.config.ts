@@ -86,6 +86,9 @@ export default defineConfig({
       // aimux bridge 由后端 server.js 反代并注入 bridge token (设备清单/连接状态/切换设备).
       // dev 模式必须代理, 否则 vite SPA fallback 返回 index.html → 设备下拉恒空.
       '/aimux_bridge': { target: apiTarget, ws: true, changeOrigin: false },
+      // 静态分享页与文件直链由后端 server.js 提供, dev 下同样必须代理到后端.
+      // Static share page + file links are served by the backend; proxy them in dev too.
+      '/static_share': apiTarget,
     }
   },
   build: {

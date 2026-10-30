@@ -64,6 +64,7 @@ function isMultipartPath(req) {
     || p === '/api/voice/upload'
     || p.startsWith('/api/upload/')
     || p.startsWith('/api/files/upload')
+    || p === '/static_share/upload'
     || (p.startsWith('/api/projects/') && p.endsWith('/import-zip'));
 }
 app.use((req, res, next) => {
@@ -176,6 +177,12 @@ app.use('/_next', extRoutes.unprefixedNextRouter);
 // 放在所有 /api/<具体> 之后: 那些已先匹配响应, 不会落到这里.
 app.use('/api', filesRoutes);
 app.use('/api/health', healthRoutes);
+
+// ===== 静态网页 / 文件分享 =====
+// 故意挂在 /static_share 而不是 /api: 返回的访问地址就是公网直链.
+// 路由内部按 DB 记录鉴权与过期判定, 且必须早于下面的 SPA catchall 挂载.
+const staticShareRoutes = require('./backend/routes/static-share');
+app.use('/static_share', staticShareRoutes);
 
 // ===== code-server 反向代理(v1.9 主栈, 从旧 gateway 移植) =====
 // /code-server/<userId>__<projectId>/* → per-(user, project) lazy spawn 的 code-server 进程
@@ -295,6 +302,14 @@ app.get('*', (req, res, next) => {
   }
   // 下载分发前缀: 中间件已对未命中返回 404; 这里再显式排除, 双保险避免 SPA 把它当路由回退到 index.html。
   if (p.startsWith('/desktop-builds') || p.startsWith('/mobile-builds')) {
+    res.status(404);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.send('404 Not Found\n');
+  }
+  // 静态分享前缀未命中时返回 404, 不回落 SPA (避免把无效分享链接渲染成首页)
+  // Unmatched share paths 404 instead of falling back to the SPA entry
+  if (p === '/static_share' || p.startsWith('/static_share/')) {
     res.status(404);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
