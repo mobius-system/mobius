@@ -119,12 +119,12 @@ const EASY_LIST_MODE_KEY = 'mobius:easy-mode:session-list-mode'
 // 图标色取自品牌色系但压低饱和, 避免在 Codex 式中性底上跳色.
 type WelcomeSuggestion = { label: string; prompt: string; icon: typeof FileText; color: string }
 const WELCOME_SUGGESTIONS: WelcomeSuggestion[] = [
-  { label: '多智能体协作', prompt: '组建一支多智能体团队协作完成这个任务：一人做方案、一人写代码、一人测试验收，最后汇总结果。', icon: Users, color: '#f472b6' },
-  { label: '功能开发', prompt: '在当前项目实现这个功能：梳理改动 → 写代码 → 补测试 → 跑通验证并说明改动。', icon: Code2, color: '#fbbf24' },
-  { label: '深度调研', prompt: '围绕这个主题做一次深度调研：检索并交叉验证多来源资料，输出一份带引用的报告。', icon: Search, color: '#38bdf8' },
-  { label: '远程算力', prompt: '连上我的 GPU 服务器，配置环境、下发训练任务并回收日志与结果。', icon: MonitorSmartphone, color: '#34d399' },
-  { label: '网页自动化', prompt: '自动完成这个网页流程：打开页面、按步骤填写提交，把关键结果截图汇总。', icon: Globe, color: '#a78bfa' },
-  { label: '文档创作', prompt: '通读仓库 README 与源码，写一份结构清晰、带示例的使用文档。', icon: FileText, color: '#60a5fa' },
+  { label: '多智能体协作', prompt: '组建一支多智能体团队协作完成这个任务：先由规划者把任务拆解成清晰的分工和验收标准，再由工程师实现、评审验证，最后汇总每个角色的产出、结论和遗留问题。', icon: Users, color: '#f472b6' },
+  { label: '功能开发', prompt: '在当前项目里实现这个功能：先读相关源码梳理改动点和风险，列出实现方案，再写代码、补上单元测试，跑通验证后总结改动内容、影响面和注意事项。', icon: Code2, color: '#fbbf24' },
+  { label: '深度调研', prompt: '围绕这个主题做一次深度调研：检索多个来源的资料，交叉验证关键事实和数据，区分结论、争议点和证据强弱，最后输出一份带引用出处的调研报告。', icon: Search, color: '#38bdf8' },
+  { label: '远程算力', prompt: '连接到我的 GPU 服务器：先确认环境与依赖是否就绪，再把训练任务部署上去并监控运行状态，最后回收日志和生成物，汇报训练结果与性能。', icon: MonitorSmartphone, color: '#34d399' },
+  { label: '网页自动化', prompt: '帮我自动完成这个网页操作流程：从打开页面开始，按步骤点击、填写、提交，遇到需要判断的地方先说明再执行，最后把关键步骤和最终结果截图汇总给我。', icon: Globe, color: '#a78bfa' },
+  { label: '文档创作', prompt: '通读当前仓库的 README 和核心源码，写一份面向使用者的文档：包含快速开始、核心功能说明和可复现的示例，结构清晰、步骤完整。', icon: FileText, color: '#60a5fa' },
 ]
 // 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
 // 用户没有显式选择项目/任务时，复用 let-us-chat / a random chat，缺失则按需创建。
