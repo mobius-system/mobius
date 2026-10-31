@@ -449,18 +449,8 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
         <div className="easy-session-input-right flex min-w-0 items-center gap-3">
           {follow && (
             <>
-              <EasySessionModelPill
-                isDark={isDark}
-                modelLabel={follow.sessionModelLabel || ''}
-                modelKey={follow.sessionModelKey || ''}
-                onChange={async (model: string) => {
-                  if (!follow.onChangeSessionModel) return
-                  await follow.onChangeSessionModel(model)
-                }}
-                disabled={!follow.modelAvailable || follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
-              />
               {/* 运行设备 pill: 只画图标, 名字留到展开后的列表里 —— 设备名又长又占宽度,
-                  而这一行右边同时站着模型 pill 和四个动作键. */}
+                  而这一行右边同时站着模型 pill 和四个动作键. 与欢迎页一致放在模型左侧. */}
               {/* 移动端运行中临时收起设备 pill: 运行中会多出 ⚡/■ 两个键, 7 个控件挤一行
                   会把模型 pill 挤成 16px; 收起设备图标 (36px) 给模型名腾出宽度. 桌面端空间够, 不藏. */}
               {follow.onChangeSessionDevice && !(isMobile && canStop) && (
@@ -474,6 +464,16 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
                   disabled={follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
                 />
               )}
+              <EasySessionModelPill
+                isDark={isDark}
+                modelLabel={follow.sessionModelLabel || ''}
+                modelKey={follow.sessionModelKey || ''}
+                onChange={async (model: string) => {
+                  if (!follow.onChangeSessionModel) return
+                  await follow.onChangeSessionModel(model)
+                }}
+                disabled={!follow.modelAvailable || follow.messageSubmitting || !!follow.hasPendingSend || !!follow.voiceBusy}
+              />
             </>
           )}
           {/* 欢迎页: 运行中枢 + 模型选型 (两个都是「这个会话是什么」的选择, 紧挨着放.

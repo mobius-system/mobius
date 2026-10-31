@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowUpRight,
-  BarChart3,
   Boxes,
   BrainCircuit,
   Check,
@@ -120,12 +119,12 @@ const EASY_LIST_MODE_KEY = 'mobius:easy-mode:session-list-mode'
 // 图标色取自品牌色系但压低饱和, 避免在 Codex 式中性底上跳色.
 type WelcomeSuggestion = { label: string; prompt: string; icon: typeof FileText; color: string }
 const WELCOME_SUGGESTIONS: WelcomeSuggestion[] = [
-  { label: '文档创作', prompt: '帮我写一份项目周报', icon: FileText, color: '#60a5fa' },
-  { label: '数据分析', prompt: '分析这份数据并生成报告', icon: BarChart3, color: '#34d399' },
-  { label: '网页应用', prompt: '帮我搭建一个网页应用', icon: Globe, color: '#a78bfa' },
-  { label: '多智能体协作', prompt: '组建一支多智能体团队协作完成这个任务', icon: Users, color: '#f472b6' },
-  { label: '深度调研', prompt: '做一次深度调研并输出调研报告', icon: Search, color: '#38bdf8' },
-  { label: '功能开发', prompt: '实现这个功能并补上测试', icon: Code2, color: '#fbbf24' },
+  { label: '多智能体协作', prompt: '组建一支多智能体团队协作完成这个任务：一人做方案、一人写代码、一人测试验收，最后汇总结果。', icon: Users, color: '#f472b6' },
+  { label: '功能开发', prompt: '在当前项目实现这个功能：梳理改动 → 写代码 → 补测试 → 跑通验证并说明改动。', icon: Code2, color: '#fbbf24' },
+  { label: '深度调研', prompt: '围绕这个主题做一次深度调研：检索并交叉验证多来源资料，输出一份带引用的报告。', icon: Search, color: '#38bdf8' },
+  { label: '远程算力', prompt: '连上我的 GPU 服务器，配置环境、下发训练任务并回收日志与结果。', icon: MonitorSmartphone, color: '#34d399' },
+  { label: '网页自动化', prompt: '自动完成这个网页流程：打开页面、按步骤填写提交，把关键结果截图汇总。', icon: Globe, color: '#a78bfa' },
+  { label: '文档创作', prompt: '通读仓库 README 与源码，写一份结构清晰、带示例的使用文档。', icon: FileText, color: '#60a5fa' },
 ]
 // 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
 // 用户没有显式选择项目/任务时，复用 let-us-chat / a random chat，缺失则按需创建。
