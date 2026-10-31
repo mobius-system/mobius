@@ -160,7 +160,7 @@ export function SearchModal({
   // 匹配选项: caseSensitive 区分大小写, wholeWord 全字匹配 (与后端 /api/search 的 case/word 参数同口径).
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
-  // 搜索结果先打开命中预览，用户确认后才离开当前搜索弹窗进入会话。
+  // 搜索结果先打开命中预览，用户确认后再查看对应会话。
   // 这既让上下文可复制，也避免点击整张结果卡时误跳到非预期片段。
   const [selectedFragment, setSelectedFragment] = useState<SelectedSearchFragment | null>(null)
   // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
@@ -371,9 +371,12 @@ export function SearchModal({
       targetUrl = `${base}${mid}?session=${r.session_id}${extra ? `&${extra}` : ''}`
     }
     const isDesktop = typeof window !== 'undefined' && !!(window as { mobiusDesktop?: { isDesktop?: boolean } }).mobiusDesktop?.isDesktop
-    if (isDesktop) onNavigate(targetUrl)
-    else window.open(targetUrl, '_blank', 'noopener,noreferrer')
-    close()
+    if (isDesktop) {
+      onNavigate(targetUrl)
+      close()
+    } else {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const openFragmentPreview = (r: SearchResult, frag?: Fragment) => {
