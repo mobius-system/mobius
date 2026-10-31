@@ -1,238 +1,248 @@
-// aimux reverse-connect 子进程的看护：启动 / bridge 状态同步 / 断线重启 / JWT 到期续命 / 退出时杀干净。
 import { app } from "electron";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pidAlive, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, reverseConnectArgs, type GuiMode } from "../../../tui/src/lib/aimux-protocol";
+import { windowsElevated } from "../../../tui/src/lib/windows-admin";
 
-// disabled：用户手动关闭了 aimux 反连（区别于 stopped=未启动/已停止、failed=连接失败）。
-// supervisor 自身不会产生 disabled，只有 main 进程在用户切换开关时设置。
 export type AimuxState = "stopped" | "starting" | "connected" | "failed" | "disabled";
-
-export interface AimuxStatus {
-  state: AimuxState;
-  detail?: string;
-  identifier?: string;
-}
-
+export interface AimuxStatus { state: AimuxState; detail?: string; identifier?: string }
+export interface BridgeProbe { connected: boolean; authError: boolean }
 export interface SupervisorOptions {
   aimuxExe: string;
-  /** ${server}/aimux_bridge — aimux reverse connect 的目标 URL */
   bridgeUrl: string;
-  /** mobius JWT，作为 reverse connect 的 --token */
   token: string;
   identifier: string;
-  /** 状态变化回调（主进程用来更新徽标 + 推给 web UI） */
   onStatus: (s: AimuxStatus) => void;
-  /** 每行 stdout/stderr 日志回调（主进程进环形缓冲供状态面板查看） */
   onLog?: (line: string) => void;
-  /** 从 bridge 查询当前 identifier 是否仍有活动事件流。 */
-  probeBridgeConnection: () => Promise<boolean>;
-  /** JWT 即将到期时主进程据此重登，返回新 token 或 null */
+  probeBridgeConnection: () => Promise<BridgeProbe>;
   onTokenExpired: () => Promise<string | null>;
   runtimePath: string;
+  guiMode?: GuiMode;
   watchdogTimeoutSeconds?: number;
+  heartbeatIntervalMs?: number;
+  spawnGraceMs?: number;
+}
+interface RuntimeRecord {
+  pid?: number;
+  identifier?: string;
+  last_feed_watchdog?: number;
+  need_external_restart?: boolean;
+  realtime_healthy_display?: boolean;
 }
 
 export function aimuxLogPath(): string {
   return path.join(app.getPath("userData"), "logs", "aimux.log");
 }
-
 export function appendAimuxLog(data: string | Buffer): void {
-  const logPath = aimuxLogPath();
   try {
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, data);
-  } catch (e) {
-    console.error(`[aimux-supervisor] 写 aimux 日志失败 (${logPath}):`, e);
-  }
+    fs.mkdirSync(path.dirname(aimuxLogPath()), { recursive: true });
+    fs.appendFileSync(aimuxLogPath(), data);
+  } catch (e) { console.error("[aimux-supervisor] log write failed", e); }
 }
 
+/*
+ * Feed a detached daemon while the desktop is alive. A bridge outage never
+ * kills a live daemon: AIMUX owns transport reconnection, as it does in TUI.
+ */
 export class AimuxSupervisor {
-  private child: ChildProcess | null = null;
-  private stopping = false;
-  private respawnTimer: ReturnType<typeof setTimeout> | null = null;
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private connectionProbeTimer: ReturnType<typeof setTimeout> | null = null;
-  private connectionProbeEpoch = 0;
-  private bridgeConnected = false;
-  private opts: SupervisorOptions;
+  private stopping = true;
+  private epoch = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private spawnedPid: number | undefined;
+  private spawnedAt = 0;
+  private attempts = 0;
+  private help = "";
+  private lastRefresh = 0;
+  private refreshAt = Infinity;
+  private lastStatus = "";
 
-  constructor(opts: SupervisorOptions) {
-    this.opts = opts;
+  constructor(private opts: SupervisorOptions) {}
+
+  private readRuntime(): RuntimeRecord {
+    try { return JSON.parse(fs.readFileSync(this.opts.runtimePath, "utf8")); } catch { return {}; }
   }
 
-  start(): void {
+  private updateRuntime(patch: Partial<RuntimeRecord>): void {
+    fs.mkdirSync(path.dirname(this.opts.runtimePath), { recursive: true, mode: 0o700 });
+    const tmp = `${this.opts.runtimePath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...this.readRuntime(), ...patch }), { mode: 0o600 });
+    fs.renameSync(tmp, this.opts.runtimePath);
+  }
+
+  private status(state: AimuxState, detail: string): void {
+    const key = `${state}:${detail}`;
+    if (key === this.lastStatus) return;
+    this.lastStatus = key;
+    this.opts.onStatus({ state, detail, identifier: this.opts.identifier });
+  }
+
+  private log(line: string): void {
+    appendAimuxLog(`[${new Date().toISOString()}] ${line}\n`);
+    this.opts.onLog?.(line);
+  }
+
+  private async probeHelp(): Promise<string> {
+    return new Promise(resolve => {
+      const child = spawn(this.opts.aimuxExe, ["reverse", "connect", "--help"], { windowsHide: true });
+      let output = "";
+      const timer = setTimeout(() => { child.kill(); resolve(""); }, 8000);
+      child.stdout?.on("data", b => { output += b.toString(); });
+      child.stderr?.on("data", b => { output += b.toString(); });
+      child.on("error", () => { clearTimeout(timer); resolve(""); });
+      child.on("close", () => { clearTimeout(timer); resolve(output); });
+    });
+  }
+
+  private scheduleRefresh(): void {
+    try {
+      const { exp } = JSON.parse(Buffer.from(this.opts.token.split(".")[1], "base64").toString());
+      this.refreshAt = typeof exp === "number" ? exp * 1000 - 600_000 : Infinity;
+    } catch { this.refreshAt = Infinity; }
+  }
+
+  async start(): Promise<void> {
+    if (!this.stopping) return;
     this.stopping = false;
-    this.spawnChild();
-    this.startWatchdogFeed();
-    this.scheduleTokenRefresh();
-  }
-
-  private spawnChild(): void {
-    const { aimuxExe, bridgeUrl, token, identifier, onStatus } = this.opts;
-    onStatus({ state: "starting", detail: "正在连接 mobius…", identifier });
-
-    appendAimuxLog(`\n==== [${new Date().toISOString()}] spawn reverse connect identifier=${identifier} ====\n`);
-    const args = ["reverse", "connect", bridgeUrl, "--identifier", identifier, "--token", token, "--replace", "--runtime", this.opts.runtimePath, "--watchdog", this.opts.runtimePath, "--watchdog-timeout", String(this.opts.watchdogTimeoutSeconds ?? 30)];
-    // Windows otherwise opens a console window for every remote terminal.
-    // v2 uses CREATE_NO_WINDOW + pipes, so there is no flash before hiding;
-    // keep --silent-shell in AIMUX for older manually launched clients.
-    if (process.platform === "win32") args.push("--slient-v2");
-    const child = spawn(aimuxExe, args, { windowsHide: true });
-    this.child = child;
-    this.startConnectionProbe();
-
-    const handle = (b: Buffer) => {
-      appendAimuxLog(b);
-      const text = b.toString("utf8").trim();
-      if (text) this.opts.onLog?.(text);
-    };
-    child.stdout?.on("data", handle);
-    child.stderr?.on("data", handle);
-
-    child.on("exit", (code) => {
-      if (this.child !== child) return;
-      this.child = null;
-      this.stopConnectionProbe();
-      appendAimuxLog(`\n---- [${new Date().toISOString()}] child exited code=${code} ----\n`);
-      if (this.stopping) {
-        this.opts.onStatus({ state: "stopped", identifier });
-        return;
+    const epoch = ++this.epoch;
+    this.status("starting", "检查 AIMUX 命令与守护进程…");
+    try {
+      this.help = await this.probeHelp();
+      if (this.stopping || epoch !== this.epoch) return;
+      this.scheduleRefresh();
+      this.feedWatchdog();
+      this.watchdogTimer = setInterval(() => this.feedWatchdog(), 5000);
+      this.ensureDaemon();
+      await this.check(epoch);
+    } catch (e) {
+      if (!this.stopping) {
+        this.clearTimers();
+        this.stopping = true;
+        this.status("failed", `AIMUX 启动失败: ${(e as Error).message}`);
       }
-      this.opts.onStatus({ state: "failed", detail: `aimux 退出 code=${code}，5s 后重启`, identifier });
-      this.respawnTimer = setTimeout(() => {
-        if (!this.stopping) this.spawnChild();
-      }, 5000);
-    });
-    child.on("error", (err) => {
-      if (this.child !== child) return;
-      appendAimuxLog(`\n---- [${new Date().toISOString()}] spawn error: ${err.message} ----\n`);
-      this.opts.onStatus({ state: "failed", detail: `spawn 失败: ${err.message}`, identifier });
-    });
-  }
-
-  /**
-   * Feed the daemon's watchdog. `last_feed_watchdog` is the liveness signal the
-   * daemon reads, so a feed must never be dropped just because the daemon has
-   * not written its runtime state yet — that would be a missed heartbeat.
-   */
-  private startWatchdogFeed(): void {
-    const feed = () => {
-      if (this.stopping) return;
-      let state: Record<string, unknown> = {};
-      try {
-        state = JSON.parse(fs.readFileSync(this.opts.runtimePath, "utf8")) as Record<string, unknown>;
-      } catch { /* AIMUX has not written the runtime yet — start a fresh record */ }
-      state.last_feed_watchdog = Date.now();
-      try {
-        const tmp = `${this.opts.runtimePath}.tmp-${process.pid}`;
-        fs.writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 });
-        fs.renameSync(tmp, this.opts.runtimePath);
-      } catch { /* directory not writable; nothing useful to do here */ }
-    };
-    feed();
-    this.watchdogTimer = setInterval(feed, 5000);
-  }
-
-  private startConnectionProbe(): void {
-    this.stopConnectionProbe();
-    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
-    this.watchdogTimer = null;
-    this.bridgeConnected = false;
-    const epoch = ++this.connectionProbeEpoch;
-    void this.probeBridgeConnection(epoch);
-  }
-
-  private stopConnectionProbe(): void {
-    this.connectionProbeEpoch += 1;
-    if (this.connectionProbeTimer) clearTimeout(this.connectionProbeTimer);
-    this.connectionProbeTimer = null;
-  }
-
-  private async probeBridgeConnection(epoch: number): Promise<void> {
-    let connected = false;
-    try {
-      connected = await this.opts.probeBridgeConnection();
-    } catch {
-      connected = false;
-    }
-    if (this.stopping || epoch !== this.connectionProbeEpoch) return;
-
-    if (connected !== this.bridgeConnected) {
-      this.bridgeConnected = connected;
-      this.opts.onStatus(connected
-        ? { state: "connected", detail: "bridge 已确认当前反向连接在线", identifier: this.opts.identifier }
-        : { state: "starting", detail: "等待 bridge 确认当前反向连接", identifier: this.opts.identifier });
-    }
-    this.connectionProbeTimer = setTimeout(() => void this.probeBridgeConnection(epoch), 2000);
-  }
-
-  /** 用新 token 重启（JWT 续期后调用）。 */
-  async restartWithToken(token: string): Promise<void> {
-    this.opts = { ...this.opts, token };
-    await this.killChild();
-    if (!this.stopping) this.spawnChild();
-  }
-
-  /** 解析 JWT exp，提前 10 分钟触发续期。 */
-  private scheduleTokenRefresh(): void {
-    try {
-      const payload = JSON.parse(Buffer.from(this.opts.token.split(".")[1], "base64").toString("utf8"));
-      const expMs = (payload.exp || 0) * 1000;
-      const refreshAt = expMs - 10 * 60 * 1000;
-      const delay = Math.max(60_000, refreshAt - Date.now());
-      this.refreshTimer = setTimeout(() => void this.refreshToken(), delay);
-    } catch {
-      /* token 非 JWT 或解析失败 → 不自动续期，到期后 aimux 会失败并由 respawn 循环暴露 */
     }
   }
 
-  private async refreshToken(): Promise<void> {
+  private feedWatchdog(): void {
     if (this.stopping) return;
-    const newToken = await this.opts.onTokenExpired();
-    if (newToken) {
-      await this.restartWithToken(newToken);
-      this.scheduleTokenRefresh();
-    }
+    try { this.updateRuntime({ last_feed_watchdog: Date.now() }); }
+    catch (e) { this.log(`watchdog write failed: ${(e as Error).message}`); }
   }
 
-  private async killChild(): Promise<void> {
-    const child = this.child;
-    if (!child?.pid) {
-      this.child = null;
+  private daemonPid(): number | undefined {
+    const recorded = this.readRuntime().pid;
+    if (recorded && pidAlive(recorded)) return recorded;
+    return this.spawnedPid && pidAlive(this.spawnedPid) ? this.spawnedPid : undefined;
+  }
+
+  private ensureDaemon(): void {
+    if (this.stopping || this.daemonPid()) return;
+    if (this.spawnedAt && Date.now() - this.spawnedAt < (this.opts.spawnGraceMs ?? 90_000)) return;
+    if (this.attempts >= 3) {
+      this.status("failed", `AIMUX 连续 3 次启动失败，请查看日志: ${aimuxLogPath()}`);
       return;
     }
-    if (process.platform === "win32") {
-      // Windows: SIGTERM 不可靠，aimux 还会派生 pty/console 子进程 → taskkill /T 连树一起杀。
-      // detached + unref：即使父进程(app)紧接着退出，taskkill 仍独立运行把 aimux 杀干净。
-      await new Promise<void>((resolve) => {
-        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          windowsHide: true,
-          detached: true,
-          stdio: "ignore",
-        });
-        killer.on("close", () => resolve());
-        killer.on("error", () => resolve());
-        killer.unref();
-      });
-    } else {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        /* ignore */
-      }
-    }
-    this.child = null;
+    const gui = pickGuiArgs(this.opts.guiMode ?? "off", windowsElevated(), {
+      enable: pickEnableGuiFlag(this.help), noElevate: pickGuiNoElevateFlag(this.help),
+    });
+    const args = reverseConnectArgs(
+      this.opts.bridgeUrl.replace(/\/aimux_bridge\/?$/, ""), this.opts.identifier, this.opts.token,
+      process.platform, pickSilentFlag(this.help), this.opts.runtimePath, gui.enableGui, gui.guiNoElevate,
+    );
+    if (/--watchdog-timeout\b/.test(this.help)) args.push("--watchdog-timeout", String(this.opts.watchdogTimeoutSeconds ?? 30));
+    this.updateRuntime({ need_external_restart: false, realtime_healthy_display: false });
+    fs.mkdirSync(path.dirname(aimuxLogPath()), { recursive: true });
+    const fd = fs.openSync(aimuxLogPath(), "a", 0o600);
+    try {
+      // 由 watchdog 决定守护进程寿命，输出直接落盘，避免退出后管道断裂。✨
+      // Let the watchdog own daemon lifetime and log to disk to avoid broken pipes after exit. ✨
+      const child = spawn(this.opts.aimuxExe, args, { detached: true, windowsHide: true, stdio: ["ignore", fd, fd] });
+      this.spawnedPid = child.pid;
+      this.spawnedAt = Date.now();
+      this.attempts += 1;
+      child.on("error", e => this.log(`AIMUX spawn failed: ${e.message}`));
+      child.unref();
+      this.log(`AIMUX daemon started identifier=${this.opts.identifier} pid=${child.pid ?? "unknown"} attempt=${this.attempts}`);
+      this.status("starting", "等待 AIMUX bridge 心跳确认…");
+    } finally { fs.closeSync(fd); }
   }
 
-  /** 应用退出前必须调用：杀进程 + 清定时器，避免 aimux 残留继续连服务器。 */
-  async stop(): Promise<void> {
+  private async check(epoch: number): Promise<void> {
+    try {
+      const probe = await this.opts.probeBridgeConnection().catch(() => ({ connected: false, authError: false }));
+      if (this.stopping || epoch !== this.epoch) return;
+      if ((probe.authError || Date.now() >= this.refreshAt) && Date.now() - this.lastRefresh >= 60_000) {
+        this.lastRefresh = Date.now();
+        this.status("starting", "正在刷新 AIMUX 登录凭据…");
+        const token = await this.opts.onTokenExpired().catch(() => null);
+        if (this.stopping || epoch !== this.epoch) return;
+        if (token) {
+          this.opts.token = token;
+          this.scheduleRefresh();
+          await this.killDaemon();
+          if (this.stopping || epoch !== this.epoch) return;
+          this.attempts = 0;
+          this.spawnedAt = 0;
+          this.ensureDaemon();
+        } else this.status("failed", "AIMUX 登录凭据刷新失败，将自动重试");
+      } else if (probe.connected) {
+        this.attempts = 0;
+        this.updateRuntime({ realtime_healthy_display: true });
+        this.status("connected", "bridge 已确认当前反向连接在线");
+      } else {
+        this.updateRuntime({ realtime_healthy_display: false });
+        this.status("starting", probe.authError ? "等待刷新 AIMUX 登录凭据…" : "等待 AIMUX 自动恢复连接…");
+        if (!probe.authError) this.ensureDaemon();
+      }
+    } catch (e) { this.status("failed", `AIMUX 心跳失败: ${(e as Error).message}`); }
+    finally {
+      if (!this.stopping && epoch === this.epoch) {
+        this.timer = setTimeout(() => void this.check(epoch), this.opts.heartbeatIntervalMs ?? 5000);
+      }
+    }
+  }
+
+  private clearTimers(): void {
+    if (this.timer) clearTimeout(this.timer);
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.timer = null;
+    this.watchdogTimer = null;
+  }
+
+  private async killDaemon(): Promise<void> {
+    const pid = this.daemonPid();
+    if (pid) {
+      if (process.platform === "win32") {
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+          child.on("error", reject);
+          child.on("close", () => resolve());
+        });
+      } else {
+        try { process.kill(pid, "SIGTERM"); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e; }
+      }
+      for (let n = 0; n < 30 && pidAlive(pid); n++) await new Promise(r => setTimeout(r, 100));
+      if (pidAlive(pid)) {
+        if (process.platform === "win32") throw new Error("AIMUX 进程仍在退出中，请稍后重试");
+        process.kill(pid, "SIGKILL");
+        for (let n = 0; n < 10 && pidAlive(pid); n++) await new Promise(r => setTimeout(r, 100));
+        if (pidAlive(pid)) throw new Error("AIMUX 进程无法停止");
+      }
+    }
+    this.spawnedPid = undefined;
+    fs.rmSync(this.opts.runtimePath, { force: true });
+  }
+
+  /*
+   * Normal app exit only ends the lease, matching TUI. Explicit disable,
+   * logout, upgrade and reconnect stop the daemon before changing its inputs.
+   */
+  async stop(terminate = true): Promise<void> {
     this.stopping = true;
-    if (this.respawnTimer) clearTimeout(this.respawnTimer);
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.stopConnectionProbe();
-    await this.killChild();
-    this.opts.onStatus({ state: "stopped", identifier: this.opts.identifier });
+    this.epoch += 1;
+    this.clearTimers();
+    if (terminate) await this.killDaemon();
+    this.status("stopped", terminate ? "AIMUX 已停止" : "AIMUX watchdog 将在续租超时后停止");
   }
 }

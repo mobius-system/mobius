@@ -6,7 +6,10 @@ import * as path from "node:path";
 
 const FILE = (): string => path.join(app.getPath("userData"), "desktop-settings.json");
 
+import type { GuiMode } from "../../../tui/src/lib/aimux-protocol";
+
 interface Store {
+  aimuxGuiMode?: GuiMode;
   aimuxEnabled?: boolean;
   // 上次退出时所在页面：key=`${serverOrigin}::${username}` → 路径(pathname+search+hash)。
   // 仅存路径不含 origin，按 账号 维度隔离，桌面端启动时回到上次离开的页面。
@@ -83,4 +86,15 @@ export function setLastTabs(server: string, username: string, tabs: SavedTabs): 
   }
   store.updatedAt = new Date().toISOString();
   write(store);
+}
+
+/*
+ * GUI access is opt-in and persists independently of the reverse connection.
+ */
+export function getAimuxGuiMode(): GuiMode {
+  const mode = read().aimuxGuiMode;
+  return mode === "no-elevate" || mode === "elevate" ? mode : "off";
+}
+export function setAimuxGuiMode(mode: GuiMode): void {
+  write({ ...read(), aimuxGuiMode: mode, updatedAt: new Date().toISOString() });
 }

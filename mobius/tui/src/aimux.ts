@@ -6,7 +6,6 @@
  * currently authenticated Mobius server.  Nothing is started before login.
  */
 import { spawn, spawnSync, type ChildProcess, type StdioOptions } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { promises as fs, existsSync, createWriteStream, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -14,6 +13,8 @@ import { Readable } from 'node:stream'
 import extract from 'extract-zip'
 import { mobiusHome } from './config.js'
 import { windowsElevated } from './lib/windows-admin.js'
+import { alignTarget, aimuxWorkspaceHash, pidAlive, reverseConnectArgs, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, currentUsername, AIMUX_TARGET_VERSION, type GuiMode } from './lib/aimux-protocol.js'
+export { alignTarget, aimuxWorkspaceHash, pidAlive, reverseConnectArgs, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, type GuiMode } from './lib/aimux-protocol.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
 export type AimuxPhase = 'idle' | 'python' | 'venv' | 'install' | 'connecting' | 'heartbeat' | 'retrying' | 'connected'
@@ -33,11 +34,6 @@ export type AimuxLauncher =
   | { kind: 'exe'; path: string }
   | { kind: 'module'; python: string }
 
-/**
- * 兜底 pin：只在读不到服务端版本时用（老 broker / 网络不通），**不是**"最低可用版本"。
- * 正常情况下连接时会读服务端 broker 的 aimux 版本，本地跟它对齐（升级、降级都一样）。
- */
-const AIMUX_TARGET_VERSION = '0.3.72'
 const WIN = process.platform === 'win32'
 const venvDir = () => path.join(mobiusHome(), 'aimux-venv')
 const venvPython = () => WIN ? path.join(venvDir(), 'Scripts', 'python.exe') : path.join(venvDir(), 'bin', 'python')
@@ -320,17 +316,6 @@ function installedAimuxVersion(): string | null {
 }
 
 /**
- * 连接前要装的版本：**服务端 broker 跑的那个版本**。
- *
- * 服务端版本读不到（老 broker 没有 /api/health 的 version 字段、或网络不通）时退回 pin——
- * 宁可不动，也不要凭猜测给用户换一个版本。
- */
-export function alignTarget(serverVersion: string | null | undefined, pin = AIMUX_TARGET_VERSION): string {
-  const v = typeof serverVersion === 'string' ? serverVersion.trim() : ''
-  return v || pin
-}
-
-/**
  * 读服务端 broker 的 aimux 版本（`GET <server>/aimux_bridge/api/health`）。
  * 经 mobius 代理转发：这里带的 token 是登录 JWT，代理会换成 broker token。
  * 任何失败都返回 null —— 读不到就按"未知"处理，绝不猜。
@@ -452,16 +437,6 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void, tar
   return { ok: false, error: `${venvError}；内置运行时也失败: ${bundle.error}` }
 }
 
-/** Effective OS user (not `$USER`, which sudo/containers can pollute). */
-function currentUsername(): string {
-  try { return os.userInfo().username } catch { return process.env.USER || process.env.USERNAME || 'user' }
-}
-
-/** Per (username, workspace) hash — reused by the identifier and runtime JSON path. */
-export function aimuxWorkspaceHash(username = currentUsername(), cwd = process.cwd()): string {
-  return createHash('sha256').update(`${username}:${path.resolve(cwd)}`).digest('hex').slice(0, 10)
-}
-
 // ── GUI (computer use) authorization ─────────────────────────────────────
 // Machine-level choice made in the first-run wizard.
 //
@@ -486,7 +461,6 @@ export function aimuxWorkspaceHash(username = currentUsername(), cwd = process.c
 //              elevated windows
 //   elevate    GUI helper that can also drive administrator windows
 // Either authorized mode registers as gui-<host>-<hash>.
-export type GuiMode = 'off' | 'no-elevate' | 'elevate'
 
 /** Whether a mode can be offered here, and if not, what the user must change. */
 export interface GuiModeAvailability { available: boolean; reason?: string }
@@ -663,59 +637,6 @@ async function touchWatchdog(hash: string): Promise<void> {
 }
 
 /**
- * Is `pid` still running? `process.kill(pid, 0)` is the only portable probe, and
- * its *error* carries the answer: ESRCH means gone, EPERM means the process is
- * there and simply not ours to signal. EPERM is the normal case now that
- * --enable-gui makes the daemon an elevated process while the TUI stays
- * unelevated (and it is the classic cross-user case on POSIX). Reading EPERM as
- * dead is what made the supervisor kill and respawn healthy daemons on every
- * bridge hiccup.
- */
-export function pidAlive(
-  pid: number,
-  probe: (pid: number, signal: number) => void = (p, s) => process.kill(p, s),
-): boolean {
-  try { probe(pid, 0); return true } catch (e: any) { return e?.code === 'EPERM' }
-}
-
-
-/**
- * Build the reverse-connect command in one place. On Windows the bridge shells
- * must run headless or every remote command flashes a console and steals
- * keyboard focus from the TUI — but *which* flag asks for that depends on the
- * installed aimux: `--silent-shell` landed in 0.1.18, the no-console
- * `--slient-v2`/`--silent-v2` only in 0.1.22+. PyPI and cached bundles in the
- * wild are often older, and hard-coding any one spelling makes Click reject the
- * whole command ("No such option: --slient-v2") and the supervisor crash-loop.
- * So the caller probes `reverse connect --help` once (see probeReverseConnectHelp
- * + pickSilentFlag) and passes the flag aimux actually advertises; when nothing
- * is supported we send nothing rather than crash.
- */
-export function reverseConnectArgs(
-  server: string,
-  identifier: string,
-  token: string,
-  platform: NodeJS.Platform = process.platform,
-  silentFlag: string | null = null,
-  runtimeFile: string | null = null,
-  enableGui = false,
-  guiNoElevate = false,
-): string[] {
-  return [
-    'reverse', 'connect', `${server.replace(/\/$/, '')}/aimux_bridge`,
-    '--identifier', identifier,
-    '--token', token,
-    '--replace',
-    ...(runtimeFile ? ['--runtime', runtimeFile, '--watchdog', runtimeFile] : []),
-    ...(platform === 'win32' && silentFlag ? [silentFlag] : []),
-    ...(enableGui ? ['--enable-gui'] : []),
-    // Only meaningful next to --enable-gui: it skips that flag's elevation
-    // request, and without --enable-gui there is no request to skip.
-    ...(enableGui && guiNoElevate ? ['--gui-no-elevate'] : []),
-  ]
-}
-
-/**
  * Capture `aimux reverse connect --help` so we can see which console-hiding
  * flags this particular build advertises. Returns '' on any failure (the
  * caller then sends no silent flag and stays alive instead of crash-looping).
@@ -730,38 +651,6 @@ export async function probeReverseConnectHelp(launcher: AimuxLauncher): Promise<
   } catch {
     return ''
   }
-}
-
-/**
- * Pick the strongest console-hiding flag aimux advertised for Windows. Prefers
- * the correctly-spelled --silent-v2 (future-proof if the historical --slient-v2
- * typo alias is ever dropped), then the --slient-v2 alias, then --silent-shell.
- * Returns null off-Windows or when the installed aimux supports none.
- */
-export function pickSilentFlag(helpText: string, platform: NodeJS.Platform = process.platform): string | null {
-  if (platform !== 'win32') return null
-  if (/--silent-v2\b/.test(helpText)) return '--silent-v2'
-  if (/--slient-v2\b/.test(helpText)) return '--slient-v2'
-  if (/--silent-shell\b/.test(helpText)) return '--silent-shell'
-  return null
-}
-
-/**
- * Does this aimux build advertise --enable-gui (0.3.64+)? Older installs
- * reject unknown options outright, so the flag is only sent when the help
- * text confirms it — same defensive pattern as pickSilentFlag.
- */
-export function pickEnableGuiFlag(helpText: string): boolean {
-  return /--enable-gui\b/.test(helpText)
-}
-
-/**
- * Does this aimux build advertise --gui-no-elevate? It landed in the same
- * 0.3.64 release as --enable-gui, but probe it separately: sending it to a
- * build that lacks it is the same "No such option" crash-loop.
- */
-export function pickGuiNoElevateFlag(helpText: string): boolean {
-  return /--gui-no-elevate\b/.test(helpText)
 }
 
 /** Result of a bridge heartbeat: is the stream up, and did the JWT just get rejected? */
@@ -1061,27 +950,6 @@ export function effectiveGuiMode(
   if (guiModeAvailability(elevated, platform)[mode].available) return mode
   if (platform !== 'win32') return mode
   return elevated ? 'elevate' : 'no-elevate'
-}
-
-/**
- * The GUI flags to send, given the stored mode, this TUI's own privilege and
- * what the installed aimux advertises.
- *
- * Pure so the rule can be tested directly. The rule is that an unelevated TUI may
- * only ever send the pair that requests nothing; when the installed build cannot
- * express that, it sends no GUI flags at all rather than risk a daemon start that
- * blocks on a consent prompt the supervisor can neither see nor clean up.
- */
-export function pickGuiArgs(
-  mode: GuiMode,
-  elevated: boolean,
-  supports: { enable: boolean; noElevate: boolean },
-  platform: NodeJS.Platform = process.platform,
-): { enableGui: boolean; guiNoElevate: boolean } {
-  if (mode === 'off' || !supports.enable) return { enableGui: false, guiNoElevate: false }
-  if (platform !== 'win32') return { enableGui: true, guiNoElevate: mode === 'no-elevate' && supports.noElevate }
-  if (elevated) return { enableGui: true, guiNoElevate: false }
-  return supports.noElevate ? { enableGui: true, guiNoElevate: true } : { enableGui: false, guiNoElevate: false }
 }
 
 /** pickGuiArgs bound to the stored mode, this process's token and the probe caches. */

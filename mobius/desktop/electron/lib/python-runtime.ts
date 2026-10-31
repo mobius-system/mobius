@@ -1,12 +1,35 @@
 // 内置 python-build-standalone 解释器 + 用户态 venv + pip install aimux。
-// 幂等：venv 里已有 aimux 可执行即跳过；"更新 aimux"按钮单独走 upgradeAimux。
+// 验证实际可导入的版本；自动对齐服务端，手动更新单独走 upgradeAimux。
+// Verify the importable version; align to the broker automatically and upgrade only on request.
 import { app } from "electron";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-// 首装包名。桌面端启动后会后台检查 PyPI 最新版，发现新版本再自动 upgrade。
-export const AIMUX_PIN = "aimux";
+// 自动连接对齐服务端版本，手动更新才安装最新版。
+// Automatic connections match the broker; only manual updates install the latest release.
+import { AIMUX_TARGET_VERSION, alignTarget } from "../../../tui/src/lib/aimux-protocol";
+export const AIMUX_PIN = `aimux==${AIMUX_TARGET_VERSION}`;
+
+/*
+ * Match the broker version on connection; fall back to the same pin as TUI.
+ */
+export async function fetchAimuxTarget(server: string, token: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${server.replace(/\/$/, "")}/aimux_bridge/api/health`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+    });
+    if (!response.ok) return AIMUX_TARGET_VERSION;
+    const data = await response.json() as { version?: string };
+    return alignTarget(data.version);
+  } catch { return AIMUX_TARGET_VERSION; }
+  finally { clearTimeout(timer); }
+}
+
+interface AimuxReady { ok: boolean; error?: string; version?: string; versionWarning?: string }
+
 
 const WIN = process.platform === "win32";
 
@@ -122,7 +145,7 @@ async function verifyVenvPython(): Promise<{ ok: boolean; reason?: string }> {
     // 该目录下应有 python.exe（Windows）或 python3（macOS/Linux）
     const exeCandidate = WIN
       ? path.join(home, "python.exe")
-      : path.join(home, "bin", "python3");
+      : path.join(home, "python3");
     if (!fs.existsSync(exeCandidate)) {
       return { ok: false, reason: `pyvenv.cfg 指向的 Python 已删除: ${exeCandidate}` };
     }
@@ -136,16 +159,28 @@ async function verifyVenvPython(): Promise<{ ok: boolean; reason?: string }> {
   return { ok: true };
 }
 
-/** 确保 venv + aimux 就绪。已有 aimux 可执行则直接返回（幂等，不强制 pin 版本以免覆盖手动升级）。
- *  自动检测 venv 的 python 是否损坏（常见于旧版打包 python 路径被删），
- *  损坏则删 venv 重建，不报"No Python at"迷惑用户。 */
-export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; error?: string }> {
+/*
+ * Ensure a working runtime matching the broker, including downgrades. If a
+ * version swap fails, continue only when the existing runtime still imports.
+ */
+export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void, target = AIMUX_TARGET_VERSION): Promise<AimuxReady> {
   // Fast-path：aimux 已装好 → 验证 venv python 真实可用才跳过
   if (fs.existsSync(aimuxExe())) {
     const check = await verifyVenvPython();
     if (check.ok) {
-      onProgress?.({ phase: "ready" });
-      return { ok: true };
+      const current = await getAimuxVersion();
+      if (current === target) {
+        onProgress?.({ phase: "ready" });
+        return { ok: true, version: current };
+      }
+      onProgress?.({ phase: "install", detail: `对齐 AIMUX ${current} → ${target}…` });
+      const swap = await run(venvPython(), ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", `aimux==${target}`], undefined, onRaw);
+      const actual = await getAimuxVersion();
+      if (actual === "未知" || actual === "未安装") return { ok: false, error: "AIMUX 安装后无法导入，请重新安装" };
+      const versionWarning = swap.code !== 0 || actual !== target ? `AIMUX 版本未对齐：本地 ${actual}／目标 ${target}，按现有版本继续` : undefined;
+      if (versionWarning) onRaw?.(`${versionWarning}\n`);
+      onProgress?.({ phase: "ready", detail: versionWarning });
+      return { ok: true, version: actual, versionWarning };
     }
     // Venv python 坏了。常见原因：用户升级桌面端后，旧 venv 的 pyvenv.cfg 还记着已删旧版 Python 路径。
     // 删 venv 目录，让下面正常流程用当前 bundled python 重建。
@@ -170,10 +205,10 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onR
   if (r.code !== 0) return { ok: false, error: `venv 创建失败: ${r.stderr || r.stdout}` };
 
   // 2) 装 aimux（--no-input 防交互卡死，--disable-pip-version-check 减噪音）；实时回传 pip 下载进度
-  onProgress?.({ phase: "install", detail: `下载并安装 ${AIMUX_PIN}…` });
+  onProgress?.({ phase: "install", detail: `下载并安装 aimux==${target}…` });
   r = await run(
     venvPython(),
-    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", AIMUX_PIN],
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", `aimux==${target}`],
     (line) => {
       if (/downloading|collecting|installing|using cached|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
@@ -184,68 +219,33 @@ export async function ensureAimux(onProgress?: (p: InstallProgress) => void, onR
   if (r.code !== 0) return { ok: false, error: `pip install 失败: ${r.stderr || r.stdout}` };
   if (!fs.existsSync(aimuxExe())) return { ok: false, error: `aimux 可执行未生成: ${aimuxExe()}` };
 
+  const version = await getAimuxVersion();
+  if (version !== target) return { ok: false, error: `AIMUX 安装版本校验失败: ${version} / ${target}` };
   onProgress?.({ phase: "ready" });
-  return { ok: true };
+  return { ok: true, version };
 }
 
 /** 查询当前 venv 里 aimux 的版本（状态面板展示用）。 */
 export async function getAimuxVersion(): Promise<string> {
   if (!fs.existsSync(venvPython())) return "未安装";
-  const r = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
-  const m = r.stdout.match(/Version:\s*(\S+)/);
-  return m ? m[1] : "未知";
-}
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split(/[.+-]/).map((x) => Number.parseInt(x, 10));
-  const pb = b.split(/[.+-]/).map((x) => Number.parseInt(x, 10));
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    const av = Number.isFinite(pa[i]) ? pa[i] : 0;
-    const bv = Number.isFinite(pb[i]) ? pb[i] : 0;
-    if (av !== bv) return av > bv ? 1 : -1;
-  }
-  return 0;
-}
-
-/** 轻量检查 PyPI 上 aimux 是否有新版本。失败只返回 error，由调用方记录日志，不影响启动。 */
-export async function checkAimuxUpdate(onRaw?: (data: string) => void): Promise<AimuxUpdateCheck> {
-  if (!fs.existsSync(venvPython())) return { ok: false, error: "venv 尚未创建" };
-  const r = await run(
-    venvPython(),
-    ["-m", "pip", "index", "versions", "aimux", "--disable-pip-version-check"],
-    undefined,
-    onRaw,
-  );
-  const output = `${r.stdout}\n${r.stderr}`;
-  if (r.code !== 0) return { ok: false, error: output.trim() || "pip index versions aimux 失败" };
-  const current = output.match(/INSTALLED:\s*(\S+)/)?.[1] || await getAimuxVersion();
-  const latest = output.match(/LATEST:\s*(\S+)/)?.[1] || output.match(/^aimux\s+\(([^)]+)\)/m)?.[1];
-  if (!latest || !current || current === "未知" || current === "未安装") {
-    return { ok: false, current, latest, error: "无法解析 aimux 版本信息" };
-  }
-  return {
-    ok: true,
-    current,
-    latest,
-    updateAvailable: compareVersions(latest, current) > 0,
-  };
+  const r = await run(venvPython(), ["-c", "import aimux, aimux.bridge_client; print(aimux.__version__)"]);
+  return r.code === 0 ? r.stdout.trim().split(/\s+/).pop() || "未知" : "未知";
 }
 
 /** "更新 aimux"按钮：升到最新版并回写 marker（解除首装 pin）。onProgress 回传 pip 实时输出供状态面板显示。 */
 export async function upgradeAimux(onProgress?: (p: InstallProgress) => void, onRaw?: (data: string) => void): Promise<{ ok: boolean; version?: string; error?: string }> {
   // venv 尚未创建/损坏: 走完整安装 (ensureAimux 幂等, 会重建损坏 venv, 内置 python 坏时回退系统 python),
   // 而非直接报 "venv 尚未创建" 卡死。这样 "更新 aimux" 按钮在首装失败 / venv 损坏时也能恢复。
-  if (!fs.existsSync(venvPython())) {
+  if (!(await verifyVenvPython()).ok) {
     onProgress?.({ phase: "venv", detail: "aimux 未就绪，重新安装…" });
     const inst = await ensureAimux(onProgress, onRaw);
     if (!inst.ok) return { ok: false, error: inst.error };
-    return { ok: true, version: await getAimuxVersion() };
+
   }
   onProgress?.({ phase: "install", detail: "pip install --upgrade aimux…" });
   const r = await run(
     venvPython(),
-    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", "--upgrade", "aimux"],
+    ["-m", "pip", "install", "--no-input", "--disable-pip-version-check", "--upgrade", "--no-cache-dir", "--index-url", "https://pypi.org/simple", "aimux"],
     (line) => {
       if (/downloading|collecting|installing|using cached|uninstalling|successfully|%\s*\d|━|─/i.test(line)) {
         onProgress?.({ phase: "install", detail: line.slice(0, 100) });
@@ -254,8 +254,8 @@ export async function upgradeAimux(onProgress?: (p: InstallProgress) => void, on
     onRaw,
   );
   if (r.code !== 0) return { ok: false, error: r.stderr || r.stdout };
-  const show = await run(venvPython(), ["-m", "pip", "show", "aimux"]);
-  const m = show.stdout.match(/Version:\s*(\S+)/);
+  const version = await getAimuxVersion();
+  if (version === "未知" || version === "未安装") return { ok: false, error: "更新后 AIMUX 无法导入" };
   onProgress?.({ phase: "ready" });
-  return { ok: true, version: m ? m[1] : "unknown" };
+  return { ok: true, version };
 }

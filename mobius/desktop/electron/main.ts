@@ -1,5 +1,6 @@
 // Mobius Desktop 主进程：登录 → 保证 aimux → reverse connect → loadURL 远程 web UI。
-// 详见 README。关键：退出前务必 supervisor.stop() 杀 aimux；aimux 状态经徽标+IPC 常驻可见。
+// 退出时停止 watchdog 续租；显式关闭、升级和注销时终止守护进程。
+// Exit stops watchdog renewal; explicit disable, upgrade and logout terminate the daemon.
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog, session, screen, type WebPreferences } from "electron";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import * as net from "node:net";
@@ -9,12 +10,14 @@ import * as os from "node:os";
 import * as fs from "node:fs";
 import { loadCreds, saveCreds, clearCreds, loadServerUrl, saveServerUrl, loadServerFromOldCreds, type StoredCreds } from "./lib/secrets";
 import { gatherHostInfo, type BootData } from "./lib/host-info";
-import { ensureAimux, upgradeAimux, getAimuxVersion, checkAimuxUpdate, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
-import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
+import { ensureAimux, upgradeAimux, getAimuxVersion, fetchAimuxTarget, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
+import { aimuxWorkspaceHash, type GuiMode } from "../../tui/src/lib/aimux-protocol";
+import { windowsElevated } from "../../tui/src/lib/windows-admin";
+import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus, type BridgeProbe } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName, findLocalProjectForPath, findSharedProjectForPath, bindSharedProjectPath } from "./lib/project-paths";
 import { ensureWindowsContextMenu, openPathArgument } from "./lib/windows-context-menu";
 import { FileOpError, validateNewName, assertNoSymlink, isDirEqualOrChild, copyEntryRecursive } from "./lib/project-file-ops";
-import { getAimuxEnabled, setAimuxEnabled, getLastRoute } from "./lib/desktop-settings";
+import { getAimuxEnabled, setAimuxEnabled, getLastRoute, getAimuxGuiMode, setAimuxGuiMode } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 import { TabManager } from "./lib/tab-manager";
 import { changeWebContentsZoom, installWebContentsShortcuts } from "./lib/web-contents-shortcuts";
@@ -29,7 +32,7 @@ let serverUrl: string | null = null;
 let lastStatus: AimuxStatus = { state: "stopped" };
 let installing = false;
 let updatingAimux = false;
-let autoUpdateTimer: NodeJS.Timeout | null = null;
+
 let windowDragTimer: NodeJS.Timeout | null = null;
 // aimux 反向连接开关（持久化于 userData/desktop-settings.json，默认开）。
 // 关闭后本机不再作为可调度节点连入 mobius，桌面端其他功能不受影响。
@@ -143,20 +146,13 @@ function stopWindowDrag(): void {
   }
 }
 
-function cancelAutoAimuxUpdateCheck(): void {
-  if (autoUpdateTimer) {
-    clearTimeout(autoUpdateTimer);
-    autoUpdateTimer = null;
-  }
-}
-
 function serverOrigin(): string {
   return (serverUrl || "").replace(/\/$/, "");
 }
 
 function defaultIdentifier(): string {
   const host = os.hostname().toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
-  return `desktop-${host || "pc"}`;
+  return `${getAimuxGuiMode() === "off" ? "desktop" : "gui"}-${host || "pc"}-${aimuxWorkspaceHash(undefined, app.getPath("userData"))}`;
 }
 
 function resolveLocalProjectPath(projectId: string, rawPath: unknown = "/"): { error: string } | { root: string; relPath: string; absPath: string } {
@@ -220,8 +216,8 @@ function emitStatus(s: AimuxStatus): void {
   if (s.detail) appendLog(`[${s.state}] ${s.detail}`);
 }
 
-async function probeAimuxBridgeConnection(identifier: string): Promise<boolean> {
-  if (!creds || !serverUrl) return false;
+async function probeAimuxBridgeConnection(identifier: string): Promise<BridgeProbe> {
+  if (!creds || !serverUrl) return { connected: false, authError: false };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 4000);
   try {
@@ -229,11 +225,11 @@ async function probeAimuxBridgeConnection(identifier: string): Promise<boolean> 
       headers: { Authorization: `Bearer ${creds.jwt}` },
       signal: controller.signal,
     });
-    if (!response.ok) return false;
+    if (!response.ok) return { connected: false, authError: response.status === 401 || response.status === 403 };
     const data = await response.json() as { identifier?: unknown; event_stream_connected?: unknown };
-    return data.identifier === identifier && data.event_stream_connected === true;
+    return { connected: data.identifier === identifier && data.event_stream_connected === true, authError: false };
   } catch {
-    return false;
+    return { connected: false, authError: false };
   } finally {
     clearTimeout(timeout);
   }
@@ -259,7 +255,7 @@ async function doLogin(serverRaw: string, username: string, password: string): P
     const token = (data.token || data.jwt || data.access_token) as string | undefined;
     const user = (data.user || data) as StoredCreds["user"];
     if (!token) return { error: "登录响应缺少 token" };
-    const identifier = creds?.identifier || defaultIdentifier();
+    const identifier = defaultIdentifier();
     return { username, password, jwt: token, user, identifier };
   } catch (e) {
     return { error: `登录请求失败: ${(e as Error).message}` };
@@ -270,23 +266,26 @@ function buildSupervisor(): AimuxSupervisor | null {
   if (!creds) return null;
   const exe = aimuxExe();
   if (!fs.existsSync(exe)) return null;
+  const connectionCreds = creds;
+  const connectionServer = serverOrigin();
   return new AimuxSupervisor({
+    guiMode: getAimuxGuiMode(),
     aimuxExe: exe,
     bridgeUrl: `${serverOrigin()}/aimux_bridge`,
     token: creds.jwt,
     identifier: creds.identifier,
     onStatus: emitStatus,
     onLog: (line) => appendLog(line),
-    probeBridgeConnection: () => probeAimuxBridgeConnection(creds!.identifier),
+    probeBridgeConnection: () => probeAimuxBridgeConnection(connectionCreds.identifier),
     onTokenExpired: async () => {
-      if (!creds || !serverUrl) return null;
-      const r = await doLogin(serverUrl, creds.username, creds.password);
-      if ("error" in r) return null;
+      if (creds !== connectionCreds || serverOrigin() !== connectionServer) return null;
+      const r = await doLogin(connectionServer, connectionCreds.username, connectionCreds.password);
+      if ("error" in r || creds !== connectionCreds || serverOrigin() !== connectionServer) return null;
       creds.jwt = r.jwt;
       saveCreds(creds);
       return r.jwt;
     },
-    runtimePath: join(app.getPath("userData"), "aimux-runtime", `${Buffer.from(`${os.userInfo().username}:${process.cwd()}`).toString("hex").slice(0, 24)}.json`),
+    runtimePath: join(app.getPath("userData"), "aimux-runtime", `${aimuxWorkspaceHash(undefined, `${app.getPath("userData")}/${encodeURIComponent(serverOrigin())}/${encodeURIComponent(creds.username)}`)}.json`),
   });
 }
 
@@ -357,12 +356,21 @@ async function ensureAimuxWithStatus(reason: string): Promise<{ ok: true } | { o
   emitStatus({ state: "starting", detail });
   appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (${reason}) ====\n`);
   try {
+    const target = creds ? await fetchAimuxTarget(serverOrigin(), creds.jwt) : undefined;
+    if (target && await getAimuxVersion() !== target) {
+      // 安装前先停旧进程，避免 Windows 文件锁阻止版本切换。
+      // Stop the old daemon before installation to release Windows file locks.
+      await (supervisor ?? buildSupervisor())?.stop();
+      supervisor = null;
+      await stopAllPortForwards();
+    }
     const r = await ensureAimux(
       (p: InstallProgress) => {
         if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
         else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
       },
       (data: string) => appendAimuxLog(data),
+      target,
     );
     return r.ok ? { ok: true } : { ok: false, error: r.error || "aimux 安装失败" };
   } finally {
@@ -477,27 +485,14 @@ async function seedWebAuth(origin: string, jwt: string): Promise<void> {
 /** 装 aimux（幂等）→ 反向连接。供 bootDesktop(启动) 与 applyAimuxEnabled(开启) 共用。
  *  安装期间若用户关闭开关，装完也不连（末尾按 aimuxEnabled 复核）。 */
 async function startAimuxConnection(): Promise<void> {
-  if (!creds || installing) return;
-  installing = true;
-  emitStatus({ state: "starting", detail: "首次启动需在本机下载 aimux（联网，约 30-90 秒）…" });
-  appendAimuxLog(`\n==== [${new Date().toISOString()}] ensure aimux (install) ====\n`);
-  const inst = await ensureAimux(
-    (p: InstallProgress) => {
-      if (p.phase === "venv") emitStatus({ state: "starting", detail: "创建 Python 虚拟环境…" });
-      else if (p.phase === "install") emitStatus({ state: "starting", detail: `下载并安装 aimux… ${p.detail ?? ""}` });
-    },
-    (data: string) => appendAimuxLog(data),
-  );
-  installing = false;
-
-  if (!inst.ok) {
-    emitStatus({ state: "failed", detail: inst.error });
-    return;
-  }
-  if (!aimuxEnabled) return; // 安装期间用户关闭了开关：装完也不连
-  emitStatus({ state: "starting", detail: "aimux 就绪，正在反向连接 mobius…" });
+  if (!creds || installing || updatingAimux || supervisor) return;
+  const connectingCreds = creds;
+  const ready = await ensureAimuxWithStatus("connect");
+  if (creds !== connectingCreds) return;
+  if (!ready.ok) { emitStatus({ state: "failed", detail: ready.error }); return; }
+  if (!aimuxEnabled || !creds) return;
   supervisor = buildSupervisor();
-  supervisor?.start();
+  await supervisor?.start();
 }
 
 async function bootDesktop(): Promise<void> {
@@ -525,7 +520,6 @@ async function bootDesktop(): Promise<void> {
     pendingOpenPath = null;
     void openRequestedPath(requested);
   }
-  scheduleAutoAimuxUpdateCheck();
 }
 
 /** 退出前持久化当前 tab 列表（多 tab 版 0.0.12，取代单页 persistLastRoute）。 */
@@ -540,10 +534,11 @@ function runSyncReload(): void {
   // aimux 开关开着但未就绪时, 借“同步最新代码”之机后台重装恢复 (用户期望此按钮也能修好坏掉的 aimux)。
   // 不阻塞 reload: 后台跑, 装完自动 start supervisor, 状态经 emitStatus 推给刷新后的页面。
   if (aimuxEnabled && creds && !fs.existsSync(aimuxExe())) {
-    void ensureAimuxWithStatus("sync-reload").then((ready) => {
-      if (!ready.ok) return;
+    void ensureAimuxWithStatus("sync-reload").then(async (ready) => {
+      if (!ready.ok || !aimuxEnabled || !creds) return;
+      await supervisor?.stop();
       supervisor = buildSupervisor();
-      supervisor?.start();
+      await supervisor?.start();
     });
   }
 }
@@ -560,18 +555,19 @@ function switchTabOffset(offset: number): void {
   tabManager.switchTab(tabs[next].id);
 }
 
-async function runUpdateAimux(source: "manual" | "auto" = "manual"): Promise<{ ok: boolean; version?: string; error?: string }> {
+async function runUpdateAimux(): Promise<{ ok: boolean; version?: string; error?: string }> {
   if (installing) return { ok: false, error: "正在安装中，请稍候" };
   if (updatingAimux) return { ok: false, error: "正在更新中，请稍候" };
   updatingAimux = true;
   // 1) 先断开现有连接 (停 supervisor + 反连子进程), 释放 venv 文件锁, 避免 pip 升级时 aimux 还在跑.
   try {
-    emitStatus({ state: "starting", detail: source === "auto" ? "检测到 aimux 新版本，准备后台更新…" : "断开现有连接, 准备更新 aimux…" });
+    emitStatus({ state: "starting", detail: "断开现有连接, 准备更新 aimux…" });
     await supervisor?.stop();
     supervisor = null;
+    await stopAllPortForwards();
     // 2) 升级: pip 实时输出 -> appendAimuxLog (aimux.log 持久化) + appendLog (状态面板环形缓冲) + emitStatus (徽标显示当前阶段).
-    emitStatus({ state: "starting", detail: source === "auto" ? "正在后台更新 aimux…" : "正在更新 aimux…" });
-    appendAimuxLog(`\n==== [${new Date().toISOString()}] ${source} upgrade aimux ====\n`);
+    emitStatus({ state: "starting", detail: "正在更新 aimux…" });
+    appendAimuxLog(`\n==== [${new Date().toISOString()}] manual upgrade aimux ====\n`);
     const r = await upgradeAimux(
       (p) => {
         if (p.detail) {
@@ -586,10 +582,10 @@ async function runUpdateAimux(source: "manual" | "auto" = "manual"): Promise<{ o
       return { ok: false, error: r.error };
     }
     // 3) 升级成功. 开关开着才重连；关着则只升级不连。
-    if (aimuxEnabled) {
+    if (aimuxEnabled && creds) {
       emitStatus({ state: "starting", detail: `aimux ${r.version} 已就绪, 正在反向连接…` });
       supervisor = buildSupervisor();
-      supervisor?.start();
+      await supervisor?.start();
     } else {
       emitStatus({ state: "disabled", detail: `aimux ${r.version} 已更新（连接已关闭）` });
     }
@@ -599,37 +595,7 @@ async function runUpdateAimux(source: "manual" | "auto" = "manual"): Promise<{ o
   }
 }
 
-function scheduleAutoAimuxUpdateCheck(): void {
-  if (autoUpdateTimer) clearTimeout(autoUpdateTimer);
-  autoUpdateTimer = setTimeout(() => {
-    autoUpdateTimer = null;
-    void runAutoAimuxUpdateCheck();
-  }, 8000);
-}
-
-async function runAutoAimuxUpdateCheck(): Promise<void> {
-  if (!creds || installing || updatingAimux) return;
-  if (!fs.existsSync(aimuxExe())) {
-    appendAimuxLine(`[aimux auto-update] skip: aimux 尚未安装`);
-    return;
-  }
-  appendAimuxLog(`\n==== [${new Date().toISOString()}] auto check aimux update ====\n`);
-  const check = await checkAimuxUpdate((data: string) => appendAimuxLog(data));
-  if (!check.ok) {
-    appendAimuxLine(`[aimux auto-update] check failed: ${check.error || "unknown error"}`);
-    return;
-  }
-  appendAimuxLine(`[aimux auto-update] current=${check.current} latest=${check.latest}`);
-  if (!check.updateAvailable) return;
-  appendAimuxLine(`[aimux auto-update] upgrading aimux ${check.current} -> ${check.latest}`);
-  const result = await runUpdateAimux("auto");
-  appendAimuxLine(result.ok
-    ? `[aimux auto-update] upgraded to ${result.version || check.latest}`
-    : `[aimux auto-update] upgrade failed: ${result.error || "unknown error"}`);
-}
-
 async function runLogout(): Promise<void> {
-  cancelAutoAimuxUpdateCheck();
   await stopAllPortForwards();
   await supervisor?.stop();
   supervisor = null;
@@ -743,6 +709,19 @@ function createWindow(): void {
   // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
+/*
+ * Apply explicit GUI authorization using the same privilege policy as TUI.
+ */
+async function applyAimuxGuiMode(mode: GuiMode): Promise<void> {
+  if (installing || updatingAimux) { buildMenu(); return; }
+  await supervisor?.stop();
+  supervisor = null;
+  setAimuxGuiMode(mode);
+  if (creds) { creds.identifier = defaultIdentifier(); saveCreds(creds); }
+  buildMenu();
+  if (aimuxEnabled) await startAimuxConnection();
+}
+
 function buildMenu(): void {
   const tpl: Electron.MenuItemConstructorOptions[] = [
     {
@@ -756,9 +735,17 @@ function buildMenu(): void {
           type: "checkbox",
           checked: aimuxEnabled,
           click: (mi) => {
-            if (installing) { mi.checked = aimuxEnabled; return; } // 安装中不允许切换，还原勾选
+            if (installing || updatingAimux) { mi.checked = aimuxEnabled; return; } // 安装中不允许切换，还原勾选
             void applyAimuxEnabled(mi.checked);
           },
+        },
+        {
+          label: "AIMUX 图形界面授权",
+          submenu: [
+            { label: "纯命令行（默认）", type: "radio", checked: getAimuxGuiMode() === "off", click: () => void applyAimuxGuiMode("off") },
+            { label: "图形界面（低权限）", type: "radio", checked: getAimuxGuiMode() === "no-elevate", enabled: process.platform === "win32" && !windowsElevated(), click: () => void applyAimuxGuiMode("no-elevate") },
+            { label: process.platform === "win32" && !windowsElevated() ? "图形界面（高权限，需以管理员启动）" : "图形界面（当前进程权限）", type: "radio", checked: getAimuxGuiMode() === "elevate", enabled: process.platform === "darwin" || (process.platform === "win32" && windowsElevated()), click: () => void applyAimuxGuiMode("elevate") },
+          ],
         },
         { type: "separator" },
         { label: "切换账号 / 服务器", click: () => void runLogout() },
@@ -858,6 +845,7 @@ ipcMain.handle("aimux:details", () => ({
 ipcMain.handle("aimux:version", () => getAimuxVersion());
 ipcMain.handle("aimux:reconnect", async () => {
   if (!creds) return { ok: false, error: "未登录" };
+  if (installing || updatingAimux) return { ok: false, error: "正在安装或更新 aimux，请稍候" };
   if (!aimuxEnabled) return { ok: false, error: "aimux 连接已关闭，请先开启开关" };
   // aimux/venv 未就绪 (首装失败 / venv 损坏 / 内置 python 坏): 先重装, 而非直接报 "未就绪" 卡死。
   if (!fs.existsSync(aimuxExe())) {
@@ -867,7 +855,7 @@ ipcMain.handle("aimux:reconnect", async () => {
   await supervisor?.stop();
   supervisor = buildSupervisor();
   if (!supervisor) return { ok: false, error: "aimux 未就绪，请稍后重试" };
-  supervisor.start();
+  await supervisor.start();
   return { ok: true };
 });
 ipcMain.handle("aimux:port-forward", async (_e, opts: { remotePort?: number }) => {
@@ -875,7 +863,7 @@ ipcMain.handle("aimux:port-forward", async (_e, opts: { remotePort?: number }) =
 });
 ipcMain.handle("aimux:get-enabled", () => aimuxEnabled);
 ipcMain.handle("aimux:set-enabled", async (_e, enabled: boolean) => {
-  if (installing) return { ok: false as const, error: "正在安装 aimux，请稍候" };
+  if (installing || updatingAimux) return { ok: false as const, error: "正在安装或更新 aimux，请稍候" };
   await applyAimuxEnabled(Boolean(enabled));
   return { ok: true as const, enabled: aimuxEnabled };
 });
@@ -1331,7 +1319,7 @@ if (!gotLock) {
     if (saved && serverUrl) {
       const r = await doLogin(serverUrl, saved.username, saved.password);
       if (!("error" in r)) {
-        creds = { ...saved, jwt: r.jwt, user: r.user };
+        creds = { ...saved, jwt: r.jwt, user: r.user, identifier: r.identifier };
         saveCreds(creds);
         void bootDesktop();
         return;
@@ -1349,11 +1337,11 @@ app.on("window-all-closed", () => {
   if (!isMac) app.quit();
 });
 
-// 退出前务必杀 aimux（Windows taskkill /T 连进程树）
+// 退出时停止续租，由 watchdog 清理守护进程。
+// Stop renewing on exit and let the watchdog clean up the daemon.
 app.on("before-quit", () => {
-  cancelAutoAimuxUpdateCheck();
   persistTabs(); // 兜底：退出前再存一次当前 tab 列表。
   tabManager?.destroyAll();
   void stopAllPortForwards();
-  void supervisor?.stop();
+  void supervisor?.stop(false);
 });
