@@ -7135,6 +7135,14 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-context-body { width: 100%; max-width: 1050px; min-height: 0; flex: 1; overflow: auto; margin: 0 auto; padding: 4px 2px 30px; }
 
 body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: none; }
+/* 简易模式隐藏了 FAB, 助理面板不用再给 FAB 留出底部 5.75rem 的空间, 贴底更自然. */
+@media (max-width: 720px) {
+  body:has([data-page="easy-mode"]) .assistant-panel--compact,
+  body:has([data-page="easy-mode"]) .assistant-panel--expanded {
+    bottom: 1rem;
+    height: min(660px, calc(100vh - 3rem));
+  }
+}
 
 /* 简易模式的侧栏已承载工作上下文：保留品牌 Logo，隐藏其后的路由面包屑。 */
 [data-page="easy-mode"] .mobius-topnav-crumb > :not(:first-child) { display: none; }

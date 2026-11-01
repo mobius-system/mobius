@@ -225,6 +225,7 @@ export default function EasyModePage() {
     setCurrentSession,
     setCurrentTask,
     setAssistantBubbleEnabled,
+    setMobileNavOpen,
     theme,
     user,
   } = useStore()
@@ -1005,7 +1006,7 @@ export default function EasyModePage() {
           </div>
 
           <div className="easy-sidebar-footer" aria-label="快捷入口">
-            <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><WandSparkles className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); setMobileNavOpen(false); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><WandSparkles className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             <button type="button" className="easy-footer-btn" onClick={() => window.openAdminOverlay?.()} title="系统设置" aria-label="系统设置"><Cog className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><GraduationCap className="h-[18px] w-[18px]" strokeWidth={2} /></button>
           </div>
