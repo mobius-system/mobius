@@ -16,6 +16,14 @@ import { Researches } from '../repositories/researches';
 import { Sessions } from '../repositories/sessions';
 import { Skills } from '../repositories/skills';
 import { Memories } from '../repositories/memories';
+// @ts-ignore — service 仍是 .js
+import {
+  buildIssueContextPreview,
+  buildIssueSelectionDefaults,
+  buildProjectIssueContextPreview,
+  buildProjectIssueSelectionDefaults,
+  stripContextItemBodies,
+} from '../services/session-context';
 import { Users } from '../repositories/users';
 import { ProjectDeletionAudit, type ProjectDeletionImpact } from '../repositories/project-deletion-audit';
 // @ts-ignore — service 仍是 .js
@@ -516,6 +524,8 @@ const CLUSTER_OVERVIEW_RANGES_MS: Record<string, number> = {
   '72h': 72 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
   '30d': 30 * 24 * 60 * 60 * 1000,
+  // 前端「全部」档 (TIME_RANGE_OPTIONS 的 'all'), 与前端保持一致 (10 年).
+  all: 10 * 365 * 24 * 60 * 60 * 1000,
 };
 
 function hasOwn(obj: any, key: string): boolean {
@@ -1011,6 +1021,13 @@ const GIT_REPO_SCAN_MAX_DEPTH = 3;
 const GIT_REPO_SCAN_MAX_DIRS = 500;
 const GIT_COMMIT_LIMIT_DEFAULT = 12;
 const GIT_COMMIT_LIMIT_MAX = 30;
+const ARCHITECTURE_ISSUE_TITLE = '项目结构绘制';
+const ARCHITECTURE_ISSUE_DESCRIPTION = [
+  '自动生成或刷新项目系统结构剖析图。',
+  `请分析当前项目结构，优先输出单文件 HTML/SVG 架构图到项目绑定路径下的 ${HIDDEN_FOLDER_NAME}/generated_figures/arch.html。`,
+  '如需兼容截图或封面，也可以额外输出 arch.svg、arch.png、arch.jpg、arch.jpeg、arch.webp 等常见预览格式。',
+].join('\n');
+const ARCHITECTURE_FIGURE_EXTENSIONS = ['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const GIT_FIELD_SEPARATOR = '\x1f';
 const GIT_RECORD_SEPARATOR = '\x1e';
 const PACKAGE_ZIP_RELATIVE_DIR = path.join(HIDDEN_FOLDER_NAME, 'package_zip');
@@ -1722,6 +1739,89 @@ function buildUserContextWhitelistPayload(projectId: string, userId: string): Us
     available_memories: availableMemories,
     updated_at: whitelist.updated_at || null,
   };
+}
+
+function findArchitectureIssue(projectId: string): any {
+  return Issues.findByProjectAndTitle(projectId, ARCHITECTURE_ISSUE_TITLE);
+}
+
+function ensureArchitectureIssue(projectId: string, userId: string): { issue: any; created: boolean } {
+  const existing = findArchitectureIssue(projectId);
+  if (existing) return { issue: existing, created: false };
+  const issueId = uuid().slice(0, 8);
+  Issues.insert({
+    id: issueId,
+    project_id: projectId,
+    title: ARCHITECTURE_ISSUE_TITLE,
+    description: ARCHITECTURE_ISSUE_DESCRIPTION,
+    created_by: userId,
+    use_worktree: false,
+    worktree_branch: '',
+  } as any);
+  return { issue: Issues.findById(issueId), created: true };
+}
+
+function toIdList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v: any) => String(v).trim()).filter(Boolean);
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function contentTypeForFigure(file: string): string {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'text/html; charset=utf-8';
+  if (ext === '.svg') return 'image/svg+xml; charset=utf-8';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.bmp') return 'image/bmp';
+  return 'application/octet-stream';
+}
+
+function figureKind(file: string): 'html' | 'svg' | 'image' {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return 'html';
+  if (ext === '.svg') return 'svg';
+  return 'image';
+}
+
+interface ArchitectureFigure {
+  absPath: string;
+  name: string;
+  ext: string;
+  stat: fs.Stats;
+}
+
+function findArchitectureFigure(project: any): ArchitectureFigure | null {
+  const bindPath = (project?.bind_path || '').trim();
+  if (!bindPath) return null;
+  const dir = path.resolve(bindPath, HIDDEN_FOLDER_NAME, 'generated_figures');
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile())
+      .map((entry): ArchitectureFigure | null => {
+        const absPath = path.join(dir, entry.name);
+        const ext = path.extname(entry.name).toLowerCase();
+        if (!ARCHITECTURE_FIGURE_EXTENSIONS.includes(ext)) return null;
+        if (path.basename(entry.name, ext).toLowerCase() !== 'arch') return null;
+        const stat = fs.statSync(absPath);
+        return { absPath, name: entry.name, ext, stat };
+      })
+      .filter((x): x is ArchitectureFigure => x !== null)
+      .sort((a, b) => {
+        const pa = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(a.ext);
+        const pb = ARCHITECTURE_FIGURE_EXTENSIONS.indexOf(b.ext);
+        if (pa !== pb) return pa - pb;
+        return b.stat.mtimeMs - a.stat.mtimeMs;
+      });
+    return entries[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 function readableProjectsForUser(user: any): any[] {
@@ -3178,6 +3278,99 @@ router.post('/:id/package/download', auth, (req: express.Request, res: express.R
       res.status(500).json({ error: (err as Error).message || '下载压缩包失败' });
     }
   });
+});
+
+function handleArchitectureSessionPresetContextPreview(req: express.Request, res: express.Response): void {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const src = (req.method === 'POST' && req.body && typeof req.body === 'object')
+    ? req.body : req.query;
+  const draftSession = {
+    name: typeof src.name === 'string' ? src.name : '',
+    description: typeof src.description === 'string' ? src.description : '',
+    pc_client_metadata: src.pc_client_metadata ?? null,
+  };
+  const excludedSkillIds = toIdList(src.excluded_skill_ids);
+  const excludedMemoryIds = toIdList(src.excluded_memory_ids);
+  const language = src.language === 'en' ? 'en' : 'zh';
+  const boolFlag = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1;
+  const falseFlag = (v: unknown): boolean => v === false || v === 'false' || v === '0' || v === 0;
+  const includeBody = !falseFlag((src as any).include_body);
+  const includeItemBodies = !falseFlag((src as any).include_item_bodies);
+  const existingIssue = findArchitectureIssue(project.id);
+  const ctx = existingIssue
+    ? buildIssueContextPreview(user, existingIssue.id, draftSession, excludedSkillIds, excludedMemoryIds, language, { includeBody })
+    : buildProjectIssueContextPreview(
+      user,
+      project.id,
+      { title: ARCHITECTURE_ISSUE_TITLE, description: ARCHITECTURE_ISSUE_DESCRIPTION },
+      draftSession,
+      excludedSkillIds,
+      excludedMemoryIds,
+      language,
+      { includeBody },
+    );
+  const canReuseSourcesForDefaults = excludedSkillIds.length === 0 && excludedMemoryIds.length === 0;
+  const includeDefaults = boolFlag((src as any).include_defaults);
+  const defaults = includeDefaults
+    ? existingIssue
+      ? buildIssueSelectionDefaults(user, existingIssue.id, canReuseSourcesForDefaults ? ctx.sources : undefined)
+      : buildProjectIssueSelectionDefaults(user, project.id, {
+        title: ARCHITECTURE_ISSUE_TITLE,
+        description: ARCHITECTURE_ISSUE_DESCRIPTION,
+      }, canReuseSourcesForDefaults ? ctx.sources : undefined)
+    : null;
+  res.json({
+    body: ctx.body,
+    sources: includeItemBodies ? ctx.sources : stripContextItemBodies(ctx.sources),
+    ...(includeDefaults ? { defaults } : {}),
+  });
+}
+
+router.get('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
+router.post('/:id/architecture-session-preset/context-preview', auth, handleArchitectureSessionPresetContextPreview);
+
+router.get('/:id/architecture-session-preset/session-selection-defaults', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const existingIssue = findArchitectureIssue(project.id);
+  if (existingIssue) return res.json(buildIssueSelectionDefaults(user, existingIssue.id));
+  res.json(buildProjectIssueSelectionDefaults(user, project.id, {
+    title: ARCHITECTURE_ISSUE_TITLE,
+    description: ARCHITECTURE_ISSUE_DESCRIPTION,
+  }));
+});
+
+router.post('/:id/architecture-issue', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  if (!canCreateIssue(user, project)) return res.status(403).json({ error: '无权在此项目创建 Issue' });
+  const result = ensureArchitectureIssue(project.id, user.id);
+  res.json(result);
+});
+
+router.get('/:id/architecture-figure', auth, (req: express.Request, res: express.Response) => {
+  const project = loadReadableProject(req, res, String(req.params.id));
+  if (!project) return;
+  const figure = findArchitectureFigure(project);
+  if (!figure) return res.status(404).json({ error: '项目结构图不存在或正在绘制中' });
+  const kind = figureKind(figure.name);
+  res.setHeader('Content-Type', contentTypeForFigure(figure.name));
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Architecture-Figure-Name', encodeURIComponent(figure.name));
+  res.setHeader('X-Architecture-Figure-Kind', kind);
+  res.setHeader('X-Architecture-Figure-Updated-At', figure.stat.mtime.toISOString());
+  if (kind === 'html' || kind === 'svg') {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'; script-src 'none'"
+    );
+  }
+  res.sendFile(figure.absPath);
 });
 
 // 项目设置中的"用户级 Skill 与 Memory 白名单".

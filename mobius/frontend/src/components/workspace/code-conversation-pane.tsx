@@ -1,11 +1,11 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass, ChevronLeft } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import { useRemoteDeviceNames } from '../../services/remote-device-names'
-import { ResizablePanel } from '../resizable-panel'
+import { ResizablePanel, useIsMobile } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
 import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
@@ -52,6 +52,9 @@ type CodeConversationPaneProps = {
   vscodeWebUrl?: string
   // 当前会话 id: 用于后端把该会话绑定的 aimux bridge 设备 (元素1) 注入远程文件源 (元素2)。
   sessionId?: string
+  // 当前会话的运行设备 (绑定的 aimux bridge 设备 id, 空 = 中枢).
+  // 设备一换, 远程文件源就得重拉 —— 否则文件树还停在上一台设备的目录上.
+  sessionDeviceId?: string
   // variant='page' (默认): 整页代码对话 v2 的左+中两栏, 编辑器列宽度可拖.
   // variant='sidebar': 嵌入窄容器 (简易模式右侧文件栏). 宽度记忆与 page 模式分开,
   // 编辑器列改 flex-1 占满剩余宽度 (拖拽由外层侧栏承担), 文件树范围收窄一档.
@@ -191,10 +194,15 @@ function loadCodeWordWrap(): boolean {
   try { return localStorage.getItem(CODE_WORD_WRAP_STORAGE_KEY) === '1' } catch { return false }
 }
 
-export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
+export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessionId, sessionDeviceId, variant = 'page', mode = 'workspace', openFileRequest }: CodeConversationPaneProps) {
   const { formatName } = useRemoteDeviceNames()
   const compact = variant === 'sidebar'
   const blueprint = mode === 'blueprint'
+  const isMobile = useIsMobile()
+  // 移动端 + 侧栏变体: 文件树 / 编辑器 二选一全宽展示 (适合手机的单列交互),
+  // 而不是桌面端并排的 190px 树 + 窄编辑器. 打开文件时切到编辑器, 点「返回」回到文件树.
+  const mobileListMode = isMobile && compact
+  const [mobileShowTree, setMobileShowTree] = useState(true)
   // 蓝图变体的树根: <HIDDEN_FOLDER_NAME>/blueprints (相对 bind_path); 工作区模式仍为项目根.
   const treeRoot = blueprint ? `/${HIDDEN_FOLDER_NAME}/blueprints` : '/'
   const desktop = getDesktopBridge()
@@ -350,7 +358,24 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         setRemoteSourcesLoaded(true)
       })
     return () => { cancelled = true }
-  }, [projectId, remoteSourcesVersion, sessionId, blueprint])
+    // sessionDeviceId 也在依赖里: 运行设备一换, 后端注入的 bridge 远程文件源就换了人,
+    // 不重拉的话文件树还停在上一台设备的目录上.
+  }, [projectId, remoteSourcesVersion, sessionId, sessionDeviceId, blueprint])
+
+  // 运行设备变了 → 文件树跟着走 (强绑定).
+  // 远程文件源是「会话绑定的设备」这一条线, 用户换设备就是要换工作机; 设备变了还留在
+  // 上一台机器的目录上, 看着像没切换成功. 绑了设备就落到「远程」(由上面的 bridge 优先
+  // 规则选中新设备); 解绑回中枢就落回「中枢」—— 这时远程源里已经没有这台设备了,
+  // 硬留在「远程」会选到一个空值.
+  const prevDeviceIdRef = useRef<string | undefined>(sessionDeviceId)
+  useEffect(() => {
+    const prev = prevDeviceIdRef.current
+    prevDeviceIdRef.current = sessionDeviceId
+    if (prev === undefined || prev === sessionDeviceId) return
+    const next: FileSource = sessionDeviceId ? 'remote' : 'hub'
+    setSourceState(next)
+    try { localStorage.setItem(fileSourceStorageKey(projectId), next) } catch { /* 静默 */ }
+  }, [sessionDeviceId, projectId])
 
   // 切换远程机器时换用该机器记住的根目录覆盖值 (按 项目+机器 隔离), 并退出编辑态。
   // Switching remote machines swaps in that machine's remembered root and leaves edit mode
@@ -537,6 +562,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const onSelectFile = useCallback(async (entry: Entry) => {
     if (entry.type !== 'file') return
     const key = entry.abs_path
+    // 移动端单列交互: 选中文件后从「文件树」切到「编辑器」全宽
+    if (mobileListMode) setMobileShowTree(false)
     // 已打开的文件 → 仅激活对应 Tab (内容/未保存修改都留在各自 Tab 里, 不再需要切换确认)
     if (tabsRef.current.some(t => t.key === key) || openingRef.current.has(key)) {
       setActiveKey(key)
@@ -577,7 +604,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     } finally {
       openingRef.current.delete(key)
     }
-  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab])
+  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab, mobileListMode])
 
   // 蓝图变体: 仅初始加载时自动打开第一张蓝图 (根下直连 .html 优先, 否则第一个 module 的首张),
   // 打开即有内容, 消除右侧大片空白; 用户手动关掉全部 Tab 后不再强开.
@@ -1170,7 +1197,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const htmlFile = !!selected && /\.html?$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
 
   return (
-    <div className={blueprint ? 'flex h-full min-h-0 w-full' : 'contents'}>
+    <div className={blueprint ? 'flex h-full min-h-0 w-full' : `contents${mobileListMode ? (mobileShowTree ? ' cc-mobile-list' : ' cc-mobile-editor') : ''}`}>
       {/* ===== 左: 文件浏览器 ===== */}
       <ResizablePanel
         storageKey={`mobius:ui:${blueprint ? 'blueprint-tree' : (compact ? 'easy-files-tree' : 'split:cc-files')}:${projectId}`}
@@ -1178,6 +1205,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         minWidth={compact ? 140 : 160}
         maxWidth={compact ? 300 : 360}
         side="left"
+        // 简易模式文件侧栏嵌在右侧抽屉里, 内层文件树不能再抽屉化 (否则作为关闭的抽屉渲染到屏幕外)
+        noMobileDrawer={compact}
         className="border-r flex flex-col"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
@@ -1425,11 +1454,28 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         minWidth={compact ? 0 : codeEditorMinWidth}
         maxWidth={compact ? 0 : codeEditorMaxWidth}
         side="left"
+        // 简易模式文件侧栏嵌在底部抽屉里, 编辑器也不能抽屉化 —— 否则作为关闭的抽屉渲染到屏幕外,
+        // 只看到文件树看不到文件内容 (与左侧文件浏览器同款 noMobileDrawer 处理).
+        noMobileDrawer={compact}
         className="flex flex-col"
         // 蓝图变体: 预览区吃掉文件树之外的剩余宽度, 否则固定宽度会在卡片右侧留一条空带
         // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip
         style={{ background: cc.bg, color: cc.fg, ...(blueprint ? { flexGrow: 1, flexBasis: 0, maxWidth: 'none' } : {}) }}
       >
+        {/* 移动端单列交互: 从编辑器返回文件树 (顶部左侧返回按钮) */}
+        {mobileListMode && (
+          <button
+            type="button"
+            onClick={() => setMobileShowTree(true)}
+            aria-label="返回文件列表"
+            title="返回文件列表"
+            className="inline-flex h-8 flex-shrink-0 items-center gap-1 border-b px-2 text-[length:var(--fs-md)] transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-secondary)', borderColor: cc.border }}
+          >
+            <ChevronLeft className="h-4 w-4" strokeWidth={2} />
+            文件
+          </button>
+        )}
         {/* ★ 多 Tab 标签栏: 每个打开的文件一个 Tab; 点击切换, 中键或 × 关闭, 圆点 = 未保存 */}
         {tabs.length > 0 && (
           <div

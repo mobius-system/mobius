@@ -9,11 +9,9 @@ import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
-import { ConfirmModal, NewSessionModal } from './modals'
-import { CreateSessionForm } from './quick-create-session'
+import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
-import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
-import { ResizablePanel, useNarrowContainer } from './resizable-panel'
+import { ResizablePanel, useIsMobile } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -21,7 +19,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, continuationDevice } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, boundAimuxDeviceId } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -39,7 +37,7 @@ import { KnowledgeEditorModal } from './knowledge-editor-modal'
 import { RemoteComputeMemoryModal } from './memories'
 import { AdvancedInteractionBtn } from './advanced-interaction-btn'
 import { EasySessionChatInput } from './easy-session-chat-input'
-import { EasySessionProjectSelector } from './easy-session-project-selector'
+import { AttachmentChip, AttachmentImagePreviewModal, type Attachment as SharedAttachment, type AttachmentImagePreview } from './attachments'
 import { AdvancedSessionActions } from './advanced-session-actions'
 import { UnifiedButtonGroup, type VisibilityOption } from './unified-button-group'
 import { EasySessionToolBar } from './easy-session-tool-bar'
@@ -67,10 +65,6 @@ const CHAT_INPUT_MIN_RATIO = 0.14
 const CHAT_INPUT_MIN_WIDTH = 224
 const CHAT_INPUT_MAX_WIDTH = 720
 const CHAT_HISTORY_MIN_WIDTH = 360
-// 会话体中栏窄于此宽度即转纵向堆叠 (历史在上, 输入在下). 与 index.css 里
-// @media(max-width:900px) 同一断点, 区别是这里量的是中栏自己的宽度: 左侧会话栏和
-// 右侧文件编辑栏 (原生文件编辑器) 都会占掉中栏宽度, 视口宽 ≠ 中栏宽.
-const CHAT_BODY_STACK_BREAKPOINT = 900
 // 「会话统一按钮组」的显示设置清单: 标准布局的侧栏与简易模式的工具浮层共用同一份,
 // 否则两处的显示开关会漂移 (存储 key 相同, 清单不同会互相隐藏对方的按钮).
 const SESSION_TOOL_VISIBILITY_OPTIONS: VisibilityOption[] = [
@@ -167,12 +161,6 @@ function JsonlCountSlot({ store, children }: { store: SessionHistoryStore | null
 // lerp 跟随系数 (调参台定稿 0.06, 见 tmp/frontend_unit_mock): 每帧走"距底剩余距离"的比例.
 const LERP_FOLLOW_K = 0.06
 
-// 吸附阈值: lerp 单帧增量 = 剩余距离 * 0.06, 剩余不足 ~17px 时增量已小于 1px, 而 scrollTop
-// 按整像素生效 —— 增量被整个吞掉, 环既追不平 (delta 永远 > 0.5) 也推不动一格, 于是每帧空转
-// 并把视野死钉在底部, 任何程序滚动 (轮次跳转按钮/摘要跳转) 都被它逐帧按回去 = "按钮无效".
-// 剩余距离进这个阈值就直接吸附到底并收环. 24px 留足整像素余量, 视觉上仍是"到底".
-const LERP_SNAP_PX = 24
-
 // 两个触发源 (条数变化 / 内容长高) 共用同一个自续 RAF 追赶环: 每帧只走剩余距离的
 // LERP_FOLLOW_K — 落后越多追得越快, 逼近底部自动减速, 高卡/批量呈现为先快后慢的
 // 缓动, 小增量轻带即到; 底部在长高中途变化也自然 retarget. 系数按 60Hz 手感调的,
@@ -222,14 +210,6 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (!el) { diagRef.current.lastStop = '滚动容器不存在'; return }
     const delta = el.scrollHeight - el.scrollTop - el.clientHeight
     if (delta <= 0.5) { diagRef.current.lastStop = '已在底部 (delta<=0.5)'; scrollDebug('chase: done (delta<=0.5)'); return }
-    // 剩余距离已在 lerp 分辨率之下: 直接吸附到底并收环, 否则环空转不休 (见 LERP_SNAP_PX)
-    // Inside the lerp's dead zone: snap to the bottom and end the loop, or it would spin forever
-    if (delta <= LERP_SNAP_PX) {
-      el.scrollTop = el.scrollHeight
-      diagRef.current.lastStop = '已在底部 (吸附收环)'
-      scrollDebug('chase: snap to bottom then stop, delta=', delta.toFixed(1))
-      return
-    }
     diagRef.current.frames += 1
     diagRef.current.lastFrameAt = Date.now()
     diagRef.current.lastStop = '追赶中'
@@ -248,14 +228,7 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (rafRef.current) { diag.scheduleBlocked += 1; return }
     rafRef.current = requestAnimationFrame(chase)
   }
-  // 卸载时取消在跑的帧, 并把句柄归零: 取消掉的帧不算"环还在跑", 留着非 0 句柄会让
-  // schedulePin 的守卫永远挡下后续排帧, 环再也不会启动 (dev StrictMode 双调用必现).
-  // Cancel the pending frame and clear the handle: a cancelled frame is not a running loop,
-  // and a stale non-zero handle would make schedulePin's guard block every later start.
-  useEffect(() => () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    rafRef.current = 0
-  }, [])
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   // 浮窗探针: 读实时 DOM + 计数器, 给出"环是否还活着"和"被谁挡住"的结论.
   // Panel probe: reads live DOM plus the counters to say whether the loop is alive and what blocks it.
@@ -551,7 +524,7 @@ function SessionTitle({ name, theme }: { name?: string | null; theme: string }) 
   const full = String(name || '')
   return (
     <h2
-      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-lg)]"
+      className="min-w-0 flex items-baseline gap-1 font-semibold text-[length:var(--fs-xl)]"
       style={{ color: theme !== 'light' ? '#f1f5f9' : '#1e293b' }}
       title={full || undefined}
     >
@@ -576,22 +549,9 @@ function permissionReplyText(value: string) {
 // =====================================================================
 // 附件 (粘贴 / 拖放 / 上传按钮 三入口共用)
 // =====================================================================
-type AttachmentStatus = 'uploading' | 'done' | 'error'
-type Attachment = {
-  id: string
-  name: string
-  size: number
-  kind: 'image' | 'file'
-  previewUrl?: string      // 仅 image: 本地 ObjectURL, 用作缩略图
-  status: AttachmentStatus
-  remotePath?: string      // 上传成功后的服务端绝对路径 (用于 prompt 拼接)
-  error?: string
-}
-
-type AttachmentImagePreview = {
-  id: string
-  name: string
-  src: string
+// 共享附件类型 (attachments.tsx) + 会话内额外记录的 remotePath (上传成功后的服务端绝对路径, 用于 prompt 拼接)
+type Attachment = SharedAttachment & {
+  remotePath?: string
 }
 
 type SessionFileFeature = {
@@ -638,21 +598,6 @@ function attachmentKindOf(file: File): 'image' | 'file' {
 // 参考截图粘贴的同一路径: 转成 .txt 附件走 /api/upload 上传.
 const PASTE_TEXT_AS_FILE_THRESHOLD = 100 * 1024
 
-function formatFileSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
-}
-
-// 多种常见扩展名 → 简短分类标签 (用于无缩略图的文件芯片)
-function fileExtBadge(name: string): string {
-  const ext = (name.split('.').pop() || '').toLowerCase()
-  if (!ext || ext === name.toLowerCase()) return 'FILE'
-  return ext.slice(0, 4).toUpperCase()
-}
-
 // 上传单个文件到 /api/upload (multer 接收 field 名 'file').
 // 不能复用 store 里的 api(), 它默认设了 Content-Type: application/json — FormData 必须留空 Content-Type.
 async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ path: string; name: string; size: number }> {
@@ -668,118 +613,6 @@ async function uploadAttachmentFile(file: File, projectId?: string): Promise<{ p
   const data = await res.json().catch(() => ({} as any))
   if (!res.ok) throw new Error(data?.error || `上传失败 (HTTP ${res.status})`)
   return { path: data.path, name: data.name, size: data.size }
-}
-
-// 输入框内的紧凑附件芯片. 图片缩略图 / 文件短标签 + 删除按钮 + 上传状态.
-function AttachmentChip({ att, theme, onRemove, onPreview }: {
-  att: Attachment
-  theme: 'dark' | 'light' | 'purple'
-  onRemove: () => void
-  onPreview?: (preview: AttachmentImagePreview) => void
-}) {
-  const isImage = att.kind === 'image' && att.previewUrl
-  const isDark = theme !== 'light'
-  const baseStyle: React.CSSProperties = {
-    background: isDark ? '#111827' : '#ffffff',
-    border: `1px solid ${isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)'}`,
-  }
-  const fileLabel = fileExtBadge(att.name).slice(0, 2)
-  return (
-    <div className="relative group flex-shrink-0" title={`${att.name}${att.size ? ` · ${formatFileSize(att.size)}` : ''}`}>
-      {isImage ? (
-        <button
-          type="button"
-          onClick={() => onPreview?.({ id: att.id, name: att.name, src: att.previewUrl! })}
-          className="w-6 h-6 rounded-md overflow-hidden relative block text-left focus:outline-none focus:ring-2 focus:ring-blue-500/35 cursor-zoom-in"
-          style={baseStyle}
-          title={`${att.name} · 点击预览`}
-          aria-label={`预览图片 ${att.name}`}>
-          <img src={att.previewUrl} alt={att.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/35 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity inline-flex items-center justify-center">
-            <ZoomIn className="w-3 h-3" strokeWidth={2.2} />
-          </div>
-          {att.status === 'uploading' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-              <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-              </svg>
-            </div>
-          )}
-          {att.status === 'error' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-red-500/60 text-white text-[length:var(--fs-xs)] font-semibold" title={att.error}>
-              失败
-            </div>
-          )}
-        </button>
-      ) : (
-        <div
-          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 relative text-[length:var(--fs-2xs)] font-semibold leading-none"
-          style={{ ...baseStyle, color: isDark ? '#bfdbfe' : '#2563eb' }}>
-          <span>{fileLabel}</span>
-            {att.status === 'uploading' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-black/50">
-                <svg className="w-3 h-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
-                </svg>
-              </div>
-            )}
-            {att.status === 'error' && (
-              <div className="absolute inset-0 rounded-md flex items-center justify-center bg-red-500/70 text-white text-[length:var(--fs-2xs)] font-semibold" title={att.error}>
-                !
-              </div>
-            )}
-        </div>
-      )}
-      <button type="button" onClick={(e) => { e.stopPropagation(); onRemove() }}
-        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-white shadow opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-        style={{ background: '#1f2937' }}
-        title="移除">
-        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  )
-}
-
-function AttachmentImagePreviewModal({ preview, onClose }: {
-  preview: AttachmentImagePreview
-  onClose: () => void
-}) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-black/80 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`图片预览 ${preview.name}`}>
-      <button className="absolute inset-0 cursor-zoom-out" type="button" aria-label="关闭图片预览" onClick={onClose} />
-      <div className="relative z-10 h-12 flex items-center justify-between gap-3 px-4 border-b border-white/10 text-white">
-        <div className="min-w-0 text-[length:var(--fs-lg)] font-medium truncate">{preview.name}</div>
-        <button
-          type="button"
-          onClick={onClose}
-          title="关闭"
-          aria-label="关闭"
-          className="h-8 w-8 rounded-full inline-flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
-          <X className="w-4 h-4" strokeWidth={2} />
-        </button>
-      </div>
-      <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6 pointer-events-none">
-        <img
-          src={preview.src}
-          alt={preview.name}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-auto"
-          onClick={(event) => event.stopPropagation()}
-        />
-      </div>
-    </div>
-  )
 }
 
 const TUI_CONTACT_TIMEOUT_MESSAGE = '任务失败，与后台TUI联络超时，请尝试继续提问，或者重建会话。'
@@ -1519,7 +1352,6 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
-  onOpenBlueprint, canOpenBlueprint,
 }: {
   jsonlCount: number
   onOpenRaw: () => void
@@ -1529,8 +1361,6 @@ function ChatHeaderOverflowMenu({
   onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
-  onOpenBlueprint: () => void
-  canOpenBlueprint: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1569,10 +1399,6 @@ function ChatHeaderOverflowMenu({
             disabled={!canStop}
             onClick={() => { setOpen(false); onStop() }}>
             <span>终止当前操作</span>
-          </button>
-          <button className={itemClass} disabled={!canOpenBlueprint}
-            onClick={() => { setOpen(false); onOpenBlueprint() }}>
-            <span>查看项目蓝图</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
@@ -1900,34 +1726,20 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
 // 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
 // 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
-type EasyProjectOption = {
-  id: string
-  name: string
-  count?: number
-  runningCount?: number
-}
-
 type SearchHitTarget = { uuid?: string | null; timestamp?: string | null }
 
 // 简易模式右侧文件编辑栏: 复用代码对话 v2 的 CodeConversationPane (variant='sidebar'),
 // 按需加载避免简易模式首屏背上 CodeMirror 的 bundle.
 const EasyFilesPane = lazy(() => import('./workspace/code-conversation-pane').then(module => ({ default: module.CodeConversationPane })))
-const EASY_FILES_OPEN_KEY = 'mobius:ui:easy-files-sidebar:open'
 
-export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easyProjectControl }: {
+export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   layout?: 'default' | 'stacked' | 'easy'
   onNewSession?: () => void
   // 消息提交成功后的回调 (所有发送路径共用)。外层用它把「会话已开始执行」尽快同步到侧栏。
   onMessageSent?: () => void
-  easyProjectControl?: {
-    selectedProjectId?: string
-    selectedProjectName?: string
-    projects: EasyProjectOption[]
-    onSelectProject: (projectId: string | null) => void
-    onCreateProject: () => void
-  }
 } = {}) {
-  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
+  const { currentSession, currentTask, currentIssue, currentResearch, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme, mobileNavOpen } = useStore()
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
   // 搜索结果跳转: URL 带 ?match=<uuid>&ts=<iso> 时, 把命中条目交给 JsonlView 滚到所属卡片.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -2045,8 +1857,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [inputExpanded, setInputExpanded] = useState(false)
   const [inputMenuOpen, setInputMenuOpen] = useState(false)
   const [easyToolsOpen, setEasyToolsOpen] = useState(false)
-  const [easyProjectMenuOpen, setEasyProjectMenuOpen] = useState(false)
-  const [easyProjectQuery, setEasyProjectQuery] = useState('')
   const [inputFocused, setInputFocused] = useState(false)
   // 每个 session 维持一份附件列表 (粘贴 / 拖放 / 上传按钮三路共用).
   // 切 session 时不清空, 让用户在哪儿留下就在哪儿见.
@@ -2057,14 +1867,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const inputMenuButtonRef = useRef<HTMLButtonElement | null>(null)
   const easyToolsRef = useRef<HTMLDivElement | null>(null)
   const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
-  const easyProjectMenuRef = useRef<HTMLDivElement | null>(null)
-  const easyProjectButtonRef = useRef<HTMLButtonElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
-  // 中栏是否已被挤窄 (视口宽 ≠ 中栏宽: 左侧会话栏 + 右侧文件编辑栏都要占位).
-  // 只有标准分栏需要这个判据 —— 简易模式 (--easy) 与代码对话 (--stacked) 本就纵向堆叠.
-  const chatBodyWidthNarrow = useNarrowContainer(chatBodyRef, CHAT_BODY_STACK_BREAKPOINT)
-  const chatBodyNarrow = layout === 'default' && chatBodyWidthNarrow
   const chatInputRef = useRef<HTMLDivElement>(null)
   const chatSplitHandleRef = useRef<HTMLDivElement>(null)
   const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
@@ -2093,38 +1897,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [easyToolsOpen])
-
-  useEffect(() => {
-    if (!easyProjectMenuOpen) return
-    const closeOnOutside = (event: MouseEvent) => {
-      if (!easyProjectMenuRef.current?.contains(event.target as Node)) setEasyProjectMenuOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setEasyProjectMenuOpen(false)
-      easyProjectButtonRef.current?.focus()
-    }
-    document.addEventListener('mousedown', closeOnOutside)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutside)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [easyProjectMenuOpen])
-
-  useEffect(() => {
-    setEasyProjectMenuOpen(false)
-    setEasyProjectQuery('')
-  }, [currentSession?.session_id])
-
-  const easyFilteredProjects = useMemo(() => {
-    const query = easyProjectQuery.trim().toLocaleLowerCase('zh-CN')
-    if (!query) return easyProjectControl?.projects || []
-    return (easyProjectControl?.projects || []).filter(project => (
-      project.name.toLocaleLowerCase('zh-CN').includes(query)
-      || project.id.toLocaleLowerCase('zh-CN').includes(query)
-    ))
-  }, [easyProjectControl?.projects, easyProjectQuery])
 
   // 右栏宽度不放进 React inline style：拖动时直接写 DOM，避免每个 mousemove
   // 都重渲染 JSONL 与输入区两棵重子树；松手时才提交一次 state 并持久化比例。
@@ -2254,9 +2026,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const [easyLoadingAll, setEasyLoadingAll] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
-  // 项目蓝图全屏抽屉 (从 chat 头部 … 菜单打开).
-  // Full-screen project blueprint drawer, opened from the chat header overflow menu.
-  const [projectBlueprintOpen, setProjectBlueprintOpen] = useState(false)
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [rawJsonlDownloading, setRawJsonlDownloading] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
@@ -2279,8 +2048,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 终止完成后若该会话仍有 Mobius 定时任务, 记录数量并弹窗询问是否一并清除.
-  const [stopWakeupPrompt, setStopWakeupPrompt] = useState<{ sessionId: string; count: number } | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -2312,18 +2079,12 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   // ===== 简易模式右侧文件编辑栏 (复用代码对话 v2 的文件树 + CodeMirror 编辑器) =====
   // 开关状态存本浏览器; easyFilesMounted 首次打开后保活 (文件树展开/选中/未保存草稿不丢),
   // 关闭仅 display:none — 与 IssuePage 的 editorMounted/v2Mounted 同一模式.
-  const [easyFilesOpen, setEasyFilesOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
-  })
-  const [easyFilesMounted, setEasyFilesMounted] = useState<boolean>(() => {
-    try { return localStorage.getItem(EASY_FILES_OPEN_KEY) === '1' } catch { return false }
-  })
-  // 常规模式的文件编辑栏开合走 store: 顶栏「原生文件编辑器」入口与 display-files 卡片写同一份状态.
-  // The standard-mode file pane open-state lives in the store so the top-bar entry and cards share one source.
-  const displayFilesOpen = useStore(s => s.fileEditorOpen)
-  const setDisplayFilesOpen = useStore(s => s.setFileEditorOpen)
-  // web 终端仅 admin 可用 (见后端 webTerminalAllowedFor): 普通用户隐藏入口与显示设置项.
-  const isAdminUser = useStore(s => s.user?.role === 'admin')
+  // 文件栏开关不再持久化到 localStorage: 每次进页面都默认收起, 不记住上次的展开/关闭状态.
+  // easyFilesMounted 只在本次会话内保活 (首次打开后挂载, 保留文件树展开/未保存草稿), 不跨页面.
+  const [easyFilesOpen, setEasyFilesOpen] = useState(false)
+  const [easyFilesMounted, setEasyFilesMounted] = useState(false)
+  // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
+  const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
   // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
   const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)
@@ -2335,19 +2096,18 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       setDisplayFilesOpen(true)
       setEasyFilesMounted(true)
       setEasyFilesOpen(true)
-      try { localStorage.setItem(EASY_FILES_OPEN_KEY, '1') } catch { /* ignore */ }
       window.setTimeout(() => window.dispatchEvent(new CustomEvent('mobius:open-file-in-sidebar', { detail })), 250)
     }
     window.addEventListener('mobius:request-open-file-in-sidebar', openFile)
     return () => window.removeEventListener('mobius:request-open-file-in-sidebar', openFile)
   }, [currentProjectId, sessionId])
   useEffect(() => { if (easyFilesOpen) setEasyFilesMounted(true) }, [easyFilesOpen])
+  // 左侧导航抽屉打开时收起文件抽屉 (两个抽屉不能同时开, 否则遮罩互相叠, 点不到东西)
+  useEffect(() => {
+    if (mobileNavOpen) setEasyFilesOpen(false)
+  }, [mobileNavOpen])
   const toggleEasyFiles = useCallback(() => {
-    setEasyFilesOpen(previous => {
-      const next = !previous
-      try { localStorage.setItem(EASY_FILES_OPEN_KEY, next ? '1' : '0') } catch { /* 静默 */ }
-      return next
-    })
+    setEasyFilesOpen(previous => !previous)
   }, [])
   // bind_path 与代码对话模式同源 (useEditorAvailability 模块级缓存, 同项目只发一次请求).
   const filesPaneEnabled = (layout === 'easy' ? easyFilesMounted : displayFilesOpen) && !!currentProjectId && !!currentSession
@@ -2512,6 +2272,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
   }, [])
 
   const [pendingSendAt, setPendingSendAt] = useState<number | null>(null)
+  // 运行中发送 = 入队 (后端 queue 路径). 记一个时间戳, 简易模式输入框据此闪一下「已排队」,
+  // 让用户立刻知道这条已被接收 (消息区另有「排队」卡). Enter / 按钮 / 语音三条路径都经这里.
+  const [queuedSentAt, setQueuedSentAt] = useState<number | null>(null)
   // 本次 pending 发送是否为加急: 加急时 session 本来就在 working, poll 的
   // "working=true ⇒ 清除 pending" 信号无效, 会过早清掉导致发送阶段提示 (正在发送/唤醒中) 不显示.
   // 故加急时跳过该条件 (只靠 !alive / 8s 兜底). ref 不参与渲染, 无需进 deps.
@@ -2764,20 +2527,15 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
-    // 必须在 effect 内同步读取草稿: 若放进 setDrafts 的更新函数, React 会延迟到下一次渲染才执行,
-    // 那时下方的持久化 effect 已经用初始空值把 localStorage 里的草稿删掉了
-    // Read the draft synchronously here: inside the setDrafts updater React defers it to the next render,
-    // by which time the persist effect below has already deleted the saved draft with the initial empty value
-    const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
-    if (!saved?.input) return
     setDrafts(prev => {
       if (Object.prototype.hasOwnProperty.call(prev, sessionId)) return prev
-      return { ...prev, [sessionId]: saved.input as string }
+      const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
+      if (!saved?.input) return prev
+      return { ...prev, [sessionId]: saved.input }
     })
   }, [sessionId])
 
   const input = drafts[sessionId] || ''
-  const hasDraftEntry = Object.prototype.hasOwnProperty.call(drafts, sessionId)
   const setInput = (val: string | ((prev: string) => string)) => {
     if (!sessionId) return
     setDrafts(prev => {
@@ -2792,11 +2550,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   useEffect(() => {
     if (!sessionId) return
-    // 草稿水合完成前不写 localStorage, 否则初始空值会覆盖刚保存的内容
-    // Skip persisting until the draft is hydrated in state, otherwise the initial empty value wipes the saved draft
-    if (!hasDraftEntry) return
     draftSave(`session-input:${sessionId}`, { input }, { minChars: 1 })
-  }, [sessionId, input, hasDraftEntry])
+  }, [sessionId, input])
 
   // F6: 规划编辑器 3s 静止后, 预填一条"通知 Agent 已更新规划"的草稿, 避免用户来回切换.
   // 仅在事件 detail.sessionId === 当前 session 时生效, 防止跨 session 串扰.
@@ -3076,7 +2831,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     }
   }, [])
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (e.currentTarget === e.target) setIsDraggingFile(false)
+    // 用 relatedTarget 判定「还在框内」: 指针从输入框空白处移到 textarea 等子元素时,
+    // dragleave 的 target 仍是容器本身, 用 target 判定会误判成已离开, 遮罩闪一下就没了.
+    const related = e.relatedTarget as Node | null
+    if (related && e.currentTarget.contains(related)) return
+    setIsDraggingFile(false)
   }, [])
   const handleDrop = useCallback((e: React.DragEvent) => {
     setIsDraggingFile(false)
@@ -3488,22 +3247,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [inputExpanded])
-  /* Long-text editor only: Tab inserts four spaces instead of moving focus. */
-  const handleExpandedInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
-    const nativeEvent = e.nativeEvent
-    // 输入法合成中不劫持 Tab，避免打断候选词
-    // Do not hijack Tab while IME composition is active
-    if (composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
-    e.preventDefault()
-    const el = e.currentTarget
-    const start = el.selectionStart
-    const end = el.selectionEnd
-    // ✨ 用四个空格替换选区写回输入，再把光标落到插入点之后
-    // ✨ Replace the selection with four spaces and move the caret past them
-    setInput(input.slice(0, start) + '    ' + input.slice(end))
-    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 4 })
-  }, [input])
 
   useEffect(() => {
     if (!inputMenuOpen) return
@@ -3894,6 +3637,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     pendingUrgentRef.current = urgent
     setPendingSendAt(Date.now())
     setMessageSubmitting(true)
+    // 运行中 + 非加急 = 排队 (后端 noPauseCurrentAndQueueQueryAtSession): 记时间戳给输入框反馈
+    if (!urgent && backendAlive && backendWorking) setQueuedSentAt(Date.now())
     setTyping(true)
     // 记录发送尝试而不是等待服务端成功回执。网络超时、响应丢失或后端暂时不可达时，
     // 这条本地记录仍可通过 ↑ /“回放输入”召回，并在刷新页面后继续存在。
@@ -3968,7 +3713,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       .finally(() => setMessageSubmitting(false))
   }, [sessionId, messageSubmitting, addMessage, setTyping, postSessionMessage])
 
-  // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发).
+  // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发,
+  // 以及输入框里的「运行设备」pill). newId 为空 = 回到中枢, 不绑任何设备.
   // 顺序: ① 更新 DB 绑定 → ② 同步本地 currentSession 元数据 → ③ 终止当前 agent(等待确认)
   // → ④ 走"唤醒文字"路径发一条消息, 让新设备上重新 spawn 的 agent 先去 hostname 确认新环境.
   const handleSwitchAimuxDevice = useCallback(async (newId: string, oldId: string) => {
@@ -3989,10 +3735,14 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
     if (tsk?.task_id === sessionId && meta) {
       store.setCurrentTask({ ...tsk, pc_client_metadata: meta })
     }
-    // ③ 终止当前 agent (await 确认终止完成)
+    // ③ 终止当前 agent (await 确认终止完成).
+    //    remote_* 工具是在 agent spawn 时按 pc_client_metadata 注入的, 已经在跑的 agent
+    //    手里的 MCP 服务器还指着旧设备, 所以换设备必须换进程.
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
-    const content = `【用户更新了mcp连接的设备（从${oldId}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 remote_ping 检查和确认新设备的情况（它会返回对面机器的操作系统、shell、工作路径）。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。小提示：你依然可以在必要的时候，使用aimux继续调用${oldId}。 】`
+    const content = newId
+      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
+      : `【用户把mcp连接的设备解除了（从${oldId}变回中枢），这意味着后续工作回到莫比乌斯中枢上完成。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
@@ -4142,39 +3892,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       }
     }
     api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
-      .then(async () => {
+      .then(() => {
         setTyping(false)
         setStreamContent('')
         loadHistoryRef.current()
-        // 常规终止已完成后才询问定时任务, 避免杀会话失败却先清掉任务.
-        // Ask about scheduled tasks only after the regular stop succeeded.
-        try {
-          const data = await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(sessionId)}`)
-          const count = Array.isArray(data?.wakeups) ? data.wakeups.length : 0
-          // ✨ 该会话仍有定时任务时弹窗询问是否一并清除
-          // ✨ Prompt to clear remaining scheduled wake-ups for this session
-          if (count > 0) setStopWakeupPrompt({ sessionId, count })
-        } catch { /* 查询失败不打断终止流程 — query failure must not block stop */ }
       })
       .catch((e: any) => {
         setLastSendError(e?.message || '终止失败')
         setStopFeedbackActive(false)
       })
   }, [sessionId, setTyping, setStreamContent, currentIssueId, holdLiveOverride])
-
-  // 用户在弹窗里确认后清空该会话的全部 Mobius 定时任务; 关闭弹窗即保留.
-  // Clear every scheduled wake-up for the session when confirmed; closing the dialog keeps them.
-  const clearStopWakeups = useCallback(async () => {
-    const target = stopWakeupPrompt
-    if (!target) return
-    try {
-      await api(`/api/scheduled-wake-ups?session_id=${encodeURIComponent(target.sessionId)}`, { method: 'DELETE' })
-      setStopWakeupPrompt(null)
-    } catch (e: any) {
-      setStopWakeupPrompt(null)
-      setLastSendError(e?.message || '清除定时任务失败')
-    }
-  }, [stopWakeupPrompt])
 
   const showSessionStartModal = !!(
     currentSession
@@ -4209,9 +3936,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {(jsonlEntryCount) => (
         <AdvancedSessionActions
           variant={variant}
-          showTerminal={isAdminUser}
-          // 简易布局没有 chat 头部, 也就没有承载它的 … 菜单, 开关保留在工具浮层里.
-          omitJsonlMetaButton={layout !== 'easy'}
           sessionId={currentSession?.session_id || sessionId}
           projectId={currentProjectId}
           issueId={currentIssueId}
@@ -4248,16 +3972,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
 
   // 会话工具按钮组只有这一份定义: 标准布局挂在输入侧栏, 简易模式收进 EasySessionToolBar 浮层,
   // 避免入口/禁用条件/显示开关两处漂移 (按钮本体由 AdvancedSessionActions 定义).
-  const sessionToolVisibilityOptions = useMemo(
-    () => SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => {
-      if (option.id === 'terminal' && !isAdminUser) return false
-      // 非简易布局的「显示时间与序号」已并进 chat 头部的 … 菜单, 按钮组里不再有这个按钮,
-      // 显示设置里也就不该留一个拨不动任何东西的开关.
-      if (option.id === 'jsonl-meta' && layout !== 'easy') return false
-      return true
-    }),
-    [isAdminUser, layout],
-  )
   const renderSessionToolGroup = (opts: { variant: 'default' | 'compact' | 'menu'; className: string; initialPanel: null | 'memory'; persistActivePanel?: boolean }) => (
     <UnifiedButtonGroup
       className={opts.className}
@@ -4274,7 +3988,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         vscodeSubPath={currentVscodeSubPath}
         onRequestRunProject={sendRunProjectPortPrompt}
         onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-        visibilityOptions={sessionToolVisibilityOptions}
+        visibilityOptions={SESSION_TOOL_VISIBILITY_OPTIONS}
       />
     </UnifiedButtonGroup>
   )
@@ -4533,8 +4247,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
                 onStop={handleStopSession}
                 canStop={!!sessionId}
-                onOpenBlueprint={() => setProjectBlueprintOpen(true)}
-                canOpenBlueprint={!!currentProjectId}
               />
             )}
           </JsonlCountSlot>
@@ -4599,12 +4311,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
       {/* body: 默认横向分栏，JsonlView 与输入/skill-memory 之间可拖拽调宽；初始 68/32。
           窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
           layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式).
-          chatBodyNarrow (中栏自身 < 900px, 视口媒体查询管不到) 时附加 mobius-chat-body--narrow.
           easy + 文件栏打开时右 padding 收回 (空间让给文件栏, padding 平滑过渡避免内容跳动). */}
       <div
         ref={chatBodyRef}
-        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}${chatBodyNarrow ? ' mobius-chat-body--narrow' : ''}`}
-        style={layout === 'easy' ? { paddingLeft: '10%', paddingRight: easyFilesOpen ? '0' : '10%', transition: 'padding .2s ease' } : undefined}
+        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        style={layout === 'easy' ? { paddingLeft: isMobile ? '12px' : '10%', paddingRight: easyFilesOpen ? '0' : (isMobile ? '12px' : '10%'), transition: 'padding .2s ease' } : undefined}
       >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。
             快照订阅在面板内部 (Chat 不随每条数据重渲染); 条目驱动的自动滚底由旁边的 EntriesAutoScroll 承担. */}
@@ -4666,32 +4377,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           )}
           {layout === 'easy' && (
             <div className="easy-session-chat-input-shell min-w-0 flex-shrink-0 p-3">
-              {/* 附件芯片: 标准输入框整块在简易模式下隐藏, 芯片若留在那里面, 上传/粘贴后就没有任何可见反馈. */}
-              {attachments.length > 0 && (
-                <div className="mb-2 flex max-h-20 flex-wrap items-start gap-1.5 overflow-y-auto pr-1">
-                  {attachments.map(att => (
-                    <AttachmentChip
-                      key={att.id}
-                      att={att}
-                      theme={theme as 'dark' | 'light' | 'purple'}
-                      onRemove={() => removeAttachment(att.id)}
-                      onPreview={openAttachmentImagePreview}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* 项目选择入口: 「更改此聊天的项目」按钮 (issue 2026-10-13) */}
-              {easyProjectControl && (
-                <div className="mb-2">
-                  <EasySessionProjectSelector
-                    selectedProjectId={easyProjectControl.selectedProjectId}
-                    selectedProjectName={easyProjectControl.selectedProjectName}
-                    projects={easyProjectControl.projects}
-                    onSelectProject={easyProjectControl.onSelectProject}
-                    onCreateProject={easyProjectControl.onCreateProject}
-                  />
-                </div>
-              )}
               <EasySessionChatInput
                 mode="follow_session_mode"
                 input={input}
@@ -4699,6 +4384,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   inputPlaceholder={inputPlaceholder}
                   inputFocused={inputFocused}
                   theme={theme}
+                  currentProjectId={currentProjectId}
+                  queuedAt={queuedSentAt}
+                  attachments={attachments}
+                  onRemoveAttachment={removeAttachment}
+                  onPreviewAttachment={openAttachmentImagePreview}
                   voiceState={voiceState}
                   voiceTip={voiceTip}
                   voiceBusy={voiceBusy}
@@ -4711,6 +4401,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   stopFeedbackActive={stopFeedbackActive}
                   onChange={handleChatInputChange}
                   onPaste={handlePaste}
+                  onDrop={handleDrop}
                   onFocus={() => setInputFocused(true)}
                   onBlur={(event) => {
                     const nextTarget = event.relatedTarget as Node | null
@@ -4723,20 +4414,17 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                   sessionId={sessionId}
                   sessionModelKey={(currentSession as any)?.model || (currentTask as any)?.model || ''}
                   sessionModelLabel={currentModelLabel}
+                  sessionDeviceId={boundAimuxDeviceId(currentSession ?? currentTask)}
+                  onChangeSessionDevice={async (deviceId: string) => {
+                    await handleSwitchAimuxDevice(deviceId, boundAimuxDeviceId(currentSession ?? currentTask))
+                  }}
                   agentWorking={!!(backendAlive && backendWorking)}
-                  showContextAccess={!!((currentSession as any)?.pc_client_metadata || (currentTask as any)?.pc_client_metadata)}
-                  contextAccessLabel="完全访问"
                   recentSessions={(useStore.getState().sessions || []).slice(0, 20) as any}
-                  projects={(easyProjectControl as any)?.projects as any}
-                  currentProjectId={(easyProjectControl as any)?.selectedProjectId || currentProjectId}
                   onSwitchSession={(sid) => {
                     if (!sid) return
                     const search = new URLSearchParams(location.search)
                     search.set('session', sid)
                     navigate(`${location.pathname}?${search.toString()}${location.hash}`, { replace: true })
-                  }}
-                  onSwitchProject={(pid) => {
-                    (easyProjectControl as any)?.onSelectProject(pid)
                   }}
                   language={(currentSession as any)?.language === 'en' ? 'en' : 'zh'}
                   onChangeLanguage={(next) => {
@@ -5113,9 +4801,12 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           minWidth={easyFilesSidebarMinWidth}
           maxWidth={easyFilesSidebarMaxWidth}
           side="right"
-          className={`border-l flex overflow-hidden${layout === 'easy' && !easyFilesOpen ? ' hidden' : ''}`}
+          // 移动端右侧栏走抽屉 (覆盖式, 不占位), 开合由 easyFilesOpen 驱动; 桌面端仍靠 hidden 隐藏
+          className={`border-l flex overflow-hidden${layout === 'easy' && !isMobile && !easyFilesOpen ? ' hidden' : ''}`}
           style={{ borderColor: 'var(--border-color)' }}
           data-testid="easy-files-sidebar"
+          mobileOpen={isMobile ? easyFilesOpen : undefined}
+          onMobileClose={() => setEasyFilesOpen(false)}
         >
           {(easyFilesBindPath || projectForSession?.bind_path) ? (
             <Suspense
@@ -5131,6 +4822,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
                 bindPath={easyFilesBindPath || projectForSession?.bind_path || ''}
                 vscodeWebUrl={easyFilesVscodeUrl}
                 sessionId={currentSession?.session_id || sessionId}
+                sessionDeviceId={boundAimuxDeviceId(currentSession ?? currentTask)}
                 openFileRequest={displayFileRequest || undefined}
               />
             </Suspense>
@@ -5174,7 +4866,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
               ref={expandedInputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={handleExpandedInputKeyDown}
               onPaste={handlePaste}
               placeholder={inputPlaceholder}
               className="min-h-0 flex-1 w-full resize-none rounded-xl px-3 py-2 text-[length:var(--fs-lg)] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/30"
@@ -5247,17 +4938,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         />
       )}
 
-      {stopWakeupPrompt && (
-        <ConfirmModal
-          title="同时清除定时任务？"
-          message={`该会话还有 ${stopWakeupPrompt.count} 个 Mobius 定时任务。终止后它们仍会按计划唤醒这个会话；是否一并清除？`}
-          confirmText="清除定时任务"
-          cancelText="保留定时任务"
-          onConfirm={clearStopWakeups}
-          onClose={() => setStopWakeupPrompt(null)}
-        />
-      )}
-
       {compactConfirmOpen && (
         <CompactContextConfirmModal
           onConfirm={sendCompactCommand}
@@ -5265,24 +4945,10 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
         />
       )}
 
-      {continueModalOpen && currentSession?.session_id && currentIssueId && (
-        <CreateSessionForm
-          defaultProjectId={currentProjectId || (currentSession as any).project_id}
-          defaultIssueId={currentIssueId}
-          projectKind={projectForSession?.kind}
-          onClose={() => setContinueModalOpen(false)}
-          onDone={handleContinueSessionCreated}
-          continueFromSessionId={currentSession.session_id}
-          initialName={continueSessionName(currentSession)}
-          initialDescription={(currentSession as any).description || ''}
-          initialIssueTitle={(currentIssue as any)?.title || (currentTask as any)?.title}
-          initialDevice={continuationDevice(currentSession)}
-        />
-      )}
-      {continueModalOpen && currentSession?.session_id && !currentIssueId && (currentSession as any)?.research_id && (
+      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
         <NewSessionModal
-          issueId={undefined}
-          researchId={(currentSession as any).research_id}
+          issueId={currentIssueId || undefined}
+          researchId={(currentSession as any)?.research_id || undefined}
           onClose={() => setContinueModalOpen(false)}
           onCreated={handleContinueSessionCreated}
           defaultName={continueSessionName(currentSession)}
@@ -5358,14 +5024,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent, easy
           </div>
         </div>
       )}
-
-      {/* 项目蓝图: 全屏抽屉, 内容复用项目设置里的同名面板 */}
-      {/* Project blueprint: full-screen drawer wrapping the same panel used in project settings */}
-      <ProjectBlueprintDrawer
-        open={projectBlueprintOpen}
-        projectId={currentProjectId}
-        onClose={() => setProjectBlueprintOpen(false)}
-      />
 
       {terminalOpen && (
         <WebTerminalModal

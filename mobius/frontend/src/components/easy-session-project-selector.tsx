@@ -36,6 +36,8 @@ type Props = EasyProjectControl & {
   shortcutHint?: string
   /** 额外类 */
   className?: string
+  /** 深色主题 (浅色时按钮用白底+中性边框, 深色透明底在浅色页面不可见) */
+  isDark?: boolean
 }
 
 export function EasySessionProjectSelector({
@@ -46,6 +48,7 @@ export function EasySessionProjectSelector({
   onCreateProject,
   shortcutHint = '⌘⇧O',
   className = '',
+  isDark = true,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -156,18 +159,26 @@ export function EasySessionProjectSelector({
         aria-label={selectedProjectId ? `当前项目: ${selectedProjectName || '项目'}, 点击修改` : '点击选择项目'}
         data-testid="easy-project-trigger"
         className="easy-project-trigger inline-flex h-7 max-w-full items-center gap-1.5 rounded-full px-3 text-[length:var(--fs-sm)] font-medium transition-colors hover:bg-[var(--bg-card-hover)]"
-        style={{
-          background: open ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          color: 'var(--text-secondary)',
-        }}
-        title={selectedProjectId ? `当前项目: ${selectedProjectName || '项目'} · 点击可修改` : '点击选择项目'}
+        style={isDark
+          ? {
+              background: open ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.04)',
+              border: selectedProjectId ? '1px solid rgba(59,130,246,0.55)' : '1px solid rgba(255,255,255,0.08)',
+              color: selectedProjectId ? '#60a5fa' : 'var(--text-secondary)',
+            }
+          : {
+              /* 浅色: 白底 + 中性边框 (深色透明背景在浅色页面上不可见, issue 2026-10-26) */
+              background: open ? 'rgba(59,130,246,0.10)' : '#ffffff',
+              border: `1px solid ${open || selectedProjectId ? 'rgba(37,99,235,0.45)' : 'rgba(15,23,42,0.16)'}`,
+              color: selectedProjectId ? '#2563eb' : 'var(--text-secondary)',
+              boxShadow: '0 1px 2px rgba(15,23,42,0.05)',
+            }}
+        title={selectedProjectId ? `当前项目: ${selectedProjectName || '项目'} · 点击可修改` : '未指定项目 · 点击选择'}
       >
-        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: open ? '#60a5fa' : 'var(--text-muted)' }} />
+        <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: open || selectedProjectId ? '#60a5fa' : 'var(--text-muted)' }} />
         <span className="truncate font-medium">
           {selectedProjectId
             ? (selectedProjectName || '项目')
-            : '点击选择项目'}
+            : '未指定项目'}
         </span>
         <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
       </button>
@@ -179,7 +190,7 @@ export function EasySessionProjectSelector({
           role="menu"
           aria-label="选择项目"
           data-testid="easy-session-project-menu"
-          className="fixed z-[97] overflow-hidden rounded-2xl shadow-2xl"
+          className="easy-popover-in fixed z-[96] overflow-hidden rounded-2xl shadow-2xl"
           style={{
             left: pos.left,
             bottom: pos.bottom,
@@ -216,8 +227,9 @@ export function EasySessionProjectSelector({
           </div>
           <div className="mt-1 max-h-[320px] overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-2 py-3 text-center text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-                {query.trim() ? '未找到匹配项目' : '暂无可用项目'}
+              <div className="easy-list-empty">
+                <Search className="h-5 w-5" strokeWidth={1.8} />
+                <span>{query.trim() ? '未找到匹配项目' : '暂无可用项目'}</span>
               </div>
             ) : (
               filtered.map(p => (

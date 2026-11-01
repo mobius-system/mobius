@@ -5823,6 +5823,11 @@ body.mobius-resizing .mobius-resizable-handle {
 .mobius-drawer-backdrop {
   position: fixed;
   inset: 0;
+  /* 顶栏留在遮罩之上、可点: #root 自身 z-index:1 会压住应用内所有元素的 z-index,
+     没法靠给顶栏加 z-index 盖过 portal 出来的遮罩 (8999). 只能让遮罩不覆盖顶栏,
+     这样抽屉开着时汉堡按钮仍能点 → 能切到左侧导航.
+     顶栏移动端高度是 3rem + 安全区 (见 ≤900px 的 .mobius-topnav), 不是桌面端 h-9 的 36px. */
+  top: calc(3rem + env(safe-area-inset-top, 0px));
   z-index: 8999;
   background: rgba(2, 6, 23, .52);
   -webkit-backdrop-filter: blur(2px);
@@ -5875,19 +5880,57 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
-/* 全屏抽屉变体: 从右侧滑入后铺满整个视口 (会话头部「查看项目蓝图」). */
-/* Full-screen variant: slides in from the right and covers the whole viewport. */
-.mobius-drawer--full {
+/* 左侧导航抽屉要压过右侧抽屉 / 底部弹窗: 三者 z-index 相同 (9000), 但 portal 到 body 的顺序
+   是左导航先、文件栏后, DOM 靠后的底部弹窗会盖住左导航. 打开左导航时若底部弹窗还没收起,
+   用户会看到「代码浏览」而不是导航. 这里把左导航抬到 9001, 恒在最上. */
+.mobius-drawer:not(.mobius-drawer--right):not(.mobius-drawer--bottom) {
+  z-index: 9001;
+}
+
+/* 底部半弹窗变体: 简易模式文件编辑栏在手机上从底部滑出 (约 65% 屏高),
+   保留顶部圆角与顶部把手感. 里面是 CodeConversationPane (文件树 + 编辑器), 它的根是
+   display:contents, 所以文件树/编辑器直接成了本抽屉的 flex 子项 —— 必须横向排 (row),
+   否则继承基类的 column 会把它们竖着叠, 编辑器被挤出屏幕, 只看到文件树看不到内容. */
+.mobius-drawer--bottom {
+  top: auto;
+  bottom: 0;
   left: 0;
   right: 0;
   width: 100%;
-  max-width: 100%;
-  border-left: 0 !important;
+  height: 65dvh;
+  max-width: none;
+  max-height: 65dvh;
+  flex-direction: row;
+  border-top: 1px solid var(--border-color-strong) !important;
   border-right: 0 !important;
-  transform: translateX(100%);
+  border-bottom: 0 !important;
+  border-radius: 16px 16px 0 0;
+  transform: translateY(100%);
+  padding-top: 0;
+  /* 底部弹窗不需要避开顶部刘海, 保留底部 Home 条 */
+  padding-bottom: env(safe-area-inset-bottom);
 }
-.mobius-drawer--full.mobius-drawer--open {
-  transform: translateX(0);
+.mobius-drawer--bottom.mobius-drawer--open {
+  transform: translateY(0);
+}
+
+/* 移动端文件编辑器单列交互: 文件树 / 编辑器 二选一全宽, 而不是并排的 190px 树 + 窄编辑器.
+   打开文件时切到编辑器 (cc-mobile-editor), 点「返回」回到文件树 (cc-mobile-list). */
+.cc-mobile-list > .mobius-resizable:not(.mobius-resizable--fill) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+.cc-mobile-list > .mobius-resizable--fill {
+  display: none !important;
+}
+.cc-mobile-editor > .mobius-resizable:not(.mobius-resizable--fill) {
+  display: none !important;
+}
+
+.mobius-drawer--bottom .mobius-drawer-close {
+  top: .7rem;
+  right: .7rem;
 }
 
 /* 抽屉关闭按钮: 浮在右上角 */
@@ -5993,43 +6036,6 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* ======================================================================
-   中栏被挤窄时同样纵向堆叠, 判据换成中栏自身宽度 (JS 量出后挂 .mobius-chat-body--narrow).
-   上面那条断的是「视口」宽度 —— 左侧会话栏与右侧文件编辑栏 (原生文件编辑器) 都是从
-   中栏身上吃宽度: 视口 1914px 时中栏可能只剩 ~780px, 媒体查询不触发, 68/32 分栏就把
-   两栏压到各自 min-width (360 + 224) 以下并向右溢出, 被文件编辑栏盖住/裁掉 ——
-   就是「原生文件编辑器打开时, 中间的对话&输入很难正常转为上下布局」.
-   规则与 @media(max-width:900px) 完全同源 (堆叠后中栏只放得下输入框, 输入框下面的
-   操作按钮带与 skill/memory 编辑区一律隐藏).
-   该 class 只加在标准分栏上 (layout='default'), 简易模式与代码对话模式本就是纵向堆叠.
-   ====================================================================== */
-.mobius-chat-body.mobius-chat-body--narrow {
-  flex-direction: column;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-history {
-  width: 100% !important;
-  flex: 1 1 0%;
-  min-width: 0 !important;
-  min-height: 0;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  /* 只保留输入框贴底: 不 flex-grow, 让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
-  flex: 0 0 auto;
-  min-height: 0;
-  border-left: 0 !important;
-  border-top: 1px solid var(--border-color) !important;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-actions,
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-side {
-  display: none !important;
-}
-.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-split-handle {
-  display: none !important;
-}
-
-/* ======================================================================
    代码对话模式: 强制 ChatArea 纵向堆叠 (历史 jsonl 在上、输入在下), 与视口宽度无关.
    镜像上面 @media(max-width:900px) 的规则, 仅在 .mobius-chat-body--stacked 时生效;
    !important 用于覆盖 .mobius-chat-history/.mobius-chat-input 的 inline width (68%/32%).
@@ -6098,11 +6104,45 @@ body.mobius-resizing .mobius-resizable-handle {
   -webkit-backdrop-filter: blur(22px);
   box-shadow: 0 20px 54px rgba(0, 0, 0, .18), inset 0 1px 0 color-mix(in srgb, white 7%, transparent) !important;
 }
+/* 欢迎页输入框卡片 (issue 2026-10-26, 配色参考 Codex):
+   近黑底上的中性深灰卡片 + 极淡边框 + 大圆角, 不吃背景 (Codex 卡片不透明),
+   阴影压到几乎无 —— 让输入框靠「表面 + 留白」而不是发光来分层. */
+[data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
+  border-radius: 26px !important;
+  background: rgba(255, 255, 255, .055) !important;
+  border: 1px solid rgba(255, 255, 255, .085) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3) !important;
+}
+.light [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
+  background: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, .10) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .06) !important;
+}
 .light .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"],
 .light [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"] {
   /* 浅色主题: 纯白卡片浮在浅灰页面上 (靠阴影分层, 不再叠灰罩) */
   background: #ffffff !important;
   box-shadow: 0 12px 32px rgba(15, 23, 42, .10), inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+}
+/* 欢迎页拖拽态: 边框色同样被 !important 接管, 这里单独放开 (issue 2026-10-26) */
+[data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"][data-drag-over="true"] {
+  border-color: rgba(96, 165, 250, .8) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .25), 0 1px 2px rgba(0, 0, 0, .3) !important;
+}
+.light [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"][data-drag-over="true"] {
+  border-color: rgba(37, 99, 235, .7) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .18), 0 1px 2px rgba(15, 23, 42, .06) !important;
+}
+/* 拖拽文件悬停: 蓝色光晕要压过上面两条 !important 阴影, 否则拖拽高亮看不见 (issue 2026-10-26) */
+.mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"][data-drag-over="true"],
+[data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"][data-drag-over="true"] {
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .28), 0 20px 54px rgba(0, 0, 0, .18) !important;
+}
+.light .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input [data-tour="session-chat-input"][data-drag-over="true"],
+.light [data-page="easy-mode"] .easy-welcome-card [data-tour="session-chat-input"][data-drag-over="true"] {
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .22), 0 12px 32px rgba(15, 23, 42, .10) !important;
 }
 .mobius-chat-body.mobius-chat-body--easy .mobius-chat-input textarea {
   font-size: var(--fs-2xl);
@@ -6594,12 +6634,20 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
-[data-page="easy-mode"] .easy-extension-grid,
-[data-page="easy-mode"] .easy-device-list {
+[data-page="easy-mode"] .easy-extension-grid {
   display: grid;
   max-width: 1050px;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
+  margin: 0 auto;
+}
+/* 设备列表用单列而不是卡片网格: 一行 = 一台设备, 右边对齐状态与操作,
+   像设置页那样一眼扫完; 卡片网格在只有一两台设备时右边全是空白. */
+[data-page="easy-mode"] .easy-device-list {
+  display: grid;
+  max-width: 1050px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin: 0 auto;
 }
 [data-page="easy-mode"] .easy-extension-card,
@@ -6631,6 +6679,14 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
+/* 徽标默认全部中性 (issue 2026-10-27): 原来按项目 id 哈希出 8 种颜色,
+   项目一多就是一屏彩虹, 颜色既不承载语义也不帮助识别 —— 改为统一中性底,
+   只在悬停时给一点强调色, 让"颜色"重新变成有意义的状态信号. */
+[data-page="easy-mode"] .easy-extension-card:hover:not(:disabled) .easy-extension-card__icon {
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 32%, transparent);
+}
 [data-page="easy-mode"] .easy-extension-card strong,
 [data-page="easy-mode"] .easy-extension-card small,
 [data-page="easy-mode"] .easy-device-row strong,
@@ -6639,9 +6695,166 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-device-row strong { overflow: hidden; color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 [data-page="easy-mode"] .easy-extension-card small,
 [data-page="easy-mode"] .easy-device-row small { overflow: hidden; margin-top: 4px; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
-[data-page="easy-mode"] .easy-device-row__status { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-device-row__status { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-sm); }
 [data-page="easy-mode"] .easy-device-row__status i { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--text-muted) 45%, transparent); }
 [data-page="easy-mode"] .easy-device-row__status.is-online i { background: #22c55e; }
+/* SSH 探测的第三种状态: 网络通但密钥没配好. 归到「离线」会让人以为机器挂了. */
+[data-page="easy-mode"] .easy-device-row__status.is-warn { color: #f59e0b; }
+[data-page="easy-mode"] .easy-device-row__status.is-warn i { background: #f59e0b; }
+/* 探测中: 流式扫描的中间态, 名字已知但连通性还没测出来. */
+[data-page="easy-mode"] .easy-device-row__status.is-pending { color: var(--text-muted); }
+[data-page="easy-mode"] .easy-device-row__status.is-pending i { animation: easy-device-probe 1.2s ease-in-out infinite; }
+@keyframes easy-device-probe {
+  0%, 100% { opacity: .3; }
+  50% { opacity: 1; }
+}
+/* 加载占位: 扫 SSH 主机要真连一次远端, 这段时间显示骨架而不是先闪一个空态. */
+[data-page="easy-mode"] .easy-device-row--skeleton { pointer-events: none; }
+[data-page="easy-mode"] .easy-device-skeleton__line {
+  display: block;
+  height: 10px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--bg-card-hover), color-mix(in srgb, var(--bg-card-hover) 65%, var(--text-muted) 18%), var(--bg-card-hover));
+  background-size: 220% 100%;
+  animation: easy-device-skeleton-pulse 1.4s ease-in-out infinite;
+}
+[data-page="easy-mode"] .easy-device-skeleton__line--title { width: 38%; }
+[data-page="easy-mode"] .easy-device-skeleton__line--sub { width: 22%; height: 8px; margin-bottom: 0; }
+[data-page="easy-mode"] .easy-device-skeleton__line:last-child { margin-bottom: 0; }
+@keyframes easy-device-skeleton-pulse {
+  0% { background-position: 220% 0; }
+  100% { background-position: -220% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-page="easy-mode"] .easy-device-skeleton__line,
+  [data-page="easy-mode"] .easy-device-row__status.is-pending i { animation: none; }
+}
+/* 客户端与服务端版本不一致 —— 该提示会影响能否正常协作, 不能埋在日志里. */
+[data-page="easy-mode"] .easy-device-row__warn {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, #f59e0b 42%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #f59e0b;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+/* 行内操作: 默认隐形, 悬停/聚焦才出现 —— 平时保持行的干净, 键盘 Tab 依然可达. */
+[data-page="easy-mode"] .easy-device-row__actions { display: inline-flex; flex-shrink: 0; align-items: center; gap: 2px; }
+[data-page="easy-mode"] .easy-device-row__act {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--text-muted);
+  transition: background-color .15s ease, color .15s ease;
+}
+[data-page="easy-mode"] .easy-device-row__act:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--text-primary); }
+[data-page="easy-mode"] .easy-device-row__act:disabled { cursor: not-allowed; opacity: .4; }
+[data-page="easy-mode"] .easy-device-row__act--danger:hover:not(:disabled) { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+[data-page="easy-mode"] .easy-device-row__rename {
+  width: 100%;
+  border: 1px solid var(--accent-primary);
+  border-radius: 7px;
+  padding: 2px 7px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+}
+/* 面板顶部: 一句话说明「设备能干什么」+ 唯一的主动作. */
+[data-page="easy-mode"] .easy-devices-toolbar {
+  display: flex;
+  max-width: 1050px;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto 18px;
+}
+[data-page="easy-mode"] .easy-devices-toolbar__hint { flex: 1; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; }
+[data-page="easy-mode"] .easy-devices-add-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, transparent);
+  border-radius: 9px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  color: var(--accent-primary);
+  font-size: var(--fs-md);
+  transition: background-color .15s ease, border-color .15s ease;
+}
+[data-page="easy-mode"] .easy-devices-add-btn:hover { background: color-mix(in srgb, var(--accent-primary) 20%, transparent); }
+[data-page="easy-mode"] .easy-devices-add {
+  max-width: 1050px;
+  margin: 0 auto 20px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+  border-radius: 12px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+}
+[data-page="easy-mode"] .easy-devices-add__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 12px; }
+[data-page="easy-mode"] .easy-devices-add__wide { grid-column: 1 / -1; }
+[data-page="easy-mode"] .easy-devices-add__grid label { display: block; min-width: 0; }
+[data-page="easy-mode"] .easy-devices-add__grid label span { display: block; margin-bottom: 4px; color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-add__grid label i { color: #ef4444; font-style: normal; }
+[data-page="easy-mode"] .easy-devices-add__grid input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+}
+[data-page="easy-mode"] .easy-devices-add__grid input:focus { border-color: var(--accent-primary); }
+[data-page="easy-mode"] .easy-devices-add__grid input:disabled { opacity: .5; }
+[data-page="easy-mode"] .easy-devices-add__actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+[data-page="easy-mode"] .easy-devices-add__submit {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, transparent);
+  border-radius: 9px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  color: var(--accent-primary);
+  font-size: var(--fs-md);
+  transition: background-color .15s ease;
+}
+[data-page="easy-mode"] .easy-devices-add__submit:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-primary) 22%, transparent); }
+[data-page="easy-mode"] .easy-devices-add__submit:disabled { cursor: not-allowed; opacity: .5; }
+[data-page="easy-mode"] .easy-devices-add__note { color: var(--text-muted); font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-error { margin-top: 10px; color: #ef4444; font-size: var(--fs-sm); }
+[data-page="easy-mode"] .easy-devices-error--page { max-width: 1050px; margin: 0 auto 12px; }
+[data-page="easy-mode"] .easy-devices-ok { margin-top: 10px; color: #22c55e; font-size: var(--fs-sm); }
+/* 两类设备分组: SSH 主机与协作设备的增删改规则不同, 混在一张列表里讲不清. */
+[data-page="easy-mode"] .easy-devices-groups { display: flex; max-width: 1050px; flex-direction: column; gap: 24px; margin: 0 auto; }
+[data-page="easy-mode"] .easy-devices-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+[data-page="easy-mode"] .easy-devices-group h2 span {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+[data-page="easy-mode"] .easy-devices-group__note { margin: 0 0 12px; color: var(--text-muted); font-size: var(--fs-sm); line-height: 1.5; }
 [data-page="easy-mode"] .easy-content-empty {
   display: flex;
   min-height: 220px;
@@ -6858,8 +7071,62 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
   line-height: 1.6;
   text-align: center;
 }
-[data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
-[data-page="easy-mode"] .easy-welcome-suggestions span { border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent); border-radius: 999px; padding: 9px 15px; color: var(--text-secondary); background: var(--bg-primary); font-size: var(--fs-md); }
+/* ===== 欢迎页问候区 / 项目行 / 能力胶囊 (issue 2026-10-26) =====
+ * 排版参考千问办公: 全部左对齐, 自上而下 品牌 → 问候 → 主标题 → 输入框 → 项目行 → 能力胶囊.
+ * 配色参考 Codex: 中性灰表面 + 弱化文字, 只有强调色留给首要动作. */
+[data-page="easy-mode"] .easy-welcome-greet { margin-bottom: 20px; }
+[data-page="easy-mode"] .easy-welcome-hello {
+  margin: 0 0 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+[data-page="easy-mode"] .easy-welcome-headline {
+  margin: 0;
+  text-align: left;
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -.02em;
+}
+[data-page="easy-mode"] .easy-welcome-brand { justify-content: flex-start; margin-bottom: 16px; }
+[data-page="easy-mode"] .easy-welcome-brand__name { font-size: 15px; color: var(--text-secondary); }
+[data-page="easy-mode"] .easy-welcome-brand__tag { font-size: var(--fs-xs); }
+/* 能力胶囊 (千问办公最底一排: 图标 + 场景名) */
+[data-page="easy-mode"] .easy-welcome-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; justify-content: flex-start; }
+/* 移动端: 六个场景胶囊挤在一排/两排, 图标贴着图标. 拉开间距, 让每颗胶囊都有呼吸空间. */
+@media (max-width: 768px) {
+  [data-page="easy-mode"] .easy-welcome-suggestions { gap: 10px; }
+  [data-page="easy-mode"] .easy-welcome-suggestions button { padding: 8px 15px; }
+}
+[data-page="easy-mode"] .easy-welcome-suggestions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, .085);
+  border-radius: 999px;
+  padding: 6px 13px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, .035);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+[data-page="easy-mode"] .easy-welcome-suggestions button:hover {
+  border-color: rgba(255, 255, 255, .17);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, .075);
+}
+[data-page="easy-mode"] .easy-welcome-suggestions button:focus-visible { outline: 2px solid color-mix(in srgb, #60a5fa 74%, transparent); outline-offset: 2px; }
+[data-page="easy-mode"] .easy-welcome-suggestions__icon { width: 14px; height: 14px; flex-shrink: 0; opacity: .9; }
+.light [data-page="easy-mode"] .easy-welcome-suggestions button {
+  border-color: rgba(15, 23, 42, .10);
+  background: #ffffff;
+}
+.light [data-page="easy-mode"] .easy-welcome-suggestions button:hover {
+  border-color: rgba(15, 23, 42, .18);
+  background: #f6f7f9;
+}
 [data-page="easy-mode"] .easy-content--context { display: flex; flex-direction: column; overflow: hidden; }
 [data-page="easy-mode"] .easy-content--context .easy-content-header { width: 100%; flex: 0 0 auto; }
 [data-page="easy-mode"] .easy-context-tabs { display: flex; width: 100%; max-width: 1050px; flex: 0 0 auto; gap: 4px; margin: 0 auto 10px; border-bottom: 1px solid var(--border-color); }
@@ -6868,6 +7135,14 @@ body:has([data-page="easy-mode"]) .easy-sidebar-footer button {
 [data-page="easy-mode"] .easy-context-body { width: 100%; max-width: 1050px; min-height: 0; flex: 1; overflow: auto; margin: 0 auto; padding: 4px 2px 30px; }
 
 body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: none; }
+/* 简易模式隐藏了 FAB, 助理面板不用再给 FAB 留出底部 5.75rem 的空间, 贴底更自然. */
+@media (max-width: 720px) {
+  body:has([data-page="easy-mode"]) .assistant-panel--compact,
+  body:has([data-page="easy-mode"]) .assistant-panel--expanded {
+    bottom: 1rem;
+    height: min(660px, calc(100vh - 3rem));
+  }
+}
 
 /* 简易模式的侧栏已承载工作上下文：保留品牌 Logo，隐藏其后的路由面包屑。 */
 [data-page="easy-mode"] .mobius-topnav-crumb > :not(:first-child) { display: none; }
@@ -7352,17 +7627,9 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   padding: 4px 0 4px 10px;
 }
 
-.display-files-card__row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
 .display-files-card__item {
   display: flex;
   min-width: 0;
-  flex: 1;
   align-items: center;
   gap: 9px;
   border: 1px solid var(--display-files-border);
@@ -7380,20 +7647,6 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 .display-files-card__meta strong { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__meta small { overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__size { display: inline-flex; min-width: 58px; justify-content: flex-end; color: var(--text-secondary); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
-.display-files-card__download {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--display-files-border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
-  cursor: pointer;
-}
-.display-files-card__download:hover { border-color: #38bdf8; background: var(--bg-hover); color: var(--text-primary); }
 .display-files-card--easy { margin-left: 8px; }
 
 /* ===== 简易模式输入框底部按钮样式 (issue 2026-10-13 用户截图对齐) =====
@@ -7446,10 +7699,6 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 @keyframes easy-stop-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0), 0 1px 2px rgba(0,0,0,.12); }
   50% { box-shadow: 0 0 0 5px rgba(239,68,68,.22), 0 1px 2px rgba(0,0,0,.12); }
-}
-/* 完全访问状态 chip: 橙色盾牌 + 文字 */
-.easy-context-access-chip {
-  line-height: 1;
 }
 
 /* ===== 输入框流光描边 (方案 5, issue 2026-10-17) =====
@@ -7525,4 +7774,210 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   .easy-input-glow {
     animation: none;
   }
+}
+
+/* ===== 统一键盘焦点环 (issue 2026-10-23, impeccable P0) =====
+ * 全站图标按钮此前缺 focus-visible, 键盘 Tab 导航看不到焦点.
+ * 这里给所有图标按钮统一 2px accent 环, 与 jsonl-icon-button 既有风格一致. */
+.easy-icon-btn:focus-visible,
+.easy-send-btn:focus-visible,
+.easy-project-trigger:focus-visible,
+.easy-sidebar-nav:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-tools button:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-footer button:focus-visible,
+body:has([data-page="easy-mode"]) .easy-sidebar-session__action:focus-visible,
+[data-testid="easy-session-tool-menu"] button:focus-visible {
+  outline: 2px solid color-mix(in srgb, #60a5fa 74%, transparent);
+  outline-offset: 2px;
+}
+
+/* ===== 简易模式输入框 · 移动端 (issue 2026-10-29) =====
+ * 手机窄屏下输入框底行站了 8 个控件 (工具菜单 + 模型 + 设备 + 附件/语音/加急/发送/终止),
+ * 28px 的图标按钮既难点又挤. 移动端把纯图标按钮的触控热区拉到 36px, 并收起桌面专属的
+ * 快捷键提示行 (Ctrl/⌘+V / ↑键回溯 手机用不上, 显示出来只会横向截断).
+ * 模型 pill 是文字按钮 (有 h-9), 不套 min-width —— 保留 min-w-0 让它按需收缩,
+ * 名称过长由 truncate 截断, 否则 375px 下会跟 8 个控件抢宽度抢到只剩一个图标. */
+@media (max-width: 768px) {
+  /* 桌面快捷键提示行: 手机隐藏 */
+  .easy-session-input-hint { display: none; }
+  /* 纯图标按钮触控热区: min-height/min-width 会盖过 h-7/w-7 的固定 28px */
+  [data-page="easy-mode"] .easy-session-chat-input .easy-icon-btn:not(.easy-icon-btn--model),
+  [data-page="easy-mode"] .easy-session-chat-input .easy-send-btn {
+    min-height: 36px;
+    min-width: 36px;
+  }
+  /* 模型 pill 只留模型名, 隐藏渠道副标签 (· Claude Code), 避免撑宽挤掉动作键 */
+  .easy-model-sub { display: none; }
+  /* 会话内底行右侧控件收紧间距 (12px → 6px): 运行中会多出 ⚡/■ 两个键,
+     7 个控件挤一行会把模型 pill 挤成 16px, 收紧后能给模型名腾出更多宽度 */
+  [data-page="easy-mode"] .easy-session-chat-input .easy-session-input-right {
+    gap: 6px;
+  }
+  /* 记忆和技能的 17/17 计数在手机上隐藏, 给右侧动作键让出宽度 */
+  .easy-skill-memory-count { display: none; }
+  /* 欢迎页输入框底行换行成两行: 配置条 (项目/任务/记忆和技能) 一行, 动作键一行.
+     原来 8 个控件挤在一行, 项目选择器被挤成只有图标看不到. */
+  [data-mode="create_session_mode"] .easy-session-input-row {
+    flex-wrap: wrap;
+    height: auto;
+    padding-top: 8px;
+  }
+  [data-mode="create_session_mode"] .easy-session-input-left {
+    width: 100%;
+  }
+}
+
+/* ===== 弹窗交互规范 (issue 2026-10-23, impeccable) =====
+ * 统一弹窗进出动画: popover 贴边弹层 fade+上滑, modal 遮罩层 fade + 内容 scale.
+ * 时长 160ms ease-out (impeccable 产品动效 150-250ms). */
+.easy-popover-in {
+  transform-origin: left bottom;
+  animation: easy-popover-in .16s ease-out;
+}
+@keyframes easy-popover-in {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.easy-modal-overlay-in {
+  animation: easy-fade-in .16s ease-out;
+}
+.easy-modal-panel-in {
+  transform-origin: center;
+  animation: easy-modal-in .16s ease-out;
+}
+@keyframes easy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes easy-modal-in {
+  from { opacity: 0; transform: scale(.97) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .easy-popover-in, .easy-modal-overlay-in, .easy-modal-panel-in { animation: none; }
+}
+
+/* ===== 移动端选择器 actionsheet (issue 2026-10-29) =====
+ * 项目 / 模型 / 会话工具 / 运行设备 四个选择器桌面端是贴着触发按钮向上弹的 popover,
+ * 手机上改成从底部滑出的 actionsheet: 全宽、顶部圆角、限高滚动, 符合移动端选择菜单的习惯. */
+@keyframes easy-actionsheet-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 768px) {
+  [data-testid="easy-session-project-menu"],
+  [data-testid="easy-session-model-picker"],
+  [data-testid="easy-session-tool-menu"],
+  [data-testid="easy-session-device-picker"] {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-height: 72dvh;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: 0 !important;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.4) !important;
+    animation: easy-actionsheet-in .22s cubic-bezier(.2, .8, .2, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* 搜索框 / 头部不随圆角裁掉 */
+  [data-testid="easy-session-project-menu"] > :first-child,
+  [data-testid="easy-session-model-picker"] > :first-child,
+  [data-testid="easy-session-tool-menu"] > :first-child,
+  [data-testid="easy-session-device-picker"] > :first-child {
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+  }
+  /* 记忆和技能 (SkillMemoryPicker) 桌面端是居中弹窗, 手机上改成底部 actionsheet.
+     注意 ≤480px 有一条更具体的「居中模态改顶部对齐」规则 (见 480px 媒体查询),
+     会盖过这里的 align-items, 故必须 !important. */
+  [data-testid="skill-memory-overlay"] {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+  [data-testid="skill-memory-panel"] {
+    width: 100%;
+    max-width: none;
+    max-height: 72dvh;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ===== 列表空态规范 (issue 2026-10-23, impeccable) =====
+ * 弹窗/下拉内的小空态统一为「图标 + 一句说明」, 替代零散纯文字. */
+.easy-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.easy-list-empty svg {
+  color: var(--text-muted);
+  opacity: .45;
+}
+.easy-list-empty .easy-list-empty__action {
+  margin-top: 4px;
+  color: var(--accent-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.easy-list-empty .easy-list-empty__action:hover { text-decoration: underline; }
+
+/* ===== 工作区面板 (issue 2026-10-23) =====
+ * 搜索框 + 项目/拓展分区标题 + 首字母色块图标 + 会话计数徽标 */
+[data-page="easy-mode"] .easy-workspace-search {
+  position: relative;
+  max-width: 1050px;
+  margin: 0 auto 18px;
+}
+[data-page="easy-mode"] .easy-workspace-search input {
+  width: 100%;
+  height: 36px;
+  padding: 0 44px 0 36px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  outline: none;
+  transition: border-color .15s ease;
+}
+[data-page="easy-mode"] .easy-workspace-search input:focus { border-color: var(--accent-primary); }
+[data-page="easy-mode"] .easy-workspace-section {
+  max-width: 1050px;
+  margin: 0 auto 22px;
+}
+[data-page="easy-mode"] .easy-workspace-section h2 {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+[data-page="easy-mode"] .easy-workspace-section h2 span {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--fs-sm);
+}
+[data-page="easy-mode"] .easy-workspace-section .easy-list-empty { border: 1px dashed color-mix(in srgb, var(--border-color) 70%, transparent); border-radius: 11px; }
+[data-page="easy-mode"] .easy-extension-card .easy-workspace-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+  line-height: 20px;
 }

@@ -97,6 +97,13 @@ type ResizablePanelProps = {
   'data-tour'?: string
   'data-testid'?: string
   children: ReactNode
+  // 右侧栏在移动端也走抽屉 (从左/右侧滑入覆盖内容, 不占位). 左侧栏的开合由 store.mobileNavOpen
+  // 统一驱动 (汉堡按钮); 右侧栏 (如简易模式文件编辑栏) 的开合各自不同, 由调用方传入.
+  mobileOpen?: boolean
+  onMobileClose?: () => void
+  // 嵌套在另一个移动端抽屉里的面板要关掉抽屉化: 否则内外两层都变抽屉,
+  // 内层 (如文件侧栏里的文件树) 会作为「关闭的抽屉」渲染到屏幕外, 打开外抽屉什么也看不到.
+  noMobileDrawer?: boolean
 }
 
 function clampWidth(value: number, min: number, max: number) {
@@ -127,6 +134,9 @@ export function ResizablePanel({
   'data-tour': dataTour,
   'data-testid': dataTestId,
   children,
+  mobileOpen,
+  onMobileClose,
+  noMobileDrawer = false,
 }: ResizablePanelProps) {
   const [width, setWidth] = useState<number>(() => readStoredWidth(storageKey, defaultWidth, minWidth, maxWidth))
   const isMobile = useIsMobile()
@@ -161,10 +171,12 @@ export function ResizablePanel({
   }, [storageKey])
 
   // 路由变化 (例如在抽屉里点了一个项目) 时自动收起抽屉.
+  // 简易模式的面板/会话切换只改 ?panel= / ?session= 等 query (pathname 不变),
+  // 所以这里必须同时监听 search, 否则点了「新任务/全局纵观/跨设备」抽屉还开着.
   const location = useLocation()
   useEffect(() => {
     setMobileNavOpen(false)
-  }, [location.pathname, setMobileNavOpen])
+  }, [location.pathname, location.search, setMobileNavOpen])
 
   // Esc 键收起抽屉
   useEffect(() => {
@@ -269,7 +281,7 @@ export function ResizablePanel({
   }, [handleMouseMove, handleMouseUp])
 
   // ===== 移动端 + 左侧栏: 渲染成从左滑入的抽屉 (portal 到 body, 避免被父级 overflow/transform 裁切) =====
-  if (isMobile && side === 'left') {
+  if (isMobile && side === 'left' && !noMobileDrawer) {
     const drawer = (
       <>
         {mobileNavOpen && (
@@ -295,6 +307,48 @@ export function ResizablePanel({
             className="mobius-drawer-close"
             onClick={() => setMobileNavOpen(false)}
             aria-label="关闭侧栏"
+            title="关闭"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          {children}
+        </aside>
+      </>
+    )
+    return createPortal(drawer, document.body)
+  }
+
+  // ===== 移动端 + 右侧栏: 从底部滑出的半弹窗 (覆盖内容不占位), 开合由调用方 mobileOpen 驱动.
+  // 桌面端右侧栏仍走固定宽度 flex 面板; 手机上固定宽度的文件栏会把对话挤到只剩一条缝,
+  // 所以改成底部半弹窗 (issue 2026-10-29). =====
+  if (isMobile && side === 'right' && !noMobileDrawer) {
+    const open = mobileOpen ?? false
+    const close = onMobileClose ?? (() => {})
+    const drawer = (
+      <>
+        {open && (
+          <div className="mobius-drawer-backdrop" onClick={close} aria-hidden="true" />
+        )}
+        <aside
+          data-tour={dataTour}
+          data-testid={dataTestId}
+          className={[
+            'mobius-resizable',
+            'mobius-drawer',
+            'mobius-drawer--bottom',
+            open ? 'mobius-drawer--open' : '',
+            className || '',
+          ].filter(Boolean).join(' ')}
+          style={{ ...style }}
+          aria-hidden={!open}
+        >
+          <button
+            type="button"
+            className="mobius-drawer-close"
+            onClick={close}
+            aria-label="关闭文件编辑栏"
             title="关闭"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
