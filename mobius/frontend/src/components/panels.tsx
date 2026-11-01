@@ -8106,7 +8106,8 @@ function AdminTextRedactionPanel() {
             临时用于录屏隐藏敏感文字，规则只保存在当前浏览器，可随时清空。关闭后全部规则都会保留，不会被删除。
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* 移动端这一排按钮有 6 个 (隐藏模式/规则数/导出/保存/推全/清空), 不换行会横向溢出 */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             role="switch"
