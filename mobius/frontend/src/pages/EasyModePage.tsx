@@ -1100,7 +1100,8 @@ export default function EasyModePage() {
                   <MobiusLogo size={30} className="easy-welcome-brand__logo" />
                   <span className="easy-welcome-brand__name">Mobius</span>
                   <span className="easy-welcome-brand__divider" aria-hidden="true" />
-                  <span className="easy-welcome-brand__tag">多智能体 · 自进化</span>
+                  {/* data-text-redaction-ignore: 欢迎页定位语是固定品牌文案, 不参与管理员「文字替换隐藏」规则 */}
+                  <span className="easy-welcome-brand__tag" data-text-redaction-ignore="true">多智能体 · 自进化</span>
                 </div>
                 <p className="easy-welcome-hello">{timeGreeting(user?.display_name)}</p>
                 <h1 className="easy-welcome-headline">有什么需要我搞定的？</h1>
