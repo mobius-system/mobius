@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Electron 编译与发布蓝图 · Mobius</title>
+<style>
+:root{color-scheme:light;--bg:#f5f3ee;--paper:#fffefa;--ink:#212d31;--muted:#586970;--line:#d5dedb;--accent:#126959;--soft:#e7f2ed;--code:#edf0ed} :root[data-theme=dark]{color-scheme:dark;--bg:#111a1e;--paper:#19252a;--ink:#e5ece8;--muted:#a5b6b8;--line:#35474c;--accent:#84d5b8;--soft:#203b34;--code:#101b20}
+*{box-sizing:border-box;min-width:0}html{background:var(--bg);scroll-behavior:smooth}body{overflow-wrap:anywhere;margin:0;color:var(--ink);font:16px/1.75 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1080px;margin:auto;padding:56px 32px 72px}.eyebrow{font-size:12px;letter-spacing:.2em;color:var(--accent);font-weight:750}h1{font-size:clamp(30px,5vw,52px);line-height:1.2;letter-spacing:-.04em;margin:16px 0}h2{font-size:25px;margin:0 0 16px;line-height:1.4}h3{font-size:17px;margin:0 0 8px}p{margin:10px 0 14px}.meta,.footer{color:var(--muted);font-size:13px}.box{padding:20px 24px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}.ok{background:var(--soft);border-left:4px solid var(--accent)}.toc{columns:2;list-style:none;padding:18px 0 0;margin:0}.toc a{color:var(--accent);text-decoration:none;display:block;padding:5px 0}section{margin-top:40px;padding-top:30px;border-top:1px solid var(--line);scroll-margin-top:22px}.num{color:var(--accent);font-size:14px;margin-right:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.tag{display:inline-block;color:var(--accent);background:var(--soft);border-radius:5px;padding:2px 8px;font-size:12px}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.flow>div{border:1px solid var(--line);border-top:3px solid var(--accent);padding:16px;background:var(--paper);border-radius:8px}.flow b{display:block}.flow small{color:var(--muted);display:block;overflow-wrap:anywhere}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px}tbody tr:nth-child(2n){background:var(--paper)}code{font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}pre{padding:18px;background:var(--code);border:1px solid var(--line);border-radius:8px;overflow:auto;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre}pre code{overflow-wrap:normal}.note{color:var(--muted);font-size:14px}details{margin-top:14px}summary{cursor:pointer;color:var(--accent);font-weight:600}.footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line)}#theme{position:fixed;right:22px;bottom:22px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:12px 16px;border-radius:30px;cursor:pointer;box-shadow:0 5px 20px #0001}a{color:var(--accent)}@media(max-width:700px){main{padding:30px 18px 70px}.grid,.flow{grid-template-columns:1fr}.toc{columns:1}h2{font-size:22px}th,td{padding:9px}.box{padding:17px}}
+</style></head><body><main>
+<div class="eyebrow">MOBIUS / RELEASE ENGINEERING</div><h1>Electron 编译与发布蓝图</h1><p class="meta">源码核对：2026-11-01 · 基线 b54915a5 · 适用桌面端 0.3.75 及当前 apps-v 发布流程 · 文档状态：操作指南</p>
+<div class="box ok"><strong>从同一份源码，交付可校验、可下载的桌面客户端。</strong><p>先在对应平台编译并验收安装包，再用统一发布清单登记版本、下载源和 SHA-256；GitHub Actions 校验这些文件并创建 Release，Mobius 服务器同步后提供站内下载。</p></div>
+<ul class="toc"><li><a href="#map">01 · 发布链路与职责</a></li><li><a href="#build">02 · 选定版本并编译</a></li><li><a href="#verify">03 · 验收与签名</a></li><li><a href="#publish">04 · 准备清单并发布</a></li><li><a href="#delivery">05 · 分发、核验与回退</a></li><li><a href="#trouble">附录 · 当前仓库边界与排错</a></li></ul>
+<section id="map"><h2><span class="num">01</span>发布链路与职责</h2><div class="flow"><div><b>① 源码与版本</b><small>mobius/desktop/package.json<br>electron/ · src/</small></div><div><b>② 平台安装包</b><small>build.py:build_electron<br>electron-builder.yml</small></div><div><b>③ GitHub Release</b><small>mobius/apps-release.json<br>.github/workflows/apps-release.yml</small></div><div><b>④ 站内下载</b><small>backend/services/sync-desktop-builds.js<br>/desktop-builds/manifest.json</small></div></div>
+<p>Electron 主进程、预加载脚本和登录页编译到 <code>app.asar</code>；Python 通过 <code>extraResources</code> 随安装包分发。工作台页面由服务器提供。发布壳代码需要新安装包；更新工作台页面走服务器部署。</p><div class="grid"><div class="box"><span class="tag">本机 / 单站点</span><p><code>build.py</code> 编译后将安装包复制到 <code>mobius/desktop-builds/</code> 并生成本地清单，本站即可提供文件下载。</p></div><div class="box"><span class="tag">统一 Release / 多站点</span><p><code>apps-release.yml</code> 下载已构建文件并核验，上传到 GitHub；各服务器从统一 Release 同步。桌面版、Android 和 iOS 链接共同写入发布清单。</p></div></div></section>
+<section id="build"><h2><span class="num">02</span>选定版本并编译</h2><p>所有平台使用同一源码提交。确定新版本 <code>V</code> 后，同步更新桌面端 <code>package.json</code> 与 <code>package-lock.json</code>，通过 PR 合入 GitHub main；从该合并提交构建。下例中的版本和标签均为示例，执行前替换为本次选定值。</p>
+<pre><code># 在发布分支更新版本；依赖安装与外网下载使用专用 tmux 窗口
+V=0.3.76
+npm --prefix mobius/desktop version "$V" --no-git-tag-version
+npm ci --prefix mobius/desktop
+npm run build --prefix mobius/desktop
+node mobius/desktop/tests/aimux-lifecycle.test.cjs
+npm run test:aimux --prefix mobius/tui</code></pre>
+<div class="table"><table><thead><tr><th>目标</th><th>构建位置</th><th>命令（项目根目录）</th><th>分发格式</th></tr></thead><tbody><tr><td>Windows x64</td><td>当前 Linux 构建机可交叉打包</td><td><code>python3 build.py --build-electron --targets win-x64</code></td><td>ZIP</td></tr><tr><td>macOS Apple Silicon</td><td>具备签名和公证凭据的 macOS</td><td><code>python3 build.py --build-electron --targets mac-arm64</code></td><td>DMG + ZIP</td></tr><tr><td>macOS Intel</td><td>具备签名和公证凭据的 macOS</td><td><code>python3 build.py --build-electron --targets mac-x64</code></td><td>DMG + ZIP</td></tr></tbody></table></div>
+<p class="note">各目标顺序构建，或在独立 checkout 中构建：它们共用 <code>resources/python/</code>。已有匹配架构的 <code>resources/python-&lt;target&gt;/</code> 时可加 <code>--skip-fetch-python</code>。在隔离的发布工作区执行构建，再将验收通过的产物交给分发目录。</p>
+<details><summary>构建产物、日志和网络约定</summary><pre><code>原始安装包  mobius/desktop/release/Mobius Desktop-V-win-x64.zip
+分发安装包  mobius/desktop-builds/mobius-desktop-V-win-x64.zip
+本地清单    mobius/desktop-builds/manifest.json
+打包日志    /tmp/mobius-eb-win-x64.log</code></pre><p>依赖和 Python 首次下载放在新建 tmux 窗口中执行；外网下载低于 500 KB/s 时使用 <code>proxychains 命令</code> 重试。代理通过命令包装配置。<code>build.py</code> 直接调用 electron-vite，所以发布前单独执行上面的 <code>npm run build</code> 完成 TypeScript 检查。</p></details></section>
+<section id="verify"><h2><span class="num">03</span>验收与签名</h2><div class="grid"><div class="box"><h3>通用运行验收</h3><p>解压或安装本次产物，验证登录、工作台、AIMUX 在线、关闭后重新开启、退出后 watchdog 回收，并保留状态面板截图。检查包内版本及 Python 架构与目标一致。</p><pre><code>python3 scripts/desktop_manifest.py validate \
+  --dir mobius/desktop-builds</code></pre></div><div class="box"><h3>macOS 独立验收</h3><p>使用 Developer ID Application 签名与 Apple 公证。每种架构构建后，立即对该目标的输出目录运行校验脚本；六项检查通过后再进入公开分发。</p><pre><code>bash scripts/verify-mac-build.sh "$V" arm64 \
+  mobius/desktop/release/mac-arm64
+# Intel：目标目录通常为 release/mac，arch 参数为 x64</code></pre></div></div>
+<p class="note">Mac 检查覆盖签名完整性、签名身份及 Team、Gatekeeper、公证票据、主程序架构、内置 Python 架构与启动。按实际输出目录传参，确保目录中只有本次目标应用。</p><details><summary>签名凭据配置位置</summary><p>构建机或 CI 密钥存储提供 <code>CSC_LINK</code>、<code>CSC_KEY_PASSWORD</code>。公证可使用 <code>APPLE_ID</code> + <code>APPLE_APP_SPECIFIC_PASSWORD</code>，或 <code>APPLE_API_KEY</code> + <code>APPLE_API_KEY_ID</code> + <code>APPLE_API_ISSUER</code>。具体 Team 和 entitlements 以 <code>mobius/desktop/electron-builder.yml</code> 为准。文档与发布日志只记录检查结果。</p></details></section>
+<section id="publish"><h2><span class="num">04</span>准备清单并发布</h2><p><strong>先上传验收后的安装包，取得 GitHub runner 可访问的下载地址。</strong> 然后更新 <code>mobius/apps-release.json</code>：设置新 <code>releaseTag</code>（以 <code>apps-v</code> 开头）、标题、<code>desktop.version</code>，逐个登记 <code>platform / arch / format / file / url / size / sha256</code>。每个 URL 必须返回对应文件的真实内容。</p>
+<p>统一流程也读取 <code>mobile</code> 和 <code>ios</code>。本次只升级桌面端时，可保留经复核仍可下载的移动端文件与 TestFlight 链接。只发布 Windows 时，桌面清单列本次 Windows 文件；发布完整桌面版时，收齐同版本五个文件：Windows ZIP 与两种 Mac 架构的 DMG、ZIP。</p>
+<details open><summary>发布前离线优先校验</summary><pre><code># 使用新的输出目录；本地缺少的文件会按配置 URL 下载
+python3 scripts/prepare-apps-release.py \
+  --config mobius/apps-release.json \
+  --output /tmp/mobius-release-check-NEW \
+  --source-dir mobius/desktop-builds \
+  --source-dir mobius/mobile-builds
+cd /tmp/mobius-release-check-NEW
+sha256sum -c SHA256SUMS.txt</code></pre><p class="note">准备脚本只检查配置所列文件的字节数与 SHA-256。发布人同时复核桌面清单版本、文件名、平台覆盖范围与包内版本。脚本生成 <code>apps-manifest.json</code>、<code>desktop-manifest.json</code>、<code>mobile-manifest.json</code>、校验文件及发布说明。</p></details>
+<p>将最终发布清单通过 PR 合入 main。确认 main 的发布标签与清单完全一致后，选择一种触发方式：</p><pre><code># 方式 A：在已核验的合并提交上打标签；推送 tag 触发发布
+RELEASE_TAG=apps-v2026.11.01
+RELEASE_COMMIT=REPLACE_WITH_REVIEWED_MERGE_SHA
+git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
+git push origin "refs/tags/$RELEASE_TAG"
+
+# 方式 B：手动运行当前分支上的工作流，按配置中的 tag 发布
+gh workflow run apps-release.yml -R mobius-system/mobius \
+  --ref main -f draft=false
+gh run list -R mobius-system/mobius --workflow apps-release.yml --limit 5
+gh run watch RUN_ID -R mobius-system/mobius --exit-status</code></pre>
+<p class="note">GitHub 仓库须已启用该工作流，且清单引用的下载源可被 runner 访问。工作流使用 <code>GITHUB_TOKEN</code> 的 contents:write 权限；源码进入 main 走 PR，发布命令只推送已核验的 tag。</p></section>
+<section id="delivery"><h2><span class="num">05</span>分发、核验与回退</h2><p>GitHub Release 发布后，配置了 <code>DESKTOP_WEBHOOK_URL</code> 与 <code>DESKTOP_WEBHOOK_TOKEN</code> 的工作流会请求 <code>POST /api/webhook/desktop-sync</code>。服务器也会在启动约 30 秒后检查，随后默认每 <strong>60 分钟</strong>检查一次；间隔由 <code>MOBIUS_DESKTOP_SYNC_INTERVAL_MIN</code> 控制。</p><p>同步服务优先选择公开的 <code>apps-v*</code> Release，下载桌面文件，将 <code>desktop-manifest.json</code> 保存为本地 <code>manifest.json</code>。用户下载界面从这个清单显示可用平台。</p>
+<pre><code>gh release view "$RELEASE_TAG" -R mobius-system/mobius \
+  --json url,isDraft,assets
+
+SITE=https://YOUR_MOBIUS_SITE
+curl -fsS "$SITE/desktop-builds/manifest.json"
+curl -fI "$SITE/desktop-builds/mobius-desktop-$V-win-x64.zip"
+# 完整下载后再核对 SHA-256；下载操作放在专用 tmux 窗口</code></pre>
+<div class="box ok"><strong>发布完成的证据</strong><p>工作流成功；Release 标签、版本、文件集合正确；每个分发站点的清单和安装包一致；完整下载文件的哈希匹配；Windows / macOS 对应目标的真实启动验收通过。记录源码 SHA、构建平台、签名结果、Release 地址和校验值。</p></div>
+<p>回退采用新的 <code>apps-v*</code> 发布标签，清单明确指向已验收的旧版本安装包。这样服务器按相同流程同步，历史版本和校验记录也能继续追踪。仅修改本机清单时，应同时考虑下一次自动同步的覆盖行为。</p><p class="note">服务器源码变动按项目约定先 commit，再执行 <code>python3 start.py --detach</code>。安装包目录由静态路由提供；安装在用户电脑上的 Electron 通过新包安装或受控替换 <code>app.asar</code> 生效。</p></section>
+<section id="trouble"><h2>附录 · 当前仓库边界与排错</h2><div class="table"><table><thead><tr><th>症状 / 现状</th><th>原因</th><th>处理</th></tr></thead><tbody>
+<tr><td>触发 CI 后没有编译新代码</td><td>当前只有统一发布工作流，下载并校验预构建文件。</td><td>先在构建机产出包，再更新 apps-release.json。源码注释提到的 desktop-release.yml 当前不存在。</td></tr>
+<tr><td>直接运行工作流会发旧包</td><td>当前 apps-release.json 仍为 apps-v2026.09.19、桌面 0.0.30；源码 package.json 已是 0.3.75。</td><td>发布前更新并复核清单；本文未修改发布配置、创建标签或触发 Release。</td></tr>
+<tr><td>macOS 打包成功但用户打不开</td><td>签名 / 公证凭据缺失时打包器可能仍以 0 退出；build.py 没有自动调用独立验收脚本。</td><td>Mac 构建在隔离目录进行，执行 verify-mac-build.sh，确认通过后再公开文件。开发模式包不进入正式分发。</td></tr>
+<tr><td>Windows 显示未知发布者</td><td>当前配置 signAndEditExecutable:false，生成未签名 ZIP。</td><td>当前流程按未签名包交付；如需签名版，另配 Windows 签名环境与发布验证。</td></tr>
+<tr><td>同版本新包下载到旧内容</td><td>同名覆盖遇到缓存；同步器按文件大小跳过已有包。</td><td>发布新版本和唯一文件名，核对完整下载 SHA-256。当前 JS 同步器并未自动复验 SHA-256。</td></tr>
+<tr><td>旧同步脚本拒绝 apps-v 标签</td><td>scripts/sync-desktop-builds.py 只接受 desktop-v。</td><td>统一发布使用后端 JS 同步服务或 webhook；旧 Python 脚本用于旧标签兼容路径。</td></tr>
+<tr><td>draft=true 没有保护已有 Release</td><td>工作流只有创建分支读取 draft；已有标签会执行 upload --clobber 和 edit --latest。</td><td>使用全新标签建立草稿，在发布前核实该标签不存在。已有草稿转公开应显式发布并复核。</td></tr>
+<tr><td>Webhook 返回 200 但文件不齐</td><td>同步结果可能含 failed；请求 body 中 tag 不用于固定同步目标。</td><td>检查返回 JSON、实际选择的公开 Release、每个站点的清单和文件；等待结果全部通过。</td></tr>
+</tbody></table></div></section>
+<div class="footer">核对来源：build.py · mobius/desktop/package.json · electron-builder.yml · scripts/verify-mac-build.sh · scripts/desktop_manifest.py · scripts/prepare-apps-release.py · .github/workflows/apps-release.yml · mobius/apps-release.json · mobius/backend/services/sync-desktop-builds.js · mobius/server.js<br>此蓝图记录当前可执行流程；版本示例与命令仅供发布时替换使用。</div>
+</main><button id="theme" type="button" aria-label="切换明暗主题">◐ 明暗</button><script>
+(function(){var root=document.documentElement;var theme;try{theme=localStorage.getItem('electron-release-theme')}catch(e){}root.dataset.theme=theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.getElementById('theme').onclick=function(){var next=root.dataset.theme==='dark'?'light':'dark';root.dataset.theme=next;try{localStorage.setItem('electron-release-theme',next)}catch(e){}}})();
+</script></body></html>
