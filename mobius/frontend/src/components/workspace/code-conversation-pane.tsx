@@ -214,7 +214,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
   const [remoteSourcesLoaded, setRemoteSourcesLoaded] = useState(false)
   const [remoteSourcesError, setRemoteSourcesError] = useState('')
-  const [remoteDiscoveryWarning, setRemoteDiscoveryWarning] = useState('')
   const manualRemoteRef = useRef(false)
   useEffect(() => { manualRemoteRef.current = false }, [projectId, sessionId, sessionDeviceId])
   const [remoteSourcesVersion, setRemoteSourcesVersion] = useState(0)
@@ -327,7 +326,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         if (cancelled) return
         const rows = Array.isArray(data?.remotes) ? data.remotes.filter((row: any) => row?.name) : []
         setRemoteSources(rows)
-        setRemoteDiscoveryWarning(data?.discovery_error || '')
         // 会话绑定的 bridge 设备恒在列表首位 (后端标 bridge:true), 自动挂载且第一优先。
         const bridgeName = rows[0]?.bridge === true ? rows[0].name : ''
         setRemoteName(current => {
@@ -1341,7 +1339,6 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 </button>
               )}
             </div>
-            {remoteDiscoveryWarning && <div role="status" className="mt-1 text-[length:var(--fs-xs)] text-amber-400">{remoteDiscoveryWarning}</div>}
             {source === 'remote' && remoteRootError && (
               <div className="mt-1 text-[length:var(--fs-xs)] text-red-400">{remoteRootError}</div>
             )}

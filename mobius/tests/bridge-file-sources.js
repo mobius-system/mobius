@@ -36,17 +36,26 @@ async function main(){
  Sessions.insert({session_id:'s',scope_type:'research',research_id:'r',project_id:'p',user_id:'reader',name:'S',session_key:'web:reader:s',pc_client_metadata:{aimux_id:'bound-device',add_remote_aimux_mcp:true,local_path:'/work'}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const base=`http://127.0.0.1:${server.address().port}/api/projects/p`;
- async function request(url,user='admin'){const response=await fetch(base+url,{headers:{authorization:`Bearer ${jwt.sign({id:user,role:user==='admin'?'admin':'user'},process.env.JWT_SECRET)}`}});return {status:response.status,body:await response.json()};}
- let r=await request('/remote-file-sources');assert.equal(r.status,200);assert.equal(r.body.remotes.length,2);assert.equal(r.body.remotes.find(x=>x.name==='old-device').status,'offline');assert.equal(r.body.remotes.find(x=>x.name==='new-device').status,'connected');
- r=await request('/remote-file-sources','reader');assert.deepEqual(r.body.remotes.map(x=>x.name),['old-device']);
- r=await request('/remote-files?remote=new-device');assert.equal(r.status,200);assert.equal(r.body.entries[0].name,'hello.txt');
- r=await request('/remote-file?remote=new-device&path=/hello.txt');assert.equal(r.body.content,'hello');
- r=await request('/remote-files?remote=old-device');assert.equal(r.status,400);assert.match(r.body.error,/连接已失效/);
- r=await request('/remote-files?remote=new-device','reader');assert.equal(r.status,400);
- r=await request('/remote-files?session=s&remote=bound-device','reader');assert.equal(r.status,200);assert.equal(r.body.root_path,'/work');
- r=await request('/remote-files?remote=unknown-device');assert.equal(r.status,400);
- remotes.push({name:'second-device',status:'connected'});r=await request('/remote-file-sources');assert(r.body.remotes.some(x=>x.name==='second-device'));
- remotes=[];r=await request('/remote-files?remote=new-device');assert.equal(r.status,400);
- console.log('PASS real routes + bridge registry + CLI: discovery, dedup, stale status, browse/read, refresh, session scope and unauthorized device rejection');
+ async function request(url,user='admin',options={}){const response=await fetch(base+url,{...options,headers:{'Content-Type':'application/json',authorization:`Bearer ${jwt.sign({id:user,role:user==='admin'?'admin':'user'},process.env.JWT_SECRET)}`}});return {status:response.status,body:await response.json()};}
+ for (const user of ['admin','reader']) {
+  let r=await request('/remote-file-sources',user);
+  assert.equal(r.status,200);assert.deepEqual(r.body.remotes.map(x=>x.name),['old-device']);
+  r=await request('/remote-file-sources?session=s',user);
+  assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','old-device']);
+  assert.equal(r.body.remotes[0].remote_path,'/work');
+  for(const url of ['/remote-files?remote=new-device','/remote-file?remote=new-device&path=/hello.txt','/remote-file/download?remote=new-device&path=/hello.txt']) {
+   r=await request(url,user);assert.equal(r.status,400,`${user}: ${url}`);
+  }
+  r=await request('/remote-file',user,{method:'POST',body:JSON.stringify({remote:'new-device',path:'/hello.txt',content:'no'})});assert.equal(r.status,400);
+  r=await request('/remote-files?session=s&remote=bound-device',user);assert.equal(r.status,200);assert.equal(r.body.root_path,'/work');
+  r=await request('/remote-file?session=s&remote=bound-device&path=/hello.txt',user);assert.equal(r.body.content,'hello');
+ }
+ let r=await request('/remote-files?remote=old-device');assert.equal(r.status,400);assert.match(r.body.error,/连接已失效/);
+ remotes.push({name:'second-device',status:'connected'});
+ r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','old-device']);
+ db.prepare('UPDATE projects SET aimux_remote_inventory=? WHERE id=?').run(JSON.stringify([{name:'bound-device',remote_path:'/stale'},{name:'registered-device',remote_path:'/registered'}]),'p');
+ r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','registered-device']);assert.equal(r.body.remotes[0].remote_path,'/work');
+ r=await request('/remote-files?remote=registered-device');assert.equal(r.status,200);assert.equal(r.body.root_path,'/registered');
+ console.log('PASS admin/user: only bound + project devices, bound path precedence, dedup, list/read, and reject unrelated online devices for list/read/write/download');
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{server.closeAllConnections?.();await new Promise(r=>server.close(r));await new Promise(r=>broker.close(r));db.close();fs.rmSync(temp,{recursive:true,force:true});});
