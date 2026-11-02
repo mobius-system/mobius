@@ -5880,6 +5880,20 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
+/* 全屏项目蓝图抽屉；保留侧栏和底部抽屉各自的尺寸规则。 */
+.mobius-drawer--full {
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100%;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  transform: translateX(100%);
+}
+.mobius-drawer--full.mobius-drawer--open {
+  transform: translateX(0);
+}
+
 /* 左侧导航抽屉要压过右侧抽屉 / 底部弹窗: 三者 z-index 相同 (9000), 但 portal 到 body 的顺序
    是左导航先、文件栏后, DOM 靠后的底部弹窗会盖住左导航. 打开左导航时若底部弹窗还没收起,
    用户会看到「代码浏览」而不是导航. 这里把左导航抬到 9001, 恒在最上. */
