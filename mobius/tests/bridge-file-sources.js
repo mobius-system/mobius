@@ -42,7 +42,7 @@ async function main(){
   assert.equal(r.status,200);assert.deepEqual(r.body.remotes.map(x=>x.name),['old-device']);
   r=await request('/remote-file-sources?session=s',user);
   assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','old-device']);
-  assert.equal(r.body.remotes[0].remote_path,'/work');
+  assert.equal(r.body.remotes[0].remote_path,'/work');assert(r.body.remotes.every(x=>x.status==='unknown'), 'saved connected state must not be reported as live');
   for(const url of ['/remote-files?remote=new-device','/remote-file?remote=new-device&path=/hello.txt','/remote-file/download?remote=new-device&path=/hello.txt']) {
    r=await request(url,user);assert.equal(r.status,400,`${user}: ${url}`);
   }
@@ -54,7 +54,7 @@ async function main(){
  remotes.push({name:'second-device',status:'connected'});
  r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','old-device']);
  db.prepare('UPDATE projects SET aimux_remote_inventory=? WHERE id=?').run(JSON.stringify([{name:'bound-device',remote_path:'/stale'},{name:'registered-device',remote_path:'/registered'}]),'p');
- r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','registered-device']);assert.equal(r.body.remotes[0].remote_path,'/work');
+ r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','registered-device']);assert.equal(r.body.remotes[0].remote_path,'/work');assert(r.body.remotes.every(x=>x.status==='unknown'), 'saved connected state must not be reported as live');
  r=await request('/remote-files?remote=registered-device');assert.equal(r.status,200);assert.equal(r.body.root_path,'/registered');
  console.log('PASS admin/user: only bound + project devices, bound path precedence, dedup, list/read, and reject unrelated online devices for list/read/write/download');
 }

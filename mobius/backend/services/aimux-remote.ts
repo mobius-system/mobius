@@ -200,7 +200,7 @@ function resultMessage(result: any): string {
   if (parsed?.message) return parsed.message;
   const message = result.stderr || result.stdout || result.error || 'aimux remote 命令执行失败';
   if (/not found in ~\/\.ssh\/config or bridge registry/i.test(message)) {
-    return '所选设备连接已失效。请刷新设备列表并选择在线设备，或重新连接原客户端。';
+    return '所选设备连接已失效。请重新连接原客户端后刷新，或选择当前会话绑定、项目登记的其他设备。';
   }
   return message;
 }

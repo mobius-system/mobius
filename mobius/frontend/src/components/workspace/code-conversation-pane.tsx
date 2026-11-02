@@ -213,6 +213,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const [localPathBusy, setLocalPathBusy] = useState(false)
   const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
   const [remoteSourcesLoaded, setRemoteSourcesLoaded] = useState(false)
+  const [remoteAccessStatus, setRemoteAccessStatus] = useState<Record<string, string>>({})
+  useEffect(() => { setRemoteAccessStatus({}) }, [projectId, sessionId, sessionDeviceId])
   const [remoteSourcesError, setRemoteSourcesError] = useState('')
   const manualRemoteRef = useRef(false)
   useEffect(() => { manualRemoteRef.current = false }, [projectId, sessionId, sessionDeviceId])
@@ -415,6 +417,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   }, [anyDirty, tabs, projectId, remoteName, remoteRoot, remoteRootDraft])
 
   const loadDir = useCallback(async (relPath: string) => {
+    if (source === 'remote') setRemoteAccessStatus(prev => ({ ...prev, [remoteName]: 'checking' }))
     setDirs(prev => ({ ...prev, [relPath]: { ...prev[relPath], loading: true, error: undefined } }))
     try {
       const data = source === 'local'
@@ -423,6 +426,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           ? await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(remoteName)}&path=${encodeURIComponent(relPath)}${remoteRootParam}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`)
           : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本地文件失败')
+      if (source === 'remote') setRemoteAccessStatus(prev => ({ ...prev, [remoteName]: 'connected' }))
       if (relPath === treeRoot) {
         setRootError('')
         setRootLoaded(true)
@@ -443,6 +447,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       }
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, entries: data.entries || [] } }))
     } catch (e: any) {
+      if (source === 'remote') {
+        const offline = /连接已失效|not found in ~\/\.ssh\/config or bridge registry|remote_disconnected/i.test(e?.message || '')
+        setRemoteAccessStatus(prev => ({ ...prev, [remoteName]: offline ? 'offline' : 'unknown' }))
+      }
       setDirs(prev => ({ ...prev, [relPath]: { loading: false, error: e?.message || '加载失败' } }))
       if (relPath === treeRoot) { setRootLoaded(true); setRootError(e?.message || '加载失败') }
     }
@@ -1264,7 +1272,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   {remoteSourcesLoaded && remoteSources.length === 0 && <option value="" disabled>未注册远程机器</option>}
                   {remoteSources.map(remote => (
                     <option key={remote.name} value={remote.name}>
-                      {formatName(remote.name)}{remote.status ? ` · ${remote.status === 'connected' ? '在线' : remote.status === 'offline' ? '离线' : remote.status}` : ''}
+                      {formatName(remote.name)} · {({ connected: '在线', offline: '离线', checking: '检测中', unknown: '未检测' } as Record<string, string>)[remoteAccessStatus[remote.name] || 'unknown']}
                     </option>
                   ))}
                 </optgroup>

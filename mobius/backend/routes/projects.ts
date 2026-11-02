@@ -3531,7 +3531,7 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
   const inventory = Array.isArray(project.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
   const bridgeRemotes = bridge ? [{
     name: bridge.aimuxId,
-    status: 'connected',
+    status: 'unknown',
     remote_path: bridge.localPath,
     hostname: '',
     hardware: '',
@@ -3547,12 +3547,14 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
     seenNames.add(name);
     inventoryRemotes.push({
       name,
-      status: String(entry.status || ''),
+      status: 'unknown',
       remote_path: String(entry.remote_path || ''),
       hostname: String(entry.hostname || ''),
       hardware: String(entry.hardware || ''),
     });
   }
+  // 登记和绑定只能证明设备属于此列表，不能证明当前在线。
+  res.setHeader('Cache-Control', 'no-store');
   res.json({ remotes: [...bridgeRemotes, ...inventoryRemotes] });
 });
 
