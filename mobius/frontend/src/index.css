@@ -7627,26 +7627,53 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
   padding: 4px 0 4px 10px;
 }
 
-.display-files-card__item {
+.display-files-card__row {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 9px;
   border: 1px solid var(--display-files-border);
   border-radius: 6px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.display-files-card__row:focus-within { border-color: #38bdf8; }
+.display-files-card__item {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  border: 0;
   padding: 7px 9px;
   color: var(--text-primary);
-  background: var(--bg-secondary);
+  background: transparent;
   text-align: left;
 }
+.display-files-card__item > svg { flex-shrink: 0; }
+.display-files-card__download {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  align-self: stretch;
+  border: 0;
+  border-left: 1px solid var(--display-files-border);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.display-files-card__download:hover { color: #38bdf8; background: var(--bg-hover); }
+.display-files-card__item:focus-visible,
+.display-files-card__download:focus-visible { outline: 2px solid #38bdf8; outline-offset: -2px; }
 
 .display-files-card__item:not(:disabled) { cursor: pointer; }
-.display-files-card__item:not(:disabled):hover { border-color: #38bdf8; background: var(--bg-hover); }
+.display-files-card__item:not(:disabled):hover { background: var(--bg-hover); }
 .display-files-card__item:disabled { opacity: .65; }
 .display-files-card__meta { display: grid; min-width: 0; flex: 1; gap: 2px; }
 .display-files-card__meta strong { overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .display-files-card__meta small { overflow: hidden; color: var(--text-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
-.display-files-card__size { display: inline-flex; min-width: 58px; justify-content: flex-end; color: var(--text-secondary); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.display-files-card__size { display: inline-flex; flex-shrink: 0; min-width: 58px; justify-content: flex-end; color: var(--text-secondary); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .display-files-card--easy { margin-left: 8px; }
 
 /* ===== 简易模式输入框底部按钮样式 (issue 2026-10-13 用户截图对齐) =====
