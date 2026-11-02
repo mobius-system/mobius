@@ -6,6 +6,7 @@ import { auth, downloadAuth } from '../middleware/auth';
 import { Researches } from '../repositories/researches';
 import { Projects } from '../repositories/projects';
 import { Sessions } from '../repositories/sessions';
+import { pcClientMetadataForContinuation } from '../services/pc-client-context';
 import { Messages } from '../repositories/messages';
 import { SessionPendingMentions } from '../repositories/session-pending-mentions';
 // @ts-ignore — service 仍是 .js
@@ -275,14 +276,7 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
   const sessionKey = `web:${user.id}:${sessionId}`;
   const excludedSkillIds = sanitizeIds(excluded_skill_ids);
   const excludedMemoryIds = sanitizeIds(excluded_memory_ids);
-  const pcClientMetadata = req.body?.pc_client_metadata;
-  const selectionSnapshot = buildResearchSessionSelectionSnapshot(
-    user,
-    String(req.params.researchId),
-    excludedSkillIds,
-    excludedMemoryIds,
-    { pc_client_metadata: pcClientMetadata },
-  );
+  let pcClientMetadata = req.body?.pc_client_metadata;
 
   let sourceSession: AnySession | null = null;
   let transferResult: any = null;
@@ -314,6 +308,16 @@ researchScoped.post('/', auth, async (req: express.Request, res: express.Respons
       return;
     }
   }
+
+  // 与 Issue 连续会话一致：继承来源当前设备，忽略客户端默认设备和历史切换信息。
+  if (sourceSession) pcClientMetadata = pcClientMetadataForContinuation(sourceSession.pc_client_metadata);
+  const selectionSnapshot = buildResearchSessionSelectionSnapshot(
+    user,
+    String(req.params.researchId),
+    excludedSkillIds,
+    excludedMemoryIds,
+    { pc_client_metadata: pcClientMetadata },
+  );
 
   try {
     Sessions.insert({

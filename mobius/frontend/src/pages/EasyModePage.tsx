@@ -35,6 +35,8 @@ import {
   X,
 } from 'lucide-react'
 import { useStore, api } from '../store'
+import { assistantAllowedFor } from '../services/assistant-availability'
+import { EASY_DEFAULT_PROJECT_NAME, EASY_DEFAULT_ISSUE_TITLE, EASY_NEW_PROJECT_ISSUE_TITLE, EASY_DEFAULT_DESCRIPTION, isEasyDefaultProjectName, easyIssueTitleAliases } from '../services/easy-mode-defaults'
 import { useLayoutMode, buildNormalModeTargetUrl } from '../services/layout-mode'
 import { pollRecursive } from '../services/polling'
 import { buildRecentSessionTreeGroups } from '../services/recent-session-tree'
@@ -126,18 +128,13 @@ const WELCOME_SUGGESTIONS: WelcomeSuggestion[] = [
   { label: '网页自动化', prompt: '帮我自动完成这个网页操作流程：从打开页面开始，按步骤点击、填写、提交，遇到需要判断的地方先说明再执行，最后把关键步骤和最终结果截图汇总给我。', icon: Globe, color: '#a78bfa' },
   { label: '文档创作', prompt: '通读当前仓库的 README 和核心源码，写一份面向使用者的文档：包含快速开始、核心功能说明和可复现的示例，结构清晰、步骤完整。', icon: FileText, color: '#60a5fa' },
 ]
-// 与 Electron 欢迎页“导入一些零散文件，随便聊聊”共用同一兜底容器：
-// 用户没有显式选择项目/任务时，复用 let-us-chat / a random chat，缺失则按需创建。
-const EASY_DEFAULT_PROJECT_NAME = 'let-us-chat'
-const EASY_DEFAULT_ISSUE_TITLE = 'a random chat'
-const EASY_NEW_PROJECT_ISSUE_TITLE = 'demo issue'
-const EASY_DEFAULT_DESCRIPTION = 'no description'
 const EASY_LAST_SELECTION_KEY = 'mobius:easy-mode:last-session-selection'
 
 async function ensureEasyIssue(projectId: string, title: string): Promise<{ id: string; title: string }> {
   const response = await api(`/api/projects/${projectId}/issues?status=active`)
   const issues: any[] = Array.isArray(response) ? response : (response?.issues || [])
-  const existing = issues.find(issue => String(issue?.title || '') === title)
+  const aliases = easyIssueTitleAliases(title).map(alias => alias.trim().toLowerCase())
+  const existing = issues.find(issue => aliases.includes(String(issue?.title || '').trim().toLowerCase()))
   if (existing?.id) return { id: String(existing.id), title: String(existing.title || title) }
 
   const created = await api(`/api/projects/${projectId}/issues`, {
@@ -260,7 +257,7 @@ export default function EasyModePage() {
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
   const [editingSession, setEditingSession] = useState<RecentSession | null>(null)
   const [deletingSession, setDeletingSession] = useState<RecentSession | null>(null)
-  const [createErrorToast, setCreateErrorToast] = useState<{ message: string } | null>(null)
+  const [createErrorToast, setCreateErrorToast] = useState<{ message: string; title?: string } | null>(null)
   const [createIssueOverride, setCreateIssueOverride] = useState('')
   const [createSuccessToast, setCreateSuccessToast] = useState<{ name: string } | null>(null)
   const [projectSuccessToast, setProjectSuccessToast] = useState<{ name: string } | null>(null)
@@ -708,6 +705,20 @@ export default function EasyModePage() {
     } catch {}
   }, [welcomeSelection.projectId, welcomeSelection.issueId, welcomeSelection.issueTitle])
 
+  // 项目列表到位后校准一次「上次选择」: 认不出的项目 id (换了账号 / 掉权限 / 项目被删)
+  // 直接清空, 别让界面显示「未选择项目」而状态里还压着上一个账号的项目 id.
+  // 只在列表非空时动手 —— 列表请求失败时保持原样, 不能把有效的记忆当垃圾清掉.
+  const welcomeSelectionPrunedRef = useRef(false)
+  useEffect(() => {
+    if (welcomeSelectionPrunedRef.current) return
+    if (!welcomeSelection.projectId) { welcomeSelectionPrunedRef.current = true; return }
+    if (!projects.length) return
+    welcomeSelectionPrunedRef.current = true
+    if (!projects.some((project: any) => String(project.id) === welcomeSelection.projectId)) {
+      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
+    }
+  }, [projects, welcomeSelection.projectId])
+
   // 欢迎页提交: 输入框内容 + 下方选择直接创建并启动会话, 不再二次跳配置弹窗.
   // 请求体与「新建快捷会话」完全同源 (POST /api/issues/:id/sessions + 首条消息启动).
   const submitWelcomePrompt = async () => {
@@ -728,6 +739,26 @@ export default function EasyModePage() {
     } = welcomeSelection
     if (createProject && !projectName.trim()) {
       setCreateErrorToast({ message: '请填写项目名' })
+      return
+    }
+    // 记住的项目 id 只有在「当前账号仍能在项目列表里看到它」时才算数. localStorage 里的
+    // 选择会跨账号/跨权限存活 (退出登录只清 cc-token), 换了账号后旧 id 既不在下拉选项里
+    // (界面显示"未选择项目"), 又会被下面的分支当成"已选项目", 于是拿着别人的 issue 去建
+    // 会话, 后端按成员关系判定返回 403「无权在此 Issue 创建 Session」—— 用户看到的就是
+    // "没选项目却提示会话创建失败". 这里把认不出的选择直接清掉, 让它落回不选项目的兜底.
+    const selectedProject = !createProject && projectId
+      ? projects.find((project: any) => String(project.id) === projectId) || null
+      : null
+    if (!createProject && projectId && !selectedProject) {
+      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
+    }
+    if (selectedProject && selectedProject.can_create_session === false) {
+      setCreateErrorToast({
+        title: '该项目的选择已失效',
+        message: `「${selectedProject.name || projectId}」你没有创建会话的权限（只读项目），请换一个项目，或清空项目选择后直接对话`,
+      })
+      // 顺手清掉这个用不了的选择: 用户按提示再发一次就能落到"不选项目"的兜底路径
+      setWelcomeSelection(current => ({ ...current, projectId: '', issueId: '', issueTitle: '' }))
       return
     }
     setWelcomeCreating(true)
@@ -755,15 +786,15 @@ export default function EasyModePage() {
         if (!targetProject?.id) throw new Error('项目创建失败')
         setProjects([...projects.filter((project: any) => project.id !== targetProject.id), targetProject])
         targetIssue = await ensureEasyIssue(String(targetProject.id), EASY_NEW_PROJECT_ISSUE_TITLE)
-      } else if (projectId) {
-        targetProject = projects.find((project: any) => String(project.id) === projectId) || { id: projectId }
+      } else if (selectedProject) {
+        targetProject = selectedProject
         targetIssue = issueId
           ? { id: issueId, title: issueTitle || EASY_DEFAULT_ISSUE_TITLE }
           : await ensureEasyIssue(projectId, EASY_DEFAULT_ISSUE_TITLE)
       } else {
         targetProject = projects.find((project: any) => (
           String(project?.created_by || '') === String(user?.id || '')
-          && String(project?.name || '').toLowerCase() === EASY_DEFAULT_PROJECT_NAME
+          && isEasyDefaultProjectName(project?.name)
         ))
         if (!targetProject) {
           const workDir = String(user?.work_dir || '').trim().replace(/\/+$/, '')
@@ -790,7 +821,7 @@ export default function EasyModePage() {
 
       if (!targetProject?.id || !targetIssue?.id) throw new Error('无法确定会话所属的项目与任务')
       const name = formatDefaultSessionName(targetIssue.title)
-      const keepsSelectedContext = createProject || targetIssue.id === issueId
+      const keepsSelectedContext = createProject || (!!selectedProject && targetIssue.id === issueId)
       const session = await api(`/api/issues/${targetIssue.id}/sessions`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1006,7 +1037,9 @@ export default function EasyModePage() {
           </div>
 
           <div className="easy-sidebar-footer" aria-label="快捷入口">
+            {assistantAllowedFor(user) && (
             <button type="button" className="easy-footer-btn" onClick={() => { setAssistantBubbleEnabled(true); setMobileNavOpen(false); window.dispatchEvent(new Event('mobius:assistant:open')) }} title="打开小莫" aria-label="打开小莫"><WandSparkles className="h-[18px] w-[18px]" strokeWidth={2} /></button>
+            )}
             <button type="button" className="easy-footer-btn" onClick={() => { setMobileNavOpen(false); window.openAdminOverlay?.() }} title="系统设置" aria-label="系统设置"><Cog className="h-[18px] w-[18px]" strokeWidth={2} /></button>
             <button type="button" className={`easy-footer-btn ${activePanel === 'context' ? 'is-active' : ''}`} onClick={() => selectPanel('context')} title="记忆与技能" aria-label="记忆与技能"><GraduationCap className="h-[18px] w-[18px]" strokeWidth={2} /></button>
           </div>
@@ -1168,6 +1201,12 @@ export default function EasyModePage() {
                   <AttachmentImagePreviewModal preview={welcomeImagePreview} onClose={() => setWelcomeImagePreview(null)} />
                 )}
                 {/* 能力胶囊 (千问办公式: 图标 + 场景, 点击填入输入框; issue 2026-10-26) */}
+                {!welcomeSelection.createProject && (
+                  <div className="easy-selection-notice" role="status">
+                    当前选择：{projects.find(project => String(project.id) === welcomeSelection.projectId)?.name || '未选择项目'}
+                    {' · '}{welcomeSelection.issueTitle || '未选择任务'}
+                  </div>
+                )}
                 <div className="easy-welcome-suggestions" aria-label="常用场景">
                   {WELCOME_SUGGESTIONS.map(suggestion => {
                     const Icon = suggestion.icon
@@ -1248,7 +1287,7 @@ export default function EasyModePage() {
       )}
       {searchOpen && (
         <Suspense fallback={null}>
-          <SearchModal onClose={() => setSearchOpen(false)} onNavigate={navigate} />
+          <SearchModal onClose={() => setSearchOpen(false)} onNavigate={navigate} projectId={effectiveProject || null} />
         </Suspense>
       )}
       {deletingSession && (
@@ -1285,7 +1324,7 @@ export default function EasyModePage() {
         <ToastCard
           tone="error"
           icon={<X className="h-4 w-4" strokeWidth={2} />}
-          title="会话创建失败"
+          title={createErrorToast.title || '会话创建失败'}
           subtitle={createErrorToast.message}
           onClose={() => setCreateErrorToast(null)}
         />

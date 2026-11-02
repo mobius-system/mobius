@@ -11,6 +11,7 @@ import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
 import { NewSessionModal } from './modals'
+import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
 import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
 import { ResizablePanel, useIsMobile, useNarrowContainer } from './resizable-panel'
@@ -21,7 +22,7 @@ import { scrollDebug } from './scroll-debug'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
-import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, boundAimuxDeviceId } from './aimux-link-indicator'
+import { AimuxLinkIndicator, RemoteAimuxMcpIndicator, boundAimuxDeviceId, continuationDevice } from './aimux-link-indicator'
 import { AnnouncePcButton } from './announce-pc-button'
 import { useAgentHistoryStore, useHistorySnapshotOf, useLoadedEntryCount, useTotalEntryCount, useSessionJsonlPath, type SessionHistoryStore } from '../services/agent-history-store'
 import { findLatestEntryTimestamp } from './session-jsonl-panel'
@@ -162,6 +163,8 @@ function JsonlCountSlot({ store, children }: { store: SessionHistoryStore | null
 // 新条目到达自动滚底 (null 渲染): 方案 2 — 帧同步增量跟随.
 // lerp 跟随系数 (调参台定稿 0.06, 见 tmp/frontend_unit_mock): 每帧走"距底剩余距离"的比例.
 const LERP_FOLLOW_K = 0.06
+// 小于整数像素步长时直接收环，避免 RAF 永久追赶。
+const LERP_SNAP_PX = 24
 
 // 两个触发源 (条数变化 / 内容长高) 共用同一个自续 RAF 追赶环: 每帧只走剩余距离的
 // LERP_FOLLOW_K — 落后越多追得越快, 逼近底部自动减速, 高卡/批量呈现为先快后慢的
@@ -212,6 +215,14 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (!el) { diagRef.current.lastStop = '滚动容器不存在'; return }
     const delta = el.scrollHeight - el.scrollTop - el.clientHeight
     if (delta <= 0.5) { diagRef.current.lastStop = '已在底部 (delta<=0.5)'; scrollDebug('chase: done (delta<=0.5)'); return }
+    // 剩余距离已在 lerp 分辨率之下: 直接吸附到底并收环, 否则环空转不休 (见 LERP_SNAP_PX)
+    // Inside the lerp's dead zone: snap to the bottom and end the loop, or it would spin forever
+    if (delta <= LERP_SNAP_PX) {
+      el.scrollTop = el.scrollHeight
+      diagRef.current.lastStop = '已在底部 (吸附收环)'
+      scrollDebug('chase: snap to bottom then stop, delta=', delta.toFixed(1))
+      return
+    }
     diagRef.current.frames += 1
     diagRef.current.lastFrameAt = Date.now()
     diagRef.current.lastStop = '追赶中'
@@ -230,7 +241,10 @@ function EntriesAutoScroll({ store, containerRef, matchActiveRef, searchHighligh
     if (rafRef.current) { diag.scheduleBlocked += 1; return }
     rafRef.current = requestAnimationFrame(chase)
   }
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+  useEffect(() => () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = 0
+  }, [])
 
   // 浮窗探针: 读实时 DOM + 计数器, 给出"环是否还活着"和"被谁挡住"的结论.
   // Panel probe: reads live DOM plus the counters to say whether the loop is alive and what blocks it.
@@ -2544,15 +2558,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
 
   useEffect(() => {
     if (!sessionId) return
+    // 在写回 effect 之前读出磁盘值，不能在延迟执行的 state updater 内读取。
+    const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
     setDrafts(prev => {
       if (Object.prototype.hasOwnProperty.call(prev, sessionId)) return prev
-      const saved = draftLoad<{ input?: string }>(`session-input:${sessionId}`)
-      if (!saved?.input) return prev
-      return { ...prev, [sessionId]: saved.input }
+      return { ...prev, [sessionId]: typeof saved?.input === 'string' ? saved.input : '' }
     })
   }, [sessionId])
 
   const input = drafts[sessionId] || ''
+  const hasDraftEntry = Object.prototype.hasOwnProperty.call(drafts, sessionId)
   const setInput = (val: string | ((prev: string) => string)) => {
     if (!sessionId) return
     setDrafts(prev => {
@@ -2566,9 +2581,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   }
 
   useEffect(() => {
-    if (!sessionId) return
+    if (!sessionId || !hasDraftEntry) return
     draftSave(`session-input:${sessionId}`, { input }, { minChars: 1 })
-  }, [sessionId, input])
+  }, [sessionId, input, hasDraftEntry])
 
   // F6: 规划编辑器 3s 静止后, 预填一条"通知 Agent 已更新规划"的草稿, 避免用户来回切换.
   // 仅在事件 detail.sessionId === 当前 session 时生效, 防止跨 session 串扰.
@@ -3280,6 +3295,23 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     }
   }, [inputExpanded])
 
+  /* Long-text editor only: Tab inserts four spaces instead of moving focus. */
+  const handleExpandedInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return
+    const nativeEvent = e.nativeEvent
+    // 输入法合成中不劫持 Tab，避免打断候选词
+    // Do not hijack Tab while IME composition is active
+    if (composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) return
+    e.preventDefault()
+    const el = e.currentTarget
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    // ✨ 用四个空格替换选区写回输入，再把光标落到插入点之后
+    // ✨ Replace the selection with four spaces and move the caret past them
+    setInput(input.slice(0, start) + '    ' + input.slice(end))
+    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 4 })
+  }, [input])
+
   useEffect(() => {
     if (!inputMenuOpen) return
     const handlePointerDown = (event: MouseEvent) => {
@@ -3748,7 +3780,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   // 切换会话绑定的 aimux 协作设备 (RemoteAimuxMcpIndicator 点击设备/撤回初始后触发,
   // 以及输入框里的「运行设备」pill). newId 为空 = 回到中枢, 不绑任何设备.
   // 顺序: ① 更新 DB 绑定 → ② 同步本地 currentSession 元数据 → ③ 终止当前 agent(等待确认)
-  // → ④ 走"唤醒文字"路径发一条消息, 让新设备上重新 spawn 的 agent 先去 hostname 确认新环境.
+  // → ④ 走"唤醒文字"路径发一条消息, 让新设备上重新 spawn 的 agent 先用 remote_ping 确认新环境.
   const handleSwitchAimuxDevice = useCallback(async (newId: string, oldId: string) => {
     if (!sessionId) throw new Error('当前没有可切换的会话')
     // ① 更新绑定 (后端首次切换会把 oldId 记为 initial_aimux_id 锚点)
@@ -3773,7 +3805,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
     const content = newId
-      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 hostname 命令检查和确认新设备的情况。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
+      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 remote_ping 检查和确认新设备的情况（返回远端操作系统、shell 和工作路径）。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
       : `【用户把mcp连接的设备解除了（从${oldId}变回中枢），这意味着后续工作回到莫比乌斯中枢上完成。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
@@ -3969,12 +4001,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     />
   ) : null
 
+  const isAdminUser = useStore(s => s.user?.role === 'admin')
+
   const renderAdvancedSessionActions = (variant: 'default' | 'compact' | 'menu') => (
     // 计数槽: Chat 不订阅快照, 条目计数由小组件自取 (只在计数变化时重渲染这一小块).
     <JsonlCountSlot store={historyStore}>
       {(jsonlEntryCount) => (
         <AdvancedSessionActions
           variant={variant}
+          showTerminal={isAdminUser}
+          omitJsonlMetaButton={layout !== 'easy'}
           sessionId={currentSession?.session_id || sessionId}
           projectId={currentProjectId}
           issueId={currentIssueId}
@@ -4011,6 +4047,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
 
   // 会话工具按钮组只有这一份定义: 标准布局挂在输入侧栏, 简易模式收进 EasySessionToolBar 浮层,
   // 避免入口/禁用条件/显示开关两处漂移 (按钮本体由 AdvancedSessionActions 定义).
+  const sessionToolVisibilityOptions = useMemo(
+    () => SESSION_TOOL_VISIBILITY_OPTIONS.filter((option) => {
+      if (option.id === 'terminal' && !isAdminUser) return false
+      // 非简易布局的「显示时间与序号」已并进 chat 头部的 … 菜单, 按钮组里不再有这个按钮,
+      // 显示设置里也就不该留一个拨不动任何东西的开关.
+      if (option.id === 'jsonl-meta' && layout !== 'easy') return false
+      return true
+    }),
+    [isAdminUser, layout],
+  )
   const renderSessionToolGroup = (opts: { variant: 'default' | 'compact' | 'menu'; className: string; initialPanel: null | 'memory'; persistActivePanel?: boolean }) => (
     <UnifiedButtonGroup
       className={opts.className}
@@ -4027,7 +4073,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
         vscodeSubPath={currentVscodeSubPath}
         onRequestRunProject={sendRunProjectPortPrompt}
         onOpenKnowledge={currentProjectId && currentIssueId ? () => setKnowledgeEditorOpen(true) : undefined}
-        visibilityOptions={SESSION_TOOL_VISIBILITY_OPTIONS}
+        visibilityOptions={sessionToolVisibilityOptions}
       />
     </UnifiedButtonGroup>
   )
@@ -4919,6 +4965,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
             </div>
             <textarea
               ref={expandedInputRef}
+              onKeyDown={handleExpandedInputKeyDown}
               value={input}
               onChange={e => setInput(e.target.value)}
               onPaste={handlePaste}
@@ -5000,10 +5047,24 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
         />
       )}
 
-      {continueModalOpen && currentSession?.session_id && (currentIssueId || !!(currentSession as any)?.research_id) && (
+      {continueModalOpen && currentSession?.session_id && currentIssueId && (
+        <CreateSessionForm
+          defaultProjectId={currentProjectId || (currentSession as any).project_id}
+          defaultIssueId={currentIssueId}
+          projectKind={projectForSession?.kind}
+          onClose={() => setContinueModalOpen(false)}
+          onDone={handleContinueSessionCreated}
+          continueFromSessionId={currentSession.session_id}
+          initialName={continueSessionName(currentSession)}
+          initialDescription={(currentSession as any).description || ''}
+          initialIssueTitle={(currentIssue as any)?.title || (currentTask as any)?.title}
+          initialDevice={continuationDevice(currentSession)}
+        />
+      )}
+      {continueModalOpen && currentSession?.session_id && !currentIssueId && (currentSession as any)?.research_id && (
         <NewSessionModal
-          issueId={currentIssueId || undefined}
-          researchId={(currentSession as any)?.research_id || undefined}
+          issueId={undefined}
+          researchId={(currentSession as any).research_id}
           onClose={() => setContinueModalOpen(false)}
           onCreated={handleContinueSessionCreated}
           defaultName={continueSessionName(currentSession)}

@@ -48,8 +48,8 @@ function setupFixtures() {
   insertUser('other')
   run("INSERT INTO projects (id, name, description, created_by, bind_path, research_enabled) VALUES ('p-main', 'Navigation Workbench', 'project metadata', 'owner', '/work/navigation', 1)")
   run("INSERT INTO projects (id, name, description, created_by) VALUES ('p-private', 'Private Keyword', '', 'other')")
-  run("INSERT INTO project_memberships (project_id, user_id, role, created_by) VALUES ('p-main', 'member', 'member', 'owner')")
-  run("INSERT INTO project_memberships (project_id, user_id, role, created_by) VALUES ('p-main', 'other', 'member', 'owner')")
+  run("INSERT INTO project_memberships (project_id, user_id, role, created_by) VALUES ('p-main', 'member', 'developer', 'owner')")
+  run("INSERT INTO project_memberships (project_id, user_id, role, created_by) VALUES ('p-main', 'other', 'developer', 'owner')")
   run("INSERT INTO issues (id, project_id, title, description, created_by) VALUES ('i-main', 'p-main', 'Interface Analysis', '层级检索任务', 'owner')")
   run("INSERT INTO researches (id, project_id, title, description, created_by) VALUES ('r-main', 'p-main', 'Search Research', '研究导航', 'owner')")
   insertSession({ id: 's-own', name: 'Nested Session', description: '搜索优化' })
@@ -79,10 +79,12 @@ function main() {
 
   const sessionResult = searchProjectHierarchy('搜索优化', member)
   const memberHits = findProject(sessionResult).matches
-  assert.deepStrictEqual(memberHits.map((hit) => hit.id), ['s-own'])
-  assert.strictEqual(memberHits[0].parent_id, 'i-main')
-  assert.strictEqual(memberHits[0].parent_title, 'Interface Analysis')
-  assert.ok(!('session_key' in memberHits[0]))
+  // Project developers can read other members' sessions under the current role policy.
+  assert.deepStrictEqual(memberHits.map((hit) => hit.id).sort(), ['s-other', 's-own'])
+  const ownHit = memberHits.find(hit => hit.id === 's-own')
+  assert.strictEqual(ownHit.parent_id, 'i-main')
+  assert.strictEqual(ownHit.parent_title, 'Interface Analysis')
+  assert.ok(!('session_key' in ownHit))
 
   const ownerResult = searchProjectHierarchy('搜索优化', owner)
   assert.deepStrictEqual(findProject(ownerResult).matches.map((hit) => hit.id).sort(), ['s-other', 's-own'])
@@ -90,6 +92,9 @@ function main() {
   const agentResult = searchProjectHierarchy('Agent 关键词', member)
   assert.strictEqual(findProject(agentResult).matches[0].kind, 'research_agent')
   assert.strictEqual(findProject(agentResult).matches[0].parent_id, 'r-main')
+
+  assert.strictEqual(searchProjectHierarchy('navigation', member, 'p-private').project_count, 0, 'project scope must not leak another project')
+  assert.strictEqual(searchProjectHierarchy('navigation', member, 'p-main').project_count, 1)
 
   const privateResult = searchProjectHierarchy('Private Keyword', member)
   assert.strictEqual(privateResult.project_count, 0)

@@ -47,26 +47,26 @@ assert.match(tuiHubPrompt, /你在远程机器 tui-workstation/,
   'TUI prompt should include the remote-machine orientation (localized to zh)');
 assert.doesNotMatch(tuiHubPrompt, /You are working at remote machine/,
   'zh sessions should not receive the English orientation text');
-assert.match(tuiHubPrompt, /不要使用 remote_\* 工具操作.*在mobius中枢（即本地）工作/,
+assert.match(tuiHubPrompt, /不要使用aimux连接到以下远程机器.*tui-workstation/,
   'TUI hub prompt should select Mobius Hub work');
 
 const tuiPcPrompt = pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
-assert.match(tuiPcPrompt, /通过 remote_\* 工具在以下远程机器上执行所有工作/,
+assert.match(tuiPcPrompt, /使用已注册的 remote_\* MCP 工具.*执行所有工作/,
   'TUI pc prompt should require remote execution via remote_* tools');
-assert.match(tuiPcPrompt, /先将项目同步到mobius中枢.*每次修改后都立即同步回到 tui-workstation 指定路径/s,
-  'TUI pc prompt should describe hub sync and direct-aimux fallback');
+assert.match(tuiPcPrompt, /尽量不修改Mobius中枢的代码/,
+  'TUI PC mode prefers direct remote execution');
 
 const tuiDualPrompt = pcTaskModePrompt({ work_mode: 'dual', aimux_id: device, local_path: localPath, is_tui: true }, 'zh');
-assert.match(tuiDualPrompt, /先修改本地的代码.*同步到tui-workstation上/s,
-  'TUI dual prompt should retain the synchronization rule');
+assert.doesNotMatch(tuiDualPrompt, /先修改本地的代码.*同步到tui-workstation上/s,
+  'TUI dual omits the desktop-only sync tail (77b0e765)');
 assert.match(
   pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: false }, 'zh'),
-  /使用已注册的 remote_\* MCP 工具.*尽量不修改本地的代码/s,
+  /使用已注册的 remote_\* MCP 工具.*尽量不修改Mobius中枢的代码/s,
   'Electron prompt should explain the shared remote MCP toolset',
 );
 assert.match(
   pcTaskModePrompt({ work_mode: 'pc', aimux_id: device, local_path: localPath, is_tui: true }, 'en'),
-  /Mobius Hub.*immediately sync every change back/s,
+  /remote_\* MCP tools.*carry out all work.*avoid modifying the Mobius hub code/s,
   'English TUI sessions should receive the equivalent TUI-specific prompt',
 );
 assert.strictEqual(pcTaskModePrompt({ work_mode: 'invalid', aimux_id: device, is_tui: true }, 'zh'), '',

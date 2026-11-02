@@ -183,7 +183,7 @@ export function ContinuationGroup({ items, onlyGroup, forceExpandAll = false, sh
   const firstSummary = items[0] ? buildHeaderSummary(items[0].entry).short : ''
 
   return (
-    <div className={`mb-1${easyMode ? ' easy-round-group' : ''}`}>
+    <div className={`mb-1 min-w-0 max-w-full${easyMode ? ' easy-round-group' : ''}`}>
       <button
         type="button"
         onClick={onlyGroup ? undefined : () => setOpen(o => !o)}
@@ -440,7 +440,7 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
   ) : null
 
   return (
-    <div className={`mb-1${easyMode ? ' easy-round-group' : ''}`}>
+    <div className={`mb-1 min-w-0 max-w-full${easyMode ? ' easy-round-group' : ''}`}>
       {easyGroupDivider}
       {collapsedOpener}
       {collapsedSummaryOpener}
@@ -476,10 +476,10 @@ function RoundGroupInner({ round, isLast, isSecondLast, isRecentTail = false, on
           ) : (
             <>
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--round-header-accent)]" />
-              <span className="font-mono text-[length:var(--fs-xs)] font-bold text-[var(--text-secondary)] flex-shrink-0 w-12" title={`第 ${round.roundNum} 轮`}>
+              <span className="round-group-trigger__label font-mono text-[length:var(--fs-xs)] font-bold text-[var(--text-secondary)] flex-shrink-0 min-w-12 whitespace-nowrap" title={`第 ${round.roundNum} 轮`}>
                 {headerTitle ?? `第 ${round.roundNum} 轮`}
               </span>
-              <span className="text-[length:var(--fs-sm)] text-[var(--text-secondary)] truncate flex-1 min-w-0">
+              <span className="round-group-trigger__summary text-[length:var(--fs-sm)] text-[var(--text-secondary)] truncate flex-1 min-w-0">
                 {/* 展开后用户问题由下方编号为 roundNum 的卡片完整呈现, header 不再重复摘要 (仅折叠态显示作轮次标识) */}
                 {openVisual ? '' : (userSummary || '(空)')}
               </span>
