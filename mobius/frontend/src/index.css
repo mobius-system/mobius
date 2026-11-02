@@ -6049,6 +6049,34 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* 按会话中栏实际宽度堆叠，兼容右侧文件编辑栏挤占空间。 */
+.mobius-chat-body.mobius-chat-body--narrow {
+  flex-direction: column;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-history {
+  width: 100% !important;
+  flex: 1 1 0%;
+  min-width: 0 !important;
+  min-height: 0;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  /* 只保留输入框贴底: 不 flex-grow, 让 .mobius-chat-history (jsonl) 独占上方剩余空间. */
+  flex: 0 0 auto;
+  min-height: 0;
+  border-left: 0 !important;
+  border-top: 1px solid var(--border-color) !important;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-actions,
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-input-side {
+  display: none !important;
+}
+.mobius-chat-body.mobius-chat-body--narrow .mobius-chat-split-handle {
+  display: none !important;
+}
+
 /* ======================================================================
    代码对话模式: 强制 ChatArea 纵向堆叠 (历史 jsonl 在上、输入在下), 与视口宽度无关.
    镜像上面 @media(max-width:900px) 的规则, 仅在 .mobius-chat-body--stacked 时生效;

@@ -13,7 +13,7 @@ import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, Sessi
 import { NewSessionModal } from './modals'
 import { OpenInVSCodeButton } from './project-files'
 import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
-import { ResizablePanel, useIsMobile } from './resizable-panel'
+import { ResizablePanel, useIsMobile, useNarrowContainer } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
@@ -1878,6 +1878,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   const easyToolsPanelRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBodyRef = useRef<HTMLDivElement>(null)
+  // 文件栏占位后按中栏实际宽度堆叠，不能只检查浏览器宽度。
+  const chatBodyWidthNarrow = useNarrowContainer(chatBodyRef, 900)
+  const chatBodyNarrow = layout === 'default' && chatBodyWidthNarrow
   const chatInputRef = useRef<HTMLDivElement>(null)
   const chatSplitHandleRef = useRef<HTMLDivElement>(null)
   const [chatInputRatio, setChatInputRatio] = useState(readChatInputRatio)
@@ -2096,8 +2099,9 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   // easyFilesMounted 只在本次会话内保活 (首次打开后挂载, 保留文件树展开/未保存草稿), 不跨页面.
   const [easyFilesOpen, setEasyFilesOpen] = useState(false)
   const [easyFilesMounted, setEasyFilesMounted] = useState(false)
-  // Standard-mode display-files cards need a file pane too; mount it only after a card is clicked.
-  const [displayFilesOpen, setDisplayFilesOpen] = useState(false)
+  // 顶栏布局菜单、文件卡片和无 code-server 的入口共用同一份开关。
+  const displayFilesOpen = useStore(s => s.fileEditorOpen)
+  const setDisplayFilesOpen = useStore(s => s.setFileEditorOpen)
   // Keep the requested file while the lazy editor mounts; a one-shot DOM event can otherwise be lost.
   // 懒加载编辑器挂载期间保留目标文件，避免一次性 DOM 事件丢失。
   const [displayFileRequest, setDisplayFileRequest] = useState<{ projectId: string; sessionId?: string; path: string; remote?: string; root?: string } | null>(null)
@@ -2113,7 +2117,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     }
     window.addEventListener('mobius:request-open-file-in-sidebar', openFile)
     return () => window.removeEventListener('mobius:request-open-file-in-sidebar', openFile)
-  }, [currentProjectId, sessionId])
+  }, [currentProjectId, sessionId, setDisplayFilesOpen])
   useEffect(() => { if (easyFilesOpen) setEasyFilesMounted(true) }, [easyFilesOpen])
   // 左侧导航抽屉打开时收起文件抽屉 (两个抽屉不能同时开, 否则遮罩互相叠, 点不到东西)
   useEffect(() => {
@@ -4365,7 +4369,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
           easy + 文件栏打开时右 padding 收回 (空间让给文件栏, padding 平滑过渡避免内容跳动). */}
       <div
         ref={chatBodyRef}
-        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}`}
+        className={`mobius-chat-body flex-1 flex min-h-0 min-w-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}${layout === 'easy' ? ' mobius-chat-body--easy' : ''}${chatBodyNarrow ? ' mobius-chat-body--narrow' : ''}`}
         style={layout === 'easy' ? { paddingLeft: isMobile ? '12px' : '10%', paddingRight: easyFilesOpen ? '0' : (isMobile ? '12px' : '10%'), transition: 'padding .2s ease' } : undefined}
       >
         {/* 左侧: JSONL 视图，自动占满右栏之外的剩余宽度。
