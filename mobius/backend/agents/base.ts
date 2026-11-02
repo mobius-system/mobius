@@ -112,6 +112,16 @@ class AgentBackend {
     return next
   }
 
+  // Check inside the lock: a dispatch waiting behind a stop must not revive a
+  // research agent disabled while it was waiting. Stop/read operations stay allowed.
+  _withDispatchLock(sessionId: string, fn: () => any): Promise<any> {
+    return this._withLock(sessionId, () => {
+      const { assertResearchAgentEnabled } = require('../services/research-agent-state')
+      assertResearchAgentEnabled(sessionId)
+      return fn()
+    })
+  }
+
   // ── Event subscription ─────────────────────────────────
   // Each JSON.parsed object from the agent's stdout or jsonl, passed through as-is.
   // opts.fromSentinel marks where to resume without re-emitting.

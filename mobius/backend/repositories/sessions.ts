@@ -43,6 +43,7 @@ interface SessionListRow {
   scope_type: SessionScopeType;
   research_id: string | null;
   research_role: SessionResearchRole | null;
+  research_agent_disabled: number;
   user_id: string;
   name: string;
   description: string | null;
@@ -110,6 +111,7 @@ const SESSION_LIST_COLUMNS = `
       s.scope_type,
       s.research_id,
       s.research_role,
+      s.research_agent_disabled,
       s.user_id,
       s.name,
       s.description,
@@ -134,6 +136,7 @@ const SESSION_LIST_COLUMNS = `
 
 const Sessions = {
   findById: (id: string): SessionRow | undefined => db.prepare('SELECT * FROM sessions_v2 WHERE session_id = ?').get(id) as SessionRow | undefined,
+  setResearchAgentDisabled: (id: string, disabled: boolean) => db.prepare("UPDATE sessions_v2 SET research_agent_disabled = ? WHERE session_id = ? AND scope_type = 'research'").run(disabled ? 1 : 0, id),
   findByIdForUser: (id: string, userId: string): SessionRow | undefined => db.prepare('SELECT * FROM sessions_v2 WHERE session_id = ? AND user_id = ?').get(id, userId) as SessionRow | undefined,
   findRiskById: (id: string): { risk_level?: string } | undefined => db.prepare('SELECT risk_level FROM sessions_v2 WHERE session_id = ?').get(id) as { risk_level?: string } | undefined,
 

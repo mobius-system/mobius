@@ -866,6 +866,12 @@ function migrateSessionsLanguage() {
 }
 migrateSessionsLanguage();
 
+// Run after legacy table rebuilds; existing and new research agents start enabled.
+if (!(db.prepare('PRAGMA table_info(sessions_v2)').all() as Array<{ name: string }>)
+  .some(column => column.name === 'research_agent_disabled')) {
+  db.exec('ALTER TABLE sessions_v2 ADD COLUMN research_agent_disabled INTEGER NOT NULL DEFAULT 0');
+}
+
 // ===== sessions_v2 轻量迁移: risk_level =====
 // tasks 路由 (GET /api/tasks/:id/risk, PATCH risk_level) 依赖此列. v2 建表时未含
 // (db.ts 建表注释自承), 此前 SELECT/UPDATE risk_level 必抛 "no such column" → 500. 幂等补上.

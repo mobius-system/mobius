@@ -364,6 +364,8 @@ async function deliverBlackboardBatchToSession({ researchId, session, records }:
 }
 
 function markRecordPendingTargets(record: any, activeSessions: any): any {
+  activeSessions = (Array.isArray(activeSessions) ? activeSessions : [])
+    .filter((session: any) => !session.research_agent_disabled && !session.deleted_at);
   const normalized = normalizeDeliveryState(record);
   if (normalized.delivery.target_session_ids.length > 0 || normalized.delivered) return { ...record, ...normalized };
   const authorSessionId = extractAuthorSessionId(record);
@@ -472,7 +474,8 @@ async function scanBlackboardDeliveryOnce(): Promise<void> {
 
     for (const researchRow of researches) {
       const researchId = researchRow.research_id;
-      const activeSessions = Sessions.listActiveByResearch(researchId);
+      const activeSessions = Sessions.listActiveByResearch(researchId)
+        .filter((session) => !session.research_agent_disabled && !session.deleted_at);
       const collected = readBlackboardEntries(researchId);
       if (collected.error) {
         appendDeliveryLog(`[${startedAt}] research=${researchId} read_error=${collected.error}\n`);
@@ -511,8 +514,11 @@ async function scanBlackboardDeliveryOnce(): Promise<void> {
 
       const batchResults = [];
       for (const [sessionId, batchEntries] of sessionBatchMap.entries()) {
-        const session = activeSessions.find((s: any) => s.session_id === sessionId);
-        if (!session) continue;
+        // Earlier batches await backend IO; re-read state so disabling an agent
+        // during this scan also blocks previously assigned pending deliveries.
+        const session = Sessions.findById(sessionId);
+        if (!session || session.scope_type !== 'research' || session.research_id !== researchId
+          || session.status !== 'active' || session.deleted_at || session.research_agent_disabled) continue;
         const batchRecords = batchEntries.map((entry: any) => entry.record);
         try {
           await deliverBlackboardBatchToSession({ researchId, session, records: batchRecords });

@@ -448,20 +448,58 @@ function writeSseComment(res: express.Response | null, text: string): boolean {
 }
 
 
-router.patch('/:id', auth, (req: express.Request, res: express.Response) => {
+router.get('/:id/research-agent-state', auth, (req: express.Request, res: express.Response) => {
+  const session = findSessionOperable(String(req.params.id), userOf(req));
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  res.json({ research_agent_disabled: session.scope_type === 'research' && !!session.research_agent_disabled });
+});
+
+// Only this explicit, authorized action can re-enable a disabled research agent.
+router.post('/:id/research-agent/enable', auth, (req: express.Request, res: express.Response) => {
+  const id = String(req.params.id);
+  const user = userOf(req);
+  const session = findSessionOperable(id, user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (session.scope_type !== 'research') { res.status(400).json({ error: '仅 Research Agent 支持解禁' }); return; }
+  auditSessionAccess(user, 'enable_research_agent', session);
+  Sessions.setResearchAgentDisabled(id, false);
+  res.json(Sessions.findById(id));
+});
+
+router.patch('/:id', auth, async (req: express.Request, res: express.Response) => {
   const id = String(req.params.id);
   const user = userOf(req);
   const session = findSessionOperable(id, user);
   if (!session) { res.status(404).json({ error: '未找到' }); return; }
   auditSessionAccess(user, 'write_session', session);
-  const { name, status } = (req.body || {}) as { name?: string; status?: string };
+  const { name, status, research_agent_disabled } = (req.body || {}) as { name?: string; status?: string; research_agent_disabled?: boolean };
+  if (research_agent_disabled !== undefined
+    && (research_agent_disabled !== true || session.scope_type !== 'research')) {
+    res.status(400).json({ error: '仅 Research Agent 支持禁用；解禁请使用专用解禁 API' });
+    return;
+  }
+  if (status !== undefined && !['active', 'completed', 'archived'].includes(status)) {
+    res.status(400).json({ error: '状态无效' });
+    return;
+  }
   if (name) Sessions.updateNameByUser(id, name);
   if (status !== undefined) {
-    if (!['active', 'completed', 'archived'].includes(status)) {
-      res.status(400).json({ error: '状态无效' });
+    Sessions.updateStatus(id, status as any);
+  }
+  if (research_agent_disabled === true) {
+    Sessions.setResearchAgentDisabled(id, true);
+    try {
+      const workspace = resolveSessionWorkspace(user, id);
+      await backendForSession(session).pauseCurrentAndTerminateSession({
+        sessionId: id,
+        cwd: workspace.workDir,
+        flagRoot: workspace.projectRoot || workspace.workDir,
+      });
+      Sessions.setIdle(id, session.user_id || user.id);
+    } catch (e) {
+      res.status(500).json({ error: `已禁用，但终止后台执行失败，请重试终止：${(e as Error).message}` });
       return;
     }
-    Sessions.updateStatus(id, status as any);
   }
   res.json(Sessions.findById(id));
 });
@@ -792,7 +830,11 @@ router.post('/:id/stop', auth, async (req: express.Request, res: express.Respons
     );
   } catch {}
 
-  res.json({ ok, task_id: sessionId });
+  const latest = Sessions.findById(sessionId);
+  res.json({
+    ok, task_id: sessionId,
+    research_agent_disabled: latest?.scope_type === 'research' ? !!latest.research_agent_disabled : null,
+  });
 });
 
 // 打断当前 turn 并让 agent 出队下一条排队指令 (排队卡片闪电按钮). 不追加新 prompt.
@@ -1912,7 +1954,7 @@ router.post('/:id/messages', auth, async (req: express.Request, res: express.Res
     return;
   } catch (e) {
     const err = e as any;
-    res.status(err.status || 500).json({ error: err.message || '启动失败', category: err.category || undefined });
+    res.status(err.status || 500).json({ error: err.message || '启动失败', category: err.category || undefined, code: err.code || undefined });
     return;
   }
 });

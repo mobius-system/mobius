@@ -1,5 +1,6 @@
 import { ScheduledWakeups, type ScheduledWakeupRow } from '../repositories/scheduled-wakeups';
 import { Users } from '../repositories/users';
+import { Sessions } from '../repositories/sessions';
 import { runSessionMessage } from './session-message-runner';
 
 const DEFAULT_SCAN_MS = 5_000;
@@ -48,6 +49,9 @@ async function scanScheduledWakeupsOnce(now: Date = new Date()): Promise<void> {
     const nowIso = now.toISOString();
     const due = ScheduledWakeups.listDue(nowIso);
     for (const candidate of due) {
+      // Retain due jobs while disabled; only the explicit enable API unblocks them.
+      const session = Sessions.findById(candidate.session_id);
+      if (session?.scope_type === 'research' && session.research_agent_disabled) continue;
       // 领取时先推进下次时间，即使后续投递失败也不会重复触发同一轮
       // Claiming advances the schedule first, so a later delivery failure cannot duplicate this occurrence
       const claimed = ScheduledWakeups.claimDue(candidate.id, nowIso);

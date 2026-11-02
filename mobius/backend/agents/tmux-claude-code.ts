@@ -118,7 +118,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    */
   createNewSession(opts: ClaudeDispatchOpts) {
     writeMobiusPromptEarly(this, opts)
-    return this._withLock(opts?.sessionId, () => createSession(this, opts))
+    return this._withDispatchLock(opts?.sessionId, () => createSession(this, opts))
   }
   /*
    * Pause-and-resume: interrupt the running turn, then hand the new prompt to the queue path. The
@@ -126,7 +126,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    */
   pauseCurrentAndResumeFromSession(opts: ClaudeDispatchOpts) {
     writeMobiusPromptEarly(this, opts)
-    return this._withLock(opts?.sessionId, () => pauseSessionAndNextPrompt(this, opts))
+    return this._withDispatchLock(opts?.sessionId, () => pauseSessionAndNextPrompt(this, opts))
   }
   /*
    * Hard-stop the current TUI while preserving enough runtime metadata for the next message to
@@ -142,7 +142,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    */
   noPauseCurrentAndQueueQueryAtSession(opts: ClaudeDispatchOpts) {
     writeMobiusPromptEarly(this, opts)
-    return this._withLock(opts?.sessionId, () => queueSession(this, opts))
+    return this._withDispatchLock(opts?.sessionId, () => queueSession(this, opts))
   }
   /*
    * Interrupt the running turn so the agent stops and consumes the next queued instruction. A missing
@@ -150,7 +150,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
    * running already satisfies that.
    */
   pauseCurrentToDequeueQuery(sessionId: string) {
-    return this._withLock(sessionId, async () => {
+    return this._withDispatchLock(sessionId, async () => {
       if (!sessionId) throw new Error('需要 sessionId')
       if (!windowExists(sessionId)) return
       // 单次C-c即可打断当前回合，这里只打断不追加提示词

@@ -340,7 +340,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
 
   // Start a fresh runtime; rejects when the session is already alive.
   createNewSession(opts: HarnessStartOpts & { sessionId: string; prompt: string }) {
-    return this._withLock(opts.sessionId, async () => {
+    return this._withDispatchLock(opts.sessionId, async () => {
       if (this.isAlive(opts.sessionId)) throw new Error(`DeepSeek Harness session already alive: ${opts.sessionId}`)
       return this._start(opts.sessionId, opts, opts.prompt)
     })
@@ -348,7 +348,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
 
   // Queue a prompt onto the live runtime, restarting it when it is no longer alive.
   noPauseCurrentAndQueueQueryAtSession(opts: HarnessStartOpts & { sessionId: string; prompt: string }) {
-    return this._withLock(opts.sessionId, async () => {
+    return this._withDispatchLock(opts.sessionId, async () => {
       let entry = this.runtime.get(opts.sessionId)
       if (!entry || !this.isAlive(opts.sessionId)) {
         await this._start(opts.sessionId, { ...entry, ...opts, agentSessionId: entry?.agentSessionId || opts.agentSessionId }, opts.prompt)
@@ -364,7 +364,7 @@ class DeepSeekHarnessBackend extends AgentBackend {
 
   // Stop the running runtime, then relaunch it with the expedited prompt.
   pauseCurrentAndResumeFromSession(opts: HarnessStartOpts & { sessionId: string; prompt: string }) {
-    return this._withLock(opts.sessionId, async () => {
+    return this._withDispatchLock(opts.sessionId, async () => {
       if (!String(opts.prompt || '').trim()) throw new Error('urgent send requires prompt')
       const old = this.runtime.get(opts.sessionId)
       if (old && this.isAlive(opts.sessionId)) await this._stopRuntime(old, false)

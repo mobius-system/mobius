@@ -269,6 +269,7 @@ interface Session {
   scope_type?: 'issue' | 'research'
   research_id?: string | null
   research_role?: 'chief_researcher' | 'research_assistant' | null
+  research_agent_disabled?: boolean | number
   user_id: string
   name: string
   description: string

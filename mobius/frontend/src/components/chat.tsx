@@ -6,6 +6,7 @@ import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/ma
 import { MARKDOWN_COMPONENTS } from './markdown-components'
 import { Bot, Bookmark, Wrench, MoreHorizontal, History, Copy, Check, Replace, Archive, Maximize2, Minimize2, X, ZoomIn, FileDiff, Terminal, GitCompare, Loader2, Mic, RefreshCw, SendHorizontal, Zap, Square, Plus, Paperclip, ExternalLink, Server, FolderOpen, FolderPlus, ChevronDown, ChevronRight, FileText, Search, Sparkles, Download, FolderTree } from 'lucide-react'
 import { useStore, api, HIDDEN_FOLDER_NAME } from '../store'
+import { stopSessionWithFollowup, postMessageWithResearchGuard } from '../services/session-stop'
 import { timeAgo } from './shell'
 import { AgentStatusDot } from './AgentStatusDot'
 import { SessionWelcomeCards, SessionStartModal, SessionSkillMemoryEditor, SessionSkillMemoryModal, type SessionSearchHit } from './session-welcome'
@@ -2059,6 +2060,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [stopFeedbackActive, setStopFeedbackActive] = useState(false)
   const stopFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stoppingSessionsRef = useRef(new Set<string>())
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -2994,6 +2996,17 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     setRemoteFileDrawerOpen(false)
   }, [sessionId])
   const loadHistoryRef = useRef<() => void>(() => {})
+  const updateResearchAgentDisabled = useCallback((id: string, disabled: boolean) => {
+    const store = useStore.getState()
+    const selected = store.currentSession
+    if (selected?.session_id === id) store.setCurrentSession({ ...selected, research_agent_disabled: disabled })
+    for (const [key, sessions] of Object.entries(store.sessionsMap)) {
+      if (sessions.some(s => s.session_id === id)) {
+        store.setSessionsMap(key, sessions.map(s => s.session_id === id ? { ...s, research_agent_disabled: disabled } : s))
+      }
+    }
+  }, [])
+
   const postSessionMessage = useCallback(async ({
     content,
     inputText,
@@ -3015,9 +3028,13 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     if (urgent) payload.urgent = true
     if (Array.isArray(mentions) && mentions.length > 0) payload.mentions = mentions
     try {
-      const resp = await api(`/api/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
+      const resp = await postMessageWithResearchGuard({
+        sessionId,
+        isResearch: useStore.getState().currentSession?.scope_type === 'research',
+        payload,
+        request: api,
+        confirm: message => window.confirm(message),
+        onDisabledChanged: disabled => updateResearchAgentDisabled(sessionId, disabled),
       })
       setLastSendError('')
       hideBackendFailure(sessionId)
@@ -3035,7 +3052,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       setTimeout(() => loadHistoryRef.current(), 500)
       throw e
     }
-  }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure, holdLiveOverride, onMessageSent])
+  }, [sessionId, setTyping, setStreamContent, addMessage, hideBackendFailure, holdLiveOverride, onMessageSent, updateResearchAgentDisabled])
 
   const clearVoiceTimers = useCallback(() => {
     if (voiceStopTimerRef.current !== null) {
@@ -3869,7 +3886,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   }, [messages])
 
   const handleStopSession = useCallback(() => {
-    if (!sessionId) return
+    if (!sessionId || stoppingSessionsRef.current.has(sessionId)) return
+    stoppingSessionsRef.current.add(sessionId)
     setStopFeedbackActive(true)
     if (stopFeedbackTimerRef.current) clearTimeout(stopFeedbackTimerRef.current)
     stopFeedbackTimerRef.current = setTimeout(() => {
@@ -3902,17 +3920,23 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
         )))
       }
     }
-    api(`/api/sessions/${sessionId}/stop`, { method: 'POST' })
-      .then(() => {
+    stopSessionWithFollowup({
+      sessionId,
+      request: api,
+      confirm: message => window.confirm(message),
+      onDisabledChanged: disabled => updateResearchAgentDisabled(sessionId, disabled),
+      onStopped: () => {
         setTyping(false)
         setStreamContent('')
         loadHistoryRef.current()
-      })
+      },
+    })
       .catch((e: any) => {
         setLastSendError(e?.message || '终止失败')
         setStopFeedbackActive(false)
       })
-  }, [sessionId, setTyping, setStreamContent, currentIssueId, holdLiveOverride])
+      .finally(() => stoppingSessionsRef.current.delete(sessionId))
+  }, [sessionId, setTyping, setStreamContent, currentIssueId, holdLiveOverride, updateResearchAgentDisabled])
 
   const showSessionStartModal = !!(
     currentSession
@@ -4265,6 +4289,20 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
           </JsonlCountSlot>
         </div>
       </div>}
+
+      {!!currentSession?.research_agent_disabled && (
+        <div className="mx-5 mt-3 flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[length:var(--fs-md)] flex-shrink-0">
+          <span className="flex-1">研究智能体已禁用，不接收黑板信号和自动唤醒。</span>
+          <button type="button" className="underline underline-offset-2" onClick={async () => {
+            if (!sessionId) return
+            try {
+              if (!window.confirm('当前研究智能体处于禁用状态，是否解禁？')) return
+              await api(`/api/sessions/${sessionId}/research-agent/enable`, { method: 'POST' })
+              updateResearchAgentDisabled(sessionId, false)
+            } catch (e: any) { setLastSendError(e?.message || '重新启用失败') }
+          }}>重新启用</button>
+        </div>
+      )}
 
       {stopFeedbackActive && (
         <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">

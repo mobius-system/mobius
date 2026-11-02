@@ -618,6 +618,10 @@ function researchBlackboardCliAccess(action: 'read' | 'write') {
         res.status(403).json({ error: `接收者 Session ${receiver.session_id} 当前状态为 ${receiver.status || '未知'}，无法接收定向消息` });
         return;
       }
+      if (receiver.research_agent_disabled) {
+        res.status(403).json({ error: `接收者 Session ${receiver.session_id} 已禁用，无法接收定向消息` });
+        return;
+      }
     } else if (receiverRef) {
       res.status(400).json({ error: '指定 receiver 时必须同时使用 --limit-receiver' });
       return;

@@ -111,6 +111,10 @@ const ScheduledWakeups = {
     return db.prepare(`
       SELECT * FROM scheduled_wakeups
       WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?
+        AND NOT EXISTS (
+          SELECT 1 FROM sessions_v2 s WHERE s.session_id = scheduled_wakeups.session_id
+            AND s.scope_type = 'research' AND s.research_agent_disabled = 1
+        )
       ORDER BY next_run_at ASC
       LIMIT ?
     `).all(nowIso, limit) as ScheduledWakeupRow[];

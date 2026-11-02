@@ -9,6 +9,7 @@
  *        multiagent_send 用法提示 (后续通讯走 /api/multiagent_communication 直达).
  */
 import { Sessions } from '../repositories/sessions';
+import { assertResearchAgentEnabled } from './research-agent-state';
 import { Messages } from '../repositories/messages';
 import { buildSessionContext, wrapUserMessage } from './session-context';
 import modelRegistry from './model-registry';
@@ -162,6 +163,7 @@ async function runSessionMessage({
 
   const sess = findSessionOperable(normalizedSessionId, user);
   if (!sess) throw httpError(`session ${normalizedSessionId} 不存在或不属于你`, 404);
+  assertResearchAgentEnabled(normalizedSessionId);
 
   const workspace = resolveSessionWorkspace(user, normalizedSessionId);
   if (workspace.error) {

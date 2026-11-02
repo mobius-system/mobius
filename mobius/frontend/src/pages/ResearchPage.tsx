@@ -610,6 +610,7 @@ function ResearchSessionOverview({ sessions, onOpenSession, onNewSession, onEdit
                       <div className={`text-[length:var(--fs-xl)] font-semibold truncate ${isCompleted ? 'line-through' : ''}`}
                         style={{ color: nameMuted ? 'var(--text-muted)' : 'var(--text-primary)' }}>{s.name}</div>
                       <div className="text-[length:var(--fs-xs)] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                        {!!s.research_agent_disabled && <span className="text-amber-500">已禁用 · 不接收黑板信号</span>}
                         {isFailed && <span className="text-red-400">● 任务失败</span>}
                         {!isFailed && isRunning && <span className="text-green-400">● 执行中</span>}
                         {!isFailed && !isRunning && isCompleted && <span>已完成</span>}

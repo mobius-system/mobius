@@ -893,11 +893,11 @@ class TmuxCodexBackend extends AgentBackend {
 
   createNewSession(opts: CodexDispatchOpts) {
     this._writeMobiusPromptEarly(opts)
-    return this._withLock(opts?.sessionId, () => this._createImpl(opts))
+    return this._withDispatchLock(opts?.sessionId, () => this._createImpl(opts))
   }
   pauseCurrentAndResumeFromSession(opts: CodexDispatchOpts) {
     this._writeMobiusPromptEarly(opts)
-    return this._withLock(opts?.sessionId, () => this.pauseSessionAndNextPrompt(opts))
+    return this._withDispatchLock(opts?.sessionId, () => this.pauseSessionAndNextPrompt(opts))
   }
   /*
    * Hard-stop the current Codex TUI and hold the per-session lock until its old window is gone.
@@ -908,11 +908,11 @@ class TmuxCodexBackend extends AgentBackend {
   }
   noPauseCurrentAndQueueQueryAtSession(opts: CodexDispatchOpts) {
     this._writeMobiusPromptEarly(opts)
-    return this._withLock(opts?.sessionId, () => this._queueImpl(opts))
+    return this._withDispatchLock(opts?.sessionId, () => this._queueImpl(opts))
   }
   // Interrupt the running turn so codex consumes the next queued instruction.
   pauseCurrentToDequeueQuery(sessionId: string) {
-    return this._withLock(sessionId, async () => {
+    return this._withDispatchLock(sessionId, async () => {
       if (!sessionId) throw new Error('sessionId required')
       if (!windowExists(sessionId)) return
       // Codex's interrupt key is Esc, not C-c. A single Esc breaks the current turn so the agent
