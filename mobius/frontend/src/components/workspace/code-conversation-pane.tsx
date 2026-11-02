@@ -214,6 +214,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const [remoteSources, setRemoteSources] = useState<ProjectRemoteFileSource[]>([])
   const [remoteSourcesLoaded, setRemoteSourcesLoaded] = useState(false)
   const [remoteSourcesError, setRemoteSourcesError] = useState('')
+  const [remoteDiscoveryWarning, setRemoteDiscoveryWarning] = useState('')
+  const manualRemoteRef = useRef(false)
+  useEffect(() => { manualRemoteRef.current = false }, [projectId, sessionId, sessionDeviceId])
   const [remoteSourcesVersion, setRemoteSourcesVersion] = useState(0)
   const [remoteAddOpen, setRemoteAddOpen] = useState(false)
   const [remoteName, setRemoteName] = useState(() => loadRemoteMachine(projectId))
@@ -324,11 +327,14 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         if (cancelled) return
         const rows = Array.isArray(data?.remotes) ? data.remotes.filter((row: any) => row?.name) : []
         setRemoteSources(rows)
+        setRemoteDiscoveryWarning(data?.discovery_error || '')
         // 会话绑定的 bridge 设备恒在列表首位 (后端标 bridge:true), 自动挂载且第一优先。
         const bridgeName = rows[0]?.bridge === true ? rows[0].name : ''
         setRemoteName(current => {
           const stored = loadRemoteMachine(projectId)
-          const next = bridgeName
+          const next = manualRemoteRef.current && rows.some((row: ProjectRemoteFileSource) => row.name === current)
+            ? current
+            : bridgeName
             ? bridgeName
             : rows.some((row: ProjectRemoteFileSource) => row.name === current)
               ? current
@@ -420,6 +426,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           : await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '加载本地文件失败')
       if (relPath === treeRoot) {
+        setRootError('')
         setRootLoaded(true)
         if (source === 'local') {
           setLocalBindPath(data?.bind_path || '')
@@ -445,7 +452,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
 
   useEffect(() => {
     let cancelled = false
-    if (!isDesktop) { setSourceState('hub'); setLocalBindPath(''); return }
+    if (!isDesktop) { setSourceState(current => current === 'local' ? 'hub' : current); setLocalBindPath(''); return }
     desktop?.getProjectLocalPath?.(projectId)
       .then(path => { if (!cancelled) setLocalBindPath(path || '') })
       .catch(() => { if (!cancelled) setLocalBindPath('') })
@@ -841,6 +848,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   // 局部刷新某目录 (复用 loadDir, 保留 expanded/选中/滚动)。
   const refreshDir = useCallback(async (relPath: string) => { await loadDir(relPath) }, [loadDir])
   const refreshTree = useCallback(async () => {
+    setRemoteSourcesVersion(version => version + 1)
     const paths = Array.from(expanded)
     if (!paths.includes(treeRoot)) paths.unshift(treeRoot)
     await Promise.all(paths.map(path => loadDir(path)))
@@ -1229,7 +1237,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           <button
             type="button"
             onClick={refreshTree}
-            disabled={!rootLoaded || (source === 'remote' && !remoteName)}
+            disabled={!rootLoaded}
             title="刷新文件列表"
             aria-label="刷新文件列表"
             className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -1245,7 +1253,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
             <div className="flex items-center gap-1.5">
               <select
                 value={source === 'remote' ? remoteName : (source === 'local' ? LOCATION_LOCAL : LOCATION_HUB)}
-                onChange={event => chooseLocation(event.target.value)}
+                onChange={event => { manualRemoteRef.current = true; chooseLocation(event.target.value) }}
                 aria-label="文件来源"
                 data-tour="workspace-remote-machine-select"
                 className="h-7 min-w-0 flex-1 rounded-md border px-2 text-[length:var(--fs-sm)] focus:outline-none"
@@ -1258,7 +1266,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   {remoteSourcesLoaded && remoteSources.length === 0 && <option value="" disabled>未注册远程机器</option>}
                   {remoteSources.map(remote => (
                     <option key={remote.name} value={remote.name}>
-                      {formatName(remote.name)}{remote.status ? ` · ${remote.status}` : ''}
+                      {formatName(remote.name)}{remote.status ? ` · ${remote.status === 'connected' ? '在线' : remote.status === 'offline' ? '离线' : remote.status}` : ''}
                     </option>
                   ))}
                 </optgroup>
@@ -1333,6 +1341,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                 </button>
               )}
             </div>
+            {remoteDiscoveryWarning && <div role="status" className="mt-1 text-[length:var(--fs-xs)] text-amber-400">{remoteDiscoveryWarning}</div>}
             {source === 'remote' && remoteRootError && (
               <div className="mt-1 text-[length:var(--fs-xs)] text-red-400">{remoteRootError}</div>
             )}

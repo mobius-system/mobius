@@ -1,3 +1,4 @@
+import { boundAimuxDeviceId } from '../components/aimux-link-indicator'
 import { Suspense, lazy, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bot, Users, Trash2 } from 'lucide-react'
@@ -403,6 +404,8 @@ export default function ResearchPage() {
                 projectId={projectId}
                 bindPath={editorBindPath}
                 vscodeWebUrl={editorVscodeUrl}
+                sessionId={currentSession?.session_id}
+                sessionDeviceId={boundAimuxDeviceId(currentSession)}
               />
             </Suspense>
           </div>

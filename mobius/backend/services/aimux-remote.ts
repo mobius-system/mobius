@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
+import * as http from 'http';
 
 // Candidate aimux binaries, in priority order:
 //   1. AIMUX_BIN env (explicit override)
@@ -198,7 +199,11 @@ function resultMessage(result: any): string {
   const parsed = parseJsonOutput(result);
   if (parsed?.error?.message) return parsed.error.message;
   if (parsed?.message) return parsed.message;
-  return result.stderr || result.stdout || result.error || 'aimux remote 命令执行失败';
+  const message = result.stderr || result.stdout || result.error || 'aimux remote 命令执行失败';
+  if (/not found in ~\/\.ssh\/config or bridge registry/i.test(message)) {
+    return '所选设备连接已失效。请刷新设备列表并选择在线设备，或重新连接原客户端。';
+  }
+  return message;
 }
 
 function normalizeRemote(item: any): any {
@@ -211,6 +216,34 @@ function normalizeRemote(item: any): any {
     status: String(item?.status || ''),
     rtt_ms: typeof item?.rtt_ms === 'number' ? item.rtt_ms : null,
   };
+}
+
+// Read only the local bridge registry; unlike `remote ls`, this never probes SSH hosts.
+async function listBridgeRemotes(): Promise<any[]> {
+  const runtimePath = process.env.AIMUX_BRIDGE_RUNTIME || path.join(os.homedir(), '.aimux', 'bridge', 'runtime.json');
+  const runtime = JSON.parse(fs.readFileSync(runtimePath, 'utf8'));
+  if (!runtime.url || !runtime.token) throw new Error('设备连接服务尚未就绪');
+  return new Promise((resolve, reject) => {
+    const request = http.get(`${String(runtime.url).replace(/\/$/, '')}/api/remotes`, {
+      headers: { Authorization: `Bearer ${runtime.token}` }, timeout: 3000,
+    }, response => {
+      let raw = '';
+      response.on('data', chunk => {
+        raw += chunk.toString();
+        if (raw.length > MAX_BUFFER) request.destroy(new Error('设备清单过大'));
+      });
+      response.on('error', reject);
+      response.on('end', () => {
+        try {
+          const data = JSON.parse(raw);
+          if (response.statusCode !== 200 || !Array.isArray(data.remotes)) throw new Error('无法读取在线设备清单');
+          resolve(data.remotes.map((item: any) => ({ ...normalizeRemote(item), type: 'bridge' })));
+        } catch (error) { reject(error); }
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('读取在线设备清单超时')));
+    request.on('error', reject);
+  });
 }
 
 async function listRemotes(): Promise<any[]> {
@@ -623,6 +656,7 @@ function removeRemote(name: string): any {
 
 export {
   listRemotes,
+  listBridgeRemotes,
   streamRemotes,
   testRemote,
   hardwareRemote,

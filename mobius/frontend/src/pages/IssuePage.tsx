@@ -1,3 +1,4 @@
+import { boundAimuxDeviceId } from '../components/aimux-link-indicator'
 import { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CircleDot, ChevronDown, ChevronRight, FlaskConical, MessageSquarePlus, PanelTopClose, PanelTopOpen, Plus } from 'lucide-react'
@@ -854,6 +855,7 @@ export default function IssuePage() {
                 bindPath={editorBindPath}
                 vscodeWebUrl={editorVscodeUrl}
                 sessionId={currentSession?.session_id}
+                sessionDeviceId={boundAimuxDeviceId(currentSession)}
               />
             </Suspense>
           </div>

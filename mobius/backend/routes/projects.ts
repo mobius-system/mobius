@@ -2993,7 +2993,7 @@ router.get('/:id/git-sources', auth, async (req: express.Request, res: express.R
         // 同时清掉清单里那份早已过期的 connected 快照, 避免卡片自相矛盾.
         // ✨ The name resolves nowhere: the machine is gone (bridge names change on reconnect), so the
         // frozen inventory snapshot is stale — say so in plain words and drop the bogus "connected".
-        const lostRemote = /not found in ~\/\.ssh\/config or bridge registry/i.test(message);
+        const lostRemote = /not found in ~\/\.ssh\/config or bridge registry|所选设备连接已失效/i.test(message);
         return {
           id: `remote:${name}`,
           kind: 'remote',
@@ -3511,7 +3511,7 @@ function remoteRootOverride(raw: unknown): string {
   return text;
 }
 
-function projectRemoteFileSource(project: any, rawName: unknown, bridge: { aimuxId: string; localPath: string } | null): any | null {
+async function projectRemoteFileSource(req: express.Request, project: any, rawName: unknown, bridge: { aimuxId: string; localPath: string } | null): Promise<any | null> {
   const name = typeof rawName === 'string' ? rawName.trim() : '';
   if (!name) return null;
   // 会话绑定的 bridge 设备优先: 即使不在项目清单里也可作为远程文件源 (第一优先顺序)。
@@ -3519,12 +3519,19 @@ function projectRemoteFileSource(project: any, rawName: unknown, bridge: { aimux
     return { name: bridge.aimuxId, status: 'connected', remote_path: bridge.localPath };
   }
   const inventory = Array.isArray(project?.aimux_remote_inventory) ? project.aimux_remote_inventory : [];
-  return inventory.find((entry: any) => entry?.name === name) || null;
+  const registered = inventory.find((entry: any) => entry?.name === name);
+  if (registered) return registered;
+  // Only administrators can discover arbitrary devices from the shared broker.
+  // Other users retain the existing project/session source authorization.
+  if (userOf(req)?.role !== 'admin') return null;
+  const live = await aimuxRemote.listBridgeRemotes();
+  return live.some(remote => remote.name === name && remote.status === 'connected')
+    ? { name, remote_path: '.', status: 'connected' } : null;
 }
 
-// 当前 Project 已注册的远程算力文件源。只暴露项目清单内的机器，不返回全局 aimux remote。
+// 项目/会话文件源；管理员另可发现当前在线的共享 bridge 设备。
 // 若带 ?session=<id> 且该会话绑定了 aimux bridge 设备, 则该设备作为第一优先的远程文件源注入列表。
-router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express.Response) => {
+router.get('/:id/remote-file-sources', auth, async (req: express.Request, res: express.Response) => {
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
@@ -3553,7 +3560,27 @@ router.get('/:id/remote-file-sources', auth, (req: express.Request, res: express
       hardware: String(entry.hardware || ''),
     });
   }
-  res.json({ remotes: [...bridgeRemotes, ...inventoryRemotes] });
+  const remotes = [...bridgeRemotes, ...inventoryRemotes];
+  let discoveryError = '';
+  // Shared registry discovery is admin-only; never leak its names to project readers.
+  if (userOf(req)?.role === 'admin') {
+    try {
+      const live = await aimuxRemote.listBridgeRemotes();
+      const byName = new Map(live.map(remote => [remote.name, remote]));
+      for (const remote of remotes) {
+        const current = byName.get(remote.name);
+        if (current) remote.status = current.status;
+        else if (remote.status === 'connected' || 'bridge' in remote) remote.status = 'offline';
+      }
+      for (const remote of live) {
+        if (remote.status !== 'connected' || seenNames.has(remote.name)) continue;
+        seenNames.add(remote.name);
+        remotes.push({ name: remote.name, remote_path: '.', status: remote.status, hostname: remote.hostname, hardware: '' });
+      }
+    } catch { discoveryError = '在线设备清单暂时无法刷新，请稍后重试'; }
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ remotes, discovery_error: discoveryError });
 });
 
 // 远程文件统一走 aimux file：普通 SSH remote 与 reverse bridge remote 自动分派。
@@ -3561,9 +3588,9 @@ router.get('/:id/remote-files', auth, async (req: express.Request, res: express.
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
-  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
-  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
+    const remote = await projectRemoteFileSource(req, project, req.query.remote, bridge);
+    if (!remote) return res.status(400).json({ error: '设备未登记到当前项目或当前不可用' });
     // ✨ 「远程」模式可带 ?root= 覆盖根目录 (用户在文件浏览器里更改目录), 缺省用项目注册的 remote_path
     // ✨ Optional ?root= overrides the browse root in remote mode; defaults to the project's registered remote_path
     const root = remoteRootOverride(req.query.root) || remote.remote_path;
@@ -3577,9 +3604,9 @@ router.get('/:id/remote-file', auth, async (req: express.Request, res: express.R
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
-  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
-  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
+    const remote = await projectRemoteFileSource(req, project, req.query.remote, bridge);
+    if (!remote) return res.status(400).json({ error: '设备未登记到当前项目或当前不可用' });
     // 根目录同列表接口: 与 listRemoteFiles 用同一覆盖值, 相对路径才能对齐
     // Same root override as the listing API so relative paths stay aligned
     const root = remoteRootOverride(req.query.root) || remote.remote_path;
@@ -3593,9 +3620,9 @@ router.post('/:id/remote-file', auth, async (req: express.Request, res: express.
   const project = loadWritableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
-  const remote = projectRemoteFileSource(project, req.body?.remote, bridge);
-  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   try {
+    const remote = await projectRemoteFileSource(req, project, req.body?.remote, bridge);
+    if (!remote) return res.status(400).json({ error: '设备未登记到当前项目或当前不可用' });
     // 根目录同列表接口 (写入也必须对齐, 否则会写错机器上的路径)
     // Same root override as the listing API, otherwise the write lands on the wrong path
     const root = remoteRootOverride(req.body?.root) || remote.remote_path;
@@ -3611,10 +3638,10 @@ router.get('/:id/remote-file/download', downloadAuth, async (req: express.Reques
   const project = loadReadableProject(req, res, String(req.params.id));
   if (!project) return;
   const bridge = sessionAimuxBridgeDevice(req, req.query.session);
-  const remote = projectRemoteFileSource(project, req.query.remote, bridge);
-  if (!remote) return res.status(400).json({ error: '该远程机器未注册到当前项目' });
   let buffer: Buffer;
   try {
+    const remote = await projectRemoteFileSource(req, project, req.query.remote, bridge);
+    if (!remote) return res.status(400).json({ error: '设备未登记到当前项目或当前不可用' });
     // 根目录同读取接口, 相对路径才能对齐; 越界符号已由 normalizeRemoteRelativePath 拒绝
     // Same root override as the read API so relative paths stay aligned
     const root = remoteRootOverride(req.query.root) || remote.remote_path;
