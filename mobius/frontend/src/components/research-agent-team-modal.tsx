@@ -1,3 +1,6 @@
+import { SessionDevicePicker } from './session-device-picker'
+import { HUB_DEVICE, sessionDeviceMetadata, isDeviceRequiredSkill, type SessionDeviceSelection } from '../services/session-device'
+import { continuationDevice } from './aimux-link-indicator'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircle2, Loader2, Lock, Plus, Rocket, Trash2, Users, X, Sparkles, Layers } from 'lucide-react'
 import { api, useStore } from '../store'
@@ -34,6 +37,7 @@ type SelectableItem = {
 }
 
 type TeamAgent = {
+  device?: SessionDeviceSelection
   id: string
   sessionId?: string
   locked: boolean
@@ -60,6 +64,7 @@ type SelectionPanel = {
 }
 
 type ExistingSession = {
+  pc_client_metadata?: unknown
   session_id: string
   name: string
   description?: string
@@ -171,6 +176,7 @@ function normalizeSkillExclusions(base: string[], mainSkillId: string, agentSkil
 function selectedSkillCount(agent: TeamAgent, skills: SelectableItem[], agentSkills: AgentSkill[]) {
   const agentSkillIds = new Set(agentSkills.map(sk => sk.id))
   return skills.filter((sk) => {
+    if (isDeviceRequiredSkill(sk, sessionDeviceMetadata(agent.device || HUB_DEVICE))) return true
     if (agentSkillIds.has(sk.id)) return sk.id === agent.mainSkillId
     return !agent.excludedSkillIds.includes(sk.id)
   }).length
@@ -199,6 +205,7 @@ function buildInitialAgents({
 }) {
   const existingAgents: TeamAgent[] = sortExistingSessions(existingSessions).map((s) => ({
     id: `existing-${s.session_id}`,
+    device: continuationDevice(s),
     sessionId: s.session_id,
     locked: true,
     role: sessionRole(s),
@@ -512,7 +519,7 @@ export function ResearchAgentTeamModal({
   const toggleSelection = (agent: TeamAgent, itemId: string, type: SelectionPanel['type']) => {
     if (agent.locked) return
     if (type === 'skill') {
-      if (agentSkillIds.has(itemId)) return
+      if (agentSkillIds.has(itemId) || isDeviceRequiredSkill(availableSkills.find(sk => sk.id === itemId) || { id: itemId }, sessionDeviceMetadata(agent.device || HUB_DEVICE))) return
       const set = new Set(agent.excludedSkillIds)
       set.has(itemId) ? set.delete(itemId) : set.add(itemId)
       updateAgent(agent.id, {
@@ -607,7 +614,9 @@ export function ResearchAgentTeamModal({
               role: agent.role,
               model: agent.model,
               language: agent.language,
-              excluded_skill_ids: normalizeSkillExclusions(agent.excludedSkillIds, agent.mainSkillId, agentSkills),
+              pc_client_metadata: sessionDeviceMetadata(agent.device || HUB_DEVICE),
+              excluded_skill_ids: normalizeSkillExclusions(agent.excludedSkillIds, agent.mainSkillId, agentSkills)
+                .filter(id => !isDeviceRequiredSkill(availableSkills.find(sk => sk.id === id) || { id }, sessionDeviceMetadata(agent.device || HUB_DEVICE))),
               excluded_memory_ids: agent.excludedMemoryIds,
               suppress_join_notice: true,
             }),
@@ -807,6 +816,11 @@ export function ResearchAgentTeamModal({
                         </select>
                       </div>
                     </div>
+                    <SessionDevicePicker
+                      value={selectedAgent.device || HUB_DEVICE}
+                      onChange={device => updateAgent(selectedAgent.id, { device })}
+                      dark={isDark} disabled={selectedAgent.locked || submitting}
+                    />
                     <div>
                       <label className="mb-1 block text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>主 Skill（选定后关联自动锁定 · 冲突互斥）</label>
                       <select value={selectedAgent.mainSkillId} disabled={selectedAgent.locked || submitting}
@@ -925,10 +939,11 @@ export function ResearchAgentTeamModal({
                 ) : panelItems.map((item) => {
                   const isAgentSkill = selectionPanel.type === 'skill' && agentSkillIds.has(item.id)
                   const isMain = selectionPanel.type === 'skill' && panelAgent.mainSkillId === item.id
+                  const requiredDeviceSkill = selectionPanel.type === 'skill' && isDeviceRequiredSkill(item, sessionDeviceMetadata(panelAgent.device || HUB_DEVICE))
                   const checked = selectionPanel.type === 'skill'
-                    ? (isMain || (!isAgentSkill && !panelAgent.excludedSkillIds.includes(item.id)))
+                    ? (requiredDeviceSkill || isMain || (!isAgentSkill && !panelAgent.excludedSkillIds.includes(item.id)))
                     : !panelAgent.excludedMemoryIds.includes(item.id)
-                  const disabled = panelAgent.locked || submitting || isAgentSkill
+                  const disabled = panelAgent.locked || submitting || isAgentSkill || requiredDeviceSkill
                   return (
                     <label key={item.id}
                       className={`flex items-start gap-2 rounded-md px-2 py-1.5 text-[length:var(--fs-md)] ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-[var(--bg-hover)]'}`}>
@@ -943,6 +958,7 @@ export function ResearchAgentTeamModal({
                         <div className="truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
                         {item.description && <div className="truncate text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>{item.description}</div>}
                       </div>
+                      {requiredDeviceSkill && <span className="text-blue-400">设备必选</span>}
                       {isMain && <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] text-blue-400 bg-blue-500/10">主Skill</span>}
                       {isAgentSkill && !isMain && <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] text-red-400 bg-red-500/10">互斥</span>}
                       <span className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)]" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>

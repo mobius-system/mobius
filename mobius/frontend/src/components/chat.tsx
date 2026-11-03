@@ -4239,6 +4239,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
             />
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
             <RemoteAimuxMcpIndicator
+              showHub={currentSession?.scope_type === 'research'}
               session={currentSession ?? currentTask}
               sessionId={sessionId}
               onSwitchDevice={handleSwitchAimuxDevice}

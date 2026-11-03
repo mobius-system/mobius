@@ -558,7 +558,7 @@ router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Resp
   if (newAimuxId) {
     updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: true };
     // 网页端新建会话时显式选设备走的是双侧 (work_mode), 这里保持同一口径.
-    if (!updated.work_mode) updated.work_mode = 'dual';
+    if (updated.work_mode !== 'pc' && updated.work_mode !== 'dual') updated.work_mode = 'dual';
   } else {
     updated = { ...meta, aimux_id: '', initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: false, work_mode: 'hub' };
   }

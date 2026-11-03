@@ -1,3 +1,5 @@
+import { SessionDevicePicker } from './session-device-picker'
+import { HUB_DEVICE, sessionDeviceMetadata, isDeviceRequiredSkill, type SessionDeviceSelection } from '../services/session-device'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { MARKDOWN_REMARK_PLUGINS, MARKDOWN_REHYPE_PLUGINS } from '../services/markdown'
@@ -1524,6 +1526,7 @@ export function NewSessionModal({
     language?: SessionLanguage
     excluded_skill_ids?: string[]
     excluded_memory_ids?: string[]
+    device?: SessionDeviceSelection
     chosen_agent_skill_id?: string
     selection_ready?: boolean
     mentions?: SessionMentionSelection[]
@@ -1541,6 +1544,10 @@ export function NewSessionModal({
   const [aimuxId, setAimuxId] = useState<string | null>(null)
   // PC 端工作路径 (桌面端 PcTaskModeSection 经 onPathChange 回传): 塞进 pc_client_metadata.local_path, 注入 session 提示词; web 端恒 '' → 不追加, 行为不变.
   const [pcPath, setPcPath] = useState<string>('')
+  const [device, setDevice] = useState<SessionDeviceSelection>(initialDraft?.device || HUB_DEVICE)
+  const pcMetadata = useMemo(() => sessionDeviceMetadata(isResearch ? device : HUB_DEVICE, {
+    aimuxId, workMode, localPath: pcPath,
+  }), [isResearch, device, aimuxId, workMode, pcPath])
   // electron 桌面端: session 默认名追加本机标识后缀 [OS · hostname] + 顺带取 aimux_id.
   // 仅 mount 一次; bootData 异步取, 函数式 setName 不覆盖用户后续编辑; 草稿已带该 tag 则不重复追加.
   useEffect(() => {
@@ -1699,9 +1706,10 @@ export function NewSessionModal({
         chosen_agent_skill_id: chosenAgentSkill?.id || '',
         selection_ready: !!initialDraft?.selection_ready || step >= 2 || !!preview,
         mentions: selectedMentions,
+        ...(isResearch ? { device } : {}),
       }, { minChars: 1 })
     }
-  }, [DRAFT_KEY, isPresetMode, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
+  }, [DRAFT_KEY, isPresetMode, isResearch, device, name, desc, selectedMentions, role, language, excludedSkills, excludedMemories, chosenAgentSkill?.id, step, preview, initialDraft?.selection_ready])
 
   const modelUsageFor = useCallback((modelKey: ModelKey) => {
     return promptStats?.model_usage_limits?.models?.[modelKey] || null
@@ -1787,8 +1795,8 @@ export function NewSessionModal({
     return !!chosenAgentSkill && agentSkills.some(sk => sk.id === id && sk.id !== chosenAgentSkill.id)
   }, [agentSkills, chosenAgentSkill])
   const matchesRequiredSkill = useCallback((sk: { id?: string; name?: string; dirName?: string | null }) => {
-    // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选. web 端 workMode 恒 null → 不触发, 不改变 web 端 skill 行为.
-    if ((workMode === 'pc' || workMode === 'dual') && (sk.dirName || '').replace(/_/g, '-') === 'mobius-aimux') return true
+    // 桌面工作模式与网页显式设备选择都必须保留相应的设备技能。
+    if (isDeviceRequiredSkill(sk, pcMetadata)) return true
     if (!requiredSessionSkill) return false
     const dirName = requiredSessionSkill.dirName
     const normalizedName = (requiredSessionSkill.name || dirName).replace(/_/g, '-')
@@ -1799,7 +1807,7 @@ export function NewSessionModal({
       || itemName === normalizedName
       || itemId === `builtin:${dirName}`
       || itemId.endsWith(`:${dirName}`)
-  }, [requiredSessionSkill, workMode])
+  }, [requiredSessionSkill, pcMetadata])
 
   const normalizeSkillExclusions = useCallback((skillEx: Set<string>, availableSkillIds?: Set<string>) => {
     const next = new Set(skillEx)
@@ -1848,11 +1856,11 @@ export function NewSessionModal({
         ...(options.includeDefaults ? { include_defaults: true } : {}),
         ...(options.includeBody === false ? { include_body: false } : {}),
         ...(options.includeItemBodies === false ? { include_item_bodies: false } : {}),
-        // PC 任务模式 (仅桌面端): 与 session 创建 body 同源, 让 preview 也注入 PC 提示词; web 端 workMode null 不传.
-        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+        // 预览与创建共享设备元数据，确保工具、路径和授权一致。
+        ...(pcMetadata ? { pc_client_metadata: pcMetadata } : {}),
       }),
     }) as WizardPreview
-  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, workMode, aimuxId, pcPath])
+  }, [issueId, projectId, researchId, isResearch, isProjectPreset, presetContextPreviewEndpoint, name, submittedDescription, role, language, personality, pcMetadata])
 
   // 拉取当前 issue/research 的"上次所选模型" (该作用域最近一次 Session 的 model).
   // preset 模式不走三级默认, 直接跳过. 仅依赖作用域标识, 避免无谓重拉.
@@ -2061,16 +2069,16 @@ export function NewSessionModal({
         body: JSON.stringify({
           name, description: appendAttachmentsToDesc(submittedDescription, attachments), model, role, language,
           mentions: sessionMentionPayload(selectedMentions),
-          excluded_skill_ids: Array.from(excludedSkills),
+          excluded_skill_ids: Array.from(normalizeSkillExclusions(excludedSkills)),
           excluded_memory_ids: Array.from(excludedMemories),
           continue_from_session_id: continueFromSessionId || undefined,
-          // PC 任务模式 (仅桌面端): workMode 非空才附带 pc_client_metadata; web 端 workMode 恒 null → body 完全不变.
-            ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined, is_tui: false, add_remote_aimux_mcp: true } } : {}),
+          // 设备元数据同时覆盖桌面模式与研究表单的显式设备选择。
+          ...(pcMetadata ? { pc_client_metadata: pcMetadata } : {}),
         }),
       })
       if (!initialValues) draftClear(DRAFT_KEY)
       if (deferPurpose) markFireAndForgetSession(s?.session_id)
-      onCreated(s, { excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories) })
+      onCreated(s, { excluded_skill_ids: Array.from(normalizeSkillExclusions(excludedSkills)), excluded_memory_ids: Array.from(excludedMemories) })
     } catch (e: any) { setErr(e?.message || '创建失败') } finally { setLoading(false) }
   }
 
@@ -2148,10 +2156,11 @@ export function NewSessionModal({
     }
     return null
   }
-  const pcTaskRequiresAimux = workMode === 'pc' || workMode === 'dual'
+  const pcTaskRequiresAimux = pcMetadata?.work_mode === 'pc' || pcMetadata?.work_mode === 'dual'
   const requiredSkillNames = [
     ...(requiredSessionSkill ? [requiredSessionSkill.label || requiredSessionSkill.dirName] : []),
     ...(pcTaskRequiresAimux ? ['mobius-aimux'] : []),
+    ...(pcMetadata?.gui_authorized ? ['mobius-gui-operation'] : []),
   ].filter(Boolean)
   const previewBodyText = typeof preview?.body === 'string' ? preview.body : ''
   const totalSteps = 2
@@ -2326,6 +2335,10 @@ export function NewSessionModal({
                     </div>
                   )}
                 </div>
+              )}
+              {isResearch && !isPresetMode && !continueFromSessionId && (
+                <SessionDevicePicker value={device} onChange={setDevice} dark={isDark}
+                  isDesktop={typeof window !== 'undefined' && !!(window as any).mobiusDesktop?.isDesktop} aimuxId={aimuxId} />
               )}
               {typeof window !== 'undefined' && (window as any).mobiusDesktop?.isDesktop && (
                 <PcTaskModeSection projectId={projectId} isDark={isDark} onModeChange={setWorkMode} onPathChange={setPcPath} />

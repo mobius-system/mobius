@@ -223,9 +223,11 @@ function RemoteAimuxMcpIndicatorInner({
   session,
   sessionId,
   onSwitchDevice,
+  showHub = false,
 }: {
   session: unknown
   sessionId?: string
+  showHub?: boolean
   onSwitchDevice?: (newId: string, oldId: string) => Promise<void>
 }) {
   const { formatName } = useRemoteDeviceNames()
@@ -331,15 +333,15 @@ function RemoteAimuxMcpIndicatorInner({
     }
   }
 
-  if (!aimuxId) return null
+  if (!aimuxId && !showHub) return null
 
   const status = connected ? '正常' : '断开'
   const disconnectedMessage = '虽然现在与目标机器连接断开，但依然可依托中枢继续执行任务。'
-  const label = `当前会话与设备${formatName(aimuxId)}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。${connected ? '' : disconnectedMessage}`
+  const label = !aimuxId ? '当前会话在中枢工作，可切换协作设备。' : `当前会话与设备${formatName(aimuxId)}建立了协作链接，请保持桌面客户端或者终端客户端二者之一处于开启状态。当前链接状态：${status}。${connected ? '' : disconnectedMessage}`
   const title = canSwitch ? `${label}（点击切换协作设备）` : label
   // 颜色: 断开恒红; 已切换恒黄 (连不上仍红, 故红优先); 未切换且连接绿.
-  const tone = !connected ? 'red' : switched ? 'amber' : 'green'
-  const colorClass = tone === 'green' ? 'text-green-400' : tone === 'amber' ? 'text-amber-400' : 'text-red-400'
+  const tone = !aimuxId ? 'gray' : !connected ? 'red' : switched ? 'amber' : 'green'
+  const colorClass = tone === 'gray' ? 'text-gray-400' : tone === 'green' ? 'text-green-400' : tone === 'amber' ? 'text-amber-400' : 'text-red-400'
 
   // 其他可切换设备 (排除当前与初始; 初始有独立撤回行)
   const otherRemotes = remotes.filter((r) => r.name !== aimuxId && r.name !== initialId)
@@ -354,7 +356,7 @@ function RemoteAimuxMcpIndicatorInner({
         aria-expanded={canSwitch ? menuOpen : undefined}
         title={title}
         data-testid="remote-aimux-mcp-indicator"
-        data-connection-status={connected ? 'connected' : 'disconnected'}
+        data-connection-status={!aimuxId ? 'hub' : connected ? 'connected' : 'disconnected'}
         data-device-switched={switched ? 'true' : 'false'}
         onClick={toggleMenu}
         onKeyDown={(e: React.KeyboardEvent) => {
@@ -392,11 +394,18 @@ function RemoteAimuxMcpIndicatorInner({
                 <Laptop className="w-3.5 h-3.5" strokeWidth={1.75} />
               </span>
               <span className="aimux-mode-menu__text">
-                <span className="aimux-mode-menu__label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>当前设备 · {connText(connected)}</span>
-                <span className="aimux-mode-menu__desc" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{formatName(aimuxId)}</span>
+                <span className="aimux-mode-menu__label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>当前设备 · {aimuxId ? connText(connected) : '中枢'}</span>
+                <span className="aimux-mode-menu__desc" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{aimuxId ? formatName(aimuxId) : '只在莫比乌斯中枢上工作'}</span>
               </span>
               <Check className="aimux-mode-menu__check w-3.5 h-3.5" strokeWidth={2} />
             </div>
+
+            {showHub && aimuxId && (
+              <button type="button" role="menuitem" onClick={() => chooseDevice('')} className="aimux-mode-menu__item">
+                <Server className="w-3.5 h-3.5" />
+                <span className="aimux-mode-menu__label">回到中枢</span>
+              </button>
+            )}
 
             {/* 撤回初始设备: 已切换时恒显示, 无论初始设备是否在线 */}
             {switched && (
