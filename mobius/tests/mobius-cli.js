@@ -128,6 +128,9 @@ function main() {
   const tooLong = run(path.join(binDir, 'add_project_memory'), ['--memory-name', 'n', '--memory-content', 'x'.repeat(10001)], { env: CLEAN_ENV });
   assert.strictEqual(tooLong.status, 2, 'content over 10000 characters is rejected before any request');
   assert.match(tooLong.stderr, /10000/);
+  const nameTooLong = run(path.join(binDir, 'add_project_memory'), ['--memory-name', 'n'.repeat(51), '--memory-content', 'c'], { env: CLEAN_ENV });
+  assert.strictEqual(nameTooLong.status, 2, 'name over 50 characters is rejected before any request');
+  assert.match(nameTooLong.stderr, /50/);
   const shareNoEnv = run(path.join(binDir, 'make_file_public_access'), ['--path', sampleFile], { env: CLEAN_ENV });
   assert.strictEqual(shareNoEnv.status, 3, `make_file_public_access must exit 3 without the session environment: ${shareNoEnv.stderr}`);
   assert.match(shareNoEnv.stderr, /MOBIUS_BASE is unset|MOBIUS_CLI_JWT is unset/);

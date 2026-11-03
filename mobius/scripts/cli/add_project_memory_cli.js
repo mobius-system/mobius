@@ -15,7 +15,7 @@
 const http = require('http');
 const https = require('https');
 
-const MAX_NAME_CHARS = 200;
+const MAX_NAME_CHARS = 50;
 const MAX_CONTENT_CHARS = 10000;
 const TIMEOUT_MS = 60 * 1000;
 
@@ -29,7 +29,7 @@ function usage(stream = process.stdout) {
   stream.write('  Add one Memory to the project of the current Mobius Session.\n');
   stream.write('  The project is resolved from the Session; no project id is needed.\n\n');
   stream.write('Options:\n');
-  stream.write('  --memory-name <name>      memory title (required, single line, <= 200 characters)\n');
+  stream.write('  --memory-name <name>      memory title (required, single line, <= 50 characters)\n');
   stream.write('  --memory-content <text>   memory body (required, at most 10000 characters; quote multi-line text)\n');
   stream.write('  -h, --help                show this help and exit\n\n');
   stream.write('Environment (required):\n');
