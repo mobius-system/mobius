@@ -27,7 +27,7 @@ const bundle = await build({
     function Header() {
       const [meta, setMeta] = useState(null)
       return <div className="chat-major-panel" style={{width: 360, padding: 20}}><div className="mobius-session-chat-header">
-        <RemoteAimuxMcpIndicator session={{pc_client_metadata: meta}} sessionId="research-session" showHub
+        <RemoteAimuxMcpIndicator session={{scope_type: 'issue', pc_client_metadata: meta}} sessionId="issue-session" showHub
           onSwitchDevice={async (id, old) => { window.switches.push([id, old]); setMeta({aimux_id: id, add_remote_aimux_mcp: !!id, initial_aimux_id: meta?.initial_aimux_id || old}) }} />
       </div></div>
     }
@@ -125,6 +125,6 @@ try {
   await page.evaluate(()=>window.render('locked'))
   assert(await page.getByRole('button', {name:'missing-device',exact:true}).isDisabled())
   assert.deepEqual(errors,[])
-  console.log('PASS Research header: hub binding, connected/disconnected, original-device return, hub return; inherited missing device stays visible and locked')
+  console.log('PASS classic Issue header: unbound hub icon, binding, connected/disconnected, original-device return, hub return; inherited missing device stays visible and locked')
   console.log('Screenshots:',artifacts)
 } finally { await browser.close() }
