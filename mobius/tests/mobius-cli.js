@@ -54,8 +54,8 @@ function main() {
     'research_blackboard_read', 'research_blackboard_write',
     'display_files', 'display_images', 'mobius_session_reminder',
     'mobius_schedule_wake_me_up', 'mobius_schedule_list', 'mobius_schedule_cancel_all',
-    'make_file_public_access',
-    '.research_blackboard_cli', '.mobius_schedule_cli', '.make_file_public_access_cli',
+    'make_file_public_access', 'add_project_memory',
+    '.research_blackboard_cli', '.mobius_schedule_cli', '.make_file_public_access_cli', '.add_project_memory_cli',
   ];
   for (const name of installed) {
     assert.strictEqual(fs.statSync(path.join(binDir, name)).mode & 0o777, 0o755, `${name} must be executable`);
@@ -116,6 +116,16 @@ function main() {
   assert.match(shareHelp.stdout, /--expire/);
   const sampleFile = path.join(tempRoot, 'sample.txt');
   fs.writeFileSync(sampleFile, 'hello');
+  const memoryHelp = run(path.join(binDir, 'add_project_memory'), ['--help']);
+  assert.match(memoryHelp.stdout, /--body-file/);
+  assert.match(memoryHelp.stdout, /--stdin/);
+  assert.match(memoryHelp.stdout, /--project/);
+  const memoryNoEnv = run(path.join(binDir, 'add_project_memory'), ['--name', 'n', '--body', 'b'], { env: CLEAN_ENV });
+  assert.strictEqual(memoryNoEnv.status, 3, `add_project_memory must exit 3 without the session environment: ${memoryNoEnv.stderr}`);
+  assert.match(memoryNoEnv.stderr, /MOBIUS_BASE is unset|MOBIUS_CLI_JWT is unset/);
+  assert.strictEqual(run(path.join(binDir, 'add_project_memory'), ['--body', 'b'], { env: CLEAN_ENV }).status, 2);
+  assert.strictEqual(run(path.join(binDir, 'add_project_memory'), ['--name', 'n'], { env: CLEAN_ENV }).status, 2);
+  assert.strictEqual(run(path.join(binDir, 'add_project_memory'), ['--name', 'n', '--body', 'b', '--stdin'], { env: CLEAN_ENV }).status, 2);
   const shareNoEnv = run(path.join(binDir, 'make_file_public_access'), ['--path', sampleFile], { env: CLEAN_ENV });
   assert.strictEqual(shareNoEnv.status, 3, `make_file_public_access must exit 3 without the session environment: ${shareNoEnv.stderr}`);
   assert.match(shareNoEnv.stderr, /MOBIUS_BASE is unset|MOBIUS_CLI_JWT is unset/);

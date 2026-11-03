@@ -1514,6 +1514,23 @@ router.get('/:id/features/scheduled-tasks', auth, (req: express.Request, res: ex
   }
 });
 
+// 会话所属项目 — 轻量只读接口, 供会话内 CLI (add_project_memory) 定位"当前项目".
+// Permission follows the session read rule; no runtime probing, so it is cheap.
+router.get('/:id/project', auth, (req: express.Request, res: express.Response) => {
+  const user = userOf(req);
+  const session = findSessionReadable(String(req.params.id), user);
+  if (!session) { res.status(404).json({ error: '未找到' }); return; }
+  if (!session.project_id) { res.status(400).json({ error: '当前 Session 未关联项目' }); return; }
+  const project = Projects.findById(String(session.project_id)) as any;
+  if (!project) { res.status(404).json({ error: '项目未找到' }); return; }
+  res.json({
+    session_id: session.session_id,
+    project_id: project.id,
+    project_name: project.name,
+    bind_path: project.bind_path || '',
+  });
+});
+
 // 进程存活 + PID — 前端轮询此接口作为"是否执行中"的唯一真相源.
 // 不读 sessions_v2.agent_status (那个不可靠), 直接问 agent backend.
 // (agents/backend 已在文件顶部 require, 删除路由也用到.)
