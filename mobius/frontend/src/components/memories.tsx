@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Activity, CheckCircle2, ChevronDown, Cpu, FolderInput, FolderOpen, Lock, Pencil, Plus, RefreshCw, SendHorizontal, Server, Trash2, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME } from '../store'
+import { useRemoteDeviceNames } from '../services/remote-device-names'
 import { ContextAccessModal } from './context-access'
 import { MoveScopeModal } from './modals'
 import { CopyFromCatalogModal } from './copy-catalog'
@@ -595,6 +596,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
   mode?: 'memory' | 'announce'
   onAnnounce?: (body: string) => void
 }) {
+  const { formatName, getAlias, setName } = useRemoteDeviceNames()
   // The session action opens a three-tab menu; the project Memory page keeps
   // the legacy single-purpose "add remote" view by using mode="memory".
   const hasTabs = mode === 'announce'
@@ -613,6 +615,10 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     () => new Set<CollapsibleRemoteStatus>(['auth-required', 'unreachable']),
   )
   const [busyName, setBusyName] = useState<string | null>(null)
+  const [renamingDevice, setRenamingDevice] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renameSaving, setRenameSaving] = useState(false)
+  const [renameError, setRenameError] = useState('')
   const [testInfo, setTestInfo] = useState<Record<string, string>>({})
   const [hardwareInfo, setHardwareInfo] = useState<Record<string, string>>({})
   const [remotePaths, setRemotePaths] = useState<Record<string, string>>({})
@@ -911,6 +917,37 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
     onClose()
   }
 
+  const saveDeviceName = async (deviceId: string) => {
+    const displayName = renameDraft.trim()
+    if (!displayName) {
+      setRenameError('请输入设备新名字')
+      return
+    }
+    setRenameSaving(true)
+    setRenameError('')
+    try {
+      await setName(deviceId, displayName)
+      setRenamingDevice(null)
+    } catch (error: any) {
+      setRenameError(error?.message || '设备改名失败')
+    } finally {
+      setRenameSaving(false)
+    }
+  }
+
+  const clearDeviceName = async (deviceId: string) => {
+    setRenameSaving(true)
+    setRenameError('')
+    try {
+      await setName(deviceId, '')
+      setRenamingDevice(null)
+    } catch (error: any) {
+      setRenameError(error?.message || '恢复正式 ID 失败')
+    } finally {
+      setRenameSaving(false)
+    }
+  }
+
   const renderRemoteRow = (r: AimuxRemote) => (
     <div key={r.name} data-tour="remote-compute-row" className="p-3 rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)]"
       style={{ borderColor: selected.has(r.name) ? 'rgba(34,211,238,0.35)' : 'var(--input-border)', background: selected.has(r.name) ? 'rgba(34,211,238,0.06)' : 'var(--bg-card)' }}>
@@ -920,7 +957,7 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
           className="mt-1 w-4 h-4 accent-cyan-500 cursor-pointer" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[length:var(--fs-lg)] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+            <span className="text-[length:var(--fs-lg)] font-medium font-mono" style={{ color: 'var(--text-primary)' }}>{formatName(r.name)}</span>
             <span className="text-[length:var(--fs-xs)] px-1.5 py-0.5 rounded border whitespace-nowrap" style={statusStyle(r.status)}>
               {r.status || 'unknown'}{r.cached ? ' [记忆]' : ''}
             </span>
@@ -930,16 +967,53 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             {isAnnounce && (
               <button type="button" onClick={() => appendRemoteIdToRequirement(r.name)} disabled={saving}
                 data-tour="remote-compute-append-id"
-                title={`将机器 ID ${r.name} 追加到具体要求末尾`}
-                aria-label={`将机器 ID ${r.name} 追加到具体要求末尾`}
+                title={`将机器 ID ${formatName(r.name)} 追加到具体要求末尾`}
+                aria-label={`将机器 ID ${formatName(r.name)} 追加到具体要求末尾`}
                 className="h-6 px-1.5 text-[length:var(--fs-xs)] rounded border transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
                 style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                 添加 ID
               </button>
             )}
           </div>
+          {renamingDevice === r.name && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <input
+                autoFocus
+                value={renameDraft}
+                onChange={event => { setRenameDraft(event.target.value); setRenameError('') }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') void saveDeviceName(r.name)
+                  if (event.key === 'Escape') setRenamingDevice(null)
+                }}
+                maxLength={64}
+                aria-label={`设备 ${formatName(r.name)} 的新名字`}
+                placeholder="输入新名字"
+                disabled={renameSaving}
+                className="min-w-[150px] h-7 px-2 rounded text-[length:var(--fs-sm)] focus:outline-none focus:border-cyan-500/30 disabled:opacity-40"
+                style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+              />
+              <button type="button" onClick={() => void saveDeviceName(r.name)} disabled={renameSaving || !renameDraft.trim()}
+                className="h-7 px-2 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-cyan-500/10 disabled:opacity-40"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                {renameSaving ? '保存中...' : '保存'}
+              </button>
+              {getAlias(r.name) && (
+                <button type="button" onClick={() => void clearDeviceName(r.name)} disabled={renameSaving}
+                  className="h-7 px-2 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                  清除改名
+                </button>
+              )}
+              <button type="button" onClick={() => setRenamingDevice(null)} disabled={renameSaving}
+                className="h-7 px-2 text-[length:var(--fs-sm)] rounded border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                取消
+              </button>
+              {renameError && <span className="w-full text-[length:var(--fs-xs)] text-red-400">{renameError}</span>}
+            </div>
+          )}
           <div className="text-[length:var(--fs-sm)] mt-1 truncate font-mono" style={{ color: 'var(--text-secondary)' }}>
-            {r.user || '-'}@{r.hostname || r.name}:{r.port || 22}
+            {r.user || '-'}@{r.hostname || formatName(r.name)}:{r.port || 22}
           </div>
           {(testInfo[r.name] || hardwareInfo[r.name]) && (
             <div className="text-[length:var(--fs-sm)] mt-2 space-y-1" style={{ color: 'var(--text-muted)' }}>
@@ -983,6 +1057,19 @@ export function RemoteComputeMemoryModal({ baseUrl, onClose, onSaved, mode = 'me
             style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
             <Activity className="w-3 h-3" strokeWidth={1.8} />
             {busyName === `test:${r.name}` ? '测试中...' : '测试'}
+          </button>
+          <button type="button" onClick={() => {
+            setRenamingDevice(r.name)
+            setRenameDraft(getAlias(r.name))
+            setRenameError('')
+          }} disabled={renameSaving}
+            title={`修改设备显示名称：${formatName(r.name)}`}
+            aria-label={`修改设备显示名称：${formatName(r.name)}`}
+            data-tour="remote-compute-rename"
+            className="h-7 px-2 text-[length:var(--fs-sm)] rounded border hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 inline-flex items-center gap-1"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+            <Pencil className="w-3 h-3" strokeWidth={1.8} />
+            改名
           </button>
           <button onClick={() => probeHardware(r.name)} disabled={!!busyName || saving}
             data-tour="remote-compute-hardware"
@@ -1272,6 +1359,7 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
   onClose: () => void
   onSelect: (path: string) => void
 }) {
+  const { formatName } = useRemoteDeviceNames()
   const [pathInput, setPathInput] = useState(initialPath || '~')
   const [currentPath, setCurrentPath] = useState('')
   const [parentPath, setParentPath] = useState('')
@@ -1315,7 +1403,7 @@ function RemotePathPickerModal({ remote, initialPath, onClose, onSelect }: {
             <span className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>选择远程路径</span>
             <span className="text-[length:var(--fs-sm)] px-2 py-0.5 rounded border font-mono truncate max-w-[260px]"
               style={{ borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}>
-              {remote.name}
+              {formatName(remote.name)}
             </span>
           </div>
           <button onClick={onClose}
