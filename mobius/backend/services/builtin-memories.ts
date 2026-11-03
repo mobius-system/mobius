@@ -59,10 +59,9 @@ export const BUILTIN_MEMORIES: BuiltinMemory[] = [
     description: 'add_project_memory: 把一条长期事实写进当前会话所属项目的 Memory。',
     body: [
       '需要让以后的新会话都记住某条项目事实/约定/踩过的坑时使用：',
-      '`add_project_memory --name=<标题> [--description=<一句话摘要>] (--body=<正文> | --body-file=<路径> | --stdin) [--project=<项目ID>]`',
-      '- 不传 `--project` 时自动取当前会话所属项目，无需手动查项目 ID。',
-      '- `--name` 必填、单行、不超过 200 字符；`--description` 是列表里显示的一句话摘要。',
-      '- 正文三种来源必须且只能选一种：`--body` 内联、`--body-file` 读文件、`--stdin` 读管道（正文较长时用后两者）。',
+      '`add_project_memory --memory-name=<标题> --memory-content=<正文>`',
+      '- 项目自动取当前会话所属项目，不需要传项目 ID。',
+      '- `--memory-name` 必填、单行、不超过 200 字符；`--memory-content` 必填、不超过 10000 字符（多行请用引号包起来）。',
       '- 与 `.imac/project_knowledge.md` 的区别：Memory 是平台对象，可在新建会话时被勾选注入系统提示词；知识文件是给人/agent 主动阅读的文档。',
     ].join('\n'),
   },

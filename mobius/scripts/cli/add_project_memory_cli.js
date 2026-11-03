@@ -12,12 +12,11 @@
  * MOBIUS_CLI_JWT), and the session id from MOBIUS_SESSION_ID. Nothing local.
  */
 
-const fs = require('fs');
 const http = require('http');
 const https = require('https');
 
 const MAX_NAME_CHARS = 200;
-const MAX_BODY_BYTES = 50 * 1024 * 1024;
+const MAX_CONTENT_CHARS = 10000;
 const TIMEOUT_MS = 60 * 1000;
 
 function fail(message, code = 2) {
@@ -26,31 +25,23 @@ function fail(message, code = 2) {
 }
 
 function usage(stream = process.stdout) {
-  stream.write('Usage: add_project_memory --name=<name> [options]\n\n');
+  stream.write('Usage: add_project_memory --memory-name=<name> --memory-content=<text>\n\n');
   stream.write('  Add one Memory to the project of the current Mobius Session.\n');
-  stream.write('  The project is resolved from the session unless --project is given.\n\n');
+  stream.write('  The project is resolved from the Session; no project id is needed.\n\n');
   stream.write('Options:\n');
-  stream.write('  --name <name>         memory title (required, <= 200 characters)\n');
-  stream.write('  --description <text>  one-line summary shown in the Memory list\n');
-  stream.write('  --body <text>         memory body (inline)\n');
-  stream.write('  --body-file <path>    read the memory body from a file\n');
-  stream.write('  --stdin               read the memory body from standard input\n');
-  stream.write('  --project <id>        target project id; default: the Session project\n');
-  stream.write('  --session <id>        Session id used for project lookup; default: MOBIUS_SESSION_ID\n');
-  stream.write('  --json                print the raw backend JSON response\n');
-  stream.write('  -h, --help            show this help and exit\n\n');
-  stream.write('Exactly one of --body / --body-file / --stdin is required.\n\n');
+  stream.write('  --memory-name <name>      memory title (required, single line, <= 200 characters)\n');
+  stream.write('  --memory-content <text>   memory body (required, at most 10000 characters; quote multi-line text)\n');
+  stream.write('  -h, --help                show this help and exit\n\n');
   stream.write('Environment (required):\n');
   stream.write('  MOBIUS_BASE        backend base URL\n');
   stream.write('  MOBIUS_CLI_JWT     per-session CLI token\n');
-  stream.write('  MOBIUS_SESSION_ID  Session id (used unless --session is given)\n\n');
+  stream.write('  MOBIUS_SESSION_ID  Session id used to resolve the current project\n\n');
   stream.write('Exit codes:\n');
   stream.write('  0 success · 2 usage/input error · 3 configuration error · 4 authentication error\n');
   stream.write('  5 network error · 6 protocol error · 7 permission error · 8 not found · 10 backend error\n\n');
   stream.write('Examples:\n');
-  stream.write('  add_project_memory --name="构建约定" --description="跑测试前先 tsc" --body="提交前必须 tsc -p tsconfig.backend.json"\n');
-  stream.write('  add_project_memory --name="部署流程" --body-file=./notes.md\n');
-  stream.write('  printf "第一行\\n第二行" | add_project_memory --name="口诀" --stdin\n');
+  stream.write('  add_project_memory --memory-name="构建约定" --memory-content="提交前必须跑 tsc -p tsconfig.backend.json"\n');
+  stream.write('  add_project_memory --memory-name="部署流程" --memory-content="$(cat notes.md)"\n');
 }
 
 function takeOption(args, index, name) {
@@ -68,57 +59,30 @@ function parseArgs(args) {
     usage();
     process.exit(0);
   }
-  const out = { name: null, description: '', body: null, bodyFile: null, stdin: false, project: null, session: null, json: false };
+  let name = null;
+  let content = null;
   for (let i = 0; i < args.length;) {
-    const nameOption = takeOption(args, i, '--name');
-    if (nameOption) { out.name = nameOption.value; i += nameOption.consumed; continue; }
-    const descOption = takeOption(args, i, '--description');
-    if (descOption) { out.description = descOption.value; i += descOption.consumed; continue; }
-    const bodyOption = takeOption(args, i, '--body');
-    if (bodyOption) { out.body = bodyOption.value; i += bodyOption.consumed; continue; }
-    const bodyFileOption = takeOption(args, i, '--body-file');
-    if (bodyFileOption) { out.bodyFile = bodyFileOption.value; i += bodyFileOption.consumed; continue; }
-    const projectOption = takeOption(args, i, '--project');
-    if (projectOption) { out.project = projectOption.value; i += projectOption.consumed; continue; }
-    const sessionOption = takeOption(args, i, '--session');
-    if (sessionOption) { out.session = sessionOption.value; i += sessionOption.consumed; continue; }
-    if (args[i] === '--stdin') { out.stdin = true; i += 1; continue; }
-    if (args[i] === '--json') { out.json = true; i += 1; continue; }
+    const nameOption = takeOption(args, i, '--memory-name');
+    if (nameOption) { name = nameOption.value; i += nameOption.consumed; continue; }
+    const contentOption = takeOption(args, i, '--memory-content');
+    if (contentOption) { content = contentOption.value; i += contentOption.consumed; continue; }
     fail(`Input error: unknown argument: ${args[i]}`);
   }
 
-  if (!out.name || !out.name.trim()) fail('Input error: --name is required');
-  const name = out.name.trim();
-  if (Array.from(name).length > MAX_NAME_CHARS) fail(`Input error: --name must be at most ${MAX_NAME_CHARS} characters`);
-  if (/[\r\n]/.test(name)) fail('Input error: --name must be a single line');
-  out.name = name;
+  if (!name || !name.trim()) fail('Input error: --memory-name is required');
+  const trimmedName = name.trim();
+  if (Array.from(trimmedName).length > MAX_NAME_CHARS) fail(`Input error: --memory-name must be at most ${MAX_NAME_CHARS} characters`);
+  if (/[\r\n]/.test(trimmedName)) fail('Input error: --memory-name must be a single line');
 
-  const sources = [out.body !== null, out.bodyFile !== null, out.stdin].filter(Boolean).length;
-  if (sources === 0) fail('Input error: one of --body, --body-file or --stdin is required');
-  if (sources > 1) fail('Input error: --body, --body-file and --stdin are mutually exclusive');
-  return out;
-}
-
-function resolveBody(input) {
-  let body;
-  if (input.body !== null) {
-    body = input.body;
-  } else if (input.bodyFile !== null) {
-    try {
-      body = fs.readFileSync(input.bodyFile, 'utf8');
-    } catch (error) {
-      fail(`Input error: cannot read --body-file ${input.bodyFile}: ${error.message}`);
-    }
-  } else {
-    if (process.stdin.isTTY) fail('Input error: --stdin is set but no input is piped in');
-    body = fs.readFileSync(0, 'utf8');
+  if (content === null) fail('Input error: --memory-content is required');
+  const body = String(content).replace(/\r\n/g, '\n');
+  if (!body.trim()) fail('Input error: --memory-content must not be empty');
+  // 正文上限 10000 字符, 与服务端 50MB 硬上限之外再加一道产品约束
+  // Content is capped at 10000 characters, tighter than the server's 50MB hard limit
+  if (Array.from(body).length > MAX_CONTENT_CHARS) {
+    fail(`Input error: --memory-content must be at most ${MAX_CONTENT_CHARS} characters`);
   }
-  body = String(body || '').replace(/\r\n/g, '\n');
-  if (!body.trim()) fail('Input error: memory body must not be empty');
-  if (Buffer.byteLength(body, 'utf8') > MAX_BODY_BYTES) {
-    fail(`Input error: memory body must be at most ${MAX_BODY_BYTES / 1024 / 1024}MB`);
-  }
-  return body;
+  return { name: trimmedName, body };
 }
 
 function request(base, method, requestPath, token, payload) {
@@ -168,7 +132,7 @@ function describeFailure(response) {
 
 async function main() {
   const input = parseArgs(process.argv.slice(2));
-  const body = resolveBody(input);
+  const body = input.body;
 
   // 地址与令牌全部来自会话环境, 宿主与沙箱走同一条路
   // Address and token come from the session environment only; host and sandbox share one path
@@ -183,29 +147,25 @@ async function main() {
     fail(`Configuration error: invalid MOBIUS_BASE: ${rawBase}`, 3);
   }
 
-  let projectId = input.project ? String(input.project).trim() : '';
-  let projectName = '';
-  if (!projectId) {
-    const sessionId = String(input.session || process.env.MOBIUS_SESSION_ID || '').trim();
-    if (!sessionId) {
-      fail('Configuration error: MOBIUS_SESSION_ID is unset; pass --project or --session', 3);
-    }
-    let lookup;
-    try {
-      lookup = await request(base, 'GET', `/api/sessions/${encodeURIComponent(sessionId)}/project`, token, null);
-    } catch (error) {
-      fail(`Network error: unable to connect to Mobius at ${base.host}: ${error.message}`, 5);
-    }
-    let info = null;
-    try { info = JSON.parse(lookup.body); } catch {}
-    if (lookup.status < 200 || lookup.status >= 300) {
-      const failure = describeFailure(lookup);
-      fail(failure.message, failure.code);
-    }
-    if (!info || !info.project_id) fail('Protocol error: Mobius returned an invalid project response', 6);
-    projectId = String(info.project_id);
-    projectName = String(info.project_name || '');
+  // 项目一律由当前会话解析, 不需要也不接受手工传项目 ID
+  // The project always comes from the current Session; no manual project id
+  const sessionId = String(process.env.MOBIUS_SESSION_ID || '').trim();
+  if (!sessionId) fail('Configuration error: MOBIUS_SESSION_ID is unset', 3);
+  let lookup;
+  try {
+    lookup = await request(base, 'GET', `/api/sessions/${encodeURIComponent(sessionId)}/project`, token, null);
+  } catch (error) {
+    fail(`Network error: unable to connect to Mobius at ${base.host}: ${error.message}`, 5);
   }
+  let info = null;
+  try { info = JSON.parse(lookup.body); } catch {}
+  if (lookup.status < 200 || lookup.status >= 300) {
+    const failure = describeFailure(lookup);
+    fail(failure.message, failure.code);
+  }
+  if (!info || !info.project_id) fail('Protocol error: Mobius returned an invalid project response', 6);
+  const projectId = String(info.project_id);
+  const projectName = String(info.project_name || '');
 
   let response;
   try {
@@ -216,7 +176,7 @@ async function main() {
       'POST',
       `/api/projects/${encodeURIComponent(projectId)}/memories`,
       token,
-      { name: input.name, description: input.description || '', body },
+      { name: input.name, description: '', body },
     );
   } catch (error) {
     fail(`Network error: unable to connect to Mobius at ${base.host}: ${error.message}`, 5);
@@ -230,10 +190,6 @@ async function main() {
   }
   if (!payload || !payload.id) fail('Protocol error: Mobius returned an invalid memory response', 6);
 
-  if (input.json) {
-    process.stdout.write(`${JSON.stringify({ ...payload, project_id: projectId, project_name: projectName || null }, null, 2)}\n`);
-    return;
-  }
   process.stdout.write(`Added project memory ${JSON.stringify(payload.name)}\n`);
   process.stdout.write(`Project: ${projectName ? `${projectName} (${projectId})` : projectId}\n`);
   process.stdout.write(`Memory ID: ${payload.id}\n`);
