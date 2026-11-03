@@ -4244,6 +4244,22 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
               sessionId={sessionId}
               onSwitchDevice={handleSwitchAimuxDevice}
             />
+            {!!currentSession?.research_agent_disabled && (
+              <div
+                className="flex min-w-0 items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[length:var(--fs-md)] text-amber-100"
+                role="status"
+              >
+                <span className="truncate">研究智能体已禁用，不接收黑板信号和自动唤醒。</span>
+                <button type="button" className="flex-shrink-0 underline underline-offset-2" onClick={async () => {
+                  if (!sessionId) return
+                  try {
+                    if (!window.confirm('当前研究智能体处于禁用状态，是否解禁？')) return
+                    await api(`/api/sessions/${sessionId}/research-agent/enable`, { method: 'POST' })
+                    updateResearchAgentDisabled(sessionId, false)
+                  } catch (e: any) { setLastSendError(e?.message || '重新启用失败') }
+                }}>重新启用</button>
+              </div>
+            )}
             {/* {currentModelLabel && (
               <span className="text-[length:var(--fs-xs)] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
@@ -4340,20 +4356,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
           </JsonlCountSlot>
         </div>
       </div>}
-
-      {!!currentSession?.research_agent_disabled && (
-        <div className="mx-5 mt-3 flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[length:var(--fs-md)] flex-shrink-0">
-          <span className="flex-1">研究智能体已禁用，不接收黑板信号和自动唤醒。</span>
-          <button type="button" className="underline underline-offset-2" onClick={async () => {
-            if (!sessionId) return
-            try {
-              if (!window.confirm('当前研究智能体处于禁用状态，是否解禁？')) return
-              await api(`/api/sessions/${sessionId}/research-agent/enable`, { method: 'POST' })
-              updateResearchAgentDisabled(sessionId, false)
-            } catch (e: any) { setLastSendError(e?.message || '重新启用失败') }
-          }}>重新启用</button>
-        </div>
-      )}
 
       {stopFeedbackActive && (
         <div className="pointer-events-none fixed left-1/2 top-16 z-[80] -translate-x-1/2">
