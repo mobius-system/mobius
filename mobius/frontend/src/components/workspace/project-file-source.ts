@@ -173,16 +173,41 @@ export class LocalProjectFileSource implements ProjectFileSource {
 }
 
 // 远程代码文件的读取/保存由 CodeConversationPane 直接走 project-scoped aimux API。
-// 树级复制、移动、重命名和下载尚未开放，显式抛 READ_ONLY，避免误落到中枢 REST。
+// 下载同样走 project-scoped 转发，并携带 session，以便后端解析当前会话绑定的 bridge 设备。
+// 树级复制、移动和重命名仍未开放，显式抛 READ_ONLY，避免误落到中枢 REST。
 export class RemoteProjectFileSource implements ProjectFileSource {
   readonly kind = 'remote' as const
   readonly writable = false
-  constructor(readonly projectId: string, readonly rootPath: string, readonly remoteName: string) {}
+  constructor(
+    readonly projectId: string,
+    readonly rootPath: string,
+    readonly remoteName: string,
+    private sessionId?: string,
+    private rootOverride?: string,
+  ) {}
+  private token(): string {
+    return (typeof localStorage !== 'undefined' && localStorage.getItem('cc-token')) || ''
+  }
+  private authHeaders(): Record<string, string> {
+    const token = this.token()
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
   private unsupported(): never {
-    throw new FileOperationError('READ_ONLY', '远程文件当前支持浏览与编辑，暂不支持此树级操作')
+    throw new FileOperationError('READ_ONLY', '远程文件当前支持浏览、编辑与下载，暂不支持此树级操作')
   }
   async listDir(_relPath: string): Promise<FileListResult> { return this.unsupported() }
-  async downloadFile(_relPath: string): Promise<void> { return this.unsupported() }
+  async downloadFile(relPath: string): Promise<void> {
+    const params = new URLSearchParams({ remote: this.remoteName, path: relPath })
+    if (this.rootOverride) params.set('root', this.rootOverride)
+    if (this.sessionId) params.set('session', this.sessionId)
+    const res = await fetch(`/api/projects/${encodeURIComponent(this.projectId)}/remote-file/download?${params.toString()}`, {
+      headers: this.authHeaders(),
+    })
+    await throwIfFileOpError(res)
+    const blob = await res.blob()
+    const name = relPath.split(/[\\/]/).filter(Boolean).pop() || 'remote-file'
+    triggerBlobDownload(blob, name)
+  }
   async copyEntry(_sourcePath: string, _targetDir: string): Promise<FileCopyResult> { return this.unsupported() }
   async renameEntry(_relPath: string, _newName: string): Promise<FileRenameResult> { return this.unsupported() }
   async moveEntry(_sourcePath: string, _targetDir: string): Promise<FileMoveResult> { return this.unsupported() }

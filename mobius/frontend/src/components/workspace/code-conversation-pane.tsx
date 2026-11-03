@@ -834,9 +834,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     if (source === 'local' && desktop && desktop.copyProjectLocalEntry && desktop.downloadProjectLocalFile && desktop.renameProjectLocalEntry) {
       return new LocalProjectFileSource(projectId, root, writable, desktop as DesktopFileBridge)
     }
-    if (source === 'remote') return new RemoteProjectFileSource(projectId, root, remoteName)
+    if (source === 'remote') return new RemoteProjectFileSource(projectId, root, remoteName, sessionId, remoteRoot || undefined)
     return new HubProjectFileSource(projectId, root, writable)
-  }, [source, localBindPath, selectedRemote, remoteRoot, bindPath, writable, projectId, desktop, remoteName])
+  }, [source, localBindPath, selectedRemote, remoteRoot, bindPath, writable, projectId, desktop, remoteName, sessionId])
 
   const showToast = useCallback((text: string, kind: 'info' | 'error' = 'info') => {
     setToast({ text, kind })
@@ -1169,8 +1169,8 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       ...createItems,
       { type: 'separator' },
       { type: 'item', key: 'download', label: '下载', icon: <Download className={iconCls} />,
-        disabled: type === 'dir' || source === 'remote',
-        disabledReason: source === 'remote' ? '远程文件下载暂未开放' : (type === 'dir' ? '目录打包下载将在后续版本支持' : undefined),
+        disabled: type === 'dir',
+        disabledReason: type === 'dir' ? '目录打包下载将在后续版本支持' : undefined,
         onRun: () => onDownload(target) },
       { type: 'separator' },
       { type: 'item', key: 'copy', label: '复制', icon: <Copy className={iconCls} />, onRun: () => onCopy(target) },
@@ -1679,7 +1679,24 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                   <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center" style={{ color: cc.muted }}>
                     <AlertTriangle className="w-6 h-6 text-amber-400" />
                     <div className="text-[length:var(--fs-lg)]" style={{ color: cc.fg }}>文件过大（&gt; 1.5MB），已截断不提供编辑</div>
-                    <div className="text-[length:var(--fs-sm)]">如需编辑请在 VSCode 中打开</div>
+                    <div className="text-[length:var(--fs-sm)]">可下载完整文件；如需编辑请在 VSCode 中打开</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const root = source === 'local' ? localBindPath : bindPath
+                        const relPath = source === 'remote'
+                          ? (tab.entry.rel_path || tab.fileData?.path || '/')
+                          : relPathUnderBind(tab.entry.abs_path, root)
+                        void onDownload({ entry: tab.entry, relPath, parentRelPath: dirnameRel(relPath) })
+                      }}
+                      className={`mt-2 inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
+                      style={{ borderColor: cc.border, color: cc.fg }}
+                      title="下载完整文件"
+                      aria-label={`下载完整文件 ${tab.entry.name}`}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      下载完整文件
+                    </button>
                   </div>
                 ) : tab.fileData ? (
                   /\.html?$/i.test(tab.entry.name) && tab.htmlPreview ? (
