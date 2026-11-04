@@ -1,7 +1,7 @@
 // Mobius文件浏览器
 
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass, ChevronLeft } from 'lucide-react'
+import { FileCode2, Loader2, AlertTriangle, ExternalLink, Save, Search, X, Sun, Moon, FolderOpen, Download, Copy, ClipboardPaste, Pencil, FolderTree, FilePlus2, FolderPlus, RefreshCw, Eye, EyeOff, WrapText, Plus, Check, DraftingCompass, ChevronLeft, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { EditorView } from '@codemirror/view'
 import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import { useRemoteDeviceNames } from '../../services/remote-device-names'
@@ -203,6 +203,9 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   // 而不是桌面端并排的 190px 树 + 窄编辑器. 打开文件时切到编辑器, 点「返回」回到文件树.
   const mobileListMode = isMobile && compact
   const [mobileShowTree, setMobileShowTree] = useState(true)
+  const [fileTreeHidden, setFileTreeHidden] = useState(false)
+  // 保留文件树挂载及栏宽；手机仍使用原有的列表 / 编辑器切换。
+  const hideFileTree = fileTreeHidden && !isMobile
   // 蓝图变体的树根: <HIDDEN_FOLDER_NAME>/blueprints (相对 bind_path); 工作区模式仍为项目根.
   const treeRoot = blueprint ? `/${HIDDEN_FOLDER_NAME}/blueprints` : '/'
   const desktop = getDesktopBridge()
@@ -1222,7 +1225,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         // 简易模式文件侧栏嵌在右侧抽屉里, 内层文件树不能再抽屉化 (否则作为关闭的抽屉渲染到屏幕外)
         noMobileDrawer={compact}
         className="border-r flex flex-col"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', ...(hideFileTree ? { display: 'none' } : {}) }}>
         <div className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b px-2.5" style={{ borderColor: 'var(--border-color)' }}>
           <FileCode2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
           <span className="truncate text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }} title={activeRootPath}>
@@ -1251,6 +1254,19 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
           >
             <RefreshCw className={`h-3.5 w-3.5 ${dirs['/']?.loading ? 'animate-spin' : ''}`} strokeWidth={1.8} />
           </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={() => setFileTreeHidden(true)}
+              title="隐藏文件列表"
+              aria-label="隐藏文件列表"
+              aria-expanded={true}
+              className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[var(--bg-card-hover)]"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </button>
+          )}
         </div>
         {/* 蓝图变体隐藏位置选择 (固定中枢源), 改显蓝图路径提示 */}
         {!blueprint && (
@@ -1476,6 +1492,23 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip
         style={{ background: cc.bg, color: cc.fg, ...(blueprint ? { flexGrow: 1, flexBasis: 0, maxWidth: 'none' } : {}) }}
       >
+        {hideFileTree && (
+          <div className="flex h-8 flex-shrink-0 items-center border-b px-2" style={{ borderColor: cc.border }}>
+            <button
+              type="button"
+              onClick={() => setFileTreeHidden(false)}
+              title="显示文件列表"
+              aria-label="显示文件列表"
+              aria-expanded={false}
+              autoFocus
+              className={`inline-flex h-6 items-center gap-1.5 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
+              style={{ color: cc.fg }}
+            >
+              <PanelLeftOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+              显示文件列表
+            </button>
+          </div>
+        )}
         {/* 移动端单列交互: 从编辑器返回文件树 (顶部左侧返回按钮) */}
         {mobileListMode && (
           <button
