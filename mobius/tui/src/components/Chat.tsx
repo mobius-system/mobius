@@ -57,6 +57,17 @@ interface TerminalSize {
 import { TUI_VERSION } from '../version.js'
 const DEFAULT_COMPOSER_ROWS = 5
 const STATUS_ROWS = 3
+const AIMUX_HEARTBEAT_BLOCKED_MESSAGE = 'AIMUX 正在等待 bridge 心跳确认，暂时无法提交问题；连接恢复后请再次按 Enter。'
+
+/**
+ * The heartbeat phase means the local daemon exists, but the server has not
+ * confirmed its reverse connection yet. Creating a session in that window can
+ * start an agent with an unavailable AIMUX remote, so keep the prompt local
+ * until the supervisor reports `connected`.
+ */
+export function isAimuxQuestionSubmissionBlocked(status?: AimuxStatus): boolean {
+  return status?.state === 'starting' && status.phase === 'heartbeat'
+}
 
 const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '清空当前对话，开启新会话' },
@@ -73,6 +84,7 @@ const SLASH_COMMANDS = [
 
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onLogout, onUpgradeAimux, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
+  const aimuxQuestionSubmissionBlocked = isAimuxQuestionSubmissionBlocked(aimuxStatus)
   const [showHelp, setShowHelp] = useState(false)
   // null means "follow the tail". A concrete anchor identifies the exact row
   // at the top of the viewport while the user browses history.
@@ -147,19 +159,31 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     }
   }, [aimuxStatus, chat, client.server, modelLabel, ready.prefs.model, onClear, onResume, onQuit, onLogout, onUpgradeAimux])
 
-  const onSubmit = useCallback((text: string) => {
+  const onSubmit = useCallback((text: string): boolean => {
     const t = text.trim()
-    if (!t) return
+    if (!t) return false
     setSlashError(null)
     if (t.startsWith('/')) {
+      // /compact is the only slash command that dispatches content to the
+      // agent. Keep local navigation/help commands available while heartbeat
+      // confirmation is pending, but apply the same gate to this remote one.
+      if (t === '/compact' && aimuxQuestionSubmissionBlocked) {
+        setSlashError(AIMUX_HEARTBEAT_BLOCKED_MESSAGE)
+        return false
+      }
       if (!runSlash(t)) setShowHelp(true)
-      return
+      return true
+    }
+    if (aimuxQuestionSubmissionBlocked) {
+      setSlashError(AIMUX_HEARTBEAT_BLOCKED_MESSAGE)
+      return false
     }
     setShowHelp(false)
     setVersionInfo(null)
     setRowAnchor(null)
     void chat.send(t)
-  }, [chat, runSlash])
+    return true
+  }, [aimuxQuestionSubmissionBlocked, chat, runSlash])
 
   // First query of a fresh session triggers the full backend bootstrap (lazy
   // session creation, worker spawn, context load) before any output streams.
@@ -450,6 +474,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           inputActiveRef={chatInputActiveRef}
           onPauseToDequeue={chat.pauseToDequeue}
           hasPending={chat.pending.length > 0}
+          submissionBlocked={aimuxQuestionSubmissionBlocked}
         />
         <StatusArea
           ready={ready}
@@ -644,7 +669,8 @@ function VersionBlock({ lines }: { lines: string[] }) {
 }
 
 interface ComposerProps {
-  onSubmit: (text: string) => void
+  /** Return false when the caller rejects the submission so the draft stays intact. */
+  onSubmit: (text: string) => unknown
   onStop: () => void
   onQuit: () => void
   typing: boolean
@@ -654,9 +680,11 @@ interface ComposerProps {
   // 排队插队: 有挂起指令时空输入回车触发; hasPending 控制提示文案与触发开关.
   onPauseToDequeue?: () => void
   hasPending?: boolean
+  /** Visual hint only; onSubmit remains the authoritative gate (slash commands stay usable). */
+  submissionBlocked?: boolean
 }
 
-export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange, inputActiveRef, onPauseToDequeue, hasPending }: ComposerProps) {
+export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightChange, inputActiveRef, onPauseToDequeue, hasPending, submissionBlocked }: ComposerProps) {
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [popupIdx, setPopupIdx] = useState(0)
@@ -873,10 +901,14 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
       }
       const submitted = valueRef.current
       if (submitted.trim()) {
-        historyRef.current.push(submitted)
-        onSubmit(submitted)
-        edit('', 0)
-        setHistIdx(null)
+        // A rejected submission (for example while the AIMUX bridge heartbeat
+        // is still pending) remains editable and can be retried with Enter as
+        // soon as the blocking condition clears.
+        if (onSubmit(submitted) !== false) {
+          historyRef.current.push(submitted)
+          edit('', 0)
+          setHistIdx(null)
+        }
       } else if (hasPending) {
         // 空输入回车 = 插队: 打断当前 turn 并出队下一条排队指令.
         void onPauseToDequeue?.()
@@ -1014,7 +1046,9 @@ export function Composer({ onSubmit, onStop, onQuit, typing, commands, onHeightC
             ? <Text color="yellowBright" bold>请再次按下Ctrl+C退出</Text>
             : <Text dimColor>
                 {hasPending ? <Text color="yellowBright">{hostText('空回车插队 · ')}</Text> : null}
-                {hostText((stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行')}
+                {submissionBlocked
+                  ? <Text color="yellowBright">等待 AIMUX 心跳 · 暂不可发送（/ 命令可用）</Text>
+                  : hostText((stdout.columns ?? 80) >= 72 ? 'Enter 发送 · Shift+Enter / Alt+Enter / Ctrl+J 换行' : 'Enter 发送 · Alt+Enter / Ctrl+J 换行')}
               </Text>}
           <Text dimColor>{wrapped.length > maxRows ? `${visualCursor + 1}/${wrapped.length} 行` : `${wrapped.length} 行`}</Text>
         </Box>

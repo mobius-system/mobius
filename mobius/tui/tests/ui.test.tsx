@@ -15,7 +15,7 @@ process.env.MOBIUS_TUI_HOME = TMP_HOME
 
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { ChatScreen, Composer, shimmerText } from '../src/components/Chat.js'
+import { ChatScreen, Composer, isAimuxQuestionSubmissionBlocked, shimmerText } from '../src/components/Chat.js'
 import { WindowsInputDecoder } from '../src/lib/windows-input.js'
 import { LoginScreen } from '../src/components/Login.js'
 import { PrepScreen } from '../src/components/PrepScreen.js'
@@ -211,6 +211,73 @@ async function testChat() {
     ok(/^tui-/.test(createdSessionBody?.pc_client_metadata?.aimux_id || ''), 'session metadata uses the TUI AIMUX identifier')
     ok(createdSessionBody?.pc_client_metadata?.local_path === process.cwd(), 'session metadata includes the TUI current directory')
     ok(switchedFrame.includes('智能体已经离开此设备前往新设备（remote-device-2）'), 'device switch renders the device-left warning')
+  } finally { restoreFetch() }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEST 2a — a pending AIMUX bridge heartbeat blocks prompts without consuming
+// the draft; once connected, the same draft can be retried with Enter.
+// ════════════════════════════════════════════════════════════════════════════
+async function testHeartbeatBlocksQuestionSubmission() {
+  console.log('\n[UI 2a] pending AIMUX heartbeat blocks question submission')
+  const client = new MobiusClient('http://mock.local', 'mock-jwt-token')
+  const ready: ReadyState = {
+    project: { id: 'p1', name: '测试项目' },
+    issue: { id: 'i1', project_id: 'p1', title: '测试任务' },
+    prefs: { model: 'codex', language: 'zh', excluded_skill_ids: [], excluded_memory_ids: [] },
+  }
+  let sessionCreates = 0
+  let messagePosts = 0
+  installMock((url, init) => {
+    if (url.includes('/events')) {
+      return new Response(new RS({
+        start(c: any) { c.enqueue(enc.encode('event: subscribed\ndata: {"event":"subscribed","session":{}}\n\n')) },
+      }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    if (url.includes('/api/issues/i1/sessions') && init?.method === 'POST') {
+      sessionCreates += 1
+      return jsonResponse({ session_id: 's-heartbeat' })
+    }
+    if (url.endsWith('/messages') && init?.method === 'POST') {
+      messagePosts += 1
+      return jsonResponse({ ok: true, session_id: 's-heartbeat', turn_number: 1 })
+    }
+    if (url.endsWith('/api/sessions/s-heartbeat/groups')) return jsonResponse({ groups: [], pending: [] })
+    if (url.endsWith('/api/sessions/s-heartbeat/status')) {
+      return jsonResponse({ session_id: 's-heartbeat', alive: true, working: false })
+    }
+    return jsonResponse({ error: 'no mock' }, 404)
+  })
+  try {
+    const baseProps = {
+      client, ready, webUserId: 'u',
+      onClear: () => {}, onResume: () => {}, onQuit: () => {}, onLogout: () => {},
+      onReconfigure: () => {}, onConfigCancel: () => {},
+    }
+    const waitingStatus = { state: 'starting', phase: 'heartbeat', detail: '等待 bridge 心跳确认…' } as const
+    ok(isAimuxQuestionSubmissionBlocked(waitingStatus), 'semantic heartbeat state is recognized as submission-blocking')
+    ok(!isAimuxQuestionSubmissionBlocked({ state: 'connected', phase: 'connected' }), 'connected AIMUX state allows submissions')
+
+    const view = render(<ChatScreen {...baseProps} aimuxStatus={waitingStatus} />)
+    await delay(40)
+    view.stdin.write('等待连接后发送的问题')
+    await delay(80) // outlast paste-burst detection so Enter is a real submit
+    view.stdin.write('\r')
+    await delay(100)
+    const blockedFrame = view.lastFrame() ?? ''
+    ok(sessionCreates === 0 && messagePosts === 0, 'heartbeat wait does not create a session or POST a message')
+    ok(blockedFrame.includes('暂时无法提交问题'), 'blocked Enter explains why the question was not sent')
+    ok(blockedFrame.includes('等待连接后发送的问题'), 'blocked Enter preserves the draft in the composer')
+    ok(blockedFrame.includes('等待 AIMUX 心跳 · 暂不可发送'), 'composer advertises the temporary submission lock')
+
+    view.rerender(<ChatScreen {...baseProps} aimuxStatus={{ state: 'connected', phase: 'connected', detail: '心跳正常 · tui-test' }} />)
+    await delay(40)
+    view.stdin.write('\r')
+    for (let i = 0; i < 30 && messagePosts === 0; i++) await delay(50)
+    const connectedFrame = view.lastFrame() ?? ''
+    view.unmount()
+    ok(sessionCreates === 1 && messagePosts === 1, 'the preserved draft submits once after heartbeat recovery')
+    ok(!connectedFrame.includes('暂时无法提交问题'), 'the blocking warning clears after a successful retry')
   } finally { restoreFetch() }
 }
 
@@ -1484,6 +1551,7 @@ async function testUpgradeSlash() {
 async function main() {
   await testLogin()
   await testChat()
+  await testHeartbeatBlocksQuestionSubmission()
   await testFirstTurnBootstrapIndicator()
   await testResumedWorkingStatus()
   testMarkdownCodeRendering()
