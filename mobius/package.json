@@ -21,6 +21,7 @@
     "test:user-directory-policy": "node --require tsx/cjs tests/user-directory-policy.js",
     "test:assistant-running-flag": "node --require tsx/cjs tests/assistant-running-flag.js",
     "test:assistant-auto-compact": "node --require tsx/cjs tests/assistant-auto-compact.js",
+    "test:admin-assistant-callbacks": "node --require tsx/cjs tests/admin-assistant-callbacks.js",
     "test:forgotten-flag-notify-timing": "node --require tsx/cjs tests/forgotten-flag-notify-timing.js",
     "test:assistant-tts-cache": "node --require tsx/cjs tests/assistant-tts-cache.js",
     "test:agent-history-store": "node --require tsx/cjs tests/agent-history-store.js",

@@ -1098,7 +1098,7 @@ router.put('/settings/auto-generate-session-title', adminAuth, (req: express.Req
   }
 });
 
-// ── 管理员小莫: 是否接收全站 Session 完成/失败回调 ──
+// ── 管理员小莫: 是否接收 Session 完成/失败状态上报（默认关闭） ──
 router.get('/settings/admin-assistant-callbacks', adminAuth, (req: express.Request, res: express.Response) => {
   try {
     res.json(adminSettings.getAdminAssistantCallbackForUser(adminReqUser(req).id));

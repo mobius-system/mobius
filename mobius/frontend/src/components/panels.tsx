@@ -2205,7 +2205,7 @@ function AdminAssistantCallbacksPanel() {
         <div>
           <h3 className="text-[length:var(--fs-xl)] font-semibold" style={{ color: 'var(--text-primary)' }}>管理员小莫配置</h3>
           <div className="text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-            当前管理员的小莫可接收其他用户 Session 完成与失败信号
+            Session 状态默认不上报；可为当前管理员的小莫手动开启
           </div>
         </div>
         <button type="button" onClick={load} disabled={loading || saving}
@@ -2234,10 +2234,10 @@ function AdminAssistantCallbacksPanel() {
         }}>
         <span className="block min-w-0">
           <span className="block text-[length:var(--fs-lg)] font-medium" style={{ color: 'var(--text-primary)' }}>
-            接收全站 Session 回调
+            上报 Session 状态到小莫
           </span>
           <span className="block truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-            小莫 48 小时内活跃时，接收其他用户的完成/失败通知
+            开启后，小莫在 48 小时内活跃时接收全站完成/失败通知（含自己的 Session）
           </span>
         </span>
       </ToggleSwitch>

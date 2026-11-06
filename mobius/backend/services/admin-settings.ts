@@ -4,7 +4,7 @@
  * 当前包含:
  *   - 每个 Session 模型创建新 Session 时检查的提问 / tmux 窗口限制.
  *   - 每个 Session 模型是否使用 proxychains.
- *   - 管理员小莫是否接收全站 Session 完成/失败回调.
+ *   - 管理员小莫是否接收 Session 完成/失败状态上报（默认关闭）.
  *
  * 旧 agentBackendDefaults 已移除: 代理只从 modelNetworkProxy.perModel 读取.
  *
@@ -91,6 +91,8 @@ const DEFAULTS: any = Object.freeze({
     perType: {},
   },
   adminAssistantCallbacks: {
+    // 空列表即默认关闭。只有管理员在管理中心显式开启后才加入列表，
+    // 开启后接收全站 Session 状态（包括管理员自己的 Session）。
     enabledAdminUserIds: [],
   },
   doubaoVoice: {

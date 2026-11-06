@@ -288,9 +288,9 @@ function findRecentAssistantSessionForUser(userId: any): any {
   return row && isRecentAssistantSession(row) ? row : null;
 }
 
-function listEnabledAdminCallbackUsers(excludeUserId: any): any[] {
+function listEnabledAdminCallbackUsers(): any[] {
   const ids = adminSettings.listAdminAssistantCallbackUserIds()
-    .filter((id: any) => id && id !== excludeUserId);
+    .filter((id: any) => id);
   if (!ids.length) return [];
   const placeholders = ids.map(() => '?').join(',');
   return db.prepare(`
@@ -313,14 +313,12 @@ function callbackTargetsForSourceSession(s: any): any[] {
     targets.push({ kind, session: assistantSession, user });
   };
 
-  addTarget(
-    findRecentAssistantSessionForUser(s.user_id),
-    'owner',
-    { id: s.user_id, display_name: s.user_display_name || s.user_id, role: s.user_role || 'user' },
-  );
-
-  for (const adminUser of listEnabledAdminCallbackUsers(s.user_id)) {
-    addTarget(findRecentAssistantSessionForUser(adminUser.id), 'admin', adminUser);
+  // Session 状态上报默认关闭，只投递给在管理中心显式开启该功能的管理员。
+  // 管理员自己的 Session 也必须受同一开关约束，不能再走无条件 owner 回调；
+  // 否则管理中心显示“关闭”时，小莫仍会持续收到该管理员自己的完成/失败通知。
+  for (const adminUser of listEnabledAdminCallbackUsers()) {
+    const kind = adminUser.id === s.user_id ? 'owner' : 'admin';
+    addTarget(findRecentAssistantSessionForUser(adminUser.id), kind, adminUser);
   }
   return targets;
 }
