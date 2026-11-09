@@ -12,7 +12,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Box, Text } from 'ink'
 import { MobiusClient, getMe, login, ApiError } from './api.js'
-import { clearLogin, loadLogin, saveLogin, type LoginRecord } from './config.js'
+import { clearLogin, loadLogin, loginFromEnv, saveLogin, type LoginRecord } from './config.js'
 import { LoginScreen } from './components/Login.js'
 import { PrepScreen, type ReadyState } from './components/PrepScreen.js'
 import { ChatScreen } from './components/Chat.js'
@@ -77,6 +77,34 @@ export function App() {
 
   // ── bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => { (async () => {
+    // Environment credentials win over the stored login: an unattended start
+    // (container entrypoint, CI, a launcher that already knows the account)
+    // must not be silently beaten by a stale login.json.
+    const envLogin = loginFromEnv()
+    if (envLogin) {
+      setBootMsg('使用环境变量登录…')
+      try {
+        const r = await login(envLogin.server, envLogin.username, envLogin.password)
+        const rec: LoginRecord = {
+          server: envLogin.server,
+          username: envLogin.username,
+          password: envLogin.password,
+          token: r.token,
+          user: r.user,
+        }
+        await saveLogin(rec)
+        const envClient = new MobiusClient(rec.server, rec.token)
+        setUserId(r.user.id)
+        setClient(envClient)
+        setRoute('prep')
+        bootAimux(rec, envClient)
+        return
+      } catch (e: any) {
+        // Fall back to the stored login or the form; the user still gets to
+        // see why the environment credentials did not work.
+        setBootMsg(`环境变量登录失败: ${e?.message ?? String(e)}`)
+      }
+    }
     const rec = await loadLogin()
     if (!rec) { setRoute('login'); return }
     setPrefill({ server: rec.server, username: rec.username })

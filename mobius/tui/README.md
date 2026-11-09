@@ -43,6 +43,22 @@ Enter your Mobius server URL and username (most servers are passwordless).
 On success the token is saved and the next launch auto-logs in
 (validated via `/api/auth/me`; re-login on expiry).
 
+For unattended starts the credentials can come from the environment instead:
+
+```bash
+MOBIUS_TUI_SERVER=https://your-mobius-server.example.com \
+MOBIUS_TUI_USERNAME=alice \
+MOBIUS_TUI_PASSWORD=...        # optional; leave unset on passwordless servers
+mobius
+```
+
+When both `MOBIUS_TUI_SERVER` and `MOBIUS_TUI_USERNAME` are set, the TUI logs in
+immediately, saves the token to `~/.mobius/login.json`, and skips the login
+form. A partial environment is ignored, and a failed environment login falls
+back to the stored login or the form (the reason is shown in the boot message).
+Environment credentials win over `login.json`, so a stale token cannot beat an
+explicitly stated account.
+
 After a successful login the TUI also starts its local AIMUX reverse connection
 in the background. The first run creates `~/.mobius/aimux-venv` and installs
 the `aimux` Python package, then runs:

@@ -119,6 +119,26 @@ async function main() {
   globalThis.fetch = ((u: any, init?: any) => mockFetch(String(u), init)) as unknown as typeof fetch
   process.env.MOBIUS_TUI_DEBUG = '1'
 
+  // ── environment login: no login.json at all; credentials come from the env ──
+  process.env.MOBIUS_TUI_SERVER = 'http://mock.local'
+  process.env.MOBIUS_TUI_USERNAME = 'tester'
+  // The env-login run only checks the credential path; skip the AIMUX reverse
+  // connection so the test does not touch a real Python environment.
+  process.env.MOBIUS_TUI_DISABLE_AIMUX = '1'
+  const envRun = render(React.createElement(App))
+  try {
+    ok(await waitFor(envRun.lastFrame, '选择当前路径的绑定项目'),
+      'env credentials log in without a stored login.json')
+    const envLogin = JSON.parse(fs.readFileSync(path.join(TMP_HOME, 'login.json'), 'utf8'))
+    ok(envLogin.username === 'tester' && envLogin.token === 'mock-jwt-token',
+      'env login persists a usable login.json')
+  } finally {
+    envRun.unmount()
+    delete process.env.MOBIUS_TUI_SERVER
+    delete process.env.MOBIUS_TUI_USERNAME
+    delete process.env.MOBIUS_TUI_DISABLE_AIMUX
+  }
+
   console.log('\n[FLOW] full App drive (mocked backend)\n')
   const { stdin, lastFrame, unmount } = render(React.createElement(App))
 

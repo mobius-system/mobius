@@ -126,6 +126,17 @@ async function testLogin() {
     unmount()
     console.log(`  ${captured ? '✓' : '·'} form keystroke submit ${captured ? 'succeeded' : 'skipped (harness timing)'} — logic covered by (a)`)
   } finally { restoreFetch() }
+
+  // (c) environment credentials for unattended starts.
+  const { loginFromEnv } = await import('../src/config.js')
+  ok(loginFromEnv({ MOBIUS_TUI_SERVER: ' https://m.example.com/ ', MOBIUS_TUI_USERNAME: 'alice' } as any)?.server === 'https://m.example.com',
+    'loginFromEnv trims the server and strips trailing slashes')
+  ok(loginFromEnv({ MOBIUS_TUI_SERVER: 'https://m.example.com', MOBIUS_TUI_USERNAME: 'alice' } as any)?.password === undefined,
+    'loginFromEnv leaves the password optional (passwordless servers)')
+  ok(loginFromEnv({ MOBIUS_TUI_SERVER: 'https://m.example.com', MOBIUS_TUI_USERNAME: 'alice', MOBIUS_TUI_PASSWORD: 's3cret' } as any)?.password === 's3cret',
+    'loginFromEnv forwards the password')
+  ok(loginFromEnv({ MOBIUS_TUI_SERVER: 'https://m.example.com' } as any) === null,
+    'loginFromEnv stays off unless server and username both exist')
 }
 
 // ════════════════════════════════════════════════════════════════════════════

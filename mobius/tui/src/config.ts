@@ -71,6 +71,23 @@ async function writeJson(file: string, data: unknown): Promise<void> {
 }
 
 // ── login.json ───────────────────────────────────────────────────────────────
+/**
+ * Credentials handed in by the environment, for unattended starts: a container
+ * entrypoint, CI, or a launcher that already knows the account.
+ *
+ * Server and username must come together; the password is optional because
+ * Mobius servers default to passwordless. A partial environment returns null
+ * instead of guessing, so a half-filled shell cannot silently replace a
+ * working login.json.
+ */
+export function loginFromEnv(env: NodeJS.ProcessEnv = process.env): { server: string; username: string; password?: string } | null {
+  const server = (env.MOBIUS_TUI_SERVER ?? '').trim()
+  const username = (env.MOBIUS_TUI_USERNAME ?? '').trim()
+  if (!server || !username) return null
+  const password = env.MOBIUS_TUI_PASSWORD
+  return { server: server.replace(/\/+$/, ''), username, password: password ? password : undefined }
+}
+
 export async function loadLogin(): Promise<LoginRecord | null> {
   const rec = await readJson<LoginRecord | null>(LOGIN_FILE(), null)
   if (!rec || !rec.token || !rec.server) return null
