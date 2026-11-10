@@ -3805,8 +3805,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     await api(`/api/sessions/${sessionId}/terminate`, { method: 'POST' })
     // ④ 发送唤醒消息 (与 handleAnnouncePc 同款路径: setPendingSendAt → "正在发送/唤醒中"提示)
     const content = newId
-      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 remote_ping 检查和确认新设备的情况（返回远端操作系统、shell 和工作路径）。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。】`
-      : `【用户把mcp连接的设备解除了（从${oldId}变回中枢），这意味着后续工作回到莫比乌斯中枢上完成。】`
+      ? `【用户更新了mcp连接的设备（从${oldId || '中枢'}变成${newId}），这意味着用户命令你在新设备上完成一些操作，建议先用 remote_ping 检查和确认新设备的情况（返回远端操作系统、shell 和工作路径）。提示，你依然需要使用 remote_exec_command, remote_write_stdin, remote_apply_patch, remote_view_image, remote_ping 这些工具。如果新设备支持图形界面（先看 remote_gui_diagnostics 确认），还可以用 remote_gui_list_windows 列出窗口、用 remote_gui_look 截图并拿到元素引用、用 remote_gui_act 点击或按键来操作桌面软件。】`
+      : `【用户把mcp连接的设备解除了（从${oldId}变回中枢），这意味着后续工作回到莫比乌斯中枢上完成，remote_gui_* 等远端图形工具也不再指向那台设备。】`
     const requestId = makeSendRequestId()
     setLastSendError('')
     addMessage({ role: 'user', content })
