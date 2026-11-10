@@ -557,10 +557,22 @@ router.patch('/:id/aimux-device', auth, (req: express.Request, res: express.Resp
   let updated: Record<string, unknown>;
   if (newAimuxId) {
     updated = { ...meta, aimux_id: newAimuxId, initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: true };
+    // GUI 能力跟着设备走: 只有用 --enable-gui 连上来的客户端才会注册成 gui- 前缀.
+    // 换设备是绑定关系唯一的变化点, 所以授权标记必须在这里重算, 否则会话一旦
+    // 以"未授权"创建, 之后切到任何图形设备都拿不到 remote_gui_*.
+    // Capability follows the device: only a client connected with --enable-gui
+    // registers under the gui- prefix, and switching the device is the only
+    // point where the binding changes — recompute the flag here or a session
+    // created without it can never gain the remote_gui_* tools.
+    if (newAimuxId.startsWith('gui-')) updated.gui_authorized = true;
+    else delete updated.gui_authorized;
     // 网页端新建会话时显式选设备走的是双侧 (work_mode), 这里保持同一口径.
     if (updated.work_mode !== 'pc' && updated.work_mode !== 'dual') updated.work_mode = 'dual';
   } else {
     updated = { ...meta, aimux_id: '', initial_aimux_id: initialAimuxId, add_remote_aimux_mcp: false, work_mode: 'hub' };
+    // 回到中枢后没有远端图形界面可驱动.
+    // No remote desktop to drive once the session returns to the hub.
+    delete updated.gui_authorized;
   }
   Sessions.updatePcClientMetadata(id, updated);
   auditSessionAccess(user, 'switch_session_aimux_device', session);

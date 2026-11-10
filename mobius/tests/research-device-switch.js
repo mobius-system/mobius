@@ -25,7 +25,7 @@ vm.runInNewContext(ts.transpileModule(source.slice(start,end), { compilerOptions
  findSessionOperable:()=>Sessions.findById('research-agent'),
  parsePcClientMetadata, Sessions,auditSessionAccess:()=>{},
 })
-for (const id of ['remote-a','remote-b','remote-a','','remote-b']) {
+for (const id of ['remote-a','gui-remote-b','remote-a','','gui-remote-b']) {
  handler({params:{id:'research-agent'},body:{aimux_id:id}}, {status:n=>{status=n},json:value=>{response=JSON.parse(JSON.stringify(value))}})
  stored = Sessions.findById('research-agent').pc_client_metadata
  assert.equal(Sessions.listForResearch('r')[0].pc_client_metadata,stored)
@@ -34,6 +34,10 @@ for (const id of ['remote-a','remote-b','remote-a','','remote-b']) {
  assert.equal(response.pc_client_metadata.work_mode,id?'dual':'hub')
  assert.equal(aimuxRemoteNameFromMeta(stored),id||undefined)
  if(id) assert.match(pcTaskModePrompt(stored,'zh'),new RegExp(id))
+ // GUI 能力跟着设备走: gui- 前缀才授权 remote_gui_*, 切走必须清掉.
+ // Capability follows the device: only gui- grants remote_gui_*, leaving clears it.
+ assert.equal(response.pc_client_metadata.gui_authorized, id.startsWith('gui-') ? true : undefined,
+   `gui_authorized should follow the ${id || 'hub'} binding`)
 }
 assert.equal(response.pc_client_metadata.initial_aimux_id,'remote-a')
 console.log('PASS Research device route: bind/switch/revert/unbind/rebind, MCP remote and prompt remain consistent')
