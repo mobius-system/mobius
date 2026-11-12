@@ -484,7 +484,7 @@ export function SearchModal({
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               {isQuick ? <Zap className="h-7 w-7" style={{ color: '#fbbf24' }} /> : <FileSearch className="h-7 w-7" style={{ color: 'var(--text-muted)' }} />}
               <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{isQuick ? '输入关键词快速定位项目、任务或会话' : '输入关键词搜索会话内容'}</p>
-              <p className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{isQuick ? '仅匹配名称与描述，响应更快' : `${range === 'all' ? '扫描全部会话' : `仅扫描 ${rangeLabel}内活跃的会话`}，命中片段会高亮显示`}</p>
+              <p className="text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>{isQuick ? '仅匹配名称与描述，响应更快' : '中文按词搜索；空格分隔关键词，同一条消息需全部包含；不支持任意半截词'}</p>
             </div>
           ) : isQuick ? (
             quickResults.projects.length === 0 ? (
@@ -559,7 +559,7 @@ export function SearchModal({
 
         {/* 底部: 扫描统计 */}
         {!isQuick && (meta || searched) && (
-          <div className="shrink-0 px-4 py-2 border-t flex items-center justify-between text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+          <div className="shrink-0 px-4 py-2 border-t flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[length:var(--fs-xs)]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             <span>
               {loading && results.length === 0 ? '正在搜索…' : ''}
               {searched && results.length > 0 ? `命中 ${results.length} 个会话${loading ? '…' : ''}` : ''}
