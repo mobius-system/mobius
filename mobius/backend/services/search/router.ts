@@ -2,7 +2,6 @@ import express from 'express';
 import { auth } from '../../middleware/auth';
 import { db } from '../../../db';
 import { canReadSession } from '../access-control';
-import { agentJsonlPathOf } from '../agent-jsonl-path';
 import * as agents from '../../agents';
 import { backendNameForSessionModel } from '../model-registry';
 import { parseSearchQuery } from './content';
@@ -13,9 +12,19 @@ const router = express.Router();
 function refreshSources(): void {
   try {
     const sessions = db.prepare('SELECT session_id,model FROM sessions_v2 WHERE deleted_at IS NULL ORDER BY last_active DESC').all() as any[];
+    const backends = new Map<string, { name: string; instance: any }>();
+    for (const session of sessions) {
+      if (backends.has(session.model)) continue;
+      const name = backendNameForSessionModel(session.model);
+      const instance = agents.get(name);
+      instance._reloadPersisted?.();
+      backends.set(session.model, { name, instance });
+    }
     refreshSearchSources(sessions.map(session => {
-      const backend = backendNameForSessionModel(session.model);
-      return { sessionId: session.session_id, backend, path: agentJsonlPathOf(agents.get(backend), session.session_id) };
+      const backend = backends.get(session.model)!;
+      const instance = backend.instance;
+      const source = instance.runtime?.get(session.session_id) || instance.persisted?.[session.session_id] || instance.archive?.[session.session_id];
+      return { sessionId: session.session_id, backend: backend.name, path: source?.jsonlPath || null };
     }));
   } catch (error: any) { console.warn('[search] source refresh:', error.message); }
 }
