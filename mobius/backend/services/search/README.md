@@ -20,7 +20,7 @@ arbitrary substring, typo correction, quoted phrase or semantic search.
 
 Both entry writes and index updates are transactional. Insert/update triggers
 queue changed rowids; delete triggers remove postings immediately. Initial indexing
-advances a persistent rowid checkpoint in batches of 10 every 200ms. Tokenization
+advances a persistent rowid checkpoint in batches of 10 without a fixed 200ms wait. Tokenization
 runs before the short index-write transaction; changed rows are revalidated inside
 that transaction. The indexer checks up to 20 source signatures and ingests at most
 one changed source every second. It does
@@ -36,6 +36,19 @@ Prerequisites: SQLite with FTS5 contentless-delete support (3.43+) and Node with
 full ICU. Unsupported deployments fail explicitly, rather than silently scanning.
 The existing `better-sqlite3` dependency provides SQLite; no new dependency or
 external search service is installed.
+
+On Linux a parent-side /proc CPU monitor pauses the indexer at 70ms CPU per
+one-second window (10ms polling, conservative headroom below 10% of one core).
+This also limits synchronous history ingestion and long tokenization calls; query
+workers are independent. This is a sampled CPU budget, not an instantaneous
+kernel quota; brief bursts and scheduler jitter are possible. Linux USER_HZ is 100.
+SHA-256 fingerprints skip unchanged entries encountered by both backfill and the
+pending queue. Fingerprints cost approximately 64 bytes plus SQLite overhead per
+entry and never duplicate message bodies. Image blocks and inline image data URLs
+are excluded; textual captions remain searchable. Existing postings are not
+automatically rebuilt, to avoid restarting the ongoing backfill.
+Ten-second CPU/read/tokenize/write counters are in history_search_metrics and
+printed by scripts/trace-search-progress.py (run from the repository root).
 
 Validation:
 

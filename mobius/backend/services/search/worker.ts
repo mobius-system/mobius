@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import { historyStorePath, syncSession } from '../mobius-agent-history';
-import { indexBatch, queryIndex } from './index';
+import { indexBatch, queryIndex, type BatchMetrics } from './index';
 
 const db = new Database(historyStorePath());
 db.pragma('busy_timeout=1000');
@@ -49,15 +49,33 @@ process.on('message', (message: any) => {
 });
 
 if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
-  setInterval(() => {
-    if (!inventory.length) return;
-    try { indexBatch(db, allowed); }
-    catch (error: any) { console.warn('[search] index:', error.message); }
-  }, 200);
-  setInterval(() => {
-    if (!inventory.length) return;
-    try { syncSource(); }
-    catch (error: any) { console.warn('[search] history sync:', error.message); }
-  }, 1000);
+  let lastSync = 0;
+  let lastReport = performance.now();
+  let lastCpu = process.cpuUsage();
+  let totals: BatchMetrics = { readMs: 0, tokenizeMs: 0, writeMs: 0, processed: 0, skipped: 0 };
+  const run = () => {
+    let more = false;
+    try {
+      if (inventory.length) {
+        if (Date.now() - lastSync >= 1000) { lastSync = Date.now(); syncSource(); }
+        const metrics = {} as BatchMetrics;
+        more = indexBatch(db, allowed, 10, metrics);
+        for (const key of Object.keys(totals) as Array<keyof BatchMetrics>) totals[key] += metrics[key];
+        const now = performance.now();
+        if (now - lastReport >= 10000) {
+          const cpu = process.cpuUsage(lastCpu);
+          const cpuPercent = (cpu.user + cpu.system) / ((now - lastReport) * 10);
+          db.prepare('INSERT OR REPLACE INTO history_search_metrics VALUES(1,?,?,?,?,?,?,?)')
+            .run(new Date().toISOString(), cpuPercent, totals.readMs, totals.tokenizeMs, totals.writeMs, totals.processed, totals.skipped);
+          console.log('[search] metrics', JSON.stringify({ cpuPercent, ...totals }));
+          totals = { readMs: 0, tokenizeMs: 0, writeMs: 0, processed: 0, skipped: 0 };
+          lastReport = now;
+          lastCpu = process.cpuUsage();
+        }
+      }
+    } catch (error: any) { console.warn('[search] index:', error.message); }
+    setTimeout(run, more ? 0 : 1000);
+  };
+  run();
 }
 process.on('disconnect', () => process.exit(0));

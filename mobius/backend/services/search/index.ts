@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { createHash } from 'crypto';
 import { extractSearchContent, indexTokens, matchingSnippet, parseSearchQuery, type SearchOptions } from './content';
 
 export function initializeSearchIndex(db: Database.Database): void {
@@ -11,6 +12,9 @@ export function initializeSearchIndex(db: Database.Database): void {
     );
     INSERT OR IGNORE INTO history_search_state(id) VALUES(1);
     CREATE TABLE IF NOT EXISTS history_search_pending (entry_rowid INTEGER PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS history_search_processed (entry_rowid INTEGER PRIMARY KEY, fingerprint TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS history_search_metrics (id INTEGER PRIMARY KEY CHECK(id=1), updated_at TEXT, cpu_percent REAL,
+      read_ms REAL, tokenize_ms REAL, write_ms REAL, processed INTEGER, skipped INTEGER);
     CREATE TRIGGER IF NOT EXISTS history_search_insert AFTER INSERT ON entries BEGIN
       INSERT OR IGNORE INTO history_search_pending VALUES(new.rowid);
     END;
@@ -22,34 +26,55 @@ export function initializeSearchIndex(db: Database.Database): void {
       DELETE FROM history_search_pending WHERE entry_rowid=old.rowid;
     END;
   `);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS history_search_processed_delete AFTER DELETE ON entries BEGIN
+    DELETE FROM history_search_processed WHERE entry_rowid=old.rowid;
+  END;`);
 }
 
-export function indexBatch(db: Database.Database, allowed: Set<string>, batchSize = 10): boolean {
+export type BatchMetrics = { readMs: number; tokenizeMs: number; writeMs: number; processed: number; skipped: number };
+
+export function indexBatch(db: Database.Database, allowed: Set<string>, batchSize = 10, metrics?: BatchMetrics): boolean {
+  const started = performance.now();
   const state = db.prepare('SELECT last_rowid FROM history_search_state WHERE id=1').get() as any;
   const rows = db.prepare('SELECT rowid,session_id,json FROM entries WHERE rowid>? ORDER BY rowid LIMIT ?').all(state.last_rowid, batchSize) as any[];
   const pending = db.prepare(`SELECT e.rowid,e.session_id,e.json FROM history_search_pending p
     JOIN entries e ON e.rowid=p.entry_rowid ORDER BY p.entry_rowid DESC LIMIT ?`).all(batchSize) as any[];
-  const prepared = [...new Map([...rows, ...pending].map(row => [row.rowid, row])).values()].map(row => {
+  const readProcessed = db.prepare('SELECT fingerprint FROM history_search_processed WHERE entry_rowid=?');
+  const selected = [...new Map([...rows, ...pending].map(row => [row.rowid, row])).values()].map(row => {
+    const fingerprint = createHash('sha256').update(allowed.has(row.session_id) ? '1' : '0').update(row.json).digest('hex');
+    return { ...row, fingerprint, skip: (readProcessed.get(row.rowid) as any)?.fingerprint === fingerprint };
+  });
+  const readDone = performance.now();
+  const prepared = selected.map(row => {
     let content: ReturnType<typeof extractSearchContent> = null;
-    if (allowed.has(row.session_id)) {
+    if (!row.skip && allowed.has(row.session_id)) {
       try { content = extractSearchContent(JSON.parse(row.json)); } catch {}
     }
-    return { rowid: row.rowid, json: row.json, tokens: content ? indexTokens(content.text) : '' };
+    return { ...row, tokens: content ? indexTokens(content.text) : '' };
   });
-  return db.transaction(() => {
+  const tokenizeDone = performance.now();
+  const result = db.transaction(() => {
     const remove = db.prepare('DELETE FROM history_search_fts WHERE rowid=?');
     const insert = db.prepare('INSERT INTO history_search_fts(rowid,tokens) VALUES(?,?)');
     const done = db.prepare('DELETE FROM history_search_pending WHERE entry_rowid=?');
     const unchanged = db.prepare('SELECT 1 FROM entries WHERE rowid=? AND json=?');
+    const mark = db.prepare('INSERT OR REPLACE INTO history_search_processed VALUES(?,?)');
     for (const row of prepared) {
       if (!unchanged.get(row.rowid, row.json)) continue;
-      remove.run(row.rowid);
-      if (row.tokens) insert.run(row.rowid, row.tokens);
+      if (!row.skip) {
+        remove.run(row.rowid);
+        if (row.tokens) insert.run(row.rowid, row.tokens);
+        mark.run(row.rowid, row.fingerprint);
+      }
       done.run(row.rowid);
     }
     if (rows.length) db.prepare('UPDATE history_search_state SET last_rowid=? WHERE id=1').run(rows[rows.length - 1].rowid);
     return rows.length > 0 || pending.length > 0;
-  })();
+  }).immediate();
+  if (metrics) Object.assign(metrics, { readMs: readDone - started, tokenizeMs: tokenizeDone - readDone,
+    writeMs: performance.now() - tokenizeDone, processed: prepared.filter(row => !row.skip).length,
+    skipped: prepared.filter(row => row.skip).length });
+  return result;
 }
 
 export type IndexedSearchRequest = SearchOptions & { query: string; sessionIds: string[]; limit: number; maxFragments: number };

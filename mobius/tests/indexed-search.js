@@ -8,6 +8,11 @@ db.exec(`CREATE TABLE entries(session_id TEXT,uuid TEXT,seq INTEGER,ts INTEGER,j
   CREATE TABLE ingest_state(session_id TEXT PRIMARY KEY,error TEXT);`)
 initializeSearchIndex(db)
 const allowed = new Set(['inside', 'old-session'])
+assert.strictEqual(extractSearchContent({ message: { content: [
+  { type: 'input_image', image_url: 'data:image/png;base64,SECRETIMAGE' },
+  { type: 'text', text: '图片说明文字' }
+] } }).text, '图片说明文字')
+assert.ok(!extractSearchContent({ payload: { type: 'function_call_output', output: '截图 data:image/png;base64,QUJDRA== 完成' } }).text.includes('QUJDRA'))
 function add(session, uuid, text) {
   db.prepare('INSERT INTO entries VALUES(?,?,?,?,?)').run(session, uuid, 1, Date.now(),
     JSON.stringify({ type: 'user', message: { role: 'user', content: text } }))
@@ -23,6 +28,11 @@ add('outside', 'external', '数据库连接失败，需要修复，API 调用报
 add('old-session', 'old', '数据库连接失败，需要修复')
 assert.strictEqual(search('数据库 修复').indexing, true)
 drain()
+db.prepare('INSERT INTO history_search_pending SELECT rowid FROM entries WHERE uuid=?').run('both')
+const repeated = {}
+indexBatch(db, allowed, 10, repeated)
+assert.strictEqual(repeated.skipped, 1)
+assert.strictEqual(repeated.processed, 0)
 assert.strictEqual(search('数据库 修复').hits.length, 2)
 assert.deepStrictEqual(search('API 报错').hits[0].fragments.map(item => item.uuid), ['both'])
 assert.strictEqual(search('不存在的关键词').hits.length, 0)

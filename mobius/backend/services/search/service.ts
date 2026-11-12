@@ -2,6 +2,7 @@ import { fork, type ChildProcess } from 'child_process';
 import path from 'path';
 import { historyStorePath } from '../mobius-agent-history';
 import type { IndexedSearchRequest } from './index';
+import { limitIndexerCpu } from './cpu-budget';
 
 type Source = { sessionId: string; path: string | null; backend: string };
 let indexer: ChildProcess | null = null;
@@ -26,6 +27,7 @@ function spawn(role: string): ChildProcess {
     env: { ...process.env, MOBIUS_AGENT_HISTORY_STORE_PATH: historyStorePath(), MOBIUS_SEARCH_WORKER: role },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
+  if (role === 'indexer') limitIndexerCpu(child);
   child.on('error', error => console.warn('[search] worker:', error.message));
   child.on('exit', () => {
     if (role === 'indexer') indexer = null;
@@ -86,6 +88,7 @@ export function stopSearchWorkers(): void {
   requests.clear();
   for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('搜索服务停止')); }
   pending.clear();
+  indexer?.kill('SIGCONT');
   indexer?.kill();
   reader?.kill();
 }

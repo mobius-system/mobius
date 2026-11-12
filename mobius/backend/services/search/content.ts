@@ -57,6 +57,19 @@ export function stripAttachedContext(text: string): string {
   return text;
 }
 
+export function stripImageData(text: string): string {
+  return text.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi, ' ');
+}
+
+function serializeSearchValue(value: any): string {
+  return stripImageData(JSON.stringify(value, (_key, nested) => {
+    if (nested && typeof nested === 'object' &&
+      (['image', 'input_image', 'image_url'].includes(nested.type) ||
+        nested.type === 'base64' && String(nested.media_type || '').startsWith('image/'))) return undefined;
+    return nested;
+  }) || '');
+}
+
 export function extractSearchContent(entry: any): { role: string; text: string } | null {
   if (!entry || typeof entry !== 'object') return null;
   const message = entry.message || {};
@@ -64,21 +77,22 @@ export function extractSearchContent(entry: any): { role: string; text: string }
   const role = message.role || payload.role || entry.type;
   const parts: string[] = [];
   const append = (value: any): void => {
-    if (typeof value === 'string') parts.push(value);
+    if (typeof value === 'string') parts.push(stripImageData(value));
     else if (Array.isArray(value)) value.forEach(append);
     else if (value && typeof value === 'object') {
+      if (['image', 'input_image', 'image_url'].includes(value.type)) return;
       if (typeof value.text === 'string') parts.push(value.text);
       else if (typeof value.input_text === 'string') parts.push(value.input_text);
       else if (typeof value.output_text === 'string') parts.push(value.output_text);
       else if (value.type === 'thinking' && typeof value.thinking === 'string') parts.push(value.thinking);
-      else if (value.type === 'tool_use') parts.push(value.name || '', JSON.stringify(value.input ?? {}));
+      else if (value.type === 'tool_use') parts.push(value.name || '', serializeSearchValue(value.input ?? {}));
       else if (value.type === 'tool_result') append(value.content);
     }
   };
   append(message.content ?? payload.content ?? entry.content);
   if (!parts.length && ['function_call', 'custom_tool_call', 'function_call_output', 'custom_tool_call_output'].includes(payload.type)) {
     const value = payload.arguments ?? payload.input ?? payload.output ?? payload.content ?? '';
-    parts.push(payload.name || '', typeof value === 'string' ? value : JSON.stringify(value));
+    parts.push(payload.name || '', typeof value === 'string' ? stripImageData(value) : serializeSearchValue(value));
   }
   if (!parts.length && entry.type === 'event_msg' && ['user_message', 'agent_message'].includes(payload.type)) append(payload.message);
   const text = stripAttachedContext(parts.join('\n').replace(/\x00/g, ''));
