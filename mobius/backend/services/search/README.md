@@ -37,7 +37,7 @@ full ICU. Unsupported deployments fail explicitly, rather than silently scanning
 The existing `better-sqlite3` dependency provides SQLite; no new dependency or
 external search service is installed.
 
-On Linux a parent-side /proc CPU monitor pauses the indexer at 70ms CPU per
+On Linux a parent-side /proc CPU monitor pauses the indexer at 30ms CPU per
 one-second window (10ms polling, conservative headroom below 10% of one core).
 This also limits synchronous history ingestion and long tokenization calls; query
 workers are independent. This is a sampled CPU budget, not an instantaneous

@@ -2,7 +2,7 @@ import fs from 'fs';
 import type { ChildProcess } from 'child_process';
 
 export function cpuBudgetExceeded(cpuMs: number): boolean {
-  return cpuMs >= 70;
+  return cpuMs >= 30;
 }
 
 export function limitIndexerCpu(child: ChildProcess): void {

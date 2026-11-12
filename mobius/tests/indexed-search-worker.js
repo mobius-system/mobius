@@ -41,7 +41,7 @@ async function main() {
   service.refreshSearchSources([{ sessionId: 'inside', path: source, backend: 'tmux-codex' }])
   const request = { query: '连接 修复', sessionIds: ['inside'], limit: 10, maxFragments: 3 }
   let result
-  for (let attempt = 0; attempt < 300; attempt++) {
+  for (let attempt = 0; attempt < 1200; attempt++) {
     result = await service.searchHistory(request, new AbortController().signal)
     if (result.hits.length) break
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -49,7 +49,7 @@ async function main() {
   assert.strictEqual(result.hits[0].fragments[0].uuid, 'native')
   fs.appendFileSync(source, JSON.stringify({ uuid: 'append', type: 'assistant', timestamp: new Date().toISOString(),
     message: { role: 'assistant', content: '新增内容实时搜索' } }) + '\n')
-  for (let attempt = 0; attempt < 300; attempt++) {
+  for (let attempt = 0; attempt < 1200; attempt++) {
     result = await service.searchHistory({ ...request, query: '新增 内容' }, new AbortController().signal)
     if (result.hits.length) break
     await new Promise(resolve => setTimeout(resolve, 100))
