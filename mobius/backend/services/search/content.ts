@@ -15,12 +15,6 @@ export function searchWords(text: string): string[] {
       const boundaries = [...window.matchAll(/\s/gu)];
       const lastBoundary = boundaries[boundaries.length - 1];
       if (lastBoundary) end = offset + lastBoundary.index! + lastBoundary[0].length;
-      else {
-        const nextBoundary = /\s/gu;
-        nextBoundary.lastIndex = end;
-        const boundary = nextBoundary.exec(normalized);
-        end = boundary ? boundary.index + boundary[0].length : normalized.length;
-      }
     }
     for (const part of segmenter.segment(normalized.slice(offset, end))) {
       if (part.isWordLike) words.add(part.segment);
