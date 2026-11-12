@@ -1,7 +1,7 @@
 const assert = require('assert')
 const Database = require('better-sqlite3')
 const { initializeSearchIndex, indexBatch, queryIndex } = require('../backend/services/search/index')
-const { parseSearchQuery, extractSearchContent, matchingSnippet } = require('../backend/services/search/content')
+const { parseSearchQuery, extractSearchContent, matchingSnippet, searchWords } = require('../backend/services/search/content')
 
 const db = new Database(':memory:')
 db.exec(`CREATE TABLE entries(session_id TEXT,uuid TEXT,seq INTEGER,ts INTEGER,json TEXT);
@@ -41,6 +41,11 @@ assert.ok(extractSearchContent({ type: 'response_item', payload: { role: 'assist
 assert.ok(extractSearchContent({ payload: { type: 'function_call_output', output: '工具结果' } }).text.includes('工具结果'))
 const longText = '头部关键词' + 'a'.repeat(220000) + ' 尾部关键词'
 assert.ok(matchingSnippet(longText, ['头部关键词', '尾部关键词'], {}).includes('尾部关键词'))
+const largeText = '数据库修复 API repair.md\n'.repeat(260000) + '最终关键词'
+const tokenizationStarted = Date.now()
+assert.deepStrictEqual(new Set(searchWords(largeText)), new Set(searchWords('数据库修复 API repair.md\n最终关键词')))
+assert.ok(Date.now() - tokenizationStarted < 15000, 'multi-megabyte messages must not stall indexing')
+assert.ok(searchWords(' '.repeat(4090) + 'boundarykeyword').includes('boundarykeyword'))
 db.prepare('UPDATE entries SET json=? WHERE uuid=?').run(JSON.stringify({ message: { content: '已经恢复正常' } }), 'both')
 drain()
 assert.strictEqual(search('API 报错').hits.length, 0)

@@ -6,8 +6,26 @@ export type SearchOptions = { caseSensitive?: boolean; wholeWord?: boolean };
 
 export function searchWords(text: string): string[] {
   const words = new Set<string>();
-  for (const part of segmenter.segment(text.normalize('NFKC').toLowerCase())) {
-    if (part.isWordLike) words.add(part.segment);
+  const normalized = text.normalize('NFKC').toLowerCase();
+  let offset = 0;
+  while (offset < normalized.length) {
+    let end = Math.min(offset + 4096, normalized.length);
+    if (end < normalized.length) {
+      const window = normalized.slice(offset, end);
+      const boundaries = [...window.matchAll(/\s/gu)];
+      const lastBoundary = boundaries[boundaries.length - 1];
+      if (lastBoundary) end = offset + lastBoundary.index! + lastBoundary[0].length;
+      else {
+        const nextBoundary = /\s/gu;
+        nextBoundary.lastIndex = end;
+        const boundary = nextBoundary.exec(normalized);
+        end = boundary ? boundary.index + boundary[0].length : normalized.length;
+      }
+    }
+    for (const part of segmenter.segment(normalized.slice(offset, end))) {
+      if (part.isWordLike) words.add(part.segment);
+    }
+    offset = end;
   }
   return [...words];
 }
