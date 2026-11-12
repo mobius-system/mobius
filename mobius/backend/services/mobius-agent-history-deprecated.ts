@@ -8,9 +8,8 @@
  *
  * 删除清单:
  *   - deprecatedMobiusJsonlPathOf
- *       调用方: routes/search.ts (冻结旧文件全文搜索, 待 FTS 替代) 与
- *       services/time-consume-waterfall.js (旧双轨字节统计).
- *       退场条件: 两处迁移后删.
+ *       调用方: services/time-consume-waterfall.js (旧双轨字节统计).
+ *       退场条件: 统计迁移后删.
  *       备注: session-transfer.ts (会话导出读冻结文件) 与懒迁移模块
  *       mobius-agent-history-legacy.ts 各有独立副本, 退场时一并清理.
  */

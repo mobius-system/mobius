@@ -41,7 +41,7 @@
     "test:session-transfer": "node --require tsx/cjs tests/session-transfer.js",
     "test:project-session-search": "node --require tsx/cjs tests/project-session-search.js",
     "test:project-cluster-overview": "node --require tsx/cjs tests/project-cluster-overview-route.js",
-    "test:search-content": "node --require tsx/cjs tests/search-content.js",
+    "test:indexed-search": "node --require tsx/cjs tests/indexed-search.js",
     "test:project-hierarchy-search": "node --require tsx/cjs tests/project-hierarchy-search.js",
     "test:project-session-order": "node --require tsx/cjs tests/project-session-order.js",
     "test:research-blackboard-auth": "node --require tsx/cjs tests/research-blackboard-auth.js",

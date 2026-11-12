@@ -5,25 +5,26 @@
 //   项目 › Issue/Research › Session  +  命中片段 (关键词高亮)
 // 点结果卡 → SPA 内进入该 Session.
 //
-// 搜索为用户主动触发 (非轮询); 前端 450ms 防抖 + 最短 2 字符, 避免抖打的后端压力.
+// 搜索为用户主动触发; 前端 250ms 防抖, 正文查询仅使用数据库索引.
 // =====================================================================
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, useStore } from '../store'
+import { api, useStore } from '../../store'
 import {
   Search, X, ChevronRight, Folder, CircleDot, FlaskConical,
   MessagesSquare, Loader2, AlertCircle, FileSearch, ArrowUpRight, Copy, Zap, Globe,
 } from 'lucide-react'
-import { useLayoutMode } from '../services/layout-mode'
-import { buildEasyModeUrlFromContext } from '../services/easy-route-state'
-import { projectHref } from '../services/project-url'
+import { useLayoutMode } from '../../services/layout-mode'
+import { buildEasyModeUrlFromContext } from '../../services/easy-route-state'
+import { projectHref } from '../../services/project-url'
 import {
   EMPTY_PROJECT_HIERARCHY_SEARCH,
   hierarchyHitLabel,
   hierarchyHitUrl,
   type ProjectHierarchyGroup,
   type ProjectHierarchySearchResponse,
-} from '../services/project-hierarchy-search'
+} from '../../services/project-hierarchy-search'
 import { SearchModeToggle, type SearchMode } from './search-mode-toggle'
+import { searchConversations } from '../../services/search/conversations'
 
 type Fragment = { role: string; snippet: string; timestamp: string | null; uuid?: string | null }
 type SearchResult = {
@@ -55,15 +56,15 @@ function roleMeta(role: string) {
   return ROLE_META[role] || { label: role || '消息', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' }
 }
 
-// 把片段按关键词切开, 命中段包 <mark>. 与后端 buildMatcher 同口径:
+// 把片段按多个关键词切开, 命中段包 <mark>.
 // 大小写敏感 / 全字匹配 (全字用 \w 词边界, CJK 视为边界).
 function Highlight({ text, query, caseSensitive, wholeWord }: { text: string; query: string; caseSensitive: boolean; wholeWord: boolean }) {
   const parts = useMemo(() => {
-    const q = query.trim()
+    const q = query.trim().split(/\s+/u).filter(Boolean).map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
     if (!q) return [text]
     let re: RegExp
     try {
-      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const escaped = `(?:${q})`
       const flags = caseSensitive ? 'g' : 'gi'
       re = wholeWord ? new RegExp(`(?<![\\w])${escaped}(?![\\w])`, flags) : new RegExp(escaped, flags)
     } catch {
@@ -102,7 +103,7 @@ function relativeTime(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN')
 }
 
-// 时间范围过滤选项: 默认仅扫描 7 天内活跃的会话以加速搜索 (后端按 last_active 过滤候选集).
+// 时间范围过滤选项: 按会话最近活跃时间筛选.
 type RangeKey = '1d' | '7d' | '30d' | 'all'
 const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
   { value: '1d', label: '1天内' },
@@ -140,7 +141,7 @@ export function SearchModal({
   const [loading, setLoading] = useState(false)
   const [quickLoading, setQuickLoading] = useState(false)
   const [err, setErr] = useState('')
-  const [meta, setMeta] = useState<{ scanned?: number; candidates?: number; truncated?: boolean } | null>(null)
+  const [meta, setMeta] = useState<{ took_ms?: number; indexing?: boolean; unavailable?: number; truncated?: boolean } | null>(null)
   const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
   const [range, setRange] = useState<RangeKey>('7d')
   // 搜索范围: scoped = 限定在传入的 projectId 内; all = 跨全部项目 (旧行为).
@@ -181,76 +182,29 @@ export function SearchModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [close, embedded])
 
-  // 流式搜索: GET /api/search?stream=1 走 SSE, result 事件随扫描完成逐条下发, 前端增量渲染.
-  // 不能用 EventSource (无法带 Authorization 头), 改用 fetch + ReadableStream 手解 SSE 帧.
   const runSearch = (term: string, rangeArg: RangeKey = optsRef.current.range, cs: boolean = optsRef.current.caseSensitive, ww: boolean = optsRef.current.wholeWord) => {
-    const t = term.trim()
-    if (t.length < 2) {
-      abortRef.current?.abort()
+    const id = ++reqId.current
+    abortRef.current?.abort()
+    const query = term.trim()
+    if (query.length < 2) {
       setResults([]); setMeta(null); setLoading(false); setErr(''); setSearched(false)
       return
     }
-    const id = ++reqId.current
-    // 取消上一个在途请求 (新查询 / 改选项 / 关弹窗都会触发).
-    abortRef.current?.abort()
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
+    const controller = new AbortController()
+    abortRef.current = controller
     setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null)
-    const params = new URLSearchParams({ q: t, limit: '50', range: rangeArg, stream: '1' })
+    const params = new URLSearchParams({ q: query, limit: '50', range: rangeArg })
     if (activeProjectIdRef.current) params.set('project_id', activeProjectIdRef.current)
     if (cs) params.set('case', '1')
     if (ww) params.set('word', '1')
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('cc-token') : null
-    fetch(`/api/search?${params.toString()}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: ctrl.signal,
-    }).then((res) => {
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = ''
-      const handleFrame = (event: string, payload: any) => {
-        if (id !== reqId.current) return // 陈旧响应丢弃
-        if (event === 'result') {
-          setResults(prev => [...prev, payload as SearchResult])
-        } else if (event === 'start') {
-          setMeta({ candidates: payload?.candidate_sessions })
-        } else if (event === 'done') {
-          setMeta({ scanned: payload?.scanned_sessions, candidates: payload?.candidate_sessions, truncated: !!payload?.truncated })
-          setLoading(false)
-        } else if (event === 'error') {
-          setErr(payload?.error || '搜索失败'); setLoading(false)
-        }
-      }
-      const dispatch = () => {
-        // SSE 帧以空行 (\n\n) 分隔; 每帧内 event:/data: 行. data 行可能多行 (payload 含换行时).
-        let sep: number
-        while ((sep = buf.indexOf('\n\n')) >= 0) {
-          const frame = buf.slice(0, sep)
-          buf = buf.slice(sep + 2)
-          let event = 'message'
-          const dataLines: string[] = []
-          for (const line of frame.split('\n')) {
-            if (line.startsWith('event:')) event = line.slice(6).trim()
-            else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
-          }
-          if (dataLines.length === 0) continue // 注释帧 / keepalive
-          let payload: any
-          try { payload = JSON.parse(dataLines.join('\n')) } catch { continue }
-          handleFrame(event, payload)
-        }
-      }
-      const pump = (): Promise<void> => reader.read().then(({ done, value }) => {
-        if (done) { if (id === reqId.current) setLoading(false); return }
-        buf += dec.decode(value, { stream: true })
-        dispatch()
-        return pump()
-      })
-      return pump()
-    }).catch((e: any) => {
-      if (e?.name === 'AbortError') return
-      if (id !== reqId.current) return
-      setErr(e?.message || '搜索失败'); setLoading(false)
+    searchConversations(params, controller.signal).then(response => {
+      if (id !== reqId.current || controller.signal.aborted) return
+      setResults(response.results)
+      setMeta({ took_ms: response.took_ms, indexing: response.indexing, unavailable: response.unavailable_sessions, truncated: response.truncated })
+    }).catch((error: any) => {
+      if (id === reqId.current && !controller.signal.aborted) setErr(error.message || '搜索失败')
+    }).finally(() => {
+      if (id === reqId.current && !controller.signal.aborted) setLoading(false)
     })
   }
 
@@ -288,12 +242,14 @@ export function SearchModal({
   }
 
   const onType = (v: string) => {
+    ++reqId.current
+    abortRef.current?.abort()
     setQ(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       if (mode === 'quick') runQuickSearch(v)
       else runSearch(v)
-    }, mode === 'quick' ? 300 : 450)
+    }, 250)
   }
   const externalQueryMounted = useRef(false)
   useEffect(() => {
@@ -458,7 +414,7 @@ export function SearchModal({
               value={q}
               onChange={e => onType(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { if (debounceRef.current) clearTimeout(debounceRef.current); isQuick ? runQuickSearch(q) : runSearch(q) } }}
-              placeholder={isQuick ? '快速搜索项目、任务或会话…' : '深度搜索所有会话内容…'}
+              placeholder={isQuick ? '快速搜索项目、任务或会话…' : '搜索会话全文，空格分隔多个关键词…'}
               className="min-w-0 flex-1 bg-transparent text-[length:var(--fs-sm)] focus:outline-none placeholder:!text-[var(--placeholder-color)]"
               style={{ color: dark ? '#f1f5f9' : '#1e293b' }}
             />
@@ -490,7 +446,7 @@ export function SearchModal({
         {embedded && !isQuick && (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>
             <span className="mr-auto min-w-0 truncate text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>
-              深度搜索会话内容
+              会话全文 · 空格分隔关键词，全部包含
             </span>
             {projectId && (
               <button type="button" onClick={() => setScoped(v => !v)} title={scoped ? '当前限定在本项目内，点击改为全部项目' : '当前搜索全部项目，点击改为本项目'}
@@ -607,11 +563,13 @@ export function SearchModal({
             <span>
               {loading && results.length === 0 ? '正在搜索…' : ''}
               {searched && results.length > 0 ? `命中 ${results.length} 个会话${loading ? '…' : ''}` : ''}
-              {meta?.scanned != null ? ` · 扫描 ${meta.scanned}${meta.candidates != null ? `/${meta.candidates}` : ''} 个会话` : ''}
+              {meta?.took_ms != null ? ` · ${meta.took_ms} ms` : ''}
               {` · 范围: ${rangeLabel}`}
               {caseSensitive || wholeWord ? ` · ${[caseSensitive ? '区分大小写' : '', wholeWord ? '全字匹配' : ''].filter(Boolean).join(' / ')}` : ''}
             </span>
-            {meta?.truncated && <span style={{ color: '#f59e0b' }}>部分结果 (已达时间上限, 可缩小时间范围或换词)</span>}
+            {meta?.indexing && <span role="status" style={{ color: '#f59e0b' }}>正在建立历史索引，结果暂不完整</span>}
+            {!!meta?.unavailable && <span role="status" style={{ color: '#f59e0b' }}>{meta.unavailable} 个会话历史尚未归集</span>}
+            {meta?.truncated && <span style={{ color: '#f59e0b' }}>仅展示部分结果，请缩小范围或增加关键词</span>}
           </div>
         )}
         {isQuick && searched && (

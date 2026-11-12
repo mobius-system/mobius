@@ -30,6 +30,7 @@ import {
 import { DB_PATH } from '../config';
 import { MOBIUS_KIND, kindOpensRound } from './mobius-kinds';
 import { historyEntryImageAt, projectHistoryEntryImages } from './history-image-payload';
+import { initializeSearchIndex } from './search/index';
 // [legacy-migration] 懒迁移叶子模块 (冻结 .mobius.jsonl → 本库).
 // 全部会话迁移完成后: 删除该文件 + 本文件里 grep [legacy-migration] 的调用点.
 import { loadLegacyBackfill, type LegacyBackfill } from './mobius-agent-history-legacy';
@@ -116,7 +117,13 @@ function openStore(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_entries_group ON entries (session_id, group_seq, seq_in_group);
   `);
   _stmts = buildStatements(_db);
+  initializeSearchIndex(_db);
   return _db;
+}
+
+export function historyStorePath(): string {
+  openStore();
+  return STORE_PATH;
 }
 
 function S() {

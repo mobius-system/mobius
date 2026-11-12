@@ -1624,7 +1624,7 @@ const DesktopDownloadModal = lazyWithRetry(() => import('./modals').then(module 
 const MobileDownloadModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.MobileDownloadModal })))
 const TerminalInstallModal = lazyWithRetry(() => import('./modals').then(module => ({ default: module.TerminalInstallModal })))
 const GlobalCreateRoot = lazyWithRetry(() => import('./global-create').then(module => ({ default: module.GlobalCreateRoot })))
-const SearchModal = lazyWithRetry(() => import('./search-modal').then(module => ({ default: module.SearchModal })))
+const SearchModal = lazyWithRetry(() => import('./search/search-modal').then(module => ({ default: module.SearchModal })))
 const CustomThemePalette = lazyWithRetry(() => import('./custom-theme-palette').then(module => ({ default: module.CustomThemePalette })))
 // 字体设置弹窗 (外观菜单入口) — 同样懒加载, 打开时才下载
 const FontSettingsModal = lazyWithRetry(() => import('./font-settings-modal').then(module => ({ default: module.FontSettingsModal })))

@@ -25,12 +25,12 @@ export function SearchModeToggle({
         <Zap className="h-3 w-3 flex-shrink-0" />
         <span className={label}>快速搜索</span>
       </button>
-      <button type="button" onClick={() => onChange('deep')} title="深度搜索：扫描会话内容"
+      <button type="button" onClick={() => onChange('deep')} title="会话全文：中文分词索引，多个关键词全部包含"
         aria-pressed={!isQuick}
         className={`${seg} ${!isQuick ? 'bg-blue-500/15 text-blue-400' : 'hover:bg-[var(--bg-card-hover)]'}`}
         style={!isQuick ? undefined : { color: 'var(--text-muted)' }}>
         <FileSearch className="h-3 w-3 flex-shrink-0" />
-        <span className={label}>深度搜索</span>
+        <span className={label}>会话全文</span>
       </button>
     </div>
   )

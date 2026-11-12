@@ -31,8 +31,8 @@ import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
 import { ResizablePanel } from '../components/resizable-panel'
 import { SearchMatchText } from '../components/search-match-text'
-import { SearchModal } from '../components/search-modal'
-import { SearchModeToggle, type SearchMode } from '../components/search-mode-toggle'
+import { SearchModal } from '../components/search/search-modal'
+import { SearchModeToggle, type SearchMode } from '../components/search/search-mode-toggle'
 import {
   effectiveProjectCardBorderTheme,
   projectCardHeaderStyle,
@@ -693,7 +693,7 @@ export default function UserPage() {
                   <input value={search} onChange={e => setSearch(e.target.value)}
                     maxLength={200}
                     data-project-hierarchy-search
-                    placeholder={projectSearchMode === 'quick' ? '搜索项目、任务或会话...' : '深度搜索所有会话内容...'}
+                    placeholder={projectSearchMode === 'quick' ? '搜索项目、任务或会话...' : '搜索会话全文，空格分隔关键词...'}
                     className="h-full min-w-0 flex-1 bg-transparent text-[length:var(--fs-md)] focus:outline-none"
                     style={{ color: 'var(--text-primary)' }} />
                   {hierarchySearchLoading && projectSearchMode === 'quick' ? (
@@ -734,7 +734,7 @@ export default function UserPage() {
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[length:var(--fs-sm)] tabular-nums" style={{ color: 'var(--text-muted)' }}>
                   <span className="text-[length:var(--fs-md)]">
                     {projectSearchMode === 'deep'
-                      ? (search.trim().length >= 2 ? '深度搜索会话内容' : '输入至少 2 个字符开始深度搜索')
+                      ? (search.trim().length >= 2 ? '搜索会话全文' : '输入至少 2 个字符开始全文搜索')
                       : normalizedSearch
                       ? `找到 ${visibleProjectCount} 个项目 · ${visibleSearchMatchCount} 条内部匹配`
                       : `共 ${visibleProjectCount} 个项目`}

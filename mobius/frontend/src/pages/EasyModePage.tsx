@@ -78,7 +78,7 @@ const MemoriesManager = lazyWithRetry(() => import('../components/memories').the
 const SkillsManager = lazyWithRetry(() => import('../components/skills').then(module => ({ default: module.SkillsManager })))
 // 侧栏搜索按钮与常规模式顶栏同一个弹窗, 按需下载, 不占简易模式首屏体积
 // The sidebar search button reuses the regular-mode top-bar dialog, loaded on demand
-const SearchModal = lazyWithRetry(() => import('../components/search-modal').then(module => ({ default: module.SearchModal })))
+const SearchModal = lazyWithRetry(() => import('../components/search/search-modal').then(module => ({ default: module.SearchModal })))
 
 type RecentSession = {
   session_id: string

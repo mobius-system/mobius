@@ -668,7 +668,6 @@ function SessionSearchPanel({
         q: term,
         session_id: sessionId,
         range: 'all',
-        candidates: '1',
         limit: '1',
         max_fragments: '100',
       })
