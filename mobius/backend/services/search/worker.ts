@@ -51,8 +51,13 @@ process.on('message', (message: any) => {
 if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
   setInterval(() => {
     if (!inventory.length) return;
-    try { syncSource(); indexBatch(db, allowed); }
+    try { indexBatch(db, allowed); }
     catch (error: any) { console.warn('[search] index:', error.message); }
   }, 200);
+  setInterval(() => {
+    if (!inventory.length) return;
+    try { syncSource(); }
+    catch (error: any) { console.warn('[search] history sync:', error.message); }
+  }, 1000);
 }
 process.on('disconnect', () => process.exit(0));

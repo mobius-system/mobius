@@ -79,6 +79,7 @@ function openStore(): Database.Database {
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
   _db = new Database(STORE_PATH);
   _db.pragma('journal_mode = WAL');
+  _db.pragma('busy_timeout = 3000');
   _db.exec(`
     CREATE TABLE IF NOT EXISTS ingest_state (
       session_id            TEXT PRIMARY KEY,
