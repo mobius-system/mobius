@@ -28,8 +28,8 @@ export function indexBatch(db: Database.Database, allowed: Set<string>, batchSiz
   return db.transaction(() => {
     const state = db.prepare('SELECT last_rowid FROM history_search_state WHERE id=1').get() as any;
     const rows = db.prepare('SELECT rowid,session_id,json FROM entries WHERE rowid>? ORDER BY rowid LIMIT ?').all(state.last_rowid, batchSize) as any[];
-    const pending = rows.length ? [] : db.prepare(`SELECT e.rowid,e.session_id,e.json FROM history_search_pending p
-      JOIN entries e ON e.rowid=p.entry_rowid ORDER BY p.entry_rowid LIMIT ?`).all(batchSize) as any[];
+    const pending = db.prepare(`SELECT e.rowid,e.session_id,e.json FROM history_search_pending p
+      JOIN entries e ON e.rowid=p.entry_rowid ORDER BY p.entry_rowid DESC LIMIT ?`).all(batchSize) as any[];
     const remove = db.prepare('DELETE FROM history_search_fts WHERE rowid=?');
     const insert = db.prepare('INSERT INTO history_search_fts(rowid,tokens) VALUES(?,?)');
     const done = db.prepare('DELETE FROM history_search_pending WHERE entry_rowid=?');
