@@ -37,11 +37,12 @@ full ICU. Unsupported deployments fail explicitly, rather than silently scanning
 The existing `better-sqlite3` dependency provides SQLite; no new dependency or
 external search service is installed.
 
-On Linux a parent-side /proc CPU monitor pauses the indexer at 30ms CPU per
+On Linux an independent /proc CPU monitor pauses the indexer at 30ms CPU per
 one-second window (10ms polling, conservative headroom below 10% of one core).
 This also limits synchronous history ingestion and long tokenization calls; query
 workers are independent. This is a sampled CPU budget, not an instantaneous
-kernel quota; brief bursts and scheduler jitter are possible. Linux USER_HZ is 100.
+kernel quota; brief bursts and scheduler jitter are possible. The monitor runs
+outside the busy HTTP event loop. Linux USER_HZ is 100.
 SHA-256 fingerprints skip unchanged entries encountered by both backfill and the
 pending queue. Fingerprints cost approximately 64 bytes plus SQLite overhead per
 entry and never duplicate message bodies. Image blocks and inline image data URLs
