@@ -500,7 +500,7 @@ export function SearchModal({
           ) : results.length === 0 ? (
             <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
               <Search className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>未找到匹配的会话</p>
+              <p className="text-[length:var(--fs-md)]" style={{ color: 'var(--text-muted)' }}>{meta?.indexing ? '历史索引建立中，暂未找到匹配' : '未找到匹配的会话'}</p>
             </div>
           ) : (
             <div className="py-1.5">

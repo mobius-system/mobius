@@ -843,7 +843,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   // 顶部「新建」下拉: 项目 / Issue / Research 三入口. Issue/Research 需在项目上下文内.
   const [showNewMenu, setShowNewMenu] = useState(false)
   const [createKind, setCreateKind] = useState<CreateKind | null>(null)
-  // 顶栏「搜索」弹窗: 跨项目/Issue/Research 搜索所有会话 JSONL 内容.
+  // 顶栏「搜索」弹窗: 使用历史数据库全文索引搜索会话内容.
   const [showSearch, setShowSearch] = useState(false)
 
   const refreshCustomThemes = () => {

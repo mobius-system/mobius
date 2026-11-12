@@ -26,6 +26,6 @@ Each card shows the match's **hierarchy**, left to right:
 
 ## Notes
 
-- By default only the **200 most recently active sessions** are scanned, with up to 3 matched fragments each. Use a more specific keyword if there's too much noise.
-- A single very large session is only searched in its last ~1.5MB tail (the most recent conversation).
+- Search uses the full-text index in Mobius's history store and filters by session activity range by default. Multiple terms must match the same message.
+- The index is built and updated in the background; the UI reports history that is not indexed instead of treating it as no result.
 - You can **only find sessions you're allowed to read** — your own, or sessions in projects visible to you.

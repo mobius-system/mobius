@@ -12,21 +12,26 @@ let cursor = 0;
 const sizes = new Map<string, string>();
 
 function syncSource(): void {
-  for (let count = 0; count < Math.min(1, inventory.length); count++) {
+  for (let count = 0; count < Math.min(20, inventory.length); count++) {
     const source = inventory[cursor++ % inventory.length];
     if (!source.path) continue;
     try {
       const stat = fs.statSync(source.path);
       const signature = `${source.path}|${stat.ino}|${stat.size}|${stat.mtimeMs}`;
       if (sizes.get(source.sessionId) === signature) continue;
-      const state = db.prepare('SELECT pending_round_openers FROM ingest_state WHERE session_id=?').get(source.sessionId) as any;
+      const state = db.prepare('SELECT pending_round_openers,primary_path,primary_read_bytes FROM ingest_state WHERE session_id=?').get(source.sessionId) as any;
       if (state && JSON.parse(state.pending_round_openers).length) continue;
+      if (state?.primary_path === source.path && state.primary_read_bytes === stat.size) {
+        sizes.set(source.sessionId, signature);
+        continue;
+      }
       const result = syncSession(source.sessionId, source.path, entry => {
         if (source.backend === 'tmux-codex') return entry?.type === 'response_item' && entry?.payload?.type === 'message' && entry?.payload?.role === 'user'
           || entry?.type === 'event_msg' && entry?.payload?.type === 'task_started';
         return false;
       });
       if (result.ok) sizes.set(source.sessionId, signature);
+      break;
     } catch (error: any) {
       if (error.code !== 'ENOENT') console.warn('[search] history sync:', error.message);
     }

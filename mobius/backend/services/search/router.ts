@@ -12,7 +12,7 @@ const router = express.Router();
 
 function refreshSources(): void {
   try {
-    const sessions = db.prepare('SELECT session_id,model FROM sessions_v2 WHERE deleted_at IS NULL').all() as any[];
+    const sessions = db.prepare('SELECT session_id,model FROM sessions_v2 WHERE deleted_at IS NULL ORDER BY last_active DESC').all() as any[];
     refreshSearchSources(sessions.map(session => {
       const backend = backendNameForSessionModel(session.model);
       return { sessionId: session.session_id, backend, path: agentJsonlPathOf(agents.get(backend), session.session_id) };
@@ -45,7 +45,8 @@ router.get('/', auth, async (req, res) => {
     conditions.push('COALESCE(s.last_active,s.created_at)>=?');
     parameters.push(new Date(Date.now() - days[range]! * 86400000).toISOString());
   }
-  const rows = db.prepare(`SELECT s.*,p.name AS project_name,p.description AS project_description,
+  const rows = db.prepare(`SELECT s.session_id,s.project_id,s.issue_id,s.research_id,s.scope_type,s.name,
+    s.model,s.last_active,s.created_at,s.user_id,s.status,p.name AS project_name,
     i.title AS issue_title,r.title AS research_title FROM sessions_v2 s
     JOIN projects p ON p.id=s.project_id LEFT JOIN issues i ON i.id=s.issue_id
     LEFT JOIN researches r ON r.id=s.research_id WHERE ${conditions.join(' AND ')}

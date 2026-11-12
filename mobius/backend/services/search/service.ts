@@ -22,7 +22,7 @@ function dispatch(): void {
 
 function spawn(role: string): ChildProcess {
   const child = fork(path.join(__dirname, 'worker.ts'), [], {
-    execArgv: ['--require', 'tsx/cjs'],
+    execArgv: ['--require', require.resolve('tsx/cjs')],
     env: { ...process.env, MOBIUS_AGENT_HISTORY_STORE_PATH: historyStorePath(), MOBIUS_SEARCH_WORKER: role },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });

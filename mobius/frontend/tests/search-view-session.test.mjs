@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 
-const source = fs.readFileSync(new URL('../src/components/search-modal.tsx', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('../src/components/search/search-modal.tsx', import.meta.url), 'utf8')
 const handler = source.slice(source.indexOf('  const openSession ='), source.indexOf('  const openFragmentPreview ='))
 const compiled = ts.transpileModule(`${handler}\nopenSession(result, fragment)`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
