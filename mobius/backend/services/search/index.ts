@@ -25,17 +25,17 @@ export function initializeSearchIndex(db: Database.Database): void {
 }
 
 export function indexBatch(db: Database.Database, allowed: Set<string>, batchSize = 10): boolean {
-    const state = db.prepare('SELECT last_rowid FROM history_search_state WHERE id=1').get() as any;
-    const rows = db.prepare('SELECT rowid,session_id,json FROM entries WHERE rowid>? ORDER BY rowid LIMIT ?').all(state.last_rowid, batchSize) as any[];
-    const pending = db.prepare(`SELECT e.rowid,e.session_id,e.json FROM history_search_pending p
-      JOIN entries e ON e.rowid=p.entry_rowid ORDER BY p.entry_rowid DESC LIMIT ?`).all(batchSize) as any[];
-    const prepared = [...new Map([...rows, ...pending].map(row => [row.rowid, row])).values()].map(row => {
-      let content: ReturnType<typeof extractSearchContent> = null;
-      if (allowed.has(row.session_id)) {
-        try { content = extractSearchContent(JSON.parse(row.json)); } catch {}
-      }
-      return { rowid: row.rowid, json: row.json, tokens: content ? indexTokens(content.text) : '' };
-    });
+  const state = db.prepare('SELECT last_rowid FROM history_search_state WHERE id=1').get() as any;
+  const rows = db.prepare('SELECT rowid,session_id,json FROM entries WHERE rowid>? ORDER BY rowid LIMIT ?').all(state.last_rowid, batchSize) as any[];
+  const pending = db.prepare(`SELECT e.rowid,e.session_id,e.json FROM history_search_pending p
+    JOIN entries e ON e.rowid=p.entry_rowid ORDER BY p.entry_rowid DESC LIMIT ?`).all(batchSize) as any[];
+  const prepared = [...new Map([...rows, ...pending].map(row => [row.rowid, row])).values()].map(row => {
+    let content: ReturnType<typeof extractSearchContent> = null;
+    if (allowed.has(row.session_id)) {
+      try { content = extractSearchContent(JSON.parse(row.json)); } catch {}
+    }
+    return { rowid: row.rowid, json: row.json, tokens: content ? indexTokens(content.text) : '' };
+  });
   return db.transaction(() => {
     const remove = db.prepare('DELETE FROM history_search_fts WHERE rowid=?');
     const insert = db.prepare('INSERT INTO history_search_fts(rowid,tokens) VALUES(?,?)');

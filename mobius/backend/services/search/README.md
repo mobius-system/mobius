@@ -20,8 +20,10 @@ arbitrary substring, typo correction, quoted phrase or semantic search.
 
 Both entry writes and index updates are transactional. Insert/update triggers
 queue changed rowids; delete triggers remove postings immediately. Initial indexing
-advances a persistent rowid checkpoint in batches of 25. The indexer checks up to
-20 source signatures and ingests at most one changed source every 200ms. It does
+advances a persistent rowid checkpoint in batches of 10 every 200ms. Tokenization
+runs before the short index-write transaction; changed rows are revalidated inside
+that transaction. The indexer checks up to 20 source signatures and ingests at most
+one changed source every second. It does
 not search files on behalf of an HTTP request. Sessions with pending round openers
 are left to their owning runtime to ingest, to avoid changing live turn grouping.
 
