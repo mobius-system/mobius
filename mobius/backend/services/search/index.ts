@@ -67,13 +67,15 @@ export function queryIndex(db: Database.Database, request: IndexedSearchRequest)
   const groups = new Map<string, any[]>();
   let checked = 0;
   let truncated = false;
-  const candidates = db.prepare(`SELECT e.session_id,e.uuid,e.ts,e.json FROM history_search_fts
+  const readEntry = db.prepare('SELECT json FROM entries WHERE rowid=?');
+  const candidates = db.prepare(`SELECT e.rowid,e.session_id,e.uuid,e.ts FROM history_search_fts
     JOIN entries e ON e.rowid=history_search_fts.rowid JOIN readable_sessions s ON s.id=e.session_id
     WHERE history_search_fts MATCH ? ORDER BY s.ordinal,e.seq DESC`).iterate(parsed.match);
   for (const row of candidates as Iterable<any>) {
     if (++checked > 20000 || Date.now() - started > 2500) { truncated = true; break; }
     if (groups.has(row.session_id) && groups.get(row.session_id)!.length >= request.maxFragments) continue;
-    const content = extractSearchContent(JSON.parse(row.json));
+    const stored = readEntry.get(row.rowid) as any;
+    const content = extractSearchContent(JSON.parse(stored.json));
     if (!content) continue;
     const snippet = matchingSnippet(content.text, parsed.terms, request);
     if (!snippet) continue;
