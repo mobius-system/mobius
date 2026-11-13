@@ -2,8 +2,7 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { fork } = require('child_process')
-const { limitIndexerCpu } = require('../backend/services/search/cpu-budget')
+const { cpuRestMs } = require('../backend/services/search/cpu-budget')
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'indexed-search-worker-'))
 process.env.DB_PATH = path.join(root, 'business.db')
@@ -13,27 +12,23 @@ const history = require('../backend/services/mobius-agent-history')
 const service = require('../backend/services/search/service')
 
 async function main() {
-  const burnerPath = path.join(root, 'cpu-burner.js')
-  fs.writeFileSync(burnerPath, 'setInterval(() => { const until = Date.now() + 2000; while (Date.now() < until) {} }, 0)')
-  const burner = fork(burnerPath, [], { execArgv: [], stdio: 'ignore' })
-  limitIndexerCpu(burner)
-  try {
-    const readTicks = () => {
-      const stat = fs.readFileSync(`/proc/${burner.pid}/stat`, 'utf8')
-      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
-      return Number(fields[11]) + Number(fields[12])
-    }
+  assert.strictEqual(cpuRestMs(35, 10, 1), 90)
+  assert.strictEqual(cpuRestMs(35, 200, 1), 0)
+  assert.strictEqual(cpuRestMs(100, 100, 56), 0)
+  assert.strictEqual(cpuRestMs(35, 10, 0.5), 190)
+  const testStarted = performance.now()
+  const testCpu = process.cpuUsage()
+  while (performance.now() - testStarted < 5000) {
     const started = performance.now()
-    const initialTicks = readTicks()
-    await new Promise(resolve => setTimeout(resolve, 8000))
-    const cpuPercent = (readTicks() - initialTicks) * 1000 / (performance.now() - started)
-    assert.ok(cpuPercent <= 10, `CPU limiter used ${cpuPercent.toFixed(1)}% of one core`)
-    assert.ok(cpuPercent > 1, 'CPU limiter must allow forward progress')
-    console.log(`indexer CPU cap: ${cpuPercent.toFixed(1)}% of one core`)
-  } finally {
-    burner.kill('SIGCONT')
-    burner.kill()
+    const initialCpu = process.cpuUsage()
+    while (performance.now() - started < 10) Math.sqrt(performance.now())
+    const used = process.cpuUsage(initialCpu)
+    await new Promise(resolve => setTimeout(resolve, cpuRestMs((used.user + used.system) / 1000, performance.now() - started, 1)))
   }
+  const used = process.cpuUsage(testCpu)
+  const cpuPercent = (used.user + used.system) / ((performance.now() - testStarted) * 10)
+  assert.ok(cpuPercent <= 37, `CPU limiter used ${cpuPercent.toFixed(1)}% of one core`)
+  console.log(`cooperative CPU budget: ${cpuPercent.toFixed(1)}% of one core`)
   const source = path.join(root, 'source.jsonl')
   fs.writeFileSync(source, JSON.stringify({ uuid: 'native', type: 'assistant', timestamp: new Date().toISOString(),
     message: { role: 'assistant', content: '中文连接失败，需要修复数据库' } }) + '\n')

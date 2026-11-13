@@ -21,7 +21,7 @@ def main():
                 "SELECT updated_at,cpu_percent,read_ms,tokenize_ms,write_ms,processed,skipped FROM history_search_metrics WHERE id=1"
             ).fetchone()
             if metrics:
-                print(f"  sample {metrics[0]} | CPU {metrics[1]:.1f}% of one core | read/tokenize/write {metrics[2]:.0f}/{metrics[3]:.0f}/{metrics[4]:.0f} ms | processed {metrics[5]} | unchanged skipped {metrics[6]}", flush=True)
+                print(f"  sample {metrics[0]} | CPU {metrics[1]:.1f}% of available machine (budget 35%) | read/tokenize/write {metrics[2]:.0f}/{metrics[3]:.0f}/{metrics[4]:.0f} ms | processed {metrics[5]} | unchanged skipped {metrics[6]}", flush=True)
             previous_position, previous_time = position, now
             time.sleep(5)
     except KeyboardInterrupt:

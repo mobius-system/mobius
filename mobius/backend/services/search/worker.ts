@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import { historyStorePath, syncSession } from '../mobius-agent-history';
 import { indexBatch, queryIndex, type BatchMetrics } from './index';
+import { cpuRestMs, SEARCH_CPU_COUNT } from './cpu-budget';
 
 const db = new Database(historyStorePath());
 db.pragma('busy_timeout=1000');
@@ -54,6 +55,8 @@ if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
   let lastCpu = process.cpuUsage();
   let totals: BatchMetrics = { readMs: 0, tokenizeMs: 0, writeMs: 0, processed: 0, skipped: 0 };
   const run = () => {
+    const cycleStarted = performance.now();
+    const cycleCpu = process.cpuUsage();
     let more = false;
     try {
       if (inventory.length) {
@@ -64,7 +67,7 @@ if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
         const now = performance.now();
         if (now - lastReport >= 10000) {
           const cpu = process.cpuUsage(lastCpu);
-          const cpuPercent = (cpu.user + cpu.system) / ((now - lastReport) * 10);
+          const cpuPercent = (cpu.user + cpu.system) / ((now - lastReport) * 10 * SEARCH_CPU_COUNT);
           db.prepare('INSERT OR REPLACE INTO history_search_metrics VALUES(1,?,?,?,?,?,?,?)')
             .run(new Date().toISOString(), cpuPercent, totals.readMs, totals.tokenizeMs, totals.writeMs, totals.processed, totals.skipped);
           console.log('[search] metrics', JSON.stringify({ cpuPercent, ...totals }));
@@ -74,7 +77,9 @@ if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
         }
       }
     } catch (error: any) { console.warn('[search] index:', error.message); }
-    setTimeout(run, more ? 0 : 1000);
+    const used = process.cpuUsage(cycleCpu);
+    const rest = cpuRestMs((used.user + used.system) / 1000, performance.now() - cycleStarted);
+    setTimeout(run, Math.max(more ? 0 : 1000, rest));
   };
   run();
 }

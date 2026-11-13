@@ -1,41 +1,32 @@
 import fs from 'fs';
-import { fork, type ChildProcess } from 'child_process';
+import os from 'os';
+import path from 'path';
 
-export function cpuBudgetExceeded(cpuMs: number): boolean {
-  return cpuMs >= 30;
-}
-
-export function limitIndexerCpu(child: ChildProcess): void {
-  if (process.platform !== 'linux') throw new Error('Search CPU limiter requires Linux /proc');
-  const monitor = fork(__filename, ['--monitor-indexer', String(child.pid)], {
-    execArgv: ['--require', require.resolve('tsx/cjs')], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-  });
-  child.once('exit', () => monitor.kill());
-}
-
-function monitorCpu(pid: number): void {
-  let baseline: number | null = null;
-  let windowStarted = performance.now();
-  let stopped = false;
-  const timer = setInterval(() => {
-    try {
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-      const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-      const ticks = Number(fields[11]) + Number(fields[12]);
-      const now = performance.now();
-      if (baseline === null || now - windowStarted >= 1000) {
-        baseline = ticks;
-        windowStarted = now;
-        if (stopped) { process.kill(pid, 'SIGCONT'); stopped = false; }
-      } else if (!stopped && cpuBudgetExceeded((ticks - baseline) * 10)) {
-        process.kill(pid, 'SIGSTOP');
-        stopped = true;
+export function effectiveCpuCount(): number {
+  let count = os.availableParallelism?.() || os.cpus().length;
+  const roots = new Set(['/sys/fs/cgroup']);
+  try {
+    const group = fs.readFileSync('/proc/self/cgroup', 'utf8').split('\n').find(line => line.startsWith('0::'))?.slice(3);
+    if (group) {
+      let directory = path.join('/sys/fs/cgroup', group);
+      while (directory.startsWith('/sys/fs/cgroup/')) {
+        roots.add(directory);
+        directory = path.dirname(directory);
       }
-    } catch { process.exit(0); }
-  }, 10);
-  const cleanup = () => { try { process.kill(pid, 'SIGCONT'); process.kill(pid, 'SIGTERM'); } catch {} };
-  process.once('disconnect', () => { clearInterval(timer); cleanup(); process.exit(0); });
-  process.once('SIGTERM', () => { clearInterval(timer); cleanup(); process.exit(0); });
+    }
+  } catch {}
+  for (const directory of roots) {
+    try {
+      const [quota, period] = fs.readFileSync(path.join(directory, 'cpu.max'), 'utf8').trim().split(/\s+/);
+      if (quota !== 'max' && Number(quota) > 0 && Number(period) > 0) count = Math.min(count, Number(quota) / Number(period));
+    } catch {}
+  }
+  return count;
 }
 
-if (process.argv[2] === '--monitor-indexer') monitorCpu(Number(process.argv[3]));
+export const SEARCH_CPU_COUNT = effectiveCpuCount();
+export const SEARCH_CPU_FRACTION = 0.35;
+
+export function cpuRestMs(cpuMs: number, elapsedMs: number, cpuCount = SEARCH_CPU_COUNT): number {
+  return Math.max(0, Math.ceil(cpuMs / (cpuCount * SEARCH_CPU_FRACTION) - elapsedMs));
+}

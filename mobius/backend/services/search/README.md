@@ -37,12 +37,13 @@ full ICU. Unsupported deployments fail explicitly, rather than silently scanning
 The existing `better-sqlite3` dependency provides SQLite; no new dependency or
 external search service is installed.
 
-On Linux an independent /proc CPU monitor pauses the indexer at 30ms CPU per
-one-second window (10ms polling, conservative headroom below 10% of one core).
-This also limits synchronous history ingestion and long tokenization calls; query
-workers are independent. This is a sampled CPU budget, not an instantaneous
-kernel quota; brief bursts and scheduler jitter are possible. The monitor runs
-outside the busy HTTP event loop. Linux USER_HZ is 100.
+Background ingestion and indexing use a cooperative budget of 35% of available
+machine CPU capacity (CPU affinity and cgroup v2 ancestor quotas are considered).
+Each cycle measures process CPU time and rests only after all transactions close.
+There is no SIGSTOP monitor or deliberate sleeping while holding database locks.
+The budget is a sustained average, not an instantaneous kernel quota. A single
+indexing thread normally uses at most one core; 35% does not request extra threads.
+CPU metrics report a percentage of the available machine, not of one core.
 SHA-256 fingerprints skip unchanged entries encountered by both backfill and the
 pending queue. Fingerprints cost approximately 64 bytes plus SQLite overhead per
 entry and never duplicate message bodies. Image blocks and inline image data URLs
