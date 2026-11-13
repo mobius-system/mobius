@@ -3,7 +3,7 @@
  *
  * 与 JsonlCopyButton 同款 jsonl-icon-button 样式. 点击直接触发浏览器下载
  * GET /api/download?path=<绝对路径>&token=<cc-token> — 后端 downloadAuth
- * 鉴权只服务用户可读路径 (与 FileManager / 图片渲染同一套机制).
+ * 鉴权只服务用户可读路径 (与图片渲染同一套机制).
  */
 import { Download } from 'lucide-react'
 

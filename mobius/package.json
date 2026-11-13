@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test:session-context-parity": "node --require tsx/cjs tests/session-context-parity.js",
+    "test:easy-defaults-parity": "node --require tsx/cjs tests/easy-defaults-parity.js",
     "test:agent-jsonl-path": "node --require tsx/cjs tests/agent-jsonl-path.js",
     "test:agent-backend-contract": "node tests/agent-backend-contract.js",
     "test:session-stop-backend-contract": "node tests/session-stop-backend-contract.js",

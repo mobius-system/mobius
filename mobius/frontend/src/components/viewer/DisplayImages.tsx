@@ -3,7 +3,7 @@
  *
  * 从 jsonl-view.tsx 拆出. 紧跟在 Bash(display_images) 卡片之后, 默认展开.
  * 行号渲染成 "↳#N" 表示"由第 N 条 entry 派生", 而非真实 jsonl 行.
- * 单张图片: URL 直出; 绝对路径走后端 /api/download (与 FileManager 同款, token 走 query).
+ * 单张图片: URL 直出; 绝对路径走后端 /api/download (token 走 query).
  */
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'

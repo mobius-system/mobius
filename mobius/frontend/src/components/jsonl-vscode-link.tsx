@@ -142,8 +142,8 @@ function proxyMediaUrl(src: string): string {
 // Rewrite a media src (markdown <img>, display_images card, ...) into a URL the
 // browser can actually render:
 //   - 外链 http(s) / 协议相对 // => 走同源后端代理 (proxyMediaUrl), 绕开防盗链/不可达;
-//   - 绝对服务器文件路径 => 走 GET /api/download (与 FileManager 同款, downloadAuth
-//     鉴权, 只服务用户可读路径). 这让 agent 消息 ![shot](/home/.../x.png) 能渲染 —
+//   - 绝对服务器文件路径 => 走 GET /api/download (downloadAuth 鉴权, 只服务
+//     用户可读路径). 这让 agent 消息 ![shot](/home/.../x.png) 能渲染 —
 //     原始文件路径在 <img src> 里会对 dev/prod host 404;
 //   - data: / blob: / 已是 /api 的 URL => 原样透传;
 //   - 相对或站内路径 => 不动 (isLikelyFilesystemPath 避免劫持它们).
