@@ -59,7 +59,11 @@ export function indexBatch(db: Database.Database, allowed: Set<string>, batchSiz
     const done = db.prepare('DELETE FROM history_search_pending WHERE entry_rowid=?');
     const unchanged = db.prepare('SELECT 1 FROM entries WHERE rowid=? AND json=?');
     const mark = db.prepare('INSERT OR REPLACE INTO history_search_processed VALUES(?,?)');
+    const writeStarted = performance.now();
+    let completedRowid = state.last_rowid;
+    const initialRows = new Set(rows.map(row => row.rowid));
     for (const row of prepared) {
+      if (performance.now() - writeStarted >= 5) break;
       if (!unchanged.get(row.rowid, row.json)) continue;
       if (!row.skip) {
         remove.run(row.rowid);
@@ -67,8 +71,9 @@ export function indexBatch(db: Database.Database, allowed: Set<string>, batchSiz
         mark.run(row.rowid, row.fingerprint);
       }
       done.run(row.rowid);
+      if (initialRows.has(row.rowid)) completedRowid = row.rowid;
     }
-    if (rows.length) db.prepare('UPDATE history_search_state SET last_rowid=? WHERE id=1').run(rows[rows.length - 1].rowid);
+    if (completedRowid > state.last_rowid) db.prepare('UPDATE history_search_state SET last_rowid=? WHERE id=1').run(completedRowid);
     return rows.length > 0 || pending.length > 0;
   }).immediate();
   if (metrics) Object.assign(metrics, { readMs: readDone - started, tokenizeMs: tokenizeDone - readDone,

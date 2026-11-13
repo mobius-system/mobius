@@ -56,6 +56,35 @@ async function main() {
   const outside = await service.searchHistory({ ...request, sessionIds: ['outside'] }, new AbortController().signal)
   assert.deepStrictEqual(outside.hits, [])
   assert.strictEqual(outside.unavailable_sessions, 1)
+  const backlog = path.join(root, 'backlog.jsonl')
+  fs.writeFileSync(backlog, Array.from({ length: 2000 }, (_, index) => JSON.stringify({
+    uuid: `backlog-${index}`, type: 'assistant', message: { role: 'assistant', content: '后台搜索索引并发写入回归测试 '.repeat(50) }
+  })).join('\n') + '\n')
+  history.syncSession('backlog', backlog)
+  service.refreshSearchSources([{ sessionId: 'inside', path: source, backend: 'tmux-codex' },
+    { sessionId: 'backlog', path: backlog, backend: 'tmux-codex' }])
+  await new Promise(resolve => setTimeout(resolve, 200))
+  let maximumWriteMs = 0
+  for (let index = 0; index < 40; index++) {
+    const started = performance.now()
+    assert.strictEqual(history.writeMobiusCoreEntry({ sessionId: 'chat-priority', content: `并发用户提问 ${index}` }), true)
+    maximumWriteMs = Math.max(maximumWriteMs, performance.now() - started)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  assert.ok(maximumWriteMs < 1000, `chat writes must not stall behind indexing: ${maximumWriteMs}ms`)
+  assert.strictEqual(history.getPendingOpeners('chat-priority').length, 39)
+  const Database = require('better-sqlite3')
+  const verification = new Database(path.join(root, 'history.db'))
+  verification.pragma('busy_timeout=3000')
+  const beforeLock = verification.prepare('SELECT last_rowid FROM history_search_state').get().last_rowid
+  verification.exec('BEGIN IMMEDIATE')
+  await new Promise(resolve => setTimeout(resolve, 500))
+  verification.exec('COMMIT')
+  await new Promise(resolve => setTimeout(resolve, 1500))
+  const afterLock = verification.prepare('SELECT last_rowid FROM history_search_state').get().last_rowid
+  assert.ok(afterLock > beforeLock, 'indexing must resume after yielding to a foreground write lock')
+  verification.close()
+  console.log(`chat writes during indexing: 40/40 saved, max ${maximumWriteMs.toFixed(1)}ms`)
   console.log('indexed-search-worker: ok')
 }
 

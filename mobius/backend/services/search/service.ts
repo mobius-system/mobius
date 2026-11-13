@@ -23,7 +23,8 @@ function dispatch(): void {
 function spawn(role: string): ChildProcess {
   const child = fork(path.join(__dirname, 'worker.ts'), [], {
     execArgv: ['--require', require.resolve('tsx/cjs')],
-    env: { ...process.env, MOBIUS_AGENT_HISTORY_STORE_PATH: historyStorePath(), MOBIUS_SEARCH_WORKER: role },
+    env: { ...process.env, MOBIUS_AGENT_HISTORY_STORE_PATH: historyStorePath(), MOBIUS_SEARCH_WORKER: role,
+      ...(role === 'indexer' ? { MOBIUS_AGENT_HISTORY_BUSY_TIMEOUT: '0' } : {}) },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
   child.on('error', error => console.warn('[search] worker:', error.message));

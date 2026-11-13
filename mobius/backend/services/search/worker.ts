@@ -5,7 +5,7 @@ import { indexBatch, queryIndex, type BatchMetrics } from './index';
 import { cpuRestMs, SEARCH_CPU_COUNT } from './cpu-budget';
 
 const db = new Database(historyStorePath());
-db.pragma('busy_timeout=1000');
+db.pragma('busy_timeout=0');
 db.pragma('cache_size=-8192');
 let inventory: Array<{ sessionId: string; path: string | null; backend: string }> = [];
 let allowed = new Set<string>();
@@ -30,10 +30,11 @@ function syncSource(): void {
         if (source.backend === 'tmux-codex') return entry?.type === 'response_item' && entry?.payload?.type === 'message' && entry?.payload?.role === 'user'
           || entry?.type === 'event_msg' && entry?.payload?.type === 'task_started';
         return false;
-      });
+      }, [], 20);
       if (result.ok) sizes.set(source.sessionId, signature);
       break;
     } catch (error: any) {
+      if (String(error.code).startsWith('SQLITE_BUSY')) return;
       if (error.code !== 'ENOENT') console.warn('[search] history sync:', error.message);
     }
   }
@@ -76,10 +77,13 @@ if (process.env.MOBIUS_SEARCH_WORKER === 'indexer') {
           lastCpu = process.cpuUsage();
         }
       }
-    } catch (error: any) { console.warn('[search] index:', error.message); }
+    } catch (error: any) {
+      if (String(error.code).startsWith('SQLITE_BUSY')) more = true;
+      else console.warn('[search] index:', error.message);
+    }
     const used = process.cpuUsage(cycleCpu);
     const rest = cpuRestMs((used.user + used.system) / 1000, performance.now() - cycleStarted);
-    setTimeout(run, Math.max(more ? 0 : 1000, rest));
+    setTimeout(run, Math.max(more ? 25 : 1000, rest));
   };
   run();
 }

@@ -44,6 +44,11 @@ There is no SIGSTOP monitor or deliberate sleeping while holding database locks.
 The budget is a sustained average, not an instantaneous kernel quota. A single
 indexing thread normally uses at most one core; 35% does not request extra threads.
 CPU metrics report a percentage of the available machine, not of one core.
+Background connections never queue for the history database write lock
+(`busy_timeout=0`); contention leaves progress intact and retries on a later cycle.
+Index batches stop adding rows after a 5ms write budget and yield for at least
+25ms outside all transactions. One SQLite statement/commit can exceed that budget;
+this is cooperative foreground protection, not a hard realtime priority guarantee.
 SHA-256 fingerprints skip unchanged entries encountered by both backfill and the
 pending queue. Fingerprints cost approximately 64 bytes plus SQLite overhead per
 entry and never duplicate message bodies. Image blocks and inline image data URLs
