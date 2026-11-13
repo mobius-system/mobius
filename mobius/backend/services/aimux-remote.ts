@@ -184,14 +184,126 @@ function remoteParent(value: any): string {
   return pathValue.slice(0, index);
 }
 
+/*
+ * Resident-broker fast path for file browsing.
+ *
+ * Spawning `aimux` for every directory costs ~0.8s of Python startup before the
+ * request even leaves the host, which dominated each expand in the remote file
+ * tree. The broker the CLI talks to is already resident, so bridge devices can
+ * be served over its HTTP API directly. SSH remotes (not registered with the
+ * broker) fall through to the CLI, which is why every helper below keeps that
+ * path intact.
+ */
+const BRIDGE_RUNTIME_PATH = process.env.AIMUX_BRIDGE_RUNTIME ||
+  path.join(os.homedir(), '.aimux', 'bridge', 'runtime.json');
+
+interface BridgeCallResult {
+  data?: any;
+  error?: string;
+}
+
+/*
+ * POST one files/<action> request to the resident broker.
+ * Returns null when the remote turns out not to be a bridge device, so the
+ * caller can retry through the CLI (SSH remotes and broker-down both land here).
+ */
+async function bridgeFileOp(
+  remoteName: string,
+  action: string,
+  payload: any,
+  timeoutMs: number,
+): Promise<BridgeCallResult | null> {
+  let runtime: any;
+  try {
+    runtime = JSON.parse(fs.readFileSync(BRIDGE_RUNTIME_PATH, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!runtime?.url || !runtime?.token) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(
+      `${String(runtime.url).replace(/\/+$/, '')}/api/remotes/${encodeURIComponent(remoteName)}/files/${action}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${runtime.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ...payload, timeout: Math.max(1, Math.ceil(timeoutMs / 1000)) }),
+        signal: controller.signal,
+      },
+    );
+    const text = await resp.text();
+    let body: any = null;
+    try { body = text ? JSON.parse(text) : null; }
+    catch { return null; }
+    if (resp.ok && body) return { data: body };
+    const message = String(body?.error?.message || body?.message || `aimux bridge HTTP ${resp.status}`);
+    const kind = String(body?.error?.kind || '');
+    // "bridge remote 'x' not found" = this is an SSH remote, not a bridge one.
+    if (kind === 'not_found' && /bridge remote .* not found/i.test(message)) return null;
+    if (kind === 'remote_disconnected') {
+      return { error: '所选设备连接已失效。请重新连接原客户端后刷新，或选择当前会话绑定、项目登记的其他设备。' };
+    }
+    return { error: message };
+  } catch {
+    // Broker down / connection refused / timeout: let the CLI report it.
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs = 70000): Promise<any> {
+  // ✨ 浏览不需要摘要: 带 sha256 意味着远端把每个文件完整读一遍 (5GB 目录要十几秒)
+  // ✨ Browsing needs no digest: hashing reads every file end to end
+  const fast = await bridgeFileOp(
+    remoteName,
+    'list',
+    { path: targetPath, recursive: false, digest: false },
+    timeoutMs,
+  );
+  if (fast?.data) return fast.data;
+  if (fast?.error) throw new Error(fast.error);
   const result = await runAimux(
-    ['file', 'list', remoteName, '--path', targetPath, '--json'],
+    ['file', 'list', remoteName, '--path', targetPath, '--json', '--no-digest'],
     { timeoutMs, maxBuffer: REMOTE_FILE_OUTPUT_MAX_BYTES },
   );
   const data = parseJsonOutput(result);
   if (!result.ok || !data || !Array.isArray(data.entries)) throw new Error(resultMessage(result));
   return data;
+}
+
+async function aimuxFileStat(remoteName: string, targetPath: string, timeoutMs = 70000): Promise<any> {
+  const fast = await bridgeFileOp(remoteName, 'stat', { path: targetPath }, timeoutMs);
+  if (fast?.data) return fast.data;
+  if (fast?.error) throw new Error(fast.error);
+  const result = await runAimux(
+    ['file', 'stat', remoteName, '--path', targetPath, '--json'],
+    { timeoutMs },
+  );
+  const stat = parseJsonOutput(result);
+  if (!result.ok) throw new Error(resultMessage(result));
+  return stat;
+}
+
+async function aimuxFileReadB64(
+  remoteName: string,
+  targetPath: string,
+  timeoutMs: number,
+  maxBuffer: number,
+): Promise<string> {
+  const fast = await bridgeFileOp(remoteName, 'read', { path: targetPath }, timeoutMs);
+  if (fast?.data) return String(fast.data.content_b64 || '');
+  if (fast?.error) throw new Error(fast.error);
+  const result = await runAimux(
+    ['file', 'read', remoteName, '--path', targetPath, '--b64'],
+    { timeoutMs, maxBuffer },
+  );
+  if (!result.ok) throw new Error(resultMessage(result));
+  return result.stdout || '';
 }
 
 function resultMessage(result: any): string {
@@ -416,12 +528,7 @@ async function readRemoteFile(name: any, rootPath: any, relPath: any): Promise<a
   const relativePath = normalizeRemoteRelativePath(relPath);
   if (relativePath === '/') throw new Error('请选择远程文件');
   const targetPath = joinRemotePath(rootPath, relativePath);
-  const statResult = await runAimux(
-    ['file', 'stat', remoteName, '--path', targetPath, '--json'],
-    { timeoutMs: 70000 },
-  );
-  const stat = parseJsonOutput(statResult);
-  if (!statResult.ok) throw new Error(resultMessage(statResult));
+  const stat = await aimuxFileStat(remoteName, targetPath);
   if (!stat?.exists) throw new Error('远程文件不存在');
   if (stat.type !== 'file') throw new Error('目标不是文件');
   const size = Number(stat.size || 0);
@@ -438,13 +545,14 @@ async function readRemoteFile(name: any, rootPath: any, relPath: any): Promise<a
       binary: false,
     };
   }
-  const readResult = await runAimux(
-    ['file', 'read', remoteName, '--path', targetPath, '--b64'],
-    { timeoutMs: 180000, maxBuffer: REMOTE_FILE_OUTPUT_MAX_BYTES },
+  const contentB64 = await aimuxFileReadB64(
+    remoteName,
+    targetPath,
+    180000,
+    REMOTE_FILE_OUTPUT_MAX_BYTES,
   );
-  if (!readResult.ok) throw new Error(resultMessage(readResult));
   let buffer: Buffer;
-  try { buffer = Buffer.from(readResult.stdout || '', 'base64'); }
+  try { buffer = Buffer.from(contentB64, 'base64'); }
   catch { throw new Error('aimux 返回的远程文件内容格式异常'); }
   const binary = buffer.indexOf(0) !== -1;
   return {
@@ -471,12 +579,7 @@ async function readRemoteFileRaw(name: any, rootPath: any, relPath: any): Promis
   const relativePath = normalizeRemoteRelativePath(relPath);
   if (relativePath === '/') throw new Error('请选择远程文件');
   const targetPath = joinRemotePath(rootPath, relativePath);
-  const statResult = await runAimux(
-    ['file', 'stat', remoteName, '--path', targetPath, '--json'],
-    { timeoutMs: 70000 },
-  );
-  const stat = parseJsonOutput(statResult);
-  if (!statResult.ok) throw new Error(resultMessage(statResult));
+  const stat = await aimuxFileStat(remoteName, targetPath);
   if (!stat?.exists) throw new Error('远程文件不存在');
   if (stat.type !== 'file') throw new Error('目标不是文件');
   const size = Number(stat.size || 0);
@@ -485,13 +588,14 @@ async function readRemoteFileRaw(name: any, rootPath: any, relPath: any): Promis
   }
   // ✨ maxBuffer 必须覆盖 base64 展宽 (4/3) 再留余量, 否则文件还没读完就被截断
   // ✨ maxBuffer must cover the base64 inflation (4/3) plus headroom, or the read is truncated mid-flight
-  const readResult = await runAimux(
-    ['file', 'read', remoteName, '--path', targetPath, '--b64'],
-    { timeoutMs: REMOTE_FILE_DOWNLOAD_TIMEOUT_MS, maxBuffer: Math.ceil(size * 2) + 1024 },
+  const contentB64 = await aimuxFileReadB64(
+    remoteName,
+    targetPath,
+    REMOTE_FILE_DOWNLOAD_TIMEOUT_MS,
+    Math.ceil(size * 2) + 1024,
   );
-  if (!readResult.ok) throw new Error(resultMessage(readResult));
   let buffer: Buffer;
-  try { buffer = Buffer.from(readResult.stdout || '', 'base64'); }
+  try { buffer = Buffer.from(contentB64, 'base64'); }
   catch { throw new Error('aimux 返回的远程文件内容格式异常'); }
   if (size > 0 && buffer.length !== size) {
     throw new Error(`远程文件读取不完整 (${buffer.length}/${size} 字节)`);
@@ -509,12 +613,7 @@ async function writeRemoteFile(name: any, rootPath: any, relPath: any, content: 
     throw new Error(`远程文件过大 (${data.length} 字节)，超过 ${REMOTE_FILE_WRITE_MAX_BYTES} 上限`);
   }
   const targetPath = joinRemotePath(rootPath, relativePath);
-  const statResult = await runAimux(
-    ['file', 'stat', remoteName, '--path', targetPath, '--json'],
-    { timeoutMs: 70000 },
-  );
-  const stat = parseJsonOutput(statResult);
-  if (!statResult.ok) throw new Error(resultMessage(statResult));
+  const stat = await aimuxFileStat(remoteName, targetPath);
   if (!stat?.exists) throw new Error('远程文件不存在');
   if (stat.type !== 'file') throw new Error('目标不是文件');
   const result = await runAimuxWithInput(
