@@ -79,6 +79,12 @@ function openStore(): Database.Database {
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
   _db = new Database(STORE_PATH);
   _db.pragma('journal_mode = WAL');
+  // 多 worker 共用一个库: 写事务必须 BEGIN IMMEDIATE (见本文件所有 tx.immediate()).
+  // busy_timeout 只对"取写锁"生效; 若事务先读后写, SQLite 会立刻抛 SQLITE_BUSY_SNAPSHOT,
+  // 繁忙时用户消息卡写不进库, 对话菜单就少一条提问.
+  // Workers share one store: write transactions must BEGIN IMMEDIATE (all tx.immediate()
+  // below). busy_timeout only covers lock acquisition; a deferred read-then-write raises
+  // SQLITE_BUSY_SNAPSHOT at once, which silently dropped user message cards when busy.
   _db.pragma('busy_timeout = 3000');
   _db.exec(`
     CREATE TABLE IF NOT EXISTS ingest_state (
@@ -510,7 +516,9 @@ function commitBatch(sessionId: string, rows: PendingRow[], newBookmark: number,
     db.prepare('UPDATE ingest_state SET primary_read_bytes = ?, session_version = ?, last_group_seq = ?, next_seq = ?, last_synced_at = ? WHERE session_id = ?')
       .run(newBookmark, version, gseq, nextSeq, nowIso(), sessionId);
   });
-  tx();
+  // 先读后写, 必须 IMMEDIATE 先拿写锁, 否则并发写会抛 SQLITE_BUSY_SNAPSHOT
+  // Read-then-write: take the write lock up front or a concurrent writer trips SQLITE_BUSY_SNAPSHOT
+  tx.immediate();
 }
 
 function pushSinkRow(sink: CommitSink, gseq: number, entry: any, entryUuid?: string): void {
@@ -637,7 +645,7 @@ function flushPendingOpenersToSink(sessionId: string, sink: CommitSink): number 
       .run(gseq, '[]', (cur.session_version || 0) + 1, sessionId);
     return gseq;
   });
-  const gseq = tx() as number;
+  const gseq = tx.immediate() as number;
 
   sink.newRounds.push({
     id: String(gseq), seq: gseq,
@@ -731,7 +739,7 @@ function writeMobiusCoreEntry(args: {
         pushSinkRow(sink, gseq, entry);
       }
     });
-    tx();
+    tx.immediate();
     flushSink(sessionId, sink);
     return true;
   }
@@ -745,7 +753,7 @@ function writeMobiusCoreEntry(args: {
     db.prepare('UPDATE ingest_state SET next_seq = ?, pending_round_openers = ?, session_version = ?, last_synced_at = ? WHERE session_id = ?')
       .run((state.next_seq || 1) + 1, JSON.stringify(pending), (state.session_version || 0) + 1, nowIso(), sessionId);
   });
-  txA();
+  txA.immediate();
 
   // 出队决策: group 0 特殊 (新会话还没开过轮) → 立即出队 (等价旧 opener 提前);
   // 已开过轮 → 挂起等 scanPrimary 扫到 dequeue 事件再出队, 前端先收到 pending_opener.
@@ -823,7 +831,7 @@ function writeMobiusErrorEntry(args: {
       pushSinkRow(sink, gseq, entry);
     }
   });
-  tx();
+  tx.immediate();
   flushSink(sessionId, sink);
   return true;
 }
@@ -1113,7 +1121,7 @@ function deleteSessionData(sessionId: string): void {
     st.deleteRounds.run(sessionId);
     st.deleteState.run(sessionId);
   });
-  try { tx(); } catch {}
+  try { tx.immediate(); } catch {}
   subscribers.delete(sessionId);
 }
 

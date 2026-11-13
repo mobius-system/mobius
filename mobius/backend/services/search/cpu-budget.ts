@@ -28,5 +28,5 @@ export const SEARCH_CPU_COUNT = effectiveCpuCount();
 export const SEARCH_CPU_FRACTION = 0.35;
 
 export function cpuRestMs(cpuMs: number, elapsedMs: number, cpuCount = SEARCH_CPU_COUNT): number {
-  return Math.max(0, Math.ceil(cpuMs / (cpuCount * SEARCH_CPU_FRACTION) - elapsedMs));
+  return Math.max(0, Math.ceil(cpuMs / (cpuCount * SEARCH_CPU_FRACTION * 0.94) - elapsedMs));
 }

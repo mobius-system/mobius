@@ -12,10 +12,10 @@ const history = require('../backend/services/mobius-agent-history')
 const service = require('../backend/services/search/service')
 
 async function main() {
-  assert.strictEqual(cpuRestMs(35, 10, 1), 90)
+  assert.strictEqual(cpuRestMs(35, 10, 1), 97)
   assert.strictEqual(cpuRestMs(35, 200, 1), 0)
   assert.strictEqual(cpuRestMs(100, 100, 56), 0)
-  assert.strictEqual(cpuRestMs(35, 10, 0.5), 190)
+  assert.strictEqual(cpuRestMs(35, 10, 0.5), 203)
   const testStarted = performance.now()
   const testCpu = process.cpuUsage()
   while (performance.now() - testStarted < 5000) {
@@ -27,7 +27,7 @@ async function main() {
   }
   const used = process.cpuUsage(testCpu)
   const cpuPercent = (used.user + used.system) / ((performance.now() - testStarted) * 10)
-  assert.ok(cpuPercent <= 37, `CPU limiter used ${cpuPercent.toFixed(1)}% of one core`)
+  assert.ok(cpuPercent <= 35, `CPU limiter used ${cpuPercent.toFixed(1)}% of one core`)
   console.log(`cooperative CPU budget: ${cpuPercent.toFixed(1)}% of one core`)
   const source = path.join(root, 'source.jsonl')
   fs.writeFileSync(source, JSON.stringify({ uuid: 'native', type: 'assistant', timestamp: new Date().toISOString(),
