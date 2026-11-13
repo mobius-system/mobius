@@ -245,10 +245,10 @@ export function buildMobiusPromptRecord(input: MobiusPromptInput): MobiusPromptR
 
 function buildMobiusUserEntry({
   sessionId, agentSessionId, cwd, backendName, content, inputText, finalPrompt,
-  requestId, turnNumber, source, userId, kind, timestamp, attachments, mentions,
+  requestId, turnNumber, source, userId, kind, timestamp, attachments, mentions, entryUuid,
 }: Partial<MobiusPromptRecord> & {
   sessionId?: any; agentSessionId?: any; cwd?: any; backendName?: any;
-}): any {
+} & CoreEntryRetryFields): any {
   const ts = timestamp || nowIso();
   const body = String(content || '');
   const typed = inputText == null ? null : String(inputText);
@@ -261,7 +261,7 @@ function buildMobiusUserEntry({
     promptId: crypto.randomUUID(),
     type: 'user',
     message: { role: 'user', content: body },
-    uuid: crypto.randomUUID(),
+    uuid: entryUuid || crypto.randomUUID(),
     timestamp: ts,
     permissionMode: 'bypassPermissions',
     userType: 'external',
@@ -698,7 +698,57 @@ function writeMobiusCoreEntry(args: {
   primaryPath?: string | null;
   containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean;
   pendingInputs?: string[];
-} & MobiusPromptRecord): boolean {
+} & MobiusPromptRecord & CoreEntryRetryFields): boolean {
+  // 固定 uuid: 重试时靠 INSERT OR IGNORE 幂等, 不会写出重复提问卡
+  // Stable uuid makes retries idempotent (INSERT OR IGNORE never duplicates a card)
+  const entryUuid = args.entryUuid || crypto.randomUUID();
+  try {
+    return writeMobiusCoreEntryOnce({ ...args, entryUuid });
+  } catch (e) {
+    const attempt = args.retryAttempt || 0;
+    // 只对锁竞争重试: 其它错误 (字段/文件) 重试也不会好
+    // Retry lock contention only; other failures would just repeat
+    if (!isRetryableDbBusy(e) || attempt >= CORE_ENTRY_RETRY_DELAYS.length) throw e;
+    const delay = CORE_ENTRY_RETRY_DELAYS[attempt];
+    console.warn(`[agent-history] core entry busy (${args.sessionId}): [${(e as any)?.code}] retry ${attempt + 1}/${CORE_ENTRY_RETRY_DELAYS.length} in ${delay}ms`);
+    setTimeout(() => {
+      try {
+        writeMobiusCoreEntry({ ...args, entryUuid, retryAttempt: attempt + 1 });
+      } catch (err) {
+        console.warn(`[agent-history] core entry retry failed (${args.sessionId}): [${(err as any)?.code || 'unknown'}] ${(err as Error)?.message || err}`);
+      }
+    }, delay).unref?.();
+    // 首次失败照常抛给调用方 (适配器告警并返回 false), 重试在后台补写
+    // Rethrow so the adapter still warns; the background retry does the repair
+    throw e;
+  }
+}
+
+// 锁竞争重试退避 (ms): 三次足够覆盖十几秒的极端持锁, 再多会长期占着定时器
+// Backoff for lock contention: three tries cover even a very long hold
+const CORE_ENTRY_RETRY_DELAYS = [200, 800, 2000];
+
+// 重试内部字段: uuid 跨重试不变 (幂等), retryAttempt 数已重试次数
+// Retry bookkeeping: a stable uuid across attempts, plus how many tries already happened
+interface CoreEntryRetryFields {
+  entryUuid?: string;
+  retryAttempt?: number;
+}
+
+function isRetryableDbBusy(e: any): boolean {
+  const code = String(e?.code || '');
+  return code === 'SQLITE_BUSY' || code === 'SQLITE_BUSY_SNAPSHOT' || code === 'SQLITE_LOCKED';
+}
+
+function writeMobiusCoreEntryOnce(args: {
+  sessionId: string;
+  agentSessionId?: any;
+  cwd?: any;
+  backendName?: any;
+  primaryPath?: string | null;
+  containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean;
+  pendingInputs?: string[];
+} & MobiusPromptRecord & CoreEntryRetryFields): boolean {
   const sessionId = args.sessionId;
   if (!sessionId) return false;
   const entry = buildMobiusUserEntry(args);
@@ -749,7 +799,9 @@ function writeMobiusCoreEntry(args: {
     const state = st.getState.get(sessionId) as any;
     st.insertEntry.run(sessionId, entry.uuid, state.next_seq || 1, null, null, 1, 'direct', ts, json);
     const pending: string[] = JSON.parse(state.pending_round_openers || '[]');
-    pending.push(entry.uuid);
+    // 重试可能重复入队同一个 uuid: 去重, 否则出队时条数/组元数据会算错
+    // A retry may enqueue the same uuid twice; dedupe or the flush miscounts the group
+    if (!pending.includes(entry.uuid)) pending.push(entry.uuid);
     db.prepare('UPDATE ingest_state SET next_seq = ?, pending_round_openers = ?, session_version = ?, last_synced_at = ? WHERE session_id = ?')
       .run((state.next_seq || 1) + 1, JSON.stringify(pending), (state.session_version || 0) + 1, nowIso(), sessionId);
   });

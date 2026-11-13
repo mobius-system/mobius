@@ -1217,7 +1217,9 @@ class TmuxCodexBackend extends AgentBackend {
         pendingInputs: [],
       })
     } catch (e) {
-      console.warn(`[tmux-codex] mobius core entry failed (${sessionId}): ${e.message}`)
+      // 错误码与文案分开: BUSY / BUSY_SNAPSHOT 的 message 都是 "database is locked"
+      // Keep the code alongside the text: BUSY and BUSY_SNAPSHOT both read "database is locked"
+      console.warn(`[tmux-codex] mobius core entry failed (${sessionId}): [${(e as any)?.code || 'unknown'}] ${e.message}`)
       return false
     }
   }

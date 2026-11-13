@@ -407,7 +407,9 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     } catch (e) {
       // 写库失败只告警，返回false让调用方自己决定
       // A failed write only warns; false lets the caller decide what to do
-      console.warn(`[tmux-claude-code] mobius core entry failed (${sessionId}): ${(e as Error)?.message || e}`)
+      // 带上 SQLite 错误码: "database is locked" 同时是 BUSY 和 BUSY_SNAPSHOT 的文案, 只有 code 能区分
+      // Include the SQLite code: BUSY and BUSY_SNAPSHOT share the "database is locked" text
+      console.warn(`[tmux-claude-code] mobius core entry failed (${sessionId}): [${(e as any)?.code || 'unknown'}] ${(e as Error)?.message || e}`)
       return false
     }
   }
