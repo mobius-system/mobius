@@ -883,6 +883,9 @@ export class AimuxSupervisor {
       if (this.stopping) return
       if (!token) throw new Error('登录接口未返回新 JWT')
       this.opts.token = token
+      // 跟随检查用的是 lastStartOpts 里的 token；JWT 刷新后必须一起更新，
+      // 否则 TUI 连过一周之后定时探测会一直 401。
+      if (lastStartOpts && lastStartOpts.server === this.opts.server) lastStartOpts.token = token
       this.reconnectAttempt = 0
       appendAimuxLog(installLogQueue, `AIMUX JWT refreshed at ${new Date().toISOString()}; restarting bridge client\n`)
       this.opts.onStatus({ state: 'starting', phase: 'connecting', detail: 'JWT 已刷新，正在重新连接 AIMUX bridge…', identifier: this.opts.identifier })
@@ -916,6 +919,48 @@ let lastStartOpts: StartOptions | null = null
 let skipAutoAlignOnce = false
 /** 实际装着的 aimux 版本，供状态行显示（自动对齐后可能和 pin 不同）。 */
 let runtimeAimuxVersion: string | null = null
+/** 跟随服务端版本的定时器（TUI 开着的时候才跑）。 */
+let followTimer: ReturnType<typeof setInterval> | null = null
+let followInFlight = false
+/** 同一个服务端版本连续升级失败的次数；到上限就停止重试，等版本再变或 TUI 重启。 */
+let followFailedVersion: string | null = null
+let followFailureCount = 0
+const FOLLOW_MAX_FAILURES = 3
+
+/**
+ * 跟随检查间隔。默认 30 分钟；设 0 关闭（离线/受控环境）。
+ * 单独抽出来是为了测试和排障时不必等半小时。
+ */
+export function followCheckIntervalMs(): number {
+  const raw = process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS
+  if (raw !== undefined && raw !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n >= 0) return n
+  }
+  return 30 * 60 * 1000
+}
+
+/**
+ * 按数字段比较两个 aimux 版本，返回 -1/0/1；任一侧不是纯数字点分版本时返回 null。
+ * 不能用字符串比较：'0.3.9' > '0.3.10' 是错的，而这里恰好只关心谁更新。
+ */
+export function compareAimuxVersions(a: string | null | undefined, b: string | null | undefined): number | null {
+  const parse = (value: string | null | undefined): number[] | null => {
+    const text = typeof value === 'string' ? value.trim().replace(/^v/i, '') : ''
+    if (!/^\d+(\.\d+)*$/.test(text)) return null
+    return text.split('.').map(part => Number(part))
+  }
+  const left = parse(a)
+  const right = parse(b)
+  if (!left || !right) return null
+  const length = Math.max(left.length, right.length)
+  for (let i = 0; i < length; i += 1) {
+    const x = left[i] ?? 0
+    const y = right[i] ?? 0
+    if (x !== y) return x > y ? 1 : -1
+  }
+  return 0
+}
 
 interface StartOptions {
   server: string
@@ -1024,13 +1069,84 @@ export async function startAimuxConnection(opts: StartOptions): Promise<void> {
       spawnProcess: token => spawnDetachedDaemon(launcher, reverseConnectArgs(opts.server, identifier, token, process.platform, silentFlag, runtimePath(aimuxWorkspaceHash()), gui.enableGui, gui.guiNoElevate)),
     })
     await supervisor.start()
+    scheduleFollowCheck(opts)
   })().finally(() => { installing = null })
   await installing
 }
 
 export async function stopAimuxConnection(): Promise<void> {
+  clearFollowCheck()
   const current = supervisor; supervisor = null
   await current?.stop()
+}
+
+/** 重新开始计时；每次连接成功都重置，避免旧定时器指向已废弃的 opts。 */
+function scheduleFollowCheck(opts: StartOptions): void {
+  clearFollowCheck()
+  const intervalMs = followCheckIntervalMs()
+  if (!(intervalMs > 0)) {
+    logInstall('aimux follow: disabled by MOBIUS_TUI_AIMUX_FOLLOW_MS=0\n')
+    return
+  }
+  followTimer = setInterval(() => { void followServerVersion(opts) }, intervalMs)
+  followTimer.unref?.()
+  logInstall(`aimux follow: checking the server version every ${Math.round(intervalMs / 1000)}s\n`)
+}
+
+function clearFollowCheck(): void {
+  if (followTimer) { clearInterval(followTimer); followTimer = null }
+}
+
+/**
+ * “Mobius 升级 aimux，连着的 TUI 跟着升级”的落点。
+ *
+ * 每 30 分钟读一次服务端 broker 版本；只有服务端**更新**时才动手（回滚不把用户
+ * 往回拽 —— 那是下次启动对齐的事）。升级不复用连接期的对齐逻辑，而是先停掉
+ * supervisor 和旧守护进程，再走一遍 startAimuxConnection：它会重新读版本、装到
+ * 目标版本、版本变化时丢弃旧 daemon 并重新探测命令行开关，失败也会带着旧版本
+ * 连回去，不会把设备留在离线状态。
+ */
+async function followServerVersion(opts: StartOptions): Promise<void> {
+  if (followInFlight || installing || !supervisor) return
+  if (process.env.MOBIUS_TUI_DISABLE_AIMUX === '1') return
+  const current = runtimeAimuxVersion
+  const serverVersion = await fetchServerAimuxVersion(opts.server, opts.token)
+  if (!serverVersion) return
+  if (followFailedVersion && followFailedVersion !== serverVersion) {
+    followFailedVersion = null
+    followFailureCount = 0
+  }
+  if (followFailedVersion === serverVersion && followFailureCount >= FOLLOW_MAX_FAILURES) {
+    logInstall(`aimux follow: ${serverVersion} already failed ${followFailureCount} times; waiting for a different version\n`)
+    return
+  }
+  const cmp = compareAimuxVersions(serverVersion, current)
+  if (cmp === null || cmp <= 0) return
+  followInFlight = true
+  logInstall(`\n########## aimux follow: server ${serverVersion} > local ${current ?? '(unknown)'} at ${new Date().toISOString()} ##########\n`)
+  opts.onStatus?.({ state: 'starting', phase: 'install', detail: `服务端 AIMUX 已升级到 ${serverVersion}，正在跟随升级…` })
+  try {
+    await stopAimuxConnection()
+    await stopDaemonFromRuntime()
+    await startAimuxConnection(opts)
+    if (runtimeAimuxVersion === serverVersion) {
+      logInstall(`aimux follow: now running ${runtimeAimuxVersion}\n`)
+      followFailedVersion = null
+      followFailureCount = 0
+    } else {
+      followFailedVersion = serverVersion
+      followFailureCount += 1
+      logInstall(`aimux follow: still on ${runtimeAimuxVersion ?? '(unknown)'} after the attempt (${followFailureCount}/${FOLLOW_MAX_FAILURES})\n`)
+    }
+  } catch (e: any) {
+    followFailedVersion = serverVersion
+    followFailureCount += 1
+    logInstall(`aimux follow failed: ${e?.stack || e?.message || String(e)}\n`)
+    // 别把设备留在离线状态：升级链路异常时用旧版本把连接拉回来。
+    if (!supervisor) { try { await startAimuxConnection(opts) } catch { /* 下一轮定时器再试 */ } }
+  } finally {
+    followInFlight = false
+  }
 }
 
 /**

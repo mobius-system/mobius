@@ -84,6 +84,14 @@ child and reconnect with 1/2/4/8/15-second capped exponential backoff. A
 successful bridge heartbeat resets the backoff and changes the status indicator
 to green.
 
+Every 30 minutes the TUI also reads `/aimux_bridge/api/health` and compares the
+broker's aimux version with the one in use. A newer server version installs that
+exact version locally and restarts the reverse connection, so a Mobius upgrade
+reaches TUIs that were left open; an older version is never forced on the client
+(the next TUI start aligns in either direction). Failures keep the existing
+version connected and are retried at most three times per version. Set
+`MOBIUS_TUI_AIMUX_FOLLOW_MS` to change the interval, or to `0` to disable it.
+
 ## Flow
 
 1. **Login** — server / username / password → `POST /api/auth/login` → save

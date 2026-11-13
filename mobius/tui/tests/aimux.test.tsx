@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
-import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, ensureAimux, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, alignTarget, fetchServerAimuxVersion, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
+import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, ensureAimux, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, alignTarget, compareAimuxVersions, followCheckIntervalMs, fetchServerAimuxVersion, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
 import { parseElevatedGroups } from '../src/lib/windows-admin.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -470,6 +470,28 @@ function testAlignTarget() {
   ok(alignTarget('0.3.71', '0.3.71') === '0.3.71', 'an exact match targets that same version (no swap happens)')
 }
 
+function testFollowServerVersion() {
+  console.log('\n[AIMUX 6h] follow the server version while the TUI stays open')
+  // 数字段比较：字符串比较会把 0.3.9 判成比 0.3.10 新。
+  ok(compareAimuxVersions('0.3.81', '0.3.77') === 1, 'a newer server version compares as newer')
+  ok(compareAimuxVersions('0.3.9', '0.3.10') === -1, 'numeric comparison handles multi-digit segments')
+  ok(compareAimuxVersions('0.3.81', '0.3.81') === 0, 'equal versions do not trigger an upgrade')
+  ok(compareAimuxVersions('0.3.77', '0.3.81') === -1, 'an older server version is never followed (no auto-downgrade)')
+  ok(compareAimuxVersions('v0.4.0', '0.3.81') === 1, 'a leading v is tolerated')
+  ok(compareAimuxVersions('0.3.81-beta', '0.3.81') === null, 'a non-numeric version is not acted on')
+  ok(compareAimuxVersions(null, '0.3.81') === null, 'an unknown server version is not acted on')
+  // 默认 30 分钟一轮；可被环境变量覆盖或关闭。
+  const previous = process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS
+  delete process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS
+  ok(followCheckIntervalMs() === 30 * 60 * 1000, 'the default follow interval is 30 minutes')
+  process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS = '0'
+  ok(followCheckIntervalMs() === 0, 'setting 0 disables the follow check')
+  process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS = '1234'
+  ok(followCheckIntervalMs() === 1234, 'an explicit interval is honoured')
+  if (previous === undefined) delete process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS
+  else process.env.MOBIUS_TUI_AIMUX_FOLLOW_MS = previous
+}
+
 function testAimuxIdentifierScopesWorkspace() {
   console.log('\n[AIMUX 6a] reverse client identifier workspace isolation')
   const first = tuiAimuxIdentifier('same-host', '/work/project-a')
@@ -630,6 +652,7 @@ async function main() {
   testElevationDetection()
   testGuiModeAvailability()
   testAlignTarget()
+  testFollowServerVersion()
   await testFetchServerAimuxVersion()
   await testEnsureAimuxVersionSwap()
   testAimuxIdentifierScopesWorkspace()
