@@ -85,7 +85,11 @@ function openStore(): Database.Database {
   // Workers share one store: write transactions must BEGIN IMMEDIATE (all tx.immediate()
   // below). busy_timeout only covers lock acquisition; a deferred read-then-write raises
   // SQLITE_BUSY_SNAPSHOT at once, which silently dropped user message cards when busy.
-  _db.pragma('busy_timeout = 3000');
+  // 默认 3000ms; 后台索引进程可设 MOBIUS_AGENT_HISTORY_BUSY_TIMEOUT=0, 争锁立即让位给聊天保存.
+  // 3000ms by default; a background indexer may set the env var to 0 so it yields the lock
+  // immediately instead of making the chat path wait.
+  const busyTimeoutMs = Number(process.env.MOBIUS_AGENT_HISTORY_BUSY_TIMEOUT);
+  _db.pragma(`busy_timeout = ${Number.isFinite(busyTimeoutMs) && busyTimeoutMs >= 0 ? busyTimeoutMs : 3000}`);
   _db.exec(`
     CREATE TABLE IF NOT EXISTS ingest_state (
       session_id            TEXT PRIMARY KEY,
@@ -903,7 +907,10 @@ function markError(sessionId: string, message: string): SyncResult {
 
 // [legacy-migration] 第四个参数: 迁移源 (无则纯原生轨扫描); 第五个: 本次调用是否结算迁移标记.
 // 第六个: 出队事件检测 (缺省恒 true = 立即出队). 删除迁移时一并删掉 legacy 相关参数.
-function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'members', legacy: LegacyBackfill | null, markLegacyDone: boolean, containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean, pendingInputs: string[] = []): SyncResult {
+// 第七个: 每批落库条数, 缺省 5000. 后台索引可传小值, 让写事务更短 (前台默认不变).
+// Seventh: rows per commit batch, 5000 by default; a background indexer may pass a small
+// value to keep write transactions short without slowing the foreground path.
+function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'members', legacy: LegacyBackfill | null, markLegacyDone: boolean, containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean, pendingInputs: string[] = [], chunkEntries: number = SCAN_CHUNK_ENTRIES): SyncResult {
   const db = openStore();
   const st = S();
   const state = st.getState.get(sessionId) as any;
@@ -915,7 +922,7 @@ function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'mem
   if (size < bookmark) {
     // 重置书签: 让本次从 0 开始, 同时把持久化书签也清零, 避免下次再撞到同样的不变量.
     openStore().prepare('UPDATE ingest_state SET primary_read_bytes = 0, error = NULL WHERE session_id = ?').run(sessionId);
-    return scanPrimary(sessionId, filePath, mode, legacy, markLegacyDone, containDequeueEvent, pendingInputs);
+    return scanPrimary(sessionId, filePath, mode, legacy, markLegacyDone, containDequeueEvent, pendingInputs, chunkEntries);
   }
 
   const sink: CommitSink = { newRounds: [], rowsByGroup: new Map() };
@@ -964,7 +971,7 @@ function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'mem
       }
     }
     batchEnd = line.endByte;
-    if (pendingRows.length >= SCAN_CHUNK_ENTRIES) commit();
+    if (pendingRows.length >= Math.max(1, chunkEntries)) commit();
   }
   // [legacy-migration] 扫描结束: 取出剩余迁移条目.
   if (legacy) pendingRows.push(...legacy.takeAll());
@@ -986,7 +993,7 @@ function scanPrimary(sessionId: string, filePath: string, mode: 'initial' | 'mem
  * 首次 (无状态行) = backfill: 冻结的旧 .mobius.jsonl 与原生轨按时间戳归并,
  * 见开轮卡切组 (origin='legacy'). 之后旧文件永不再读.
  */
-function syncSession(sessionId: string, primaryPath: string | null | undefined, containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean, pendingInputs: string[] = []): SyncResult {
+function syncSession(sessionId: string, primaryPath: string | null | undefined, containDequeueEvent?: (entry: any, pendingInputs?: string[]) => boolean, pendingInputs: string[] = [], chunkEntries?: number): SyncResult {
   const st = S();
   let state = st.getState.get(sessionId) as any;
   let created = false;
@@ -1003,7 +1010,7 @@ function syncSession(sessionId: string, primaryPath: string | null | undefined, 
   if (state.primary_path && state.primary_path !== primaryPath) {
     const oldPath = state.primary_path;
     if (fs.existsSync(oldPath)) {
-      const r = scanPrimary(sessionId, oldPath, 'members', null, false, containDequeueEvent, pendingInputs);
+      const r = scanPrimary(sessionId, oldPath, 'members', null, false, containDequeueEvent, pendingInputs, chunkEntries);
       if (!r.ok) return r;
       openStore().prepare('UPDATE ingest_state SET primary_path = ?, primary_read_bytes = 0 WHERE session_id = ?')
         .run(primaryPath, sessionId);
@@ -1019,7 +1026,7 @@ function syncSession(sessionId: string, primaryPath: string | null | undefined, 
   // opener 提前写入也会建状态行, 若按 created 判定, 这些会话的旧文件会被永久跳过.
   const needLegacy = Number(state.legacy_read_bytes) === 0;
   const legacy = needLegacy ? loadLegacyBackfill(primaryPath) : null;
-  return scanPrimary(sessionId, primaryPath, created ? 'initial' : 'members', legacy, needLegacy, containDequeueEvent, pendingInputs);
+  return scanPrimary(sessionId, primaryPath, created ? 'initial' : 'members', legacy, needLegacy, containDequeueEvent, pendingInputs, chunkEntries);
 }
 
 // ── 对外: 查询 (① ② + 旧 getHistory 兼容) ───────────────────────────────
