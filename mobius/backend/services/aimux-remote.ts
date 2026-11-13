@@ -194,8 +194,10 @@ function remoteParent(value: any): string {
  * broker) fall through to the CLI, which is why every helper below keeps that
  * path intact.
  */
-const BRIDGE_RUNTIME_PATH = process.env.AIMUX_BRIDGE_RUNTIME ||
-  path.join(os.homedir(), '.aimux', 'bridge', 'runtime.json');
+function bridgeRuntimePath(): string {
+  return process.env.AIMUX_BRIDGE_RUNTIME ||
+    path.join(os.homedir(), '.aimux', 'bridge', 'runtime.json');
+}
 
 interface BridgeCallResult {
   data?: any;
@@ -215,7 +217,7 @@ async function bridgeFileOp(
 ): Promise<BridgeCallResult | null> {
   let runtime: any;
   try {
-    runtime = JSON.parse(fs.readFileSync(BRIDGE_RUNTIME_PATH, 'utf8'));
+    runtime = JSON.parse(fs.readFileSync(bridgeRuntimePath(), 'utf8'));
   } catch {
     return null;
   }
@@ -265,7 +267,10 @@ async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs =
     { path: targetPath, recursive: false, digest: false },
     timeoutMs,
   );
-  if (fast?.data) return fast.data;
+  if (fast?.data) {
+    if (!Array.isArray(fast.data.entries)) throw new Error('aimux bridge 返回的文件列表格式异常');
+    return fast.data;
+  }
   if (fast?.error) throw new Error(fast.error);
   const result = await runAimux(
     ['file', 'list', remoteName, '--path', targetPath, '--json', '--no-digest'],
@@ -278,7 +283,10 @@ async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs =
 
 async function aimuxFileStat(remoteName: string, targetPath: string, timeoutMs = 70000): Promise<any> {
   const fast = await bridgeFileOp(remoteName, 'stat', { path: targetPath }, timeoutMs);
-  if (fast?.data) return fast.data;
+  if (fast?.data) {
+    if (typeof fast.data.exists !== 'boolean') throw new Error('aimux bridge 返回的文件信息格式异常');
+    return fast.data;
+  }
   if (fast?.error) throw new Error(fast.error);
   const result = await runAimux(
     ['file', 'stat', remoteName, '--path', targetPath, '--json'],
@@ -296,7 +304,10 @@ async function aimuxFileReadB64(
   maxBuffer: number,
 ): Promise<string> {
   const fast = await bridgeFileOp(remoteName, 'read', { path: targetPath }, timeoutMs);
-  if (fast?.data) return String(fast.data.content_b64 || '');
+  if (fast?.data) {
+    if (typeof fast.data.content_b64 !== 'string') throw new Error('aimux bridge 返回的文件内容格式异常');
+    return fast.data.content_b64;
+  }
   if (fast?.error) throw new Error(fast.error);
   const result = await runAimux(
     ['file', 'read', remoteName, '--path', targetPath, '--b64'],

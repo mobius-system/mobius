@@ -21,7 +21,19 @@ const {Projects}=require('../backend/repositories/projects');
 const {Researches}=require('../backend/repositories/researches');
 const {Sessions}=require('../backend/repositories/sessions');
 let remotes=[{name:'new-device',status:'connected'}];
-const broker=http.createServer((req,res)=>{assert.equal(req.headers.authorization,'Bearer fixture');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({remotes}));});
+const brokerFileOps=[];
+const broker=http.createServer((req,res)=>{
+ assert.equal(req.headers.authorization,'Bearer fixture');
+ res.setHeader('Content-Type','application/json');
+ const m=String(req.url||'').match(/^\/api\/remotes\/([^/]+)\/files\/(list|stat|read)$/);
+ if(!m){res.end(JSON.stringify({remotes}));return;}
+ const name=decodeURIComponent(m[1]),action=m[2];
+ brokerFileOps.push(`${name}/${action}`);
+ if(name!=='bound-device'){res.statusCode=404;res.end(JSON.stringify({error:{kind:'not_found',message:`bridge remote '${name}' not found`}}));return;}
+ if(action==='list') res.end(JSON.stringify({entries:[{path:'hello.txt',type:'file',size:5}]}));
+ else if(action==='stat') res.end(JSON.stringify({exists:true,type:'file',size:5}));
+ else res.end(JSON.stringify({content_b64:Buffer.from('hello').toString('base64'),size:5}));
+});
 const app=express();app.use(express.json());app.use('/api/projects',require('../backend/routes/projects'));
 const server=http.createServer(app);
 async function main(){
@@ -56,6 +68,10 @@ async function main(){
  db.prepare('UPDATE projects SET aimux_remote_inventory=? WHERE id=?').run(JSON.stringify([{name:'bound-device',remote_path:'/stale'},{name:'registered-device',remote_path:'/registered'}]),'p');
  r=await request('/remote-file-sources?session=s');assert.deepEqual(r.body.remotes.map(x=>x.name),['bound-device','registered-device']);assert.equal(r.body.remotes[0].remote_path,'/work');assert(r.body.remotes.every(x=>x.status==='unknown'), 'saved connected state must not be reported as live');
  r=await request('/remote-files?remote=registered-device');assert.equal(r.status,200);assert.equal(r.body.root_path,'/registered');
+ // 浏览走常驻 broker 的 HTTP 接口，SSH remote 仍回退 CLI（fixture 假 aimux 只认识后者）
+ assert(brokerFileOps.includes('bound-device/list'), `bridge list should hit the broker: ${brokerFileOps}`);
+ assert(brokerFileOps.includes('bound-device/stat'), `bridge stat should hit the broker: ${brokerFileOps}`);
+ assert(brokerFileOps.includes('bound-device/read'), `bridge read should hit the broker: ${brokerFileOps}`);
  console.log('PASS admin/user: only bound + project devices, bound path precedence, dedup, list/read, and reject unrelated online devices for list/read/write/download');
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{server.closeAllConnections?.();await new Promise(r=>server.close(r));await new Promise(r=>broker.close(r));db.close();fs.rmSync(temp,{recursive:true,force:true});});
