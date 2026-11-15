@@ -1544,8 +1544,9 @@ async function testUpgradeSlash() {
   })
   try {
     let upgrades = 0
+    let tuiUpgrades = 0
     const { stdin, lastFrame, unmount } = render(
-      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onUpgradeAimux={() => { upgrades += 1 }} onReconfigure={() => {}} onConfigCancel={() => {}} />,
+      <ChatScreen client={client} ready={ready} webUserId="u" onClear={() => {}} onResume={() => {}} onQuit={() => {}} onLogout={() => {}} onUpgradeAimux={() => { upgrades += 1 }} onUpgradeTui={() => { tuiUpgrades += 1 }} onReconfigure={() => {}} onConfigCancel={() => {}} />,
     )
     await delay(60)
     // 打全了命令名弹窗就收起，所以先在只打了前缀时看菜单里有没有它。
@@ -1554,8 +1555,11 @@ async function testUpgradeSlash() {
     ok(menu.includes('/upgrade'), '/upgrade is offered in the slash-command menu')
     stdin.write('rade'); await delay(40)
     stdin.write('\r'); await delay(80)
-    unmount()
     ok(upgrades === 1, '/upgrade calls the host upgrade hook exactly once')
+    stdin.write('/upgrade_tui'); await delay(40); stdin.write('\r'); await delay(80)
+    ok(tuiUpgrades === 1, '/upgrade_tui calls the TUI upgrade hook exactly once')
+    ok(upgrades === 1, '/upgrade_tui does not upgrade AIMUX')
+    unmount()
   } finally { restoreFetch() }
 }
 

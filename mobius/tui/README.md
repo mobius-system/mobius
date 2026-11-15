@@ -155,6 +155,19 @@ npm test                   # all three
 
 ## Build an installable package
 
+### Upgrade from inside the TUI
+
+Enter `/upgrade_tui` in the chat composer to install the latest
+`@mobius-os/mobius` from the official npm registry. The command upgrades the
+current global installation using its existing prefix, shows progress and
+errors, and verifies the installed version. After success, enter `/quit` and
+run `mobius` again; use `/resume` to return to your conversation. If already
+on the latest version, no installation runs. Repeated requests while upgrading
+are ignored. Source checkouts and temporary npx installations receive an
+installation hint instead of being overwritten.
+
+`/upgrade` remains the separate command for upgrading AIMUX from PyPI.
+
 The TUI release version has one source of truth: `mobius/tui/package.json`.
 The welcome screen, npm package metadata, artifact filename, and download
 manifest all read that value. `package-lock.json` mirrors it as generated npm

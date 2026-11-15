@@ -14,6 +14,7 @@
     "test:integration": "tsx tests/integration.test.ts",
     "test:size": "tsx tests/terminal-size.test.ts",
     "test:ui": "tsx tests/ui.test.tsx",
+    "test:upgrade-tui": "tsx tests/upgrade-tui.test.ts",
     "test:flow": "tsx tests/flow.test.tsx",
     "test:resume": "tsx tests/resume.test.tsx",
     "test:aimux": "tsx tests/aimux.test.tsx",

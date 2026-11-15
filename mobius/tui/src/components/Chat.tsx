@@ -32,6 +32,8 @@ import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoun
 import { useCursorKeyCapture } from '../lib/cursor-keys.js'
 import { usePaintFlushOnInput } from '../lib/paint-flush.js'
 
+import type { TuiUpgradeStatus } from '../upgrade-tui.js'
+
 interface ChatProps {
   client: MobiusClient
   ready: ReadyState
@@ -43,6 +45,8 @@ interface ChatProps {
   onLogout: () => void
   /** 可选，与 aimuxStatus 一样只在接了 AIMUX 的宿主里给；缺省时 /upgrade 不动作。 */
   onUpgradeAimux?: () => void
+  onUpgradeTui?: () => void
+  tuiUpgradeStatus?: TuiUpgradeStatus
   onReconfigure: (result: ConfigResult) => void
   onConfigCancel: (sessionId: string | null) => void
   aimuxStatus?: AimuxStatus
@@ -79,10 +83,11 @@ const SLASH_COMMANDS = [
   { cmd: '/help', desc: '显示帮助' },
   { cmd: '/version', desc: '显示 TUI、AIMUX 和运行环境版本' },
   { cmd: '/upgrade', desc: '从 PyPI 安装最新 AIMUX 并重连' },
+  { cmd: '/upgrade_tui', desc: '升级 TUI 到 npm 最新版，重启后生效' },
   { cmd: '/quit', desc: '退出 TUI' },
 ]
 
-export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onLogout, onUpgradeAimux, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
+export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, onLogout, onUpgradeAimux, onUpgradeTui, tuiUpgradeStatus, onReconfigure, onConfigCancel, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const aimuxQuestionSubmissionBlocked = isAimuxQuestionSubmissionBlocked(aimuxStatus)
   const [showHelp, setShowHelp] = useState(false)
@@ -146,6 +151,13 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       }
       case '/model': setConfigOpen(true); return true
       case '/config': setReconfigOpen(true); return true
+      case '/upgrade_tui': {
+        setVersionInfo(null)
+        setShowHelp(false)
+        if (onUpgradeTui) onUpgradeTui()
+        else setSlashError('当前宿主不支持 TUI 自升级')
+        return true
+      }
       case '/upgrade': {
         // 安装与重连进度都走 aimuxStatus（状态行），失败也会落进 aimuxStatus.detail，
         // 所以这里只管触发，不额外弹错。
@@ -157,7 +169,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       case '/quit': case '/exit': onQuit(); return true
       default: return false
     }
-  }, [aimuxStatus, chat, client.server, modelLabel, ready.prefs.model, onClear, onResume, onQuit, onLogout, onUpgradeAimux])
+  }, [aimuxStatus, chat, client.server, modelLabel, ready.prefs.model, onClear, onResume, onQuit, onLogout, onUpgradeAimux, onUpgradeTui])
 
   const onSubmit = useCallback((text: string): boolean => {
     const t = text.trim()
@@ -249,7 +261,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     (entry) => rowsForEntry(entry),
   ), [transcriptEntries, rowsForEntry])
   const viewportRows = terminal.isTty ? Math.max(9, terminal.rows - 1) : terminal.rows
-  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0) + (slashError ? 1 : 0) + (versionInfo ? versionInfo.length + 2 : 0)
+  const activityRows = (chat.typing ? 2 : 0) + (chat.error ? 1 : 0) + (tuiUpgradeStatus ? 1 : 0) + (slashError ? 1 : 0) + (versionInfo ? versionInfo.length + 2 : 0)
   const helpRows = showHelp ? SLASH_COMMANDS.length + 3 : 0
   // Conversation chrome is exactly two rows: compact header + navigation.
   const transcriptRows = Math.max(1, viewportRows - composerRows - STATUS_ROWS - activityRows - helpRows - 2)
@@ -462,6 +474,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
         {chat.typing ? <WorkingIndicator firstQuery={firstQueryInFlight} /> : null}
         {chat.error ? <Text color="red">⚠ {chat.error}</Text> : null}
         {slashError ? <Text color="red">⚠ {slashError}</Text> : null}
+        {tuiUpgradeStatus ? <Text wrap="truncate-end" color={tuiUpgradeStatus.state === 'error' ? 'red' : tuiUpgradeStatus.state === 'success' ? 'green' : 'cyan'}>{tuiUpgradeStatus.detail}</Text> : null}
         {versionInfo ? <VersionBlock lines={versionInfo} /> : null}
 
         <Composer

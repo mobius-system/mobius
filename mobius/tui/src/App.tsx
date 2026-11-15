@@ -23,6 +23,8 @@ import { startAimuxConnection, stopAimuxConnection, upgradeAimuxRuntime, type Ai
 import { AimuxStatusLine } from './components/AimuxStatus.js'
 import { bufferUnclaimedInput, useStableInput } from './components/primitives.js'
 
+import { upgradeTui, type TuiUpgradeStatus } from './upgrade-tui.js'
+
 type Route = 'boot' | 'login' | 'prep' | 'chat' | 'resume'
 
 export function App() {
@@ -31,6 +33,7 @@ export function App() {
   // the next Chat/Select mount, making the first arrows or typed characters
   // appear ignored until a later key causes another render.
   useStableInput(bufferUnclaimedInput, { interactive: false })
+  const [tuiUpgradeStatus, setTuiUpgradeStatus] = useState<TuiUpgradeStatus | undefined>()
   const [route, setRoute] = useState<Route>('boot')
   const [bootMsg, setBootMsg] = useState('初始化…')
   const [client, setClient] = useState<MobiusClient | null>(null)
@@ -229,6 +232,8 @@ export function App() {
         onQuit={onQuit}
         onLogout={() => { void onLogout() }}
         onUpgradeAimux={() => { void upgradeAimuxRuntime() }}
+        onUpgradeTui={() => { void upgradeTui(setTuiUpgradeStatus) }}
+        tuiUpgradeStatus={tuiUpgradeStatus}
         onReconfigure={onReconfigure}
         onConfigCancel={onConfigCancel}
         aimuxStatus={aimuxStatus}
