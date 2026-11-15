@@ -296,8 +296,8 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[length:var(--fs-md)] font-medium" style={{ color: 'var(--text-primary)' }}>
-            <Clock3 className="h-3.5 w-3.5 text-sky-400" strokeWidth={1.9} />
-            <span>定时任务与耗时</span>
+            <Clock3 className="h-3.5 w-3.5 shrink-0 text-sky-400" strokeWidth={1.9} />
+            <span className="truncate">定时任务与耗时</span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -366,8 +366,8 @@ export default function TimeConsumePanel({ sessionId }: { sessionId?: string }) 
           })}
         </div>
         {!scheduledView && segments.length > 0 && (
-          <div className="text-right text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
-            <div>总计 {segments.length} 段</div>
+          <div className="min-w-0 text-right text-[length:var(--fs-xs)]" style={{ color: 'var(--text-muted)' }}>
+            <div className="truncate">总计 {segments.length} 段</div>
           </div>
         )}
       </div>
