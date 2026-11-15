@@ -1706,7 +1706,15 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
         isSelected ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
       } ${nameMuted ? 'opacity-75' : ''}`}>
       <div className="flex-shrink-0">
-        <AgentStatusDot agentStatus={session.agent_status} />
+        {/* 已禁用的研究智能体: 状态点换成琥珀色叉号 (disabled research agent: amber X instead of the status dot) */}
+        {session.research_agent_disabled ? (
+          <svg className="w-2.5 h-2.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round">
+            <title>已禁用 · 不接收黑板信号</title>
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        ) : (
+          <AgentStatusDot agentStatus={session.agent_status} />
+        )}
       </div>
       <div className="flex-1 min-w-0 overflow-hidden">
         <div className="text-[length:var(--fs-sm)] font-medium leading-[13px] truncate" title={session.name} style={{ color: nameMuted ? textMuted : textPrimary }}>{session.name}</div>
