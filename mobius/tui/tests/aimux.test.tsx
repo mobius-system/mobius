@@ -8,6 +8,8 @@ import path from 'node:path'
 import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
 import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, ensureAimux, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, alignTarget, compareAimuxVersions, followCheckIntervalMs, fetchServerAimuxVersion, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
+import { aimuxVersionLabel } from '../src/components/AimuxStatus.js'
+import { WelcomeCard } from '../src/components/Chat.js'
 import { parseElevatedGroups } from '../src/lib/windows-admin.js'
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -470,6 +472,27 @@ function testAlignTarget() {
   ok(alignTarget('0.3.71', '0.3.71') === '0.3.71', 'an exact match targets that same version (no swap happens)')
 }
 
+function testWelcomeCardAimuxVersion() {
+  console.log('\n[AIMUX 6i] the welcome card reports the running aimux version')
+  ok(aimuxVersionLabel({ state: 'connected', version: '0.3.83' }) === 'v0.3.83', 'the running version is shown')
+  ok(aimuxVersionLabel({ state: 'starting' }) === '检测中…', 'before the supervisor reports, the card says it is checking')
+  ok(aimuxVersionLabel({ state: 'disabled' }) === '未启用', 'a disabled AIMUX is not presented as a version')
+  ok(aimuxVersionLabel(undefined) === '未启用', 'a host without AIMUX status does not invent a version')
+
+  const ready: any = {
+    project: { name: 'JEV 调研' },
+    issue: { title: '日常会话' },
+    prefs: { model: 'deepseek-flash', language: 'zh' },
+  }
+  const { lastFrame, unmount } = render(
+    <WelcomeCard ready={ready} columns={80} resumed={false} modelDisplay="deepseek-flash"
+      aimuxStatus={{ state: 'connected', version: '0.3.83' }} />,
+  )
+  const frame = lastFrame() ?? ''
+  ok(/aimux:\s+v0\.3\.83/.test(frame), 'the card renders an aimux row next to the other metadata')
+  unmount()
+}
+
 function testFollowServerVersion() {
   console.log('\n[AIMUX 6h] follow the server version while the TUI stays open')
   // 数字段比较：字符串比较会把 0.3.9 判成比 0.3.10 新。
@@ -653,6 +676,7 @@ async function main() {
   testGuiModeAvailability()
   testAlignTarget()
   testFollowServerVersion()
+  testWelcomeCardAimuxVersion()
   await testFetchServerAimuxVersion()
   await testEnsureAimuxVersionSwap()
   testAimuxIdentifierScopesWorkspace()

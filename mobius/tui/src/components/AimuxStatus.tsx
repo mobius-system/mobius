@@ -21,6 +21,18 @@ export function aimuxStatusText(status: AimuxStatus, compact = false): string {
   return hostText(`AIMUX${phase} · ${compact ? compactDetail(detail) : detail}`)
 }
 
+/*
+ * The version shown in the welcome card. Prefer the version the running daemon
+ * actually reports; the bundled pin is only an install fallback, so printing it
+ * here would claim a version nobody is running. Until the supervisor reports
+ * one, say so rather than guessing.
+ */
+export function aimuxVersionLabel(status?: AimuxStatus): string {
+  if (status?.version) return `v${status.version}`
+  if (!status || status.state === 'disabled') return '未启用'
+  return '检测中…'
+}
+
 export function AimuxStatusLine({ status, compact = false }: { status: AimuxStatus; compact?: boolean }) {
   const style = STYLE[status.state]
   return (

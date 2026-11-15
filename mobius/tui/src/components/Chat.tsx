@@ -26,7 +26,7 @@ import { IS_CONHOST, hostText } from '../lib/host-text.js'
 import type { AnyEntry } from '../types.js'
 import { ConfigFlow, ReconfigFlow, type ConfigResult } from './ConfigFlow.js'
 import { AIMUX_VERSION, type AimuxStatus } from '../aimux.js'
-import { AimuxStatusLine, aimuxStatusText } from './AimuxStatus.js'
+import { AimuxStatusLine, aimuxStatusText, aimuxVersionLabel } from './AimuxStatus.js'
 import { isEscapeKeypress, isMouseInput, useMouseEvents, useStableInput } from './primitives.js'
 import { useDeleteKeyCapture, applyDeleteIntent, clampCursor, previousCursorBoundary, nextCursorBoundary, previousWordBoundary, nextWordBoundary } from '../lib/delete-keys.js'
 import { useCursorKeyCapture } from '../lib/cursor-keys.js'
@@ -421,7 +421,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     >
       <Box flexDirection="column" flexGrow={1} flexShrink={1} overflowY="hidden">
         {showWelcome
-          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
+          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} aimuxStatus={aimuxStatus} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} columns={terminal.columns} />}
 
         {chat.switchedAway ? (
@@ -508,7 +508,7 @@ function useTerminalSize(): TerminalSize {
   return size
 }
 
-function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadyState; columns: number; resumed: boolean; modelDisplay: string }) {
+export function WelcomeCard({ ready, columns, resumed, modelDisplay, aimuxStatus }: { ready: ReadyState; columns: number; resumed: boolean; modelDisplay: string; aimuxStatus?: AimuxStatus }) {
   const cwd = compactPath(process.cwd())
   const width = Math.max(18, Math.min(68, columns - 4))
   const labelWidth = 11
@@ -525,6 +525,7 @@ function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadySt
         <MetaRow label="project:" value={ready.project.name} labelWidth={labelWidth} />
         <MetaRow label="task:" value={ready.issue.title} labelWidth={labelWidth} />
         <MetaRow label="directory:" value={cwd} labelWidth={labelWidth} />
+        <MetaRow label="aimux:" value={aimuxVersionLabel(aimuxStatus)} labelWidth={labelWidth} />
       </Box>
       <Box marginTop={1} paddingLeft={1}>
         <Text><Text bold>Tip:</Text> {resumed ? '已恢复历史会话；上下文会继续保留。' : '偏好按任务保存；下次进入会自动恢复模型、语言、Skill 与 Memory。'}</Text>
