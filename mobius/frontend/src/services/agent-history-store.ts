@@ -194,31 +194,31 @@ async function fetchGroupEntries(sid: string, gid: string): Promise<{ version: n
 const APPEND_PROMPT_HEADER_ZH = '以下信息描述了你正在协助的用户'
 const APPEND_PROMPT_HEADER_EN = 'The following describes the user you are assisting'
 
-// 条目"用户文本"的读写器: claude type:'user' 与 codex response_item 两种形态;
-// content 为分段数组时读拼接文本、写则前插一个 text 分段 (不改变原分段).
-function userEntryTextTarget(entry: any): { get(): string; set(prepend: string): void } | null {
-  if (!entry || typeof entry !== 'object') return null
-  if (entry.type === 'response_item' && entry.payload?.type === 'message' && entry.payload?.role === 'user') {
-    return contentTextTarget(entry.payload)
-  }
-  if (entry.type === 'user' && entry.message) {
-    return contentTextTarget(entry.message)
-  }
+// 条目"用户文本"读取 (claude type:'user' 与 codex response_item 两种形态) 与克隆式前插。
+// 前插必须返回**新条目对象**: EntryCard 的 useMemo 以 entry 引用为依赖, 原地改字符串
+// 不会触发初始模式重算 (曾致前插文本可见但卡片仍是普通 markdown)。
+// Read a user entry's text and build a CLONED entry with the text prepended —
+// a fresh object reference is what makes EntryCard's useMemo reclassify it.
+function userEntryText(entry: any): string | null {
+  const holder = entry?.type === 'response_item' ? entry.payload : entry?.type === 'user' ? entry.message : null
+  const content = holder?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) return content.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? b?.input_text ?? ''))).filter(Boolean).join('\n')
   return null
 }
 
-function contentTextTarget(holder: any): { get(): string; set(prepend: string): void } | null {
+function prependUserEntry(entry: any, prepend: string): any | null {
+  const isCodex = entry?.type === 'response_item'
+  if (!isCodex && entry?.type !== 'user') return null
+  const holder = isCodex ? entry.payload : entry.message
   const content = holder?.content
-  if (typeof content === 'string') {
-    return { get: () => content, set: (prepend) => { holder.content = `${prepend}\n\n${content}` } }
-  }
-  if (Array.isArray(content)) {
-    return {
-      get: () => content.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? b?.input_text ?? ''))).filter(Boolean).join('\n'),
-      set: (prepend) => { content.unshift({ type: 'text', text: `${prepend}\n` }) },
-    }
-  }
-  return null
+  let next: any = null
+  if (typeof content === 'string') next = `${prepend}\n\n${content}`
+  else if (Array.isArray(content)) next = [{ type: 'text', text: `${prepend}\n` }, ...content]
+  else return null
+  return isCodex
+    ? { ...entry, payload: { ...entry.payload, content: next } }
+    : { ...entry, message: { ...entry.message, content: next } }
 }
 
 // ── Store ────────────────────────────────────────────────────────────────
@@ -549,18 +549,22 @@ export class SessionHistoryStore {
     const text = this.appendSystemPromptText
     if (!text || this.appendPromptApplied) return false
     for (const group of this.groups) {
-      const entries = this.entriesByGroup.get(String(group.id))
+      const gid = String(group.id)
+      const entries = this.entriesByGroup.get(gid)
       if (!entries) continue
-      for (const entry of entries) {
-        const target = userEntryTextTarget(entry)
-        if (!target) continue
-        const current = target.get()
+      for (let i = 0; i < entries.length; i++) {
+        const current = userEntryText(entries[i])
+        if (current === null) continue
         // 已带引导语 = 转录本身含上下文 (旧数据/未拆分), 什么都不做
         if (current.includes(APPEND_PROMPT_HEADER_ZH) || current.includes(APPEND_PROMPT_HEADER_EN)) {
           this.appendPromptApplied = true
           return false
         }
-        target.set(text)
+        const next = prependUserEntry(entries[i], text)
+        if (!next) continue
+        // 换新对象替换, 让下游 useMemo 依赖引用变化重新分类
+        // Swap in a fresh object so downstream memos reclassify the entry
+        entries[i] = next
         this.appendPromptApplied = true
         return true
       }
