@@ -12,7 +12,7 @@ import fs from 'fs'
 import type { ClaudeBackendHost, ClaudeDispatchOpts } from './types'
 import { HUB } from './constants'
 import { buildClaudeLaunch } from './launch-command'
-import { sleep, sendMaybeInitialContextPrompt, extractMobiusSystemPrompt, MOBIUS_SYSTEM_PROMPT_MAX_BYTES } from './prompt'
+import { sleep, sendMaybeInitialContextPrompt, extractMobiusSystemPrompt } from './prompt'
 import { clearRunning, markRunning } from './running-flags'
 import { ensureWatcher } from './runtime-store'
 import { ensureProjectTrusted, jsonlPathOf } from './session-paths'
@@ -26,6 +26,7 @@ import {
   sandboxPolicyFor,
 } from '../../services/user-isolation'
 import { resolveDispatchIdentity } from '../../services/session-dispatch-identity'
+import { Messages } from '../../repositories/messages'
 const { safeRemoveFlagDir } = require('../../utils/session-flags')
 const { log, tmux } = require('../tmux-operation-log')
 
@@ -123,21 +124,17 @@ export async function queueSession(backend: ClaudeBackendHost, opts: ClaudeDispa
   if (!sessionId) throw new Error('需要 sessionId')
   if (!prompt) throw new Error('需要 prompt')
 
-  // 驱动层后处理: 检出 <mobius_system_prompt> 标记块 → 随本次 spawn 注入系统提示词, 粘贴剩余正文
+  // 驱动层后处理: 检出 <mobius_system_prompt> 标记块 → 随本次 spawn 注入系统提示词, 粘贴剩余正文。
+  // 文本经 launch-command 落到会话目录文件再由 claude -file 读取, 无命令行长度之忧。
   // Driver post-processing: lift the marked block into the system prompt at
-  // spawn and paste the remainder as the user message
+  // spawn and paste the remainder as the user message; the text rides a file,
+  // never the command line.
   let promptToSend = prompt
   let appendSystemPrompt: string | null = null
   const lifted = extractMobiusSystemPrompt(prompt)
   if (lifted.systemPrompt) {
-    if (Buffer.byteLength(lifted.systemPrompt, 'utf8') > MOBIUS_SYSTEM_PROMPT_MAX_BYTES) {
-      // 超限不拆: 标记当普通文本随消息下发 (模型仍可读到内容), 不赌 argv 上限
-      // Too big to lift: the marker rides the message as plain text
-      log(`[tmux-claude-code] 标记块超过 ${MOBIUS_SYSTEM_PROMPT_MAX_BYTES} 字节, 按普通消息下发 (${sessionId})`)
-    } else {
-      appendSystemPrompt = lifted.systemPrompt
-      promptToSend = lifted.message
-    }
+    appendSystemPrompt = lifted.systemPrompt
+    promptToSend = lifted.message
   }
 
   if (!windowExists(sessionId)) {
@@ -172,6 +169,18 @@ export async function queueSession(backend: ClaudeBackendHost, opts: ClaudeDispa
       appendSystemPrompt,
       sandboxPolicy: (opts as any).sandboxPolicy || null,
     })
+    if (appendSystemPrompt) {
+      // ✨ spawn 成功后才落库: 库里有行 = 该文本真实注入过系统提示词
+      // Persist only after a successful spawn: a row here means the text was
+      // really appended to the claude system prompt
+      try {
+        if (!Messages.findAppendSystemPrompt(sessionId)) {
+          Messages.insertSystem(sessionId, appendSystemPrompt, Messages.maxTurnFor(sessionId) || 1, 'append_system_prompt');
+        }
+      } catch (e: any) {
+        log(`[tmux-claude-code] append_system_prompt 落库失败 (${sessionId}): ${e?.message || e}`);
+      }
+    }
   } else if (appendSystemPrompt) {
     // 窗口已在: 系统提示词随该会话首渲染已定格, 无从再注入, 粘贴剩余正文并留痕
     // Live window: its system prompt is already recorded, only paste the rest

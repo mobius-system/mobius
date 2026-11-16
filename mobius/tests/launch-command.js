@@ -89,6 +89,22 @@ function base(proxyMode) {
   const noModel = await buildClaudeLaunch({ ...base('direct'), model: null })
   assert.ok(!noModel.cmd.includes('--model'), '未指定模型时不带 --model')
 
+  // ── 提升的初始上下文: 文本落会话目录文件, 命令行只带短路径 ─────────────
+  // Hoisted initial context: the text lands in the session dir; only a short
+  // path rides the command line (tmux rejects long commands)
+  const hoisted = await buildClaudeLaunch({
+    ...base('direct'),
+    appendSystemPrompt: '以下信息描述了你正在协助的用户\n含 \'单引号\'\n与换行',
+  })
+  const { sessionSettingsPaths } = require('../backend/services/session-hook-inject')
+  const hoistPath = sessionSettingsPaths(tempRoot, 'sid-1').appendSystemPromptPath
+  assert.ok(hoisted.cmd.includes(`--append-system-prompt-file '${hoistPath}'`), '命令行应只带文件路径')
+  assert.ok(!hoisted.cmd.includes('--append-system-prompt '), '长文本不得内联进命令行')
+  assert.strictEqual(fs.readFileSync(hoistPath, 'utf8'), '以下信息描述了你正在协助的用户\n含 \'单引号\'\n与换行', '文本应完整落盘')
+
+  const notHoisted = await buildClaudeLaunch({ ...base('direct'), sessionId: 'sid-2' })
+  assert.ok(!notHoisted.cmd.includes('append-system-prompt'), '无提升文本时不带该参数')
+
   console.log('launch command: ok')
   process.exit(0)
 })().catch((e) => { console.error(e); process.exit(1) })

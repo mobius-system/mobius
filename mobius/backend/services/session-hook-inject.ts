@@ -24,6 +24,8 @@ export interface SessionSettingsPaths {
   settingsPath: string
   /** MCP server definitions passed to the agent via --mcp-config. */
   mcpConfigPath: string
+  /** Hoisted initial context passed to claude via --append-system-prompt-file. */
+  appendSystemPromptPath: string
 }
 
 /**
@@ -40,6 +42,7 @@ export function sessionSettingsPaths(bindRoot: string, sessionId: string): Sessi
     dir,
     settingsPath: path.join(dir, 'settings.json'),
     mcpConfigPath: path.join(dir, 'mcp.json'),
+    appendSystemPromptPath: path.join(dir, 'append-system-prompt.txt'),
   }
 }
 

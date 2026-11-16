@@ -183,6 +183,44 @@ async function fetchGroupEntries(sid: string, gid: string): Promise<{ version: n
   return { version: Number(data?.version) || 0, entries: Array.isArray(data?.entries) ? data.entries : [] }
 }
 
+// ── 初始卡片补显: 首轮被抽进系统提示词的上下文 ────────────────────────────
+// 驱动层把 <mobius_system_prompt> 块抽走注入 claude 系统提示词后, 转录首条用户消息只剩
+// 问题本体; 初始卡片因此取不到上下文。这里从 /append-system-prompt 取回被抽走的文本,
+// 前插回首条用户条目, 让卡片内容与拆分前一致。旧会话/codex 转录本身带上下文 → 不补。
+// Re-attach the context lifted into the system prompt so the initial card
+// keeps its pre-split content; transcripts that still carry the context
+// (old sessions / codex) are left untouched.
+
+const APPEND_PROMPT_HEADER_ZH = '以下信息描述了你正在协助的用户'
+const APPEND_PROMPT_HEADER_EN = 'The following describes the user you are assisting'
+
+// 条目"用户文本"的读写器: claude type:'user' 与 codex response_item 两种形态;
+// content 为分段数组时读拼接文本、写则前插一个 text 分段 (不改变原分段).
+function userEntryTextTarget(entry: any): { get(): string; set(prepend: string): void } | null {
+  if (!entry || typeof entry !== 'object') return null
+  if (entry.type === 'response_item' && entry.payload?.type === 'message' && entry.payload?.role === 'user') {
+    return contentTextTarget(entry.payload)
+  }
+  if (entry.type === 'user' && entry.message) {
+    return contentTextTarget(entry.message)
+  }
+  return null
+}
+
+function contentTextTarget(holder: any): { get(): string; set(prepend: string): void } | null {
+  const content = holder?.content
+  if (typeof content === 'string') {
+    return { get: () => content, set: (prepend) => { holder.content = `${prepend}\n\n${content}` } }
+  }
+  if (Array.isArray(content)) {
+    return {
+      get: () => content.map((b: any) => (typeof b === 'string' ? b : (b?.text ?? b?.input_text ?? ''))).filter(Boolean).join('\n'),
+      set: (prepend) => { content.unshift({ type: 'text', text: `${prepend}\n` }) },
+    }
+  }
+  return null
+}
+
 // ── Store ────────────────────────────────────────────────────────────────
 
 const EMPTY_SNAPSHOT: HistorySnapshot = {
@@ -230,6 +268,9 @@ export class SessionHistoryStore {
   // ① 完成前到达的 SSE 事件缓冲 (订阅先于协商的生命周期).
   private pendingEvents: Array<() => void> = []
   private essentialsLoading = false
+  // 初始卡片补显状态: 被抽走的上下文文本 + 是否已前插过.
+  private appendSystemPromptText: string | null = null
+  private appendPromptApplied = false
 
   constructor(sid: string) {
     this.sid = sid
@@ -482,6 +523,49 @@ export class SessionHistoryStore {
   // ── ② 按需整组加载 ────────────────────────────────────────────────────
 
   /**
+   * Receive the first-message context the driver lifted into the claude
+   * system prompt (messages_v2 turn_summary='append_system_prompt'), pushed
+   * from the messages fetch chat.tsx already performs — no extra request.
+   * Re-attaches it to the first user entry so the initial card keeps its
+   * pre-split content. No text (old sessions, codex, undispatched) is a no-op.
+   */
+  setAppendSystemPromptText(text: string | null | undefined): void {
+    const value = typeof text === 'string' && text.trim() ? text : null
+    if (!value || this.appendSystemPromptText === value) return
+    this.appendSystemPromptText = value
+    if (this.applyAppendSystemPrompt()) this.emit()
+  }
+
+  /**
+   * Prepend the stored text to the first user entry across groups (in group
+   * order). Entries that already carry the context header (pre-split claude
+   * sessions, codex transcripts) mark the work done without doubling it.
+   * Returns true when an entry was mutated.
+   */
+  private applyAppendSystemPrompt(): boolean {
+    const text = this.appendSystemPromptText
+    if (!text || this.appendPromptApplied) return false
+    for (const group of this.groups) {
+      const entries = this.entriesByGroup.get(String(group.id))
+      if (!entries) continue
+      for (const entry of entries) {
+        const target = userEntryTextTarget(entry)
+        if (!target) continue
+        const current = target.get()
+        // 已带引导语 = 转录本身含上下文 (旧数据/未拆分), 什么都不做
+        if (current.includes(APPEND_PROMPT_HEADER_ZH) || current.includes(APPEND_PROMPT_HEADER_EN)) {
+          this.appendPromptApplied = true
+          return false
+        }
+        target.set(text)
+        this.appendPromptApplied = true
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
    * 背景整组加载 (negotiate 预热 / 搜索定位 / openGroup 的自动加载共用).
    * 只负责数据驻留, 不改开合状态; open-loading 的组成功后升为 open-loaded,
    * 失败退回 open-unloaded (never-tried 与 failed 由 lastError 区分).
@@ -496,6 +580,8 @@ export class SessionHistoryStore {
       const data = await fetchGroupEntries(this.sid, key)
       const merged = this.mergeEntries(key, data.entries)
       this.entriesByGroup.set(key, merged)
+      // 首组条目后到时补一次前插 (negotiate 时首组可能还没驻留).
+      this.applyAppendSystemPrompt()
       this.groupVersions.set(key, Math.max(this.groupVersions.get(key) || 0, data.version || merged.length))
       const rt = this.runtimeOf(key)
       if (rt.state === 'open-loading') rt.state = 'open-loaded'

@@ -23,11 +23,6 @@ import {
 } from '../../services/session-context-sections'
 const { log, tmux } = require('../tmux-operation-log')
 
-// 标记块注入 argv 的字节上限: 整条启动命令是 bash -lc 的单参数, 内核限 128KiB, 留足余量
-// Byte cap when the marked block rides the argv: the whole launch chain is one
-// bash -lc argument with a 128KiB kernel limit
-export const MOBIUS_SYSTEM_PROMPT_MAX_BYTES = 100_000;
-
 /*
  * Lift <mobius_system_prompt>...</mobius_system_prompt> blocks out of a prompt.
  * The captured text becomes the claude --append-system-prompt payload; the

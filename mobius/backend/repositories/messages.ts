@@ -24,6 +24,16 @@ const Messages = {
     'INSERT INTO messages_v2 (task_id, role, content, turn_number, turn_summary) VALUES (?, ?, ?, ?, ?)'
   ).run(taskId, 'system', content, turnNumber, turnSummary),
 
+  // 首轮被驱动层抽走、经 --append-system-prompt 注入系统提示词的文本 (每会话至多一条).
+  // 前端初始卡片取它补齐上下文; turn_summary='append_system_prompt' 是与前端约定的识别形式.
+  // The text lifted out of the first message into the claude system prompt (at
+  // most one row per session); the frontend initial card re-attaches it.
+  findAppendSystemPrompt: (taskId: string): { content: string; turn_number: number } | undefined => db.prepare(
+    `SELECT content, turn_number FROM messages_v2
+     WHERE task_id = ? AND role = 'system' AND turn_summary = 'append_system_prompt'
+     ORDER BY id DESC LIMIT 1`
+  ).get(taskId) as { content: string; turn_number: number } | undefined,
+
   // ─── v2 直连专属: 从 SDK 事件流落库 ────────────────────────────────
   insertAssistant: (taskId: string, content: string, turnNumber: number) => db.prepare(
     'INSERT INTO messages_v2 (task_id, role, content, turn_number) VALUES (?, ?, ?, ?)'

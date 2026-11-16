@@ -3483,7 +3483,18 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       // 否则会把旧 session 的消息覆盖到新 session 的视图.
       const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
       if (sid !== activeSid) return
-      const msgs = normalizeMessages(Array.isArray(data) ? data : (data.messages || []))
+      // 初始卡片补显: 落库行 (首轮注入系统提示词的文本) 不进聊天流, 内容推给 history store
+      // 前插回首条用户条目, 由初始卡片展示 — 借用本次既有请求, 不额外拉接口.
+      // The append_system_prompt row skips the chat flow; its text is pushed to
+      // the history store so the initial card re-attaches it (no extra request).
+      const rows = (Array.isArray(data) ? data : (data.messages || [])).filter((r: any) => {
+        if (r?.turn_summary === 'append_system_prompt') {
+          historyStoreRef.current?.setAppendSystemPromptText(r?.content)
+          return false
+        }
+        return true
+      })
+      const msgs = normalizeMessages(rows)
       const current = useStore.getState().messages
       const displayMsgs = msgs
       const pendingLocal = current.filter((m: any) =>

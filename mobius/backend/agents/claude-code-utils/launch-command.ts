@@ -261,10 +261,22 @@ export async function buildClaudeLaunch(input: LaunchInput): Promise<LaunchPlan>
   // Append a shell-quoted --model only when the caller pinned one
   if (input.model) claudeArgs.push(`--model ${shellQuote(input.model)}`)
   if (mcpConfigPath) claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
-  // 驱动层从首条消息检出的标记块 → 追加进系统提示词 (在 claude 原有系统提示词之后)
-  // Marked block lifted by the driver → appended after claude's own system prompt
+  // 驱动层从首条消息检出的标记块 → 追加进系统提示词 (在 claude 原有系统提示词之后)。
+  // 文本绝不进命令行: tmux new-window 有自身的命令长度上限, 内联几十 KB 就会
+  // "command too long"; 落到会话配置目录 (宿主与沙箱同路径) 后只传一个短路径。
+  // The lifted text never rides the command line (tmux rejects long commands);
+  // it lands in the per-session config dir and claude reads it via the -file variant.
   if (input.appendSystemPrompt && input.appendSystemPrompt.trim()) {
-    claudeArgs.push(`--append-system-prompt ${shellQuote(input.appendSystemPrompt)}`)
+    const appendPaths = sessionSettingsPaths(input.flagRoot, input.sessionId)
+    try {
+      ensureSessionSettingsDir(appendPaths.dir)
+      fs.writeFileSync(appendPaths.appendSystemPromptPath, input.appendSystemPrompt, { mode: 0o600 })
+    } catch (e: any) {
+      // 写不进会话目录就不启动: 上下文已从消息里抽走, 静默丢掉等于开残缺会话
+      // Fail fast: the context left the message, a spawn without it is broken
+      throw new Error(`append-system-prompt 文件写入失败 (${appendPaths.appendSystemPromptPath}): ${e?.message || e}`)
+    }
+    claudeArgs.push(`--append-system-prompt-file ${shellQuote(appendPaths.appendSystemPromptPath)}`)
   }
   // 优先调用方给的settings文件，否则用Mobius默认settings
   // Prefer the caller's settings file, else the Mobius default settings
