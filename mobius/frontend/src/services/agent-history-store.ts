@@ -553,6 +553,12 @@ export class SessionHistoryStore {
       const entries = this.entriesByGroup.get(gid)
       if (!entries) continue
       for (let i = 0; i < entries.length; i++) {
+        // mobius 输入卡 (entrypoint=mobius) 排在纯 jsonl 用户条目之前, 但它被
+        // extractInitialContext 的 mobius 豁免规则跳过 — 前插必须命中后面那张纯条目,
+        // 卡片才会点亮初始模式 (初始卡出现后, mobius 卡由"初始卡之前一律隐藏"规则收走).
+        // The mobius input card precedes the plain jsonl user entry but is exempt
+        // from initial detection; prepend to the plain entry so the card lights up.
+        if (entries[i]?.entrypoint === 'mobius' || entries[i]?.mobius) continue
         const current = userEntryText(entries[i])
         if (current === null) continue
         // 已带引导语 = 转录本身含上下文 (旧数据/未拆分), 什么都不做
