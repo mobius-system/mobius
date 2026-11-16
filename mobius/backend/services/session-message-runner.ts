@@ -21,7 +21,7 @@ import { resolveSessionWorkspace } from './workspace';
 import { appendSessionInput } from './session-inputs';
 import { syncSkillsToWorkspace } from './session-skills-sync';
 import { formatBackendSendFailure } from './session-errors';
-import { transferReferencePrompt } from './session-transfer';
+import { transferReferencePrompt, pendingTransferPaths } from './session-transfer';
 import { canOperateSession } from './access-control';
 import {
   normalizeAgentMentions,
@@ -47,28 +47,6 @@ function httpError(message: string, status: number = 500, category: string = '')
   err.status = status;
   if (category) err.category = category;
   return err;
-}
-
-// messages_v2 里最近一条 session_transfer 系统消息记录的 bundle 路径 (用户从别的 session
-// "转移/继承"带入的参考资料), 首条消息时拼进 prompt.
-function readPendingTransferPaths(sessionId: any): { full: string | null; user_messages: string | null; metadata: string | null } | null {
-  try {
-    const row = db.prepare(`
-      SELECT content
-      FROM messages_v2
-      WHERE task_id = ? AND role = 'system' AND turn_summary = 'session_transfer'
-      ORDER BY id DESC
-      LIMIT 1
-    `).get(sessionId) as { content?: string } | undefined;
-    if (!row?.content) return null;
-    const parsed = JSON.parse(row.content);
-    const full = typeof parsed?.paths?.full === 'string' && parsed.paths.full.trim() ? parsed.paths.full.trim() : null;
-    const userMessages = typeof parsed?.paths?.user_messages === 'string' && parsed.paths.user_messages.trim() ? parsed.paths.user_messages.trim() : null;
-    const metadata = typeof parsed?.paths?.metadata === 'string' && parsed.paths.metadata.trim() ? parsed.paths.metadata.trim() : null;
-    return full || userMessages || metadata ? { full, user_messages: userMessages, metadata } : null;
-  } catch {
-    return null;
-  }
 }
 
 function findSessionOperable(id: any, user: any): any {
@@ -105,7 +83,7 @@ function assembleInitialPrompt({ user, sessionId, workDir, content, logger }: {
     // Each hoisted section carries its own marker; the driver lifts them out.
     content = wrapUserMessage(formatBody(ctx.sources, undefined, { systemPromptMarker: true }), content, ctx.language);
   }
-  const transferPaths = readPendingTransferPaths(sessionId);
+  const transferPaths = pendingTransferPaths(sessionId);
   if (transferPaths) {
     try {
       content = transferReferencePrompt(transferPaths, content);

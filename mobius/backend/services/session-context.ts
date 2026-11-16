@@ -16,6 +16,7 @@ import { resolveEffectiveSkills } from './skill-resolver';
 import { parseSkillId } from './skills-fs';
 import { TARGET_SUBDIR as SKILLS_SUBDIR } from './session-skills-sync';
 import { isGitRepoRoot } from './workspace';
+import { pendingTransferPaths } from './session-transfer';
 import { filterReadableContextItems } from './access-control';
 import { isAssistantSession } from './assistant-session';
 import { readIssueKnowledgeShape } from './project-knowledge';
@@ -553,7 +554,8 @@ function gatherSources(user: any, sessionId: string): any {
     return {
       ...researchSources,
       research_peers: peers,
-      language: normalizeLanguage(session.language),
+      transfer: pendingTransferPaths(sessionId),
+    language: normalizeLanguage(session.language),
       session: {
         session_id: session.session_id,
         session_key: session.session_key || '',
@@ -585,6 +587,7 @@ function gatherSources(user: any, sessionId: string): any {
   }
   return {
     ...issueSources,
+    transfer: pendingTransferPaths(sessionId),
     language: normalizeLanguage(session.language),
     session: {
       session_id: session.session_id,

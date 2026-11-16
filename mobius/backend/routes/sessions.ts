@@ -1067,7 +1067,19 @@ router.get('/:id/groups', auth, (req: express.Request, res: express.Response) =>
       return;
     }
     res.set('ETag', etag);
-    res.json({ session_id: id, session_version, jsonl_path: primaryPath || null, groups, pending: getHistoryPendingOpeners(id) });
+    // 首轮被抽进系统提示词的上下文 (无则 null): 前端初始卡片借此补齐拆分前的内容,
+    // 搭 ① 协商的既有请求下发, 不另开接口。
+    // First-message context hoisted into the system prompt (null when none);
+    // rides the existing negotiation response so the initial card stays whole.
+    const appendPromptRow = Messages.findAppendSystemPrompt(id);
+    res.json({
+      session_id: id,
+      session_version,
+      jsonl_path: primaryPath || null,
+      groups,
+      pending: getHistoryPendingOpeners(id),
+      append_system_prompt: appendPromptRow ? appendPromptRow.content : null,
+    });
   } catch (e) {
     console.warn(`[sessions/groups] failed (${id}): ${(e as Error).message}`);
     res.status(500).json({ error: (e as Error).message || String(e) });

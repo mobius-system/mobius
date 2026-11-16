@@ -161,7 +161,7 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 /** ① GET groups. 304 → notModified (缓存全可信). */
-async function fetchGroups(sid: string, etag: string | null, withEssential = false): Promise<{ notModified?: boolean; session_version?: number; jsonl_path?: string | null; groups?: HistoryGroupMeta[]; pending?: PendingOpenerMeta[] }> {
+async function fetchGroups(sid: string, etag: string | null, withEssential = false): Promise<{ notModified?: boolean; session_version?: number; jsonl_path?: string | null; groups?: HistoryGroupMeta[]; pending?: PendingOpenerMeta[]; append_system_prompt?: string | null }> {
   const query = withEssential ? '?with_essential=1' : ''
   const res = await fetch(`${API}/api/sessions/${encodeURIComponent(sid)}/groups${query}`, {
     // Essential data is an optional projection; never let a prior ETag hide it with 304.
@@ -467,6 +467,9 @@ export class SessionHistoryStore {
           return carried ? { ...g, essential_dict: carried } : g
         })
         this.pending = Array.isArray(data.pending) ? data.pending : []
+        // 初始卡片补显: 首轮被抽进系统提示词的上下文随协商响应下发, 前插回首条用户条目
+        // Initial-card re-attach: the hoisted context rides the negotiation
+        this.setAppendSystemPromptText(data.append_system_prompt)
         this.sessionVersion = Number(data.session_version) || 0
         if (typeof data.jsonl_path === 'string') this.jsonlPath = data.jsonl_path
         this.error = null

@@ -81,6 +81,9 @@ export interface SectionCtx {
   pc_task_mode_prompt_zh?: string;
   pc_task_mode_prompt_en?: string;
   session_is_assistant?: boolean;
+  // 旧会话转接资料路径 (pendingTransferPaths 预解析的绝对路径); 空则转接段整段缺席
+  // Resolved transfer bundle paths; absent means no transfer for this session
+  transfer?: { full: string | null; user_messages: string | null; metadata: string | null } | null;
   [key: string]: any;
 }
 
@@ -122,6 +125,66 @@ export function defineSection(def: Omit<SectionDef, 'pattern'>): SectionDef {
 }
 
 // ── 各文本块 (每块一个 const, 互不引用) ────────────────────────────────────
+
+/*
+ * 旧会话转接: 仅转接会话渲染 (ctx.transfer 为空即整段缺席, 平时不出现在任何会话里)。
+ * 前言 (说明行 + 资料路径 + 阅读指引) 作为普通 section 参与拼装, 在 SYSTEM_PROMPT_SECTION_KEYS
+ * 里 → 随 formatBody 的标记开关进系统提示词; 前端初始卡片按本目录标题把它切成命名分块。
+ * Session transfer: renders only for transferred sessions; the preamble joins
+ * the hoisted system prompt and the initial card shows it as a named block.
+ */
+export const TransferSection = defineSection({
+  key: 'transfer',
+  title: { zh: '## 旧会话转接', en: '## Session Transfer' },
+  build: {
+    zh: (c, t) => {
+      const lines = transferPathLines(c.transfer);
+      if (!lines) return null;
+      return [
+        t.zh,
+        '这是一个从旧会话转接而来的新会话。',
+        '',
+        '旧会话的转接资料保存在以下文件：',
+        '',
+        ...lines,
+        '',
+        '开始执行前，请先读取旧会话元数据和用户消息，理解用户目标、后续补充及最后要求。',
+        '需要了解之前 Agent 已完成的工作、工具调用、命令输出或文件修改时，再读取完整记录。',
+        '完整记录较长时可以分段读取，并优先检查文件尾部的最新卡片。',
+        '不要修改或删除以上转接文件。',
+      ].join('\n');
+    },
+    en: (c, t) => {
+      const lines = transferPathLines(c.transfer);
+      if (!lines) return null;
+      return [
+        t.en,
+        'This session continues from an older one.',
+        '',
+        'The transfer bundle is stored in these files:',
+        '',
+        ...lines,
+        '',
+        'Before starting, read the old-session metadata and user messages to understand the goals, follow-ups and latest requirements.',
+        'Read the full record only when you need prior agent work, tool calls, command output or file changes.',
+        'The full record can be long; read it in chunks and check the newest cards at the tail first.',
+        'Do not modify or delete the transfer files above.',
+      ].join('\n');
+    },
+  },
+});
+
+// 转接资料路径行 (编号列表); 路径由 pendingTransferPaths 预解析为绝对路径, 这里只排版。
+// Numbered bundle path lines; paths arrive pre-resolved, this only formats them.
+function transferPathLines(transfer: any): string[] | null {
+  if (!transfer || typeof transfer !== 'object') return null;
+  const lines = [
+    transfer.full ? `1. 完整记录：\`${transfer.full}\`` : null,
+    transfer.user_messages ? `2. 仅用户消息：\`${transfer.user_messages}\`` : null,
+    transfer.metadata ? `3. 旧会话元数据：\`${transfer.metadata}\`` : null,
+  ].filter(Boolean) as string[];
+  return lines.length > 0 ? lines : null;
+}
 
 const ISSUE_STATUS_LABELS: Record<string, string> = { active: '开放', in_progress: '进行中', completed: '已解决', open: '开放' };
 const RESEARCH_STATUS_LABELS: Record<string, string> = { active: '开放', completed: '已完成' };
@@ -579,6 +642,7 @@ export const PcTaskModeSection = defineSection({
 // 拼装顺序 (同时是前端有序锚点扫描的边界顺序)。question 不在此列 —— 它由 wrapUserMessage
 // 在 body 之后追加, 前端扫描时作为最后一个锚点单独消费。
 export const SESSION_SECTIONS: SectionDef[] = [
+  TransferSection,
   HeaderSection,
   UserSection,
   ProjectSection,
@@ -612,6 +676,7 @@ export function questionPattern(lang: 'zh' | 'en'): RegExp {
 // prompt-build time; the claude-code driver lifts the marked text into the
 // real system prompt. Every memory / skill entry follows its section wholesale.
 export const SYSTEM_PROMPT_SECTION_KEYS: ReadonlySet<string> = new Set([
+  'transfer',
   'header',
   'user',
   'project',

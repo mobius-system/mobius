@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { HIDDEN_FOLDER_NAME } from '../config';
+import { db } from '../../db';
 
 const MAX_TEXT_CHARS = 20000;
 const MAX_TOTAL_CHARS = 800000;
@@ -552,32 +553,44 @@ function writeSessionTransferBundle({
   };
 }
 
+/*
+ * Latest session_transfer bundle paths recorded for a session (messages_v2
+ * system row), resolved to absolute paths — or null when there is none. This
+ * feeds the 旧会话转接 section via gatherSources; transferReferencePrompt uses
+ * it only to decide whether the separator wrap applies.
+ */
+export function pendingTransferPaths(sessionId: any): { full: string | null; user_messages: string | null; metadata: string | null } | null {
+  try {
+    const row = db.prepare(`
+      SELECT content
+      FROM messages_v2
+      WHERE task_id = ? AND role = 'system' AND turn_summary = 'session_transfer'
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(sessionId) as { content?: string } | undefined;
+    if (!row?.content) return null;
+    const parsed = JSON.parse(row.content);
+    const resolveOr = (v: any) => (typeof v === 'string' && v.trim() ? path.resolve(v.trim()) : null);
+    const full = resolveOr(parsed?.paths?.full);
+    const userMessages = resolveOr(parsed?.paths?.user_messages);
+    const metadata = resolveOr(parsed?.paths?.metadata);
+    return full || userMessages || metadata ? { full, user_messages: userMessages, metadata } : null;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Wrap the assembled first message with the transfer separator when this
+ * session was transferred: the preamble itself (notice + paths + reading
+ * instructions) lives in the 旧会话转接 section (session-context-sections.ts)
+ * and is hoisted with the other context sections; the message keeps only the
+ * "--- latest instruction ---" separator, the content and the tail rule.
+ */
 function transferReferencePrompt(paths: TransferPaths, content: any): string {
-  const fullPath = typeof paths?.full === 'string' && paths.full.trim() ? path.resolve(paths.full) : null;
-  const userMessagesPath = typeof paths?.user_messages === 'string' && paths.user_messages.trim()
-    ? path.resolve(paths.user_messages)
-    : null;
-  const metadataPath = typeof paths?.metadata === 'string' && paths.metadata.trim()
-    ? path.resolve(paths.metadata)
-    : null;
-  const pathLines = [
-    fullPath ? `1. 完整记录：\`${fullPath}\`` : null,
-    userMessagesPath ? `2. 仅用户消息：\`${userMessagesPath}\`` : null,
-    metadataPath ? `3. 旧会话元数据：\`${metadataPath}\`` : null,
-  ].filter(Boolean);
-  if (pathLines.length === 0) return String(content || '');
+  const hasPaths = Boolean(paths && (paths.full || paths.user_messages || paths.metadata));
+  if (!hasPaths) return String(content || '');
   return [
-    '这是一个从旧会话转接而来的新会话。',
-    '',
-    '旧会话的转接资料保存在以下文件：',
-    '',
-    ...pathLines,
-    '',
-    '开始执行前，请先读取旧会话元数据和用户消息，理解用户目标、后续补充及最后要求。',
-    '需要了解之前 Agent 已完成的工作、工具调用、命令输出或文件修改时，再读取完整记录。',
-    '完整记录较长时可以分段读取，并优先检查文件尾部的最新卡片。',
-    '不要修改或删除以上转接文件。',
-    '',
     '--- 下面是用户的最新指令，请在理解前文的基础上，执行最新指令 ---',
     '',
     content,
