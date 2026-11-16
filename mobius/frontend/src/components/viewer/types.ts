@@ -76,6 +76,7 @@ export type ReadToolCall = {
   filePath: string
   offset?: number
   limit?: number
+  remote?: boolean
 }
 
 // ── codex 计划模式 (update_plan function_call) ──────────────────────────

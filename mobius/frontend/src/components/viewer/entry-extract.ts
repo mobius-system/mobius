@@ -300,7 +300,7 @@ export function isStartPyToolUse(entry: AnyEntry): boolean {
 
 // ── Read tool_use ───────────────────────────────────────────────────────
 export function isReadToolUseName(name: unknown): boolean {
-  return typeof name === 'string' && name.toLowerCase() === 'read'
+  return typeof name === 'string' && ['read', 'mcp__aimux__remote_read'].includes(name.toLowerCase())
 }
 
 export function extractReadCallFromBlock(block: any): ReadToolCall | null {
@@ -313,10 +313,15 @@ export function extractReadCallFromBlock(block: any): ReadToolCall | null {
     filePath: filePath.trim(),
     offset: numberField(input.offset),
     limit: numberField(input.limit),
+    remote: block.name.toLowerCase() === 'mcp__aimux__remote_read',
   }
 }
 
 export function extractReadCalls(entry: AnyEntry): ReadToolCall[] {
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry.payload)) {
+    const call = extractReadCallFromBlock(functionCallBlock(entry.payload))
+    return call ? [call] : []
+  }
   if (entry?.type !== 'assistant') return []
   const content = entry?.message?.content
   if (!Array.isArray(content)) return []
@@ -336,6 +341,7 @@ const IMAGE_FILE_PATH_RE = /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i
 export function entryReadImagePaths(entry: AnyEntry): string[] {
   return Array.from(new Set(
     extractReadCalls(entry)
+      .filter((call) => !call.remote)
       .map((call) => call.filePath.trim())
       .filter((filePath) => IMAGE_FILE_PATH_RE.test(filePath)),
   ))
@@ -363,6 +369,22 @@ function normalizeReadFileResult(file: any): ReadFileResult | undefined {
     numLines: numberField(file.numLines ?? file.num_lines),
     startLine: numberField(file.startLine ?? file.start_line),
     totalLines: numberField(file.totalLines ?? file.total_lines),
+  }
+}
+
+function parseRemoteReadResult(content: string): ReadFileResult | undefined {
+  let file: any
+  try { file = JSON.parse(content) } catch { return undefined }
+  if (!file || typeof file.path !== 'string' || typeof file.content !== 'string' || typeof file.total_lines !== 'number' || typeof file.returned_lines !== 'number') return undefined
+  const startLine = numberField(file.offset) ?? 1
+  const lines = file.content.split('\n')
+  const numbered = lines.every((line: string, index: number) => !line && index === lines.length - 1 || line.startsWith(`${String(startLine + index).padStart(6)}\t`))
+  return {
+    filePath: file.path,
+    content: numbered ? lines.map((line: string) => line ? line.slice(line.indexOf('\t') + 1) : line).join('\n') : file.content,
+    numLines: file.returned_lines,
+    startLine,
+    totalLines: file.total_lines,
   }
 }
 
@@ -560,7 +582,8 @@ export function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffse
         continue
       }
 
-      const next = { ...record, toolUseId: matchedCallId }
+      const readFile = matchedCall.kind === 'read' ? record.readFile ?? parseRemoteReadResult(record.content) : record.readFile
+      const next = { ...record, toolUseId: matchedCallId, readFile }
       const targetMap = matchedCall.kind === 'read' ? readResultsBySourceIndex : resultsBySourceIndex
       const existing = targetMap.get(source.index) || []
       existing.push(next)

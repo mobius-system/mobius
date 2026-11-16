@@ -64,4 +64,28 @@ for (const name of ['remote_edit', 'remote_write']) {
     assert.equal(extract.extractCodeEdit(entry), null)
   }
 }
-console.log('aimux-tool-cards: execution, result merging and collaborative edits pass across Claude and Codex')
+const remotePath = 'C:\\Users\\fuqingxu-hub\\Desktop\\jev\\decision_runner.py'
+for (const entry of entries('remote_read', { file_path: remotePath, offset: 41 })) {
+  assert.equal(extract.extractReadCalls(entry)[0].filePath, remotePath)
+  assert.match(buildHeaderSummary(entry).short, /Read.*decision_runner.py/)
+  for (const wrapped of [false, true]) {
+    const body = JSON.stringify({ path: remotePath, total_lines: 180, returned_lines: 2, offset: 41, truncated: true, content: '    41\tdef decide():\n    42\t    return 1' })
+    const content = wrapped ? [{ type: 'text', text: body }] : body
+    const output = entry.type === 'assistant'
+      ? { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call-1', content }] } }
+      : { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call-1', output: content } }
+    const merged = extract.mergeBashToolResultItems([entry, output], 0)
+    assert.equal(merged.length, 1)
+    assert.equal(merged[0].readResults.length, 1)
+    assert.deepEqual(merged[0].readResults[0].readFile, {
+      filePath: remotePath, content: 'def decide():\n    return 1', numLines: 2, startLine: 41, totalLines: 180,
+    })
+    assert.equal(merged[0].bashResults, undefined)
+  }
+}
+for (const entry of entries('remote_read', { file_path: '/remote/image.png' })) {
+  assert.deepEqual(extract.entryReadImagePaths(entry), [])
+}
+const localImageRead = { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/local/image.png' } }] } }
+assert.deepEqual(extract.entryReadImagePaths(localImageRead), ['/local/image.png'])
+console.log('aimux-tool-cards: execution, edits and read-result merging pass across Claude and Codex')

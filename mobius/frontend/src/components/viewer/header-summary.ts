@@ -260,6 +260,8 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       return clip(body, HEADER_SHORT_LIMIT)
     }
     if (isFunctionCallPayload(payload)) {
+      const readCall = extractReadCallFromBlock(functionCallBlock(payload))
+      if (readCall) return clip(`Read · ${readCallOneLineSummary(readCall)}`, HEADER_SHORT_LIMIT)
       const aimuxFiles = extractAimuxRemoteApplyPatchFiles(functionCallBlock(payload))
       if (aimuxFiles.length > 0) return clip(`协作编辑 · ${aimuxFiles.map(file => basename(file.filePath)).join(', ')}`, HEADER_SHORT_LIMIT)
       if (payload?.name === 'update_plan') {
