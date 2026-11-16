@@ -601,3 +601,42 @@ export const QuestionTitle = { zh: '## 用户的问题', en: "## User's Question
 export function questionPattern(lang: 'zh' | 'en'): RegExp {
   return new RegExp(`^${escapeRegExp(QuestionTitle[lang])}$`, 'm');
 }
+
+// ── 系统提示词标记注入 ────────────────────────────────────────────────────
+// 这些 key 的 section 拼装时各自包一对 <mobius_system_prompt> 标记 (仍留在首条用户消息里),
+// claude-code 驱动层 (session-lifecycle queueSession) 检到标记后把块内文本经
+// --append-system-prompt 注入真正的系统提示词, 再粘贴去掉标记块的剩余正文。
+// Memory / Skill 的全部条目随所在段整体进标记, 不做条目级长度分流。
+// 未列出的 section (research / blackboard / peers / worktree / pcTaskMode) 不打标记。
+// Each listed section carries its own <mobius_system_prompt> marker pair at
+// prompt-build time; the claude-code driver lifts the marked text into the
+// real system prompt. Every memory / skill entry follows its section wholesale.
+export const SYSTEM_PROMPT_SECTION_KEYS: ReadonlySet<string> = new Set([
+  'header',
+  'user',
+  'project',
+  'memory',
+  'skills',
+  'scheduledWakeup',
+  'completionFlag',
+  'issue',
+  'session',
+]);
+
+// 标记开闭字符串唯一事实源 (驱动层的提取正则也从这里派生)
+// Single source of the marker strings; the driver derives its regex from them
+export const MOBIUS_SYSTEM_PROMPT_OPEN = '<mobius_system_prompt>';
+export const MOBIUS_SYSTEM_PROMPT_CLOSE = '</mobius_system_prompt>';
+
+// 隐藏标记行但保留块内内容: 用于不消费标记的后端 (codex / deepseek-harness 等,
+// 消息文本等价于历史未打标格式) 以及落库/展示场景。claude-code 驱动层不走这里,
+// 它用整块提取 (块内文本进系统提示词, 剩余正文不含标记)。
+// Hide the marker lines but keep the inner content: for backends that do not
+// consume the marker and for stored/displayed prompt records. The claude-code
+// driver instead lifts whole blocks (inner text to the system prompt, marker
+// gone from the pasted remainder).
+export function stripMobiusSystemPromptMarkers(text: string): string {
+  return String(text || '')
+    .replace(new RegExp(`${MOBIUS_SYSTEM_PROMPT_OPEN}\\n?`, 'g'), '')
+    .replace(new RegExp(`\\n?${MOBIUS_SYSTEM_PROMPT_CLOSE}`, 'g'), '');
+}

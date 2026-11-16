@@ -62,17 +62,97 @@ function formatSize(n: number | null) {
 
 export { formatSize }
 
-export function fileIcon(name: string, type: 'dir' | 'file') {
-  if (type === 'dir') return '📁'
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  const m: Record<string, string> = {
-    ts: '🔷', tsx: '🔷', js: '🟡', jsx: '🟡', py: '🐍', go: '🔵', rs: '🦀',
-    md: '📝', json: '📋', yaml: '📋', yml: '📋', toml: '📋',
-    sh: '⚙️', bash: '⚙️', css: '🎨', html: '🌐', sql: '🗄️',
-    png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', svg: '🖼️',
-    txt: '📄', log: '📄',
-  }
-  return m[ext] || '📄'
+// —— VSCode 风格文件类型图标 (Material Icon Theme 视觉: 16×16 视窗, 扁平色块徽标 / 单色线性 glyph) ——
+// 目录不渲染图标, 与 VSCode 默认 explorer 一致 (仅保留折叠箭头)。
+// 全部为模块级静态节点, 文件树逐行渲染零额外创建开销。
+function iconBadge(label: string, bg: string, fg = '#fff') {
+  const fontSize = label.length >= 2 ? 7.5 : 9
+  return (
+    <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden="true">
+      <rect x="1" y="2.75" width="14" height="10.5" rx="2.5" fill={bg} />
+      <text x="8" y="11.3" textAnchor="middle" fontSize={fontSize} fontWeight="700" fill={fg} fontFamily="ui-sans-serif, system-ui, 'Segoe UI', sans-serif">{label}</text>
+    </svg>
+  )
+}
+
+function iconGlyph(color: string, children: ReactNode) {
+  return (
+    <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden="true" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  )
+}
+
+// 文档轮廓: 默认/纯文本用主题文字色 (currentColor), 配置类按类型着色。
+const DOC_OUTLINE = (<>
+  <path d="M4.5 1.8h4.4l3.1 3.1v9.3H4.5z" />
+  <path d="M8.9 1.8v3.1h3.1" />
+</>)
+
+const SHELL_GLYPH = (<>
+  <path d="M3.2 4.9 6.7 8l-3.5 3.1" />
+  <path d="M8.7 11.5h4.1" />
+</>)
+
+const HTML_GLYPH = (<>
+  <path d="M6.2 4.6 3.2 8l3 3.4" />
+  <path d="M9.8 4.6l3 3.4-3 3.4" />
+</>)
+
+const SQL_GLYPH = (<>
+  <ellipse cx="8" cy="4.3" rx="4.9" ry="2" />
+  <path d="M3.1 4.3v7.4c0 1.1 2.2 2 4.9 2s4.9-.9 4.9-2V4.3" />
+</>)
+
+const imageGlyph = (color: string) => (<>
+  <rect x="2.2" y="3" width="11.6" height="10" rx="1.6" />
+  <circle cx="5.7" cy="6.6" r="1.2" fill={color} stroke="none" />
+  <path d="M3 12.3l3.3-3.5 2.3 2.4 1.8-1.9 2.6 2.7" />
+</>)
+
+const MD_BADGE = (
+  <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden="true">
+    <rect x="1" y="2.75" width="14" height="10.5" rx="2.5" fill="#519aba" />
+    <text x="6.1" y="11.4" textAnchor="middle" fontSize="8" fontWeight="700" fill="#fff" fontFamily="ui-sans-serif, system-ui, 'Segoe UI', sans-serif">M</text>
+    <path d="M9.5 8.8h3.2l-1.6 2.5z" fill="#fff" />
+  </svg>
+)
+
+const textGlyph = (ch: string, color: string, fontSize: number) => (
+  <svg viewBox="0 0 16 16" className="h-full w-full" aria-hidden="true">
+    <text x="8" y="11.6" textAnchor="middle" fontSize={fontSize} fontWeight="700" fill={color} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace">{ch}</text>
+  </svg>
+)
+
+const FILE_ICON_NODES: Record<string, ReactNode> = {
+  ts: iconBadge('TS', '#3178c6'), tsx: iconBadge('TS', '#3178c6'), mts: iconBadge('TS', '#3178c6'), cts: iconBadge('TS', '#3178c6'),
+  js: iconBadge('JS', '#f0db4f', '#323330'), jsx: iconBadge('JS', '#f0db4f', '#323330'), mjs: iconBadge('JS', '#f0db4f', '#323330'), cjs: iconBadge('JS', '#f0db4f', '#323330'),
+  py: iconBadge('PY', '#3776ab'),
+  go: iconBadge('GO', '#00add8'),
+  rs: iconBadge('RS', '#ce422b'),
+  md: MD_BADGE, mdx: MD_BADGE,
+  json: textGlyph('{}', '#cbcb41', 9.5),
+  yaml: iconGlyph('#a074c4', DOC_OUTLINE), yml: iconGlyph('#a074c4', DOC_OUTLINE),
+  toml: iconGlyph('#e37933', DOC_OUTLINE),
+  html: iconGlyph('#e37933', HTML_GLYPH), htm: iconGlyph('#e37933', HTML_GLYPH),
+  css: textGlyph('#', '#519aba', 11), scss: textGlyph('#', '#c76495', 11), less: textGlyph('#', '#519aba', 11),
+  sh: iconGlyph('#89e051', SHELL_GLYPH), bash: iconGlyph('#89e051', SHELL_GLYPH), zsh: iconGlyph('#89e051', SHELL_GLYPH),
+  sql: iconGlyph('#e38c00', SQL_GLYPH),
+  png: iconGlyph('#a074c4', imageGlyph('#a074c4')), jpg: iconGlyph('#a074c4', imageGlyph('#a074c4')), jpeg: iconGlyph('#a074c4', imageGlyph('#a074c4')),
+  gif: iconGlyph('#a074c4', imageGlyph('#a074c4')), webp: iconGlyph('#a074c4', imageGlyph('#a074c4')), bmp: iconGlyph('#a074c4', imageGlyph('#a074c4')), ico: iconGlyph('#a074c4', imageGlyph('#a074c4')),
+  svg: iconGlyph('#ffb13b', imageGlyph('#ffb13b')),
+  // 未知 / 纯文本: 主题色文档轮廓 (VSCode 默认文件图标)。
+  __default: iconGlyph('currentColor', DOC_OUTLINE),
+}
+
+export function FileTypeIcon({ name, className }: { name: string; className?: string }) {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  const node = FILE_ICON_NODES[ext] ?? FILE_ICON_NODES.__default
+  return (
+    <span className={`inline-flex flex-shrink-0 items-center justify-center text-[var(--text-muted)] ${className || 'h-3.5 w-3.5'}`}>
+      {node}
+    </span>
+  )
 }
 
 function fileTourTarget(name: string) {
@@ -1202,13 +1282,12 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                 // 重命名时不能把 <input> 嵌进 <button>, 改渲染 div 行。
                 <div
                   className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[length:var(--fs-md)]"
-                  style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)' }}
+                  style={{ paddingLeft: `${depth * 9.6 + 8}px`, color: 'var(--text-primary)' }}
                   onContextMenu={ctxHandler(entry, childPath)}
                 >
                   <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                  <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
                   {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
                 </div>
               ) : (
@@ -1223,11 +1302,10 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
                     onClick={() => onToggleDir(childPath)}
                     onContextMenu={ctxHandler(entry, childPath)}
                     className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[length:var(--fs-md)] ${dragOverRel === childPath ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-                    style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
+                    style={{ paddingLeft: `${depth * 9.6 + 8}px`, color: 'var(--text-primary)', background: dragOverRel === childPath ? 'color-mix(in srgb, var(--accent-primary) 20%, transparent)' : undefined, outline: dragOverRel === childPath ? '1px solid color-mix(in srgb, var(--accent-primary) 55%, transparent)' : undefined, outlineOffset: '-1px' }}>
                     <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                    <span className="flex-shrink-0">{fileIcon(entry.name, 'dir')}</span>
                     <span className="truncate">{entry.name}</span>
                   </button>
                   {onCopyPath && (
@@ -1273,10 +1351,10 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
             <div
               key={childPath}
               className="w-full text-left flex items-center gap-1.5 px-2 py-1 rounded text-[length:var(--fs-md)]"
-              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: 'var(--text-primary)' }}
+              style={{ paddingLeft: `${depth * 9.6 + 8 + 14}px`, color: 'var(--text-primary)' }}
               onContextMenu={ctxHandler(entry, childPath)}
             >
-              <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
+              <FileTypeIcon name={entry.name} />
               {renderRenameInput?.({ entry, relPath: childPath, parentRelPath: relPath })}
             </div>
           )
@@ -1292,8 +1370,8 @@ export function FileTreeLevel({ relPath, depth, dirs, expanded, onToggleDir, onO
               disabled={!vscodeReady}
               title={vscodeReady ? actionLabel : '未配置 VSCode Web'}
               className={`min-w-0 flex-1 text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[length:var(--fs-md)] disabled:cursor-default ${selected ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
-              style={{ paddingLeft: `${depth * 16 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
-              <span className="flex-shrink-0">{fileIcon(entry.name, 'file')}</span>
+              style={{ paddingLeft: `${depth * 9.6 + 8 + 14}px`, color: vscodeReady ? 'var(--text-primary)' : 'var(--text-muted)', background: selected ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
+              <FileTypeIcon name={entry.name} />
               <span className="truncate flex-1">{entry.name}</span>
               {entry.size !== null && (
                 <span className="text-[length:var(--fs-xs)] flex-shrink-0" style={{ color: 'var(--text-muted)' }}>{formatSize(entry.size)}</span>

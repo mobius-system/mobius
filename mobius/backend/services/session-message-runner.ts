@@ -11,7 +11,8 @@
 import { Sessions } from '../repositories/sessions';
 import { assertResearchAgentEnabled } from './research-agent-state';
 import { Messages } from '../repositories/messages';
-import { buildSessionContext, wrapUserMessage } from './session-context';
+import { buildSessionContext, formatBody, wrapUserMessage } from './session-context';
+import { stripMobiusSystemPromptMarkers } from './session-context-sections';
 import modelRegistry from './model-registry';
 import agents from '../agents';
 import { sessionPromptKind } from './mobius-kinds';
@@ -76,6 +77,7 @@ function findSessionOperable(id: any, user: any): any {
 }
 
 // 首轮专属的 prompt 拼装: memory/skill/项目上下文 + 转移文件引用, 把原文变成发给 agent 的完整初始 prompt.
+// 提升段用 <mobius_system_prompt> 标记包裹后仍随消息下发, 由 claude-code 驱动层检标记注入系统提示词.
 function assembleInitialPrompt({ user, sessionId, workDir, content, logger }: {
   user: any;
   sessionId: string;
@@ -98,8 +100,10 @@ function assembleInitialPrompt({ user, sessionId, workDir, content, logger }: {
     } catch (e) {
       logger?.warn?.(`[sessions/messages] writeContextSnapshot: ${e.message}`);
     }
-    // ⭐ prompt 在这里从"原文"变成"包装全文" — 原生轨首轮那张大卡就是 paste 出去的它.
-    content = wrapUserMessage(ctx.body, content, ctx.language);
+    // ⭐ prompt 在这里从"原文"变成"包装全文" — 提升段各自带 <mobius_system_prompt> 标记随消息下发,
+    // claude-code 驱动层会按标记抽走注入系统提示词, 粘贴时只留剩余正文.
+    // Each hoisted section carries its own marker; the driver lifts them out.
+    content = wrapUserMessage(formatBody(ctx.sources, undefined, { systemPromptMarker: true }), content, ctx.language);
   }
   const transferPaths = readPendingTransferPaths(sessionId);
   if (transferPaths) {
@@ -247,6 +251,15 @@ async function runSessionMessage({
     logger,
   });
 
+  // 非 claude-code 后端 (codex / deepseek-harness 等) 暂不消费标记: 隐藏标记行,
+  // 块内内容原样留在消息里, 文本等价于历史未打标格式. claude-code 驱动层自己整块提取.
+  // Backends other than tmux-claude-code do not consume the marker yet: hide the
+  // tag lines and keep the content (legacy-equivalent text); the claude-code
+  // driver lifts whole blocks itself.
+  if (backend.name !== 'tmux-claude-code') {
+    finalContent = stripMobiusSystemPromptMarkers(finalContent);
+  }
+
   try {
     // mobius 侧 prompt 提交记录: 随 dispatchOpts 下发, agent 后端 harnessWriteMobiusCoreEntry 把它写进 agent-history-store 库 (开新轮)
     const mobiusPromptRecord = buildMobiusPromptRecord({
@@ -254,7 +267,7 @@ async function runSessionMessage({
       kind: kind || sessionPromptKind(displayContent),     // 决定开不开新轮: 会话页提问, /compact 单列
       content: displayContent,                             // 成品: 正式提交、展示/落库、写进输入卡的文本 (可含前端加的标题头等加工)
       inputText: hasInputText ? normalizedInputText : null, // 原料: 用户在输入框亲手敲的原文, 供前端 ↑"回放输入"召回; 多数路径与 content 相同或为 null
-      finalPrompt: finalContent !== displayContent ? finalContent : null, // 拼装后的完整下发 prompt (首轮上下文包装等已并入); 与 content 相同时不重复存
+      finalPrompt: finalContent !== displayContent ? stripMobiusSystemPromptMarkers(finalContent) : null, // 拼装后的完整下发 prompt (首轮上下文包装等已并入, 标记行已隐藏); 与 content 相同时不重复存
       requestId: normalizedRequestId,
       turnNumber: turnNum,
       userId: user?.id,                                    // kind 由构造器按正文推导 (/compact → compact)

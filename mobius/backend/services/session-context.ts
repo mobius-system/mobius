@@ -21,7 +21,14 @@ import { isAssistantSession } from './assistant-session';
 import { readIssueKnowledgeShape } from './project-knowledge';
 import { BUILTIN_MEMORIES } from './builtin-memories';
 import { pcClientRequiresAimuxSkill, pcTaskModePrompt } from './pc-client-context';
-import { SESSION_SECTIONS, QuestionTitle, type SectionCtx } from './session-context-sections';
+import {
+  SESSION_SECTIONS,
+  QuestionTitle,
+  SYSTEM_PROMPT_SECTION_KEYS,
+  MOBIUS_SYSTEM_PROMPT_OPEN,
+  MOBIUS_SYSTEM_PROMPT_CLOSE,
+  type SectionCtx,
+} from './session-context-sections';
 
 // =====================================================================
 // 上下文拼装: 文本块全部定义在 ./session-context-sections (前后端共用的零依赖目录,
@@ -70,17 +77,29 @@ function buildSectionCtx(sources: any, D: FormatDeps): SectionCtx {
 // 段间连接复刻旧版 lines.push 序列: 默认 '\n\n'; completionFlag.tightNext='\n'
 // (旧版该段尾不带空行, 其后的 Issue/Session 紧跟); pcTaskMode.doubleGap='\n\n\n'
 // (旧版该段以 '\n## ' 开头, 与前段间双空行)。
-export function formatBody(sources: any, deps?: Partial<FormatDeps>): string {
+// systemPromptMarker 开关: 命中 SYSTEM_PROMPT_SECTION_KEYS 的段 (含 Memory/Skill 全部条目)
+// 各自包一对 <mobius_system_prompt> 标记, 仍随首条消息下发, claude-code 驱动层按标记抽走
+// 经 --append-system-prompt 注入系统提示词。不开开关 = 与历史逐字节一致的全文
+// (快照/预览/@转移/parity 测试全走这条路)。
+export function formatBody(
+  sources: any,
+  deps?: Partial<FormatDeps>,
+  opts?: { systemPromptMarker?: boolean },
+): string {
   const D: FormatDeps = { ...REAL_FORMAT_DEPS, ...(deps || {}) };
   const lang = normalizeLanguage(sources.language);
   const ctx = buildSectionCtx(sources, D);
+  const marker = !!opts?.systemPromptMarker;
   let out = '';
   let prevTight = false;
   for (const section of SESSION_SECTIONS) {
     const text = section.build[lang](ctx, section.title);
     if (!text || !text.trim()) continue;
-    if (!out) out = text;
-    else out += (section.doubleGap ? '\n\n\n' : prevTight ? '\n' : '\n\n') + text;
+    const block = marker && SYSTEM_PROMPT_SECTION_KEYS.has(section.key)
+      ? `${MOBIUS_SYSTEM_PROMPT_OPEN}\n${text}\n${MOBIUS_SYSTEM_PROMPT_CLOSE}`
+      : text;
+    if (!out) out = block;
+    else out += (section.doubleGap ? '\n\n\n' : prevTight ? '\n' : '\n\n') + block;
     prevTight = !!section.tightNext;
   }
   return out.trimEnd();

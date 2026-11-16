@@ -22,6 +22,7 @@ import {
   buildIssueContextPreview,
   buildSessionContext,
   buildSessionSelectionSnapshot,
+  formatBody,
   stripContextItemBodies,
   wrapUserMessage,
 } from '../services/session-context';
@@ -1205,7 +1206,9 @@ async function startAssistantSession(req: express.Request, session: any, questio
       } catch (e) {
         console.warn(`[assistant/messages] writeContextSnapshot failed (${session.session_id}): ${(e as Error).message}`);
       }
-      finalPrompt = wrapUserMessage(ctx.body, finalPrompt, ctx.language);
+      // 提升段各自带 <mobius_system_prompt> 标记随消息下发, 驱动层抽走注入系统提示词
+      // Each hoisted section carries its own marker; the driver lifts them out
+      finalPrompt = wrapUserMessage(formatBody(ctx.sources, undefined, { systemPromptMarker: true }), finalPrompt, ctx.language);
     }
   }
 

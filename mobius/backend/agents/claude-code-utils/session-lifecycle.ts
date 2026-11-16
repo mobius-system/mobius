@@ -12,7 +12,7 @@ import fs from 'fs'
 import type { ClaudeBackendHost, ClaudeDispatchOpts } from './types'
 import { HUB } from './constants'
 import { buildClaudeLaunch } from './launch-command'
-import { sleep, sendMaybeInitialContextPrompt } from './prompt'
+import { sleep, sendMaybeInitialContextPrompt, extractMobiusSystemPrompt, MOBIUS_SYSTEM_PROMPT_MAX_BYTES } from './prompt'
 import { clearRunning, markRunning } from './running-flags'
 import { ensureWatcher } from './runtime-store'
 import { ensureProjectTrusted, jsonlPathOf } from './session-paths'
@@ -123,6 +123,23 @@ export async function queueSession(backend: ClaudeBackendHost, opts: ClaudeDispa
   if (!sessionId) throw new Error('需要 sessionId')
   if (!prompt) throw new Error('需要 prompt')
 
+  // 驱动层后处理: 检出 <mobius_system_prompt> 标记块 → 随本次 spawn 注入系统提示词, 粘贴剩余正文
+  // Driver post-processing: lift the marked block into the system prompt at
+  // spawn and paste the remainder as the user message
+  let promptToSend = prompt
+  let appendSystemPrompt: string | null = null
+  const lifted = extractMobiusSystemPrompt(prompt)
+  if (lifted.systemPrompt) {
+    if (Buffer.byteLength(lifted.systemPrompt, 'utf8') > MOBIUS_SYSTEM_PROMPT_MAX_BYTES) {
+      // 超限不拆: 标记当普通文本随消息下发 (模型仍可读到内容), 不赌 argv 上限
+      // Too big to lift: the marker rides the message as plain text
+      log(`[tmux-claude-code] 标记块超过 ${MOBIUS_SYSTEM_PROMPT_MAX_BYTES} 字节, 按普通消息下发 (${sessionId})`)
+    } else {
+      appendSystemPrompt = lifted.systemPrompt
+      promptToSend = lifted.message
+    }
+  }
+
   if (!windowExists(sessionId)) {
     // 无活窗口必须重开；字段优先opts，其次持久化行
     // No live window means respawn; opts wins, the persisted row is the fallback
@@ -152,10 +169,15 @@ export async function queueSession(backend: ClaudeBackendHost, opts: ClaudeDispa
       agentSessionId: finalAgentSid ?? undefined,
       aimuxRemoteName,
       aimuxGuiAuthorized,
+      appendSystemPrompt,
       sandboxPolicy: (opts as any).sandboxPolicy || null,
     })
+  } else if (appendSystemPrompt) {
+    // 窗口已在: 系统提示词随该会话首渲染已定格, 无从再注入, 粘贴剩余正文并留痕
+    // Live window: its system prompt is already recorded, only paste the rest
+    log(`[tmux-claude-code] 窗口已存在, 标记块无法注入系统提示词, 仅粘贴剩余正文 (${sessionId})`)
   }
-  await sendMaybeInitialContextPrompt(backend.name, sessionId, prompt, isInitialContextPrompt)
+  await sendMaybeInitialContextPrompt(backend.name, sessionId, promptToSend, isInitialContextPrompt)
   const entry = backend.runtime.get(sessionId)
   if (!suppressRunningFlag) markRunning(flagRoot || entry?.flagRoot || entry?.cwd || cwd, sessionId)
 }
@@ -308,7 +330,7 @@ export async function terminateSession(backend: ClaudeBackendHost, sessionId: st
  * window killed rather than left behind.
  */
 export async function spawnWindow(backend: ClaudeBackendHost, opts: ClaudeDispatchOpts) {
-  let { sessionId, cwd, userId, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy = null } = opts
+  let { sessionId, cwd, userId, flagRoot, model, useProxy, proxyMode: proxyModeArg, displayName, agentSessionId, settingsPath, captureStream = false, forceNoProxy = false, aimuxRemoteName, aimuxGuiAuthorized, sandboxPolicy = null, appendSystemPrompt = null } = opts
   // 入参可为null，此处归一为非空，兜底在调用方
   // Nullable args become non-null here; the persisted fallback is the caller's
   if (!sessionId || !cwd) throw new Error('_spawnWindow 需要 sessionId + cwd')
@@ -349,6 +371,7 @@ export async function spawnWindow(backend: ClaudeBackendHost, opts: ClaudeDispat
     displayName: displayName || null,
     aimuxRemoteName,
     aimuxGuiAuthorized,
+    appendSystemPrompt: appendSystemPrompt || null,
   })
 
   // 在hub会话里建后台窗口，在cwd下跑bash -lc cmd

@@ -17,7 +17,37 @@ import {
   SUBMIT_ENTER_INTERVAL_MS,
 } from './constants'
 import { windowExists } from './tmux-window'
+import {
+  MOBIUS_SYSTEM_PROMPT_OPEN,
+  MOBIUS_SYSTEM_PROMPT_CLOSE,
+} from '../../services/session-context-sections'
 const { log, tmux } = require('../tmux-operation-log')
+
+// 标记块注入 argv 的字节上限: 整条启动命令是 bash -lc 的单参数, 内核限 128KiB, 留足余量
+// Byte cap when the marked block rides the argv: the whole launch chain is one
+// bash -lc argument with a 128KiB kernel limit
+export const MOBIUS_SYSTEM_PROMPT_MAX_BYTES = 100_000;
+
+/*
+ * Lift <mobius_system_prompt>...</mobius_system_prompt> blocks out of a prompt.
+ * The captured text becomes the claude --append-system-prompt payload; the
+ * message keeps everything else with the marker blocks removed. Prompts
+ * without the marker pass through untouched.
+ */
+export function extractMobiusSystemPrompt(text: string): { systemPrompt: string; message: string } {
+  const raw = String(text || '');
+  const captured: string[] = [];
+  const pattern = new RegExp(
+    `${MOBIUS_SYSTEM_PROMPT_OPEN}\\n?([\\s\\S]*?)\\n?${MOBIUS_SYSTEM_PROMPT_CLOSE}\\n*`,
+    'g',
+  );
+  const message = raw.replace(pattern, (_full: string, inner: string) => {
+    const value = String(inner || '').trim();
+    if (value) captured.push(value);
+    return '';
+  }).replace(/^\n+/, '').trimEnd();
+  return { systemPrompt: captured.join('\n\n'), message };
+}
 import { containerForWindow } from '../../services/user-isolation'
 import { recordPromptPaste } from '../../services/agent-prompt-events'
 

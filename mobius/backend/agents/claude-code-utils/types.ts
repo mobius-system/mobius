@@ -73,6 +73,8 @@ export interface ClaudeDispatchOpts {
   forceNoProxy?: boolean
   /** Digital-rain mode: capture the live output stream through a per-session proxy file. */
   captureStream?: boolean
+  /** Text lifted from the <mobius_system_prompt> marker by the driver; appended to the claude system prompt. */
+  appendSystemPrompt?: string | null
   sandboxPolicy?: string | null
   [key: string]: unknown
 }

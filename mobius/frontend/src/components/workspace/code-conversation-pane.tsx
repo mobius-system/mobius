@@ -7,7 +7,7 @@ import { api, HIDDEN_FOLDER_NAME } from '../../store'
 import { useRemoteDeviceNames } from '../../services/remote-device-names'
 import { ResizablePanel, useIsMobile } from '../resizable-panel'
 import { RemoteComputeMemoryModal } from '../memories'
-import { FileTreeLevel, fileIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
+import { FileTreeLevel, FileTypeIcon, formatSize, buildVscodeUrl, type Entry, type DirState } from '../project-files'
 import { FileTreeContextMenu, type ContextMenuItem } from './file-tree-context-menu'
 import { InlineRenameInput } from './inline-rename-input'
 import { HubProjectFileSource, LocalProjectFileSource, RemoteProjectFileSource, type ProjectFileSource, type DesktopFileBridge, type FileCreateKind } from './project-file-source'
@@ -1549,7 +1549,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
                     boxShadow: isActive ? 'inset 0 2px 0 0 #3b82f6' : undefined,
                   }}
                 >
-                  <span className="flex-shrink-0 text-[length:var(--fs-lg)]">{fileIcon(tab.entry.name, 'file')}</span>
+                  <FileTypeIcon name={tab.entry.name} className="h-4 w-4" />
                   <span className="truncate text-[length:var(--fs-md)]">{tab.entry.name}</span>
                   {tab.dirty && (
                     <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full group-hover:opacity-0" style={{ background: cc.accent }} title="已修改未保存" />
@@ -1972,7 +1972,7 @@ function FilteredFileTree({ dirs, expanded, onToggleDir, onSelectFile, selectedA
             title={e.abs_path}
             className={`w-full text-left flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-[length:var(--fs-md)] ${sel ? '' : 'hover:bg-[var(--bg-card-hover)]'}`}
             style={{ paddingLeft: '8px', color: 'var(--text-primary)', background: sel ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)' : undefined }}>
-            <span className="flex-shrink-0">{fileIcon(e.name, 'file')}</span>
+            <FileTypeIcon name={e.name} />
             <span className="truncate flex-1">{e.name}</span>
           </button>
         )

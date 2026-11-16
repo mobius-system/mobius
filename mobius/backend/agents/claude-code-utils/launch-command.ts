@@ -48,6 +48,8 @@ export interface LaunchInput {
   displayName?: string | null
   aimuxRemoteName?: string
   aimuxGuiAuthorized?: boolean
+  /** Text lifted from the <mobius_system_prompt> marker by queueSession; appended to the claude system prompt. */
+  appendSystemPrompt?: string | null
 }
 
 export interface LaunchPlan {
@@ -259,6 +261,11 @@ export async function buildClaudeLaunch(input: LaunchInput): Promise<LaunchPlan>
   // Append a shell-quoted --model only when the caller pinned one
   if (input.model) claudeArgs.push(`--model ${shellQuote(input.model)}`)
   if (mcpConfigPath) claudeArgs.push(`--mcp-config ${shellQuote(mcpConfigPath)}`)
+  // 驱动层从首条消息检出的标记块 → 追加进系统提示词 (在 claude 原有系统提示词之后)
+  // Marked block lifted by the driver → appended after claude's own system prompt
+  if (input.appendSystemPrompt && input.appendSystemPrompt.trim()) {
+    claudeArgs.push(`--append-system-prompt ${shellQuote(input.appendSystemPrompt)}`)
+  }
   // 优先调用方给的settings文件，否则用Mobius默认settings
   // Prefer the caller's settings file, else the Mobius default settings
   const settingsArg = finalSettingsPath
