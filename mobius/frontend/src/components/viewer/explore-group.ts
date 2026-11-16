@@ -9,13 +9,13 @@
  * 纯逻辑无 React 依赖; 折叠容器组件在 RoundGroups.tsx 的 ExploreGroupCard.
  */
 import type { AnyEntry, RoundItem } from './types'
-import { isFunctionCallPayload } from './entry-extract'
+import { functionCallToolName, isFunctionCallPayload } from './entry-extract'
 import { deriveToolCallStatus } from './tool-status'
 import type { ToolStatusMap } from './tool-status'
 
 // 探索类工具名 (只读/搜索): 默认聚合折叠. Edit/Write/Bash 等有副作用的工具不在其列.
 // 统一小写并去掉 -/_ 让 WebFetch/web_fetch 都命中.
-const EXPLORE_TOOL_NAMES = new Set(['read', 'grep', 'glob', 'webfetch', 'websearch', 'ls'])
+const EXPLORE_TOOL_NAMES = new Set(['read', 'grep', 'glob', 'webfetch', 'websearch', 'ls', 'mcpaimuxremoteread'])
 
 function normalizeToolName(name: unknown): string {
   return typeof name === 'string' ? name.toLowerCase().replace(/[-_]/g, '') : ''
@@ -32,7 +32,7 @@ export function isExploreToolUse(entry: AnyEntry): boolean {
     }
   }
   if (entry?.type === 'response_item' && isFunctionCallPayload(entry?.payload)) {
-    if (EXPLORE_TOOL_NAMES.has(normalizeToolName(entry?.payload?.name))) return true
+    if (EXPLORE_TOOL_NAMES.has(normalizeToolName(functionCallToolName(entry.payload)))) return true
   }
   return false
 }

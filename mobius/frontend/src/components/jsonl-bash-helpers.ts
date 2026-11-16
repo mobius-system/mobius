@@ -18,13 +18,13 @@ export type BashCall = {
 export function isAimuxCommandToolUseName(name: unknown): boolean {
   if (typeof name !== 'string') return false
   const normalized = name.toLowerCase()
-  return normalized.startsWith('mcp__aimux__') && normalized.endsWith('exec_command')
+  return normalized.startsWith('mcp__aimux__') && (normalized.endsWith('exec_command') || normalized === 'mcp__aimux__remote_exec_python_script')
 }
 
 // AIMUX 远程补丁工具的输入是 apply_patch 格式文本，和远程命令不同：它应进入
 // 代码差异卡片，而不是被当作命令或通用 JSON 工具调用渲染。
 export function isAimuxRemoteApplyPatchToolUseName(name: unknown): boolean {
-  return typeof name === 'string' && name.toLowerCase() === 'mcp__aimux__remote_apply_patch'
+  return typeof name === 'string' && ['mcp__aimux__remote_apply_patch', 'mcp__aimux__remote_edit', 'mcp__aimux__remote_write'].includes(name.toLowerCase())
 }
 
 // Claude Code 官方 Bash 工具名是 'Bash', 不同代理实现里出现过 'bash'/'BASH' 大小写不一,
@@ -57,6 +57,9 @@ export function extractBashCallFromBlock(block: any, entryCwd: string): BashCall
     commandSource = 'cmd'
   } else if (typeof input.script === 'string' && input.script.length > 0) {
     command = input.script
+    commandSource = 'script'
+  } else if (block.name.toLowerCase() === 'mcp__aimux__remote_exec_python_script' && typeof input.python_script_content === 'string' && input.python_script_content.length > 0) {
+    command = input.python_script_content
     commandSource = 'script'
   } else {
     return null

@@ -135,9 +135,20 @@ function unifiedEditFile(filePath: string, unifiedDiff: string): UnifiedCodeEdit
 
 // remote_apply_patch 把标准 apply_patch 文本放在 input.input 中。它不是标准 unified
 // diff，但其内容段保留 @@ / + / - 语义，现有 CodeDiff 可以直接可靠呈现。
-export function extractAimuxRemoteApplyPatchFiles(block: any): UnifiedCodeEditFile[] {
+export function extractAimuxRemoteApplyPatchFiles(block: any): CodeEditFile[] {
   if (!block || block?.type !== 'tool_use' || !isAimuxRemoteApplyPatchToolUseName(block?.name)) return []
   const input = block?.input
+  const name = block.name.toLowerCase()
+  if (name === 'mcp__aimux__remote_edit' || name === 'mcp__aimux__remote_write') {
+    const filePath = stringField(input?.file_path).trim()
+    if (!filePath) return []
+    if (name === 'mcp__aimux__remote_edit') {
+      if (typeof input?.old_string !== 'string' || typeof input?.new_string !== 'string') return []
+      return [stringEditFile(filePath, input.old_string, input.new_string)]
+    }
+    if (typeof input?.content !== 'string') return []
+    return [stringEditFile(filePath, '', input.content)]
+  }
   const patch = typeof input?.input === 'string' ? input.input
     : typeof input?.patch === 'string' ? input.patch
       : ''
@@ -167,6 +178,9 @@ export function extractAimuxRemoteApplyPatchFiles(block: any): UnifiedCodeEditFi
 }
 
 export function isAimuxRemoteApplyPatchToolUse(entry: AnyEntry): boolean {
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry.payload)) {
+    return extractAimuxRemoteApplyPatchFiles(functionCallBlock(entry.payload)).length > 0
+  }
   if (entry?.type !== 'assistant') return false
   const content = entry?.message?.content
   return Array.isArray(content) && content.some((block: any) => extractAimuxRemoteApplyPatchFiles(block).length > 0)
@@ -174,6 +188,9 @@ export function isAimuxRemoteApplyPatchToolUse(entry: AnyEntry): boolean {
 
 export function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
   const files: CodeEditFile[] = []
+  if (entry?.type === 'response_item' && isFunctionCallPayload(entry.payload)) {
+    files.push(...extractAimuxRemoteApplyPatchFiles(functionCallBlock(entry.payload)))
+  }
 
   if (entry?.type === 'assistant') {
     const c = entry?.message?.content
@@ -239,7 +256,7 @@ export function extractBashCalls(entry: AnyEntry): BashCall[] {
     const cwd = stringField(args.workdir) || stringField(args.cwd) || stringField(args?.input?.workdir) || stringField(args?.input?.cwd) || stringField(entry?.cwd)
     let commandSource: BashCall['commandSource'] = 'command'
     if (typeof args.cmd === 'string') commandSource = 'cmd'
-    else if (typeof args.script === 'string' || typeof args?.input?.script === 'string') commandSource = 'script'
+    else if (typeof args.script === 'string' || typeof args?.input?.script === 'string' || typeof args.python_script_content === 'string') commandSource = 'script'
 
     return [{
       id: stringField(payload?.call_id) || undefined,
@@ -270,7 +287,7 @@ export function isAimuxCommandToolUse(entry: AnyEntry): boolean {
   return content.some((block: any) => {
     if (block?.type !== 'tool_use' || !isAimuxCommandToolUseName(block?.name)) return false
     const input = block?.input
-    return !!input && typeof input === 'object' && [input.cmd, input.command, input.script].some((value) => typeof value === 'string' && value.length > 0)
+    return !!input && typeof input === 'object' && [input.cmd, input.command, input.script, input.python_script_content].some((value) => typeof value === 'string' && value.length > 0)
   })
 }
 
@@ -652,10 +669,19 @@ function functionCallArguments(payload: any): Record<string, any> | null {
     || parseCustomToolInput(payload?.input)
 }
 
+export function functionCallBlock(payload: any): any {
+  const args = functionCallArguments(payload)
+  return { type: 'tool_use', name: functionCallToolName(payload), id: payload?.call_id, input: args?.input && typeof args.input === 'object' ? args.input : args }
+}
+
 export function functionCallCommand(payload: any): string | null {
   const args = functionCallArguments(payload)
   const cmd = args?.cmd ?? args?.command ?? args?.input?.cmd ?? args?.input?.command
   if (typeof cmd === 'string' && cmd.trim()) return cmd
+  if (functionCallToolName(payload).toLowerCase() === 'mcp__aimux__remote_exec_python_script') {
+    const script = args?.python_script_content ?? args?.input?.python_script_content
+    if (typeof script === 'string' && script.trim()) return script
+  }
   // 新版 Codex 的 custom_tool_call(name="exec") 不只包装 exec_command，也会包装
   // write_stdin / apply_patch 等工具。它们没有 shell cmd，但仍必须成为一个可按 call_id
   // 接收 custom_tool_call_output 的调用卡片；否则调用与结果会再次拆成两张字段卡。

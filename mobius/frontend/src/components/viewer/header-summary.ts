@@ -29,6 +29,7 @@ import {
   bashCallOneLineSummary,
   isAimuxCommandToolUseName,
   extractAimuxRemoteApplyPatchFiles,
+  functionCallBlock,
   isBashToolUseName,
   extractPlanUpdate,
   extractTaskReminder,
@@ -259,6 +260,8 @@ export function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
       return clip(body, HEADER_SHORT_LIMIT)
     }
     if (isFunctionCallPayload(payload)) {
+      const aimuxFiles = extractAimuxRemoteApplyPatchFiles(functionCallBlock(payload))
+      if (aimuxFiles.length > 0) return clip(`协作编辑 · ${aimuxFiles.map(file => basename(file.filePath)).join(', ')}`, HEADER_SHORT_LIMIT)
       if (payload?.name === 'update_plan') {
         const plan = extractPlanUpdate(entry)
         if (plan) return clip(summarizePlanUpdate(plan), HEADER_SHORT_LIMIT)
