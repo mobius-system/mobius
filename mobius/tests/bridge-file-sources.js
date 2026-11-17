@@ -25,6 +25,10 @@ const brokerFileOps=[];
 const broker=http.createServer((req,res)=>{
  assert.equal(req.headers.authorization,'Bearer fixture');
  res.setHeader('Content-Type','application/json');
+ if(String(req.url||'').match(/^\/api\/remotes\/bound-device\/system-info$/)){
+  brokerFileOps.push('bound-device/system-info');
+  res.end(JSON.stringify({cwd:'/client/cwd',home:'/client/home',path_style:'posix'}));return;
+ }
  const m=String(req.url||'').match(/^\/api\/remotes\/([^/]+)\/files\/(list|stat|read)$/);
  if(!m){res.end(JSON.stringify({remotes}));return;}
  const name=decodeURIComponent(m[1]),action=m[2];
@@ -46,6 +50,7 @@ async function main(){
  db.prepare('UPDATE projects SET aimux_remote_inventory=? WHERE id=?').run(JSON.stringify([{name:'old-device',status:'connected',remote_path:''},{name:'old-device',status:'connected'}]),'p');
  Researches.insert({id:'r',project_id:'p',title:'R',description:'',created_by:'reader'});
  Sessions.insert({session_id:'s',scope_type:'research',research_id:'r',project_id:'p',user_id:'reader',name:'S',session_key:'web:reader:s',pc_client_metadata:{aimux_id:'bound-device',add_remote_aimux_mcp:true,local_path:'/work'}});
+ Sessions.insert({session_id:'s-relative',scope_type:'research',research_id:'r',project_id:'p',user_id:'reader',name:'S relative',session_key:'web:reader:s-relative',pc_client_metadata:{aimux_id:'bound-device',add_remote_aimux_mcp:true}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const base=`http://127.0.0.1:${server.address().port}/api/projects/p`;
  async function request(url,user='admin',options={}){const response=await fetch(base+url,{...options,headers:{'Content-Type':'application/json',authorization:`Bearer ${jwt.sign({id:user,role:user==='admin'?'admin':'user'},process.env.JWT_SECRET)}`}});return {status:response.status,body:await response.json()};}
@@ -61,6 +66,10 @@ async function main(){
   r=await request('/remote-file',user,{method:'POST',body:JSON.stringify({remote:'new-device',path:'/hello.txt',content:'no'})});assert.equal(r.status,400);
   r=await request('/remote-files?session=s&remote=bound-device',user);assert.equal(r.status,200);assert.equal(r.body.root_path,'/work');
   r=await request('/remote-file?session=s&remote=bound-device&path=/hello.txt',user);assert.equal(r.body.content,'hello');
+  r=await request('/remote-file-sources?session=s-relative',user);assert.equal(r.body.remotes[0].remote_path,'.');
+  r=await request('/remote-files?session=s-relative&remote=bound-device',user);assert.equal(r.status,200);
+  assert.equal(r.body.root_path,'.');assert.equal(r.body.absolute_root_path,'/client/cwd');
+  assert.equal(r.body.remote_path,'/client/cwd');assert.equal(r.body.entries[0].abs_path,'/client/cwd/hello.txt');
  }
  let r=await request('/remote-files?remote=old-device');assert.equal(r.status,400);assert.match(r.body.error,/连接已失效/);
  remotes.push({name:'second-device',status:'connected'});
@@ -72,6 +81,7 @@ async function main(){
  assert(brokerFileOps.includes('bound-device/list'), `bridge list should hit the broker: ${brokerFileOps}`);
  assert(brokerFileOps.includes('bound-device/stat'), `bridge stat should hit the broker: ${brokerFileOps}`);
  assert(brokerFileOps.includes('bound-device/read'), `bridge read should hit the broker: ${brokerFileOps}`);
+ assert(brokerFileOps.includes('bound-device/system-info'), `relative bridge roots should resolve through system-info: ${brokerFileOps}`);
  console.log('PASS admin/user: only bound + project devices, bound path precedence, dedup, list/read, and reject unrelated online devices for list/read/write/download');
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{server.closeAllConnections?.();await new Promise(r=>server.close(r));await new Promise(r=>broker.close(r));db.close();fs.rmSync(temp,{recursive:true,force:true});});

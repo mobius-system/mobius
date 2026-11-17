@@ -204,6 +204,15 @@ interface BridgeCallResult {
   error?: string;
 }
 
+type RemoteSystemInfo = {
+  cwd?: string;
+  home?: string;
+  path_style?: string;
+};
+
+const BRIDGE_SYSTEM_INFO_TTL_MS = 5 * 60 * 1000;
+const bridgeSystemInfoCache = new Map<string, { expiresAt: number; info: RemoteSystemInfo }>();
+
 /*
  * POST one files/<action> request to the resident broker.
  * Returns null when the remote turns out not to be a bridge device, so the
@@ -258,6 +267,73 @@ async function bridgeFileOp(
   }
 }
 
+/*
+ * Ask a bridge client which directory relative file paths are resolved from.
+ * file.list intentionally accepts relative paths, but older protocol responses
+ * only echo relative entry paths. The browser must not label those values as
+ * absolute paths, so resolve them from the client's own cwd/home instead.
+ */
+async function bridgeSystemInfo(remoteName: string, timeoutMs = 10000): Promise<RemoteSystemInfo | null> {
+  const cached = bridgeSystemInfoCache.get(remoteName);
+  if (cached && cached.expiresAt > Date.now()) return cached.info;
+  let runtime: any;
+  try {
+    runtime = JSON.parse(fs.readFileSync(bridgeRuntimePath(), 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!runtime?.url || !runtime?.token) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(
+      `${String(runtime.url).replace(/\/+$/, '')}/api/remotes/${encodeURIComponent(remoteName)}/system-info`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${runtime.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ timeout: Math.max(1, Math.ceil(timeoutMs / 1000)) }),
+        signal: controller.signal,
+      },
+    );
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    if (!body || typeof body !== 'object') return null;
+    const info = body as RemoteSystemInfo;
+    bridgeSystemInfoCache.set(remoteName, { expiresAt: Date.now() + BRIDGE_SYSTEM_INFO_TTL_MS, info });
+    return info;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isAbsoluteRemotePath(value: string): boolean {
+  return value.startsWith('/') || value.startsWith('\\\\') || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function resolveRemotePathFromSystemInfo(value: string, info: RemoteSystemInfo): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (isAbsoluteRemotePath(raw)) return raw;
+  const windows = info.path_style === 'windows' || /^[A-Za-z]:[\\/]/.test(String(info.cwd || info.home || ''));
+  const pathApi = windows ? path.win32 : path.posix;
+  const cwd = String(info.cwd || '').trim();
+  const home = String(info.home || '').trim();
+  let resolved = '';
+  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
+    if (!isAbsoluteRemotePath(home)) return '';
+    resolved = raw === '~' ? home : pathApi.resolve(home, raw.slice(2));
+  } else {
+    if (!isAbsoluteRemotePath(cwd)) return '';
+    resolved = pathApi.resolve(cwd, raw);
+  }
+  return isAbsoluteRemotePath(resolved) ? resolved : '';
+}
+
 async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs = 70000): Promise<any> {
   // ✨ 浏览不需要摘要: 带 sha256 意味着远端把每个文件完整读一遍 (5GB 目录要十几秒)
   // ✨ Browsing needs no digest: hashing reads every file end to end
@@ -269,7 +345,7 @@ async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs =
   );
   if (fast?.data) {
     if (!Array.isArray(fast.data.entries)) throw new Error('aimux bridge 返回的文件列表格式异常');
-    return fast.data;
+    return { ...fast.data, __mobius_bridge: true };
   }
   if (fast?.error) throw new Error(fast.error);
   const result = await runAimux(
@@ -278,7 +354,7 @@ async function aimuxFileList(remoteName: string, targetPath: string, timeoutMs =
   );
   const data = parseJsonOutput(result);
   if (!result.ok || !data || !Array.isArray(data.entries)) throw new Error(resultMessage(result));
-  return data;
+  return { ...data, __mobius_bridge: false };
 }
 
 async function aimuxFileStat(remoteName: string, targetPath: string, timeoutMs = 70000): Promise<any> {
@@ -507,12 +583,30 @@ async function listRemoteFiles(name: any, rootPath: any, relPath: any): Promise<
   const relativePath = normalizeRemoteRelativePath(relPath);
   const targetPath = joinRemotePath(rootPath, relativePath);
   const data = await aimuxFileList(remoteName, targetPath);
-  const listedPath = typeof data.path === 'string' && data.path ? data.path : targetPath;
+  const rawListedPath = typeof data.path === 'string' && data.path ? data.path : targetPath;
+  let systemInfo: RemoteSystemInfo | null = null;
+  if (data.__mobius_bridge && !isAbsoluteRemotePath(rawListedPath)) {
+    systemInfo = await bridgeSystemInfo(remoteName);
+    if (!systemInfo) throw new Error('无法从 aimux bridge 解析远程绝对路径，请升级或重新连接远端客户端');
+  }
+  const listedPath = isAbsoluteRemotePath(rawListedPath)
+    ? rawListedPath
+    : resolveRemotePathFromSystemInfo(rawListedPath, systemInfo || {});
+  if (!listedPath || !isAbsoluteRemotePath(listedPath)) {
+    throw new Error('无法解析远程目录的绝对路径');
+  }
   const entries = data.entries
     .filter((entry: any) => entry?.type === 'dir' || entry?.type === 'file')
     .map((entry: any) => {
-      const entryPath = String(entry.path || joinRemotePath(listedPath, `/${entry.name || ''}`));
-      const entryName = String(entry.name || remoteBasename(entryPath));
+      const rawEntryPath = String(entry.path || '');
+      const entryName = String(entry.name || remoteBasename(rawEntryPath));
+      const entryPath = rawEntryPath
+        ? (isAbsoluteRemotePath(rawEntryPath)
+          ? rawEntryPath
+          : (isAbsoluteRemotePath(rawListedPath)
+            ? joinRemotePath(listedPath, `/${rawEntryPath.replace(/\\/g, '/')}`)
+            : resolveRemotePathFromSystemInfo(rawEntryPath, systemInfo || {})))
+        : joinRemotePath(listedPath, `/${entryName}`);
       const childRel = relativePath === '/' ? `/${entryName}` : `${relativePath}/${entryName}`;
       return {
         name: entryName,
@@ -525,9 +619,15 @@ async function listRemoteFiles(name: any, rootPath: any, relPath: any): Promise<
     })
     .filter((entry: any) => entry.name)
     .sort((a: any, b: any) => a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name));
+  if (entries.some((entry: any) => !isAbsoluteRemotePath(entry.abs_path))) {
+    throw new Error('aimux bridge 返回了无法解析的相对文件路径');
+  }
   return {
     remote: remoteName,
     root_path: normalizedRemoteRoot(rootPath),
+    absolute_root_path: relativePath === '/'
+      ? listedPath
+      : resolveRemotePathFromSystemInfo(normalizedRemoteRoot(rootPath), systemInfo || {}) || normalizedRemoteRoot(rootPath),
     path: relativePath,
     remote_path: listedPath,
     entries,
