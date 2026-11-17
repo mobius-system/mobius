@@ -27,6 +27,7 @@ import { copyTextToClipboard } from '../../utils/clipboard'
 import type { CodeSkinKey } from './code-mirror-editor'
 import { MarkdownWysiwygEditor } from './markdown-wysiwyg-editor'
 import { inlinePreviewAssets, projectFileDataUrl } from './preview-assets'
+import { blueprintRelativePath, blueprintStorageKey } from '../project-page/blueprint-navigation'
 
 const LazyCodeMirrorEditor = lazy(() => import('./code-mirror-editor').then(module => ({ default: module.CodeMirrorEditor })))
 
@@ -257,6 +258,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   const treeLoadKeyRef = useRef('')
   // 蓝图变体: 初始加载只自动打开第一张蓝图一次 (树重建/目录初始化后复位).
   const blueprintAutoOpenedRef = useRef(false)
+  const restoringBlueprintRef = useRef('')
   const [filter, setFilter] = useState('')
   const [showFileFilter, setShowFileFilter] = useState(false)
 
@@ -615,18 +617,35 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
       if (source === 'local' && !data?.ok) throw new Error(data?.error || '读取本地文件失败')
       // Tab 可能已在读取期间被关闭: patchTab 对不存在的 key 是 no-op
       patchTab(key, { loading: false, fileData: data as FileContent, doc: (data as FileContent).content || '' })
+      if (restoringBlueprintRef.current === key) restoringBlueprintRef.current = ''
     } catch (e: any) {
+      if (blueprint && restoringBlueprintRef.current === key) {
+        restoringBlueprintRef.current = ''
+        blueprintAutoOpenedRef.current = false
+        try { localStorage.removeItem(blueprintStorageKey(projectId)) } catch {}
+        setTabs(previous => previous.filter(tab => tab.key !== key))
+        setActiveKey(previous => previous === key ? '' : previous)
+        return
+      }
       patchTab(key, { loading: false, error: e?.message || '读取文件失败' })
     } finally {
       openingRef.current.delete(key)
     }
-  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab, mobileListMode])
+  }, [desktop, projectId, bindPath, localBindPath, remoteName, remoteRootParam, source, sessionId, patchTab, mobileListMode, blueprint])
 
   // 蓝图变体: 仅初始加载时自动打开第一张蓝图 (根下直连 .html 优先, 否则第一个 module 的首张),
   // 打开即有内容, 消除右侧大片空白; 用户手动关掉全部 Tab 后不再强开.
   // Blueprint variant: open the first blueprint once on initial load so the reader never lands on a blank pane
   useEffect(() => {
-    if (!blueprint || blueprintAutoOpenedRef.current || tabsRef.current.length > 0) return
+    if (!blueprint || !rootLoaded || openFileRequest || openRequest || blueprintAutoOpenedRef.current || tabsRef.current.length > 0) return
+    let rememberedPath: string | null = null
+    try { rememberedPath = blueprintRelativePath(localStorage.getItem(blueprintStorageKey(projectId)) || '', bindPath, HIDDEN_FOLDER_NAME) } catch {}
+    if (rememberedPath) {
+      blueprintAutoOpenedRef.current = true
+      restoringBlueprintRef.current = `${bindPath.replace(/\/$/, '')}/${rememberedPath}`
+      setOpenRequest({ projectId, path: rememberedPath })
+      return
+    }
     const rootEntries = dirs[treeRoot]?.entries
     if (!rootEntries) return
     const isHtml = (e: Entry | undefined | null): e is Entry => !!e && e.type === 'file' && /\.html?$/i.test(e.name)
@@ -634,9 +653,20 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     const target = rootEntries.find(isHtml)
       || children.map(p => (dirs[p]?.entries || []).find(isHtml)).find(Boolean)
     if (target) { blueprintAutoOpenedRef.current = true; void onSelectFile(target) }
-  }, [blueprint, treeRoot, dirs, onSelectFile])
+  }, [blueprint, rootLoaded, openFileRequest, openRequest, projectId, bindPath, treeRoot, dirs, onSelectFile])
 
   useEffect(() => {
+    if (!blueprint) return
+    const tab = tabs.find(candidate => candidate.key === activeKey)
+    if (!tab || tab.loading || tab.error) return
+    const path = blueprintRelativePath(tab.entry.abs_path, bindPath, HIDDEN_FOLDER_NAME)
+    if (path) {
+      try { localStorage.setItem(blueprintStorageKey(projectId), path) } catch {}
+    }
+  }, [blueprint, projectId, bindPath, tabs, activeKey])
+
+  useEffect(() => {
+    if (blueprint) return
     const onOpen = (event: Event) => {
       const request = (event as CustomEvent<OpenFileRequest>).detail
       if (!request || request.projectId !== projectId || (request.sessionId && request.sessionId !== sessionId)) return
@@ -644,7 +674,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
     }
     window.addEventListener('mobius:open-file-in-sidebar', onOpen)
     return () => window.removeEventListener('mobius:open-file-in-sidebar', onOpen)
-  }, [projectId, sessionId])
+  }, [projectId, sessionId, blueprint])
 
   // The chat shell keeps this request in state so lazy mounting cannot lose it.
   useEffect(() => {
@@ -654,7 +684,7 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   useEffect(() => {
     if (!openRequest || openRequest.projectId !== projectId || (openRequest.sessionId && openRequest.sessionId !== sessionId)) return
     // 蓝图变体只认中枢蓝图文件, 远程打开请求直接丢弃.
-    if (blueprint && openRequest.remote) { setOpenRequest(null); return }
+    if (blueprint && (openRequest.remote || !blueprintRelativePath(openRequest.path, bindPath, HIDDEN_FOLDER_NAME))) { setOpenRequest(null); return }
     const nextSource: FileSource = openRequest.remote ? 'remote' : 'hub'
     const targetRemote = openRequest.remote || ''
     const needsSourceChange = nextSource !== source || (nextSource === 'remote' && targetRemote !== remoteName)

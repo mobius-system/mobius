@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import { CodeConversationPane } from '../workspace/code-conversation-pane'
 import { useEditorAvailability } from '../workspace/use-editor-availability'
+import type { BlueprintFileRequest } from './blueprint-navigation'
 
 /*
  * ProjectBlueprintPanel — 项目设置的「项目蓝图」面板.
@@ -8,7 +9,7 @@ import { useEditorAvailability } from '../workspace/use-editor-availability'
  * <HIDDEN_FOLDER_NAME>/blueprints、默认 HTML 预览、可切源码编辑保存,
  * 树/编辑器/保存/右键管理全部继承自原组件 (mode='blueprint').
  */
-export function ProjectBlueprintPanel({ projectId }: { projectId: string }) {
+export function ProjectBlueprintPanel({ projectId, openFileRequest }: { projectId: string; openFileRequest?: BlueprintFileRequest }) {
   const { bindPath, loading } = useEditorAvailability(projectId, true)
 
   if (!bindPath) {
@@ -36,7 +37,7 @@ export function ProjectBlueprintPanel({ projectId }: { projectId: string }) {
       className="h-full w-full overflow-hidden rounded-xl border"
       style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}
     >
-      <CodeConversationPane projectId={projectId} bindPath={bindPath} mode="blueprint" variant="page" />
+      <CodeConversationPane key={projectId} projectId={projectId} bindPath={bindPath} mode="blueprint" variant="page" openFileRequest={openFileRequest} />
     </div>
   )
 }

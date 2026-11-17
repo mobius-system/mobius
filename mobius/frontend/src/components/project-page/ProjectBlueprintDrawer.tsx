@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DraftingCompass, Loader2, X } from 'lucide-react'
+import type { BlueprintFileRequest } from './blueprint-navigation'
 
 // 关闭时优先等 transform 过渡结束再卸载; 定时器只做兜底 (过渡未触发/标签页不可见).
 // Prefer unmounting on transitionend; the timer is only a fallback.
@@ -18,10 +19,12 @@ const ProjectBlueprintPanel = lazy(() =>
 export function ProjectBlueprintDrawer({
   open,
   projectId,
+  openFileRequest,
   onClose,
 }: {
   open: boolean
   projectId: string
+  openFileRequest?: BlueprintFileRequest
   onClose: () => void
 }) {
   // 两段式挂载: 先以「关闭位」渲染一帧, 再加 --open 触发过渡; 关闭时先滑出再卸载.
@@ -118,7 +121,7 @@ export function ProjectBlueprintDrawer({
               </div>
             }
           >
-            <ProjectBlueprintPanel projectId={projectId} />
+            <ProjectBlueprintPanel key={projectId} projectId={projectId} openFileRequest={openFileRequest} />
           </Suspense>
         </div>
       </aside>

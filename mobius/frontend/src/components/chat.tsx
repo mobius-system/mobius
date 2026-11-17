@@ -14,6 +14,7 @@ import { NewSessionModal } from './modals'
 import { CreateSessionForm } from './quick-create-session'
 import { OpenInVSCodeButton } from './project-files'
 import { ProjectBlueprintDrawer } from './project-page/ProjectBlueprintDrawer'
+import { blueprintRelativePath, type BlueprintFileRequest } from './project-page/blueprint-navigation'
 import { ResizablePanel, useIsMobile, useNarrowContainer } from './resizable-panel'
 import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
@@ -71,7 +72,7 @@ const CHAT_HISTORY_MIN_WIDTH = 360
 // 「会话统一按钮组」的显示设置清单: 标准布局的侧栏与简易模式的工具浮层共用同一份,
 // 否则两处的显示开关会漂移 (存储 key 相同, 清单不同会互相隐藏对方的按钮).
 const SESSION_TOOL_VISIBILITY_OPTIONS: VisibilityOption[] = [
-  { id: 'file-changes', label: '查看文件修改' },
+  { id: 'project-blueprint', label: '查看项目蓝图' },
   { id: 'bash-commands', label: '查看运行命令' },
   { id: 'input-replay', label: '回放输入' },
   { id: 'jsonl-meta', label: '显示时间与序号' },
@@ -1368,7 +1369,6 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   autoUrgentOnEnter, onToggleAutoUrgentOnEnter,
   onStop, canStop,
-  onOpenBlueprint, canOpenBlueprint,
 }: {
   jsonlCount: number
   onOpenRaw: () => void
@@ -1378,8 +1378,6 @@ function ChatHeaderOverflowMenu({
   onToggleAutoUrgentOnEnter: () => void
   onStop: () => void
   canStop: boolean
-  onOpenBlueprint: () => void
-  canOpenBlueprint: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1418,10 +1416,6 @@ function ChatHeaderOverflowMenu({
             disabled={!canStop}
             onClick={() => { setOpen(false); onStop() }}>
             <span>终止当前操作</span>
-          </button>
-          <button className={itemClass} disabled={!canOpenBlueprint}
-            onClick={() => { setOpen(false); onOpenBlueprint() }}>
-            <span>查看项目蓝图</span>
           </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
@@ -2060,9 +2054,8 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
   const [easyExpandAllSignal, setEasyExpandAllSignal] = useState(0)
   const [easyLoadingAll, setEasyLoadingAll] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
-  // 项目蓝图全屏抽屉 (从 chat 头部 … 菜单打开).
-  // Full-screen project blueprint drawer, opened from the chat header overflow menu.
   const [projectBlueprintOpen, setProjectBlueprintOpen] = useState(false)
+  const [blueprintFileRequest, setBlueprintFileRequest] = useState<BlueprintFileRequest | undefined>()
   const [rawJsonlCopied, setRawJsonlCopied] = useState(false)
   const [rawJsonlDownloading, setRawJsonlDownloading] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
@@ -2114,6 +2107,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     setEasyRoundCount(previous => previous === count ? previous : count)
   }, [])
   const currentProjectId = (currentIssue as any)?.project_id || (currentSession as any)?.project_id || (currentTask as any)?.project_id || ''
+  const blueprintBindPath = (currentProject?.id === currentProjectId ? currentProject : projects.find(project => project.id === currentProjectId))?.bind_path || ''
   // ===== 简易模式右侧文件编辑栏 (复用代码对话 v2 的文件树 + CodeMirror 编辑器) =====
   // 开关状态存本浏览器; easyFilesMounted 首次打开后保活 (文件树展开/选中/未保存草稿不丢),
   // 关闭仅 display:none — 与 IssuePage 的 editorMounted/v2Mounted 同一模式.
@@ -2131,6 +2125,11 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     const openFile = (event: Event) => {
       const detail = (event as CustomEvent).detail
       if (!detail || detail.projectId !== currentProjectId || (detail.sessionId && detail.sessionId !== sessionId)) return
+      if (!detail.remote && blueprintRelativePath(detail.path, blueprintBindPath, HIDDEN_FOLDER_NAME)) {
+        setBlueprintFileRequest({ projectId: currentProjectId, path: detail.path })
+        setProjectBlueprintOpen(true)
+        return
+      }
       setDisplayFileRequest(detail)
       setDisplayFilesOpen(true)
       setEasyFilesMounted(true)
@@ -2139,7 +2138,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     }
     window.addEventListener('mobius:request-open-file-in-sidebar', openFile)
     return () => window.removeEventListener('mobius:request-open-file-in-sidebar', openFile)
-  }, [currentProjectId, sessionId, setDisplayFilesOpen])
+  }, [currentProjectId, sessionId, setDisplayFilesOpen, blueprintBindPath])
   useEffect(() => { if (easyFilesOpen) setEasyFilesMounted(true) }, [easyFilesOpen])
   // 左侧导航抽屉打开时收起文件抽屉 (两个抽屉不能同时开, 否则遮罩互相叠, 点不到东西)
   useEffect(() => {
@@ -4035,7 +4034,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
           showJsonlMeta={showJsonlMeta}
           connectionReady={connectionStatus === 'connected'}
           projectKnowledgeSending={projectKnowledgeSending}
-          onOpenFileChanges={() => setFileChangesOpen(true)}
+          onOpenBlueprint={() => { setBlueprintFileRequest(undefined); setProjectBlueprintOpen(true) }}
           onOpenBashCommands={() => setBashCommandsOpen(true)}
           onOpenInputReplay={() => setInputReplayOpen(true)}
           onToggleJsonlMeta={() => setShowJsonlMeta(value => !value)}
@@ -4365,8 +4364,6 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                 onToggleAutoUrgentOnEnter={toggleAutoUrgentOnEnter}
                 onStop={handleStopSession}
                 canStop={!!sessionId}
-                onOpenBlueprint={() => setProjectBlueprintOpen(true)}
-                canOpenBlueprint={!!currentProjectId}
               />
             )}
           </JsonlCountSlot>
@@ -5165,6 +5162,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
       <ProjectBlueprintDrawer
         open={projectBlueprintOpen}
         projectId={currentProjectId}
+        openFileRequest={blueprintFileRequest}
         onClose={() => setProjectBlueprintOpen(false)}
       />
 

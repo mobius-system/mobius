@@ -1,4 +1,4 @@
-import { BookOpen, Brain, Clock, Cpu, FileDiff, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
+import { BookOpen, Brain, Clock, Cpu, DraftingCompass, GitBranch, History, Loader2, Network, Puzzle, RotateCcw, Terminal, Wand2 } from 'lucide-react'
 import { RemoteAimuxMcpIcon } from './aimux-link-indicator'
 import { UnifiedButton } from './unified-button-group'
 
@@ -18,7 +18,7 @@ type AdvancedSessionActionsProps = {
   // 该开关不再在按钮组里重复出一个按钮.
   omitJsonlMetaButton?: boolean
   variant?: 'default' | 'compact' | 'menu'
-  onOpenFileChanges: () => void
+  onOpenBlueprint: () => void
   onOpenBashCommands: () => void
   onOpenInputReplay: () => void
   onToggleJsonlMeta: () => void
@@ -51,7 +51,7 @@ export function AdvancedSessionActions({
   showTerminal = true,
   omitJsonlMetaButton = false,
   variant = 'default',
-  onOpenFileChanges,
+  onOpenBlueprint,
   onOpenBashCommands,
   onOpenInputReplay,
   onToggleJsonlMeta,
@@ -79,15 +79,15 @@ export function AdvancedSessionActions({
     <>
       <UnifiedButton
         kind="modal"
-        buttonId="file-changes"
-        onClick={onOpenFileChanges}
-        disabled={!hasSession}
-        label="查看文件修改"
-        tooltip="查看当前会话所有文件修改"
+        buttonId="project-blueprint"
+        onClick={onOpenBlueprint}
+        disabled={!projectId}
+        label="查看项目蓝图"
+        tooltip="查看项目蓝图"
         accent="blue"
         displayLabel={displayLabel}
         className={controlClassName}
-        icon={<FileDiff className="h-4 w-4" strokeWidth={1.9} />}
+        icon={<DraftingCompass className="h-4 w-4" strokeWidth={1.9} />}
       />
       <UnifiedButton
         kind="modal"
