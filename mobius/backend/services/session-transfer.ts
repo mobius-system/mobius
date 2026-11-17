@@ -5,6 +5,49 @@ import { db } from '../../db';
 
 const MAX_TEXT_CHARS = 20000;
 const MAX_TOTAL_CHARS = 800000;
+// 单条 jsonl 记录的超长保护与全文兜底上限 — V8 单字符串上限约 536M 字符
+// (0x1fffffe8), 不设防的整文件读取/拼接会直接抛 "Cannot create a string
+// longer than 0x1fffffe8 characters" (2026-11-17 实测 1.4GB rollout)。
+// Per-record and whole-document guards — V8 caps one string at ~536M chars,
+// so unbounded whole-file reads/joins throw hard on giant rollouts.
+const MAX_JSONL_LINE_CHARS = 32_000_000;
+const HARD_TOTAL_CHARS = 200_000_000;
+// ≥512 连续 base64 字符在正文里只可能是内嵌二进制(图片), 转接文档一律换成占位符。
+// 注意不能用正则 replace: V8 在匹配数百万字符的超长 run 时会抛
+// "Maximum call stack size exceeded" (实测 8M 字符即炸), 这里用手动线性扫描。
+// A 512+ contiguous base64 run in prose is always embedded binary (images) and
+// becomes a placeholder. Regex replace is unusable here — V8 throws
+// "Maximum call stack size exceeded" matching multi-million-char runs — so this
+// is a manual linear scan (iterative, no recursion).
+function isB64CharCode(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+    || (code >= 48 && code <= 57) || code === 43 || code === 47;
+}
+
+function stripBinaryHunks(text: string): string {
+  const n = text.length;
+  if (n < 512) return text;
+  let out = '';
+  let copied = 0;
+  let runStart = -1;
+  let changed = false;
+  for (let i = 0; i <= n; i += 1) {
+    if (i < n && isB64CharCode(text.charCodeAt(i))) {
+      if (runStart < 0) runStart = i;
+      continue;
+    }
+    if (runStart < 0) continue;
+    const runLen = i - runStart;
+    if (runLen >= 512) {
+      out += `${text.slice(copied, runStart)}[已省略内嵌数据 ${runLen} 字符]`;
+      copied = i;
+      changed = true;
+    }
+    runStart = -1;
+  }
+  if (!changed) return text;
+  return out + text.slice(copied);
+}
 
 interface TransferSection {
   title: string;
@@ -73,36 +116,56 @@ function timestampIso(entry: any): string | null {
   return ms == null ? null : new Date(ms).toISOString();
 }
 
-function readJsonlRecords(filePath: any, source: string): any[] {
-  if (!filePath || !fs.existsSync(filePath)) return [];
-  const text = fs.readFileSync(filePath, 'utf8');
-  const records = [];
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (!line.trim()) continue;
+/*
+ * Stream a jsonl file record by record. Never materialises the whole file as
+ * one string — readFileSync(utf8) on a >512MB rollout throws V8's
+ * "Cannot create a string longer than 0x1fffffe8 characters". Lines are cut on
+ * '\n' byte boundaries so multi-byte UTF-8 is never split, and lines longer
+ * than MAX_JSONL_LINE_CHARS (observed: whole PNGs inlined as base64) are
+ * skipped and counted instead of parsed.
+ */
+function forEachJsonlRecord(
+  filePath: any,
+  onRecord: (entry: any, index: number) => void,
+): { recordCount: number; skippedOversized: number } {
+  const result = { recordCount: 0, skippedOversized: 0 };
+  if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) return result;
+  const fd = fs.openSync(filePath, 'r');
+  const chunk = Buffer.alloc(8 * 1024 * 1024);
+  let pending: Buffer = Buffer.alloc(0);
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (trimmed.length > MAX_JSONL_LINE_CHARS) { result.skippedOversized += 1; return; }
     try {
-      records.push({ entry: JSON.parse(line), source, index: i });
+      onRecord(JSON.parse(trimmed), result.recordCount);
+      result.recordCount += 1;
     } catch {}
+  };
+  try {
+    for (;;) {
+      const n = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (n <= 0) break;
+      const combined = pending.length ? Buffer.concat([pending, chunk.subarray(0, n)]) : chunk.subarray(0, n);
+      const lastNl = combined.lastIndexOf(0x0a);
+      if (lastNl === -1) {
+        // 尚无完整行; 拷贝留存, 下一轮拼接 — 防御性拷贝, subarray 是视图
+        // No complete line yet; copy out (subarray is a view into `combined`)
+        pending = Buffer.from(combined);
+        continue;
+      }
+      pending = Buffer.from(combined.subarray(lastNl + 1));
+      const blockText = combined.toString('utf8', 0, lastNl);
+      const lines = blockText.split('\n');
+      for (let i = 0; i < lines.length; i += 1) handleLine(lines[i]);
+    }
+    if (pending.length) handleLine(pending.toString('utf8'));
+  } finally {
+    fs.closeSync(fd);
   }
-  return records;
+  return result;
 }
 
-function readAllMergedJsonlRecords(jsonlPath: any): any[] {
-  const primary = readJsonlRecords(jsonlPath, 'primary');
-  const mobius = readJsonlRecords(mobiusJsonlPathOf(jsonlPath), 'mobius');
-  const records = primary.concat(mobius);
-  records.sort((a, b) => {
-    const at = parseTimestampMs(a.entry);
-    const bt = parseTimestampMs(b.entry);
-    if (at != null && bt != null && at !== bt) return at - bt;
-    if (at == null && bt != null) return -1;
-    if (at != null && bt == null) return 1;
-    if (a.source !== b.source) return a.source === 'primary' ? -1 : 1;
-    return a.index - b.index;
-  });
-  return records;
-}
 
 function contentText(content: any): string {
   if (typeof content === 'string') return content;
@@ -135,6 +198,34 @@ function functionOutputBody(output: any): string {
   return idx >= 0 ? text.slice(idx + marker.length).trimStart() : text;
 }
 
+/*
+ * custom_tool_call_output (aimux MCP 工具) 的输出是 content block 数组, 其中
+ * input_image 携带整张图的 base64 — 转接文档只保留文字, 图片换成占位符,
+ * 否则一次 36 张图的标注结果就能把文档撑爆。
+ * custom_tool_call_output (aimux MCP tools) returns a content-block array whose
+ * input_image blocks carry whole base64 images — the transfer digest keeps only
+ * the text and replaces each image with a placeholder.
+ */
+function customToolOutputBody(output: any): string {
+  if (!Array.isArray(output)) return functionOutputBody(output);
+  const parts = output.map((block: any) => {
+    if (!block || typeof block !== 'object') return '';
+    if (typeof block.text === 'string') return block.text;
+    if (typeof block.input_text === 'string') return block.input_text;
+    if (block.type === 'input_image' || typeof block.image_url === 'string') {
+      const url = typeof block.image_url === 'string' ? block.image_url : '';
+      // 估算大小走下标运算不用正则 — 超长 base64 上正则会栈溢出
+      // size estimate via index math, not regex — regex overflows on giant runs
+      const marker = url.indexOf('base64,');
+      const b64Chars = marker >= 0 ? Math.max(0, url.length - marker - 7) : 0;
+      const kb = Math.round((b64Chars * 3 / 4) / 1024);
+      return `[图片已屏蔽${b64Chars ? ` 约${kb}KB` : ''}]`;
+    }
+    return '';
+  }).filter(Boolean);
+  return parts.join('\n');
+}
+
 function functionCommand(payload: any): string | null {
   const args = parseJsonMaybe(payload?.arguments);
   const cmd = args?.cmd ?? args?.command ?? args?.input?.cmd ?? args?.input?.command;
@@ -147,20 +238,21 @@ function extractAssistantBlocks(entry: any): any[] {
 }
 
 function addSection(sections: TransferSection[], title: string, body: any, maxTextChars: number | null): void {
-  const text = String(body || '').trim();
+  // ✨ 图片/base64 屏蔽的唯一入口 — 所有进入转接文档的正文都在这里过一遍
+  // ✨ the single choke point where every body is stripped of embedded binary
+  const text = stripBinaryHunks(String(body || '')).trim();
   if (!text) return;
   const clipped = truncateText(text, maxTextChars);
   sections.push({ title, body: clipped.body, truncated: clipped.truncated });
 }
 
-function entrySections(entry: any, index: number, maxTextChars: number | null): TransferSection[] {
+function entrySections(entry: any, maxTextChars: number | null): TransferSection[] {
   const sections: TransferSection[] = [];
   const type = entry?.type;
   const payload = entry?.payload;
-  const prefix = `#${index + 1}`;
 
   if (type === 'user') {
-    addSection(sections, `${prefix} 用户输入`, contentText(entry?.message?.content), maxTextChars);
+    addSection(sections, `用户输入`, contentText(entry?.message?.content), maxTextChars);
     return sections;
   }
 
@@ -175,17 +267,17 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
       }
       if (block.type !== 'tool_use') continue;
       if (block.name === 'Bash' && typeof block.input?.command === 'string') {
-        addSection(sections, `${prefix} Bash 命令`, fence(block.input.command, 'bash'), maxTextChars);
+        addSection(sections, `Bash 命令`, fence(block.input.command, 'bash'), maxTextChars);
       } else if (block.name === 'Write') {
         const write = normalizeWriteInput(block.input);
-        if (write) addSection(sections, `${prefix} 写入文件 ${write.filePath}`, fence(write.content), maxTextChars);
+        if (write) addSection(sections, `写入文件 ${write.filePath}`, fence(write.content), maxTextChars);
       } else if (block.name === 'Edit') {
         const input = block.input || {};
         if (typeof input.old_string === 'string' || typeof input.new_string === 'string') {
           const filePath = typeof input.file_path === 'string' ? input.file_path : '(unknown file)';
           addSection(
             sections,
-            `${prefix} 编辑文件 ${filePath}`,
+            `编辑文件 ${filePath}`,
             [
               'old_string:',
               fence(input.old_string || ''),
@@ -199,13 +291,13 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
       } else {
         addSection(
           sections,
-          `${prefix} 工具调用 ${block.name || 'tool'}`,
+          `工具调用 ${block.name || 'tool'}`,
           fence(JSON.stringify(block.input || {}, null, 2), 'json'),
           maxTextChars,
         );
       }
     }
-    addSection(sections, `${prefix} 智能体回复`, textParts.join('\n\n'), maxTextChars);
+    addSection(sections, `智能体回复`, textParts.join('\n\n'), maxTextChars);
     return sections;
   }
 
@@ -213,7 +305,7 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
     if (payload?.type === 'message') {
       addSection(
         sections,
-        `${prefix} ${payload.role === 'assistant' ? '智能体回复' : payload.role === 'user' ? '用户消息' : '消息'}`,
+        `${payload.role === 'assistant' ? '智能体回复' : payload.role === 'user' ? '用户消息' : '消息'}`,
         contentText(payload.content),
         maxTextChars,
       );
@@ -221,21 +313,25 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
       if (payload.name === 'Write') {
         const args = parseJsonMaybe(payload.arguments);
         const write = normalizeWriteInput(payload.input ?? args?.input ?? args);
-        if (write) addSection(sections, `${prefix} 写入文件 ${write.filePath}`, fence(write.content), maxTextChars);
+        if (write) addSection(sections, `写入文件 ${write.filePath}`, fence(write.content), maxTextChars);
       } else {
         const cmd = functionCommand(payload);
-        if (cmd) addSection(sections, `${prefix} Bash 命令`, fence(cmd, 'bash'), maxTextChars);
+        if (cmd) addSection(sections, `Bash 命令`, fence(cmd, 'bash'), maxTextChars);
         else {
           addSection(
             sections,
-            `${prefix} 工具调用 ${payload.name || 'function_call'}`,
+            `工具调用 ${payload.name || 'function_call'}`,
             fence(payload.arguments || JSON.stringify(payload.input || {}, null, 2), 'json'),
             maxTextChars,
           );
         }
       }
     } else if (payload?.type === 'function_call_output') {
-      addSection(sections, `${prefix} 工具结果`, fence(functionOutputBody(payload.output)), maxTextChars);
+      addSection(sections, `工具结果`, fence(functionOutputBody(payload.output)), maxTextChars);
+    } else if (payload?.type === 'custom_tool_call_output') {
+      // aimux MCP 工具结果: 文字进文档, 内嵌图片换占位符
+      // aimux MCP tool result: text goes in, inline images become placeholders
+      addSection(sections, `工具结果`, fence(customToolOutputBody(payload.output)), maxTextChars);
     }
     return sections;
   }
@@ -244,7 +340,7 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
     if (payload?.type === 'agent_message' || payload?.type === 'user_message') {
       addSection(
         sections,
-        `${prefix} ${payload.type === 'agent_message' ? '智能体消息' : '用户消息'}`,
+        `${payload.type === 'agent_message' ? '智能体消息' : '用户消息'}`,
         payload.message,
         maxTextChars,
       );
@@ -252,22 +348,22 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
       for (const [filePath, change] of Object.entries(payload.changes)) {
         const diff = (change as any)?.unified_diff;
         if (typeof diff === 'string' && diff.trim()) {
-          addSection(sections, `${prefix} 补丁 ${filePath}`, fence(diff, 'diff'), maxTextChars);
+          addSection(sections, `补丁 ${filePath}`, fence(diff, 'diff'), maxTextChars);
         }
       }
     } else if (payload?.type === 'task_complete') {
-      addSection(sections, `${prefix} 任务完成事件`, `duration_ms: ${payload.duration_ms || 0}`, maxTextChars);
+      addSection(sections, `任务完成事件`, `duration_ms: ${payload.duration_ms || 0}`, maxTextChars);
     }
     return sections;
   }
 
   if (type === 'attachment') {
     const attachment = entry.attachment;
-    if (typeof attachment === 'string') addSection(sections, `${prefix} 附件`, attachment, maxTextChars);
+    if (typeof attachment === 'string') addSection(sections, `附件`, attachment, maxTextChars);
     else if (attachment?.content) {
       addSection(
         sections,
-        `${prefix} 附件 ${attachment.type || ''}`,
+        `附件 ${attachment.type || ''}`,
         JSON.stringify(attachment.content, null, 2),
         maxTextChars,
       );
@@ -278,30 +374,81 @@ function entrySections(entry: any, index: number, maxTextChars: number | null): 
 }
 
 function userMessageBody(entry: any): string {
-  if (entry?.type === 'user') return contentText(entry?.message?.content).trim();
+  if (entry?.type === 'user') return stripBinaryHunks(contentText(entry?.message?.content)).trim();
   if (entry?.type === 'response_item' && entry?.payload?.type === 'message' && entry?.payload?.role === 'user') {
-    return contentText(entry.payload.content).trim();
+    return stripBinaryHunks(contentText(entry.payload.content)).trim();
   }
   if (entry?.type === 'event_msg' && entry?.payload?.type === 'user_message') {
-    return String(entry.payload.message || '').trim();
+    return stripBinaryHunks(String(entry.payload.message || '')).trim();
   }
   if (entry?.type === 'user_message') {
-    return String(entry?.message ?? entry?.payload?.message ?? '').trim();
+    return stripBinaryHunks(String(entry?.message ?? entry?.payload?.message ?? '')).trim();
   }
   return '';
 }
 
+/*
+ * 流式提取转接数据: 逐行读 primary 与 .mobius.jsonl, 只保留轻量元组 (时间戳 +
+ * 已截断/已屏蔽的 section + 用户消息), 排序后再统一编号 — 全程不把整个文件读成
+ * 一个字符串, 也不把巨型记录留在堆里。
+ * Streaming extraction: both jsonl files are read line by line, only lightweight
+ * tuples (timestamp + stripped sections + user message) are kept; merged-order
+ * numbering is applied after the sort. The file is never one big string and
+ * giant records never linger on the heap.
+ */
 function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS }: any): any {
-  const records = readAllMergedJsonlRecords(jsonlPath);
+  const collected: Array<{
+    tsMs: number | null;
+    source: string;
+    index: number;
+    sections: TransferSection[];
+    userMessage: { timestamp: string | null; body: string } | null;
+  }> = [];
+  let skippedOversized = 0;
+  const ingest = (source: string) => (entry: any, index: number) => {
+    const sections = entrySections(entry, maxTextChars);
+    const body = userMessageBody(entry);
+    collected.push({
+      tsMs: parseTimestampMs(entry),
+      source,
+      index,
+      sections,
+      userMessage: body ? { timestamp: timestampIso(entry), body } : null,
+    });
+  };
+  const primary = forEachJsonlRecord(jsonlPath, ingest('primary'));
+  skippedOversized += primary.skippedOversized;
+  const mobius = forEachJsonlRecord(mobiusJsonlPathOf(jsonlPath), ingest('mobius'));
+  skippedOversized += mobius.skippedOversized;
+
+  collected.sort((a, b) => {
+    if (a.tsMs != null && b.tsMs != null && a.tsMs !== b.tsMs) return a.tsMs - b.tsMs;
+    if (a.tsMs == null && b.tsMs != null) return -1;
+    if (a.tsMs != null && b.tsMs == null) return 1;
+    if (a.source !== b.source) return a.source === 'primary' ? -1 : 1;
+    return a.index - b.index;
+  });
+
   const sections: TransferSection[] = [];
   const userMessages: TransferUserMessage[] = [];
-  for (let i = 0; i < records.length; i += 1) {
-    const entry = records[i].entry;
-    sections.push(...entrySections(entry, i, maxTextChars));
-    const body = userMessageBody(entry);
-    if (body) userMessages.push({ index: i + 1, timestamp: timestampIso(entry), body });
+  for (let i = 0; i < collected.length; i += 1) {
+    const record = collected[i];
+    const prefix = `#${i + 1}`;
+    for (const section of record.sections) {
+      sections.push({ title: `${prefix} ${section.title}`, body: section.body, truncated: section.truncated });
+    }
+    if (record.userMessage) {
+      userMessages.push({ index: i + 1, timestamp: record.userMessage.timestamp, body: record.userMessage.body });
+    }
   }
-  return { records, sections, userMessages };
+  if (skippedOversized > 0) {
+    sections.push({
+      title: `#${collected.length + 1} 转接提取说明`,
+      body: `有 ${skippedOversized} 条超过 ${MAX_JSONL_LINE_CHARS} 字符的单行记录被跳过（通常是内嵌图片等二进制数据）。`,
+      truncated: false,
+    });
+  }
+  return { records: collected, sections, userMessages, entryCount: collected.length, skippedOversized };
 }
 
 function buildFullTransferMarkdown({
@@ -328,11 +475,15 @@ function buildFullTransferMarkdown({
 
   let totalChars = header.length;
   let writtenSectionCount = 0;
+  // change_model 路径 maxTotalChars=null (不主动截断), 但仍要有 V8 硬上限兜底
+  // change_model passes maxTotalChars=null (no eager truncation); the hard cap
+  // below still guards the final join against V8's ~536M-char string limit.
+  const effectiveTotalLimit = maxTotalChars ?? HARD_TOTAL_CHARS;
   const bodyParts = [];
   for (const section of sections as TransferSection[]) {
     const part = `\n\n## ${section.title}\n\n${section.body}`;
-    if (maxTotalChars != null && totalChars + part.length > maxTotalChars) {
-      bodyParts.push(`\n\n## 已截断\n\n转接文档超过 ${maxTotalChars} 字，后续卡片未写入。`);
+    if (totalChars + part.length > effectiveTotalLimit) {
+      bodyParts.push(`\n\n## 已截断\n\n转接文档超过 ${effectiveTotalLimit} 字，后续卡片未写入。`);
       break;
     }
     totalChars += part.length;
@@ -366,14 +517,25 @@ function buildUserMessagesMarkdown({ sourceSession, targetSessionId, userMessage
     `- 生成时间: ${generatedAt}`,
   ].join('\n');
   if (userMessages.length === 0) return `${header}\n\n## 空记录\n\n旧 Session 暂未提取到用户消息。\n`;
-  const parts = userMessages.map((message: TransferUserMessage, index: number) => [
-    `## 用户消息 #${index + 1}`,
-    '',
-    `- 原记录序号: ${message.index}`,
-    ...(message.timestamp ? [`- 时间: ${message.timestamp}`] : []),
-    '',
-    message.body,
-  ].join('\n'));
+  const parts: string[] = [];
+  let totalChars = header.length;
+  for (let index = 0; index < userMessages.length; index += 1) {
+    const message = userMessages[index];
+    const part = [
+      `## 用户消息 #${index + 1}`,
+      '',
+      `- 原记录序号: ${message.index}`,
+      ...(message.timestamp ? [`- 时间: ${message.timestamp}`] : []),
+      '',
+      message.body,
+    ].join('\n');
+    if (totalChars + part.length > HARD_TOTAL_CHARS) {
+      parts.push(`## 已截断\n\n用户消息超过 ${HARD_TOTAL_CHARS} 字，后续消息未写入。`);
+      break;
+    }
+    totalChars += part.length;
+    parts.push(part);
+  }
   return `${header}\n\n${parts.join('\n\n')}\n`;
 }
 
