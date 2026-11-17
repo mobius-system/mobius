@@ -103,14 +103,9 @@ function relativeTime(iso: string | null): string {
   return new Date(iso).toLocaleDateString('zh-CN')
 }
 
-// 时间范围过滤选项: 按会话最近活跃时间筛选.
+// 时间范围: 已固定为全部历史 (不再暴露筛选控件).
+// Time range is fixed to all history; the filter control has been removed.
 type RangeKey = '1d' | '7d' | '30d' | 'all'
-const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
-  { value: '1d', label: '1天内' },
-  { value: '7d', label: '7天内' },
-  { value: '30d', label: '1个月内' },
-  { value: 'all', label: '全部' },
-]
 
 export function SearchModal({
   onClose,
@@ -143,7 +138,9 @@ export function SearchModal({
   const [err, setErr] = useState('')
   const [meta, setMeta] = useState<{ took_ms?: number; indexing?: boolean; unavailable?: number; truncated?: boolean } | null>(null)
   const [searched, setSearched] = useState(false) // 是否已发起过搜索 (区分初始空态 vs 无结果)
-  const [range, setRange] = useState<RangeKey>('7d')
+  // 时间范围固定为全部: 不再提供时间范围筛选, 直接搜索全部历史.
+  // The time range is fixed to "all"; the range filter is gone, searches always cover all history.
+  const range: RangeKey = 'all'
   // 搜索范围: scoped = 限定在传入的 projectId 内; all = 跨全部项目 (旧行为).
   // 有 projectId 上下文时默认 scoped, 让「在项目内搜索」成为一键可达的默认动作。
   const [scoped, setScoped] = useState(!!projectId)
@@ -151,7 +148,6 @@ export function SearchModal({
     ? String(projects.find((p: any) => String(p?.id) === String(projectId))?.name || '')
     : ''
   const activeProjectId = scoped && projectId ? String(projectId) : null
-  const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || '7天内'
   const reqId = useRef(0)
   const quickReqId = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -165,8 +161,9 @@ export function SearchModal({
   // 这既让上下文可复制，也避免点击整张结果卡时误跳到非预期片段。
   const [selectedFragment, setSelectedFragment] = useState<SelectedSearchFragment | null>(null)
   // 最新匹配选项的 ref: Enter 键 / 流式回调里读到最新值, 避免闭包陈旧.
-  const optsRef = useRef({ caseSensitive, wholeWord, range })
-  optsRef.current = { caseSensitive, wholeWord, range }
+  // Latest match options ref, so Enter / stream callbacks read fresh values instead of stale closures.
+  const optsRef = useRef({ caseSensitive, wholeWord })
+  optsRef.current = { caseSensitive, wholeWord }
   // 搜索范围 (scoped/all) 的 ref: Enter 键立即搜索时读到最新值.
   const activeProjectIdRef = useRef<string | null>(activeProjectId)
   activeProjectIdRef.current = activeProjectId
@@ -182,7 +179,7 @@ export function SearchModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [close, embedded])
 
-  const runSearch = (term: string, rangeArg: RangeKey = optsRef.current.range, cs: boolean = optsRef.current.caseSensitive, ww: boolean = optsRef.current.wholeWord) => {
+  const runSearch = (term: string, cs: boolean = optsRef.current.caseSensitive, ww: boolean = optsRef.current.wholeWord) => {
     const id = ++reqId.current
     abortRef.current?.abort()
     const query = term.trim()
@@ -193,7 +190,7 @@ export function SearchModal({
     const controller = new AbortController()
     abortRef.current = controller
     setLoading(true); setErr(''); setResults([]); setSearched(true); setMeta(null)
-    const params = new URLSearchParams({ q: query, limit: '50', range: rangeArg })
+    const params = new URLSearchParams({ q: query, limit: '50', range })
     if (activeProjectIdRef.current) params.set('project_id', activeProjectIdRef.current)
     if (cs) params.set('case', '1')
     if (ww) params.set('word', '1')
@@ -286,13 +283,14 @@ export function SearchModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
-  // 切换时间范围 / 大小写 / 全字 / 搜索范围: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
+  // 切换大小写 / 全字 / 搜索范围: 用当前关键词立即重搜 (显式动作, 不防抖; 空关键词不触发).
+  // Toggling case / whole-word / project scope re-runs the search immediately (explicit action, no debounce).
   useEffect(() => {
     if (q.trim().length < 2 && !(mode === 'quick' && q.trim())) return
     if (mode === 'quick') runQuickSearch(q)
     else runSearch(q)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, caseSensitive, wholeWord, scoped])
+  }, [caseSensitive, wholeWord, scoped])
 
   // 次级预览确认后 → 进入该 Session 并跳到指定命中片段所属的卡片.
   // 优先用片段 uuid (claude entry.uuid / codex entry.id), 缺失则用 timestamp 区间兜底 (见 JsonlView).
@@ -371,9 +369,9 @@ export function SearchModal({
         style={embedded
           ? { background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }
           : { background: 'var(--modal-bg)', border: '1px solid var(--border-color)', maxWidth: 'min(680px, calc(100vw - 32px))' }}>
-        {/* 头部: 关键词输入 + 范围/模式/时间范围控件行。模式在同一弹窗内切换，关键词保持不变。 */}
+        {/* 头部: 关键词输入 + 范围/模式控件行。模式在同一弹窗内切换，关键词保持不变。 */}
         {!embedded && <div className="shrink-0 border-b px-4 py-3" style={{ borderColor: 'var(--border-color)' }}>
-          {/* 控件行: 搜索范围 + 搜索模式 + 时间范围 同排 (范围区在左, 模式与时间范围靠右)。 */}
+          {/* 控件行: 搜索范围 + 搜索模式 同排 (范围区在左, 模式靠右)。 */}
           <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
             {projectId && <>
               <span className="shrink-0 text-[length:var(--fs-sm)]" style={{ color: 'var(--text-muted)' }}>范围</span>
@@ -398,13 +396,6 @@ export function SearchModal({
             </>}
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5">
               <SearchModeToggle mode={mode} onChange={setMode} />
-              {!isQuick && (
-                <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-                  className="h-7 flex-shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
-                  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--modal-bg)' }}>
-                  {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              )}
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -465,11 +456,6 @@ export function SearchModal({
             <button type="button" onClick={() => setWholeWord(v => !v)} title="全字匹配" aria-pressed={wholeWord}
               className="h-7 w-7 shrink-0 rounded-md border text-[length:var(--fs-sm)] font-semibold transition-colors"
               style={{ color: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--text-muted)', borderColor: wholeWord ? 'var(--accent-primary, #60a5fa)' : 'var(--border-color)', background: wholeWord ? 'rgba(96,165,250,0.12)' : 'transparent' }}>W</button>
-            <select value={range} onChange={e => setRange(e.target.value as RangeKey)} title="时间范围"
-              className="h-7 shrink-0 rounded-lg border px-1.5 text-[length:var(--fs-sm)] cursor-pointer focus:outline-none"
-              style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-              {RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
           </div>
         )}
 
@@ -564,7 +550,6 @@ export function SearchModal({
               {loading && results.length === 0 ? '正在搜索…' : ''}
               {searched && results.length > 0 ? `命中 ${results.length} 个会话${loading ? '…' : ''}` : ''}
               {meta?.took_ms != null ? ` · ${meta.took_ms} ms` : ''}
-              {` · 范围: ${rangeLabel}`}
               {caseSensitive || wholeWord ? ` · ${[caseSensitive ? '区分大小写' : '', wholeWord ? '全字匹配' : ''].filter(Boolean).join(' / ')}` : ''}
             </span>
             {meta?.indexing && <span role="status" style={{ color: '#f59e0b' }}>正在建立历史索引，结果暂不完整</span>}
