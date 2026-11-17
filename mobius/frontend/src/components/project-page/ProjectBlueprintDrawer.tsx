@@ -121,7 +121,7 @@ export function ProjectBlueprintDrawer({
               </div>
             }
           >
-            <ProjectBlueprintPanel key={projectId} projectId={projectId} openFileRequest={openFileRequest} />
+            <ProjectBlueprintPanel key={projectId} projectId={projectId} openFileRequest={openFileRequest?.projectId === projectId ? openFileRequest : undefined} />
           </Suspense>
         </div>
       </aside>
