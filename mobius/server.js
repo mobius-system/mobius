@@ -302,7 +302,8 @@ app.use('/mobile-builds', createMobileBuildsRouter(MOBILE_BUILDS_DIR));
 // 不放 public/ 是因为 vite 每次构建会清空该目录。
 const INSTALLERS_DIR = path.join(__dirname, 'installers');
 const { createBuildsRouter: createInstallersRouter } = require('./backend/middleware/builds-static');
-app.use('/installers', createInstallersRouter(INSTALLERS_DIR));
+// 用户会反复重下同一个文件名 (修好启动器后重试), 所以强制 no-cache (ETag 仍在, 命中时 304)。
+app.use('/installers', createInstallersRouter(INSTALLERS_DIR, { cacheControl: 'no-cache' }));
 
 app.get('*', (req, res, next) => {
   const p = req.path || '';

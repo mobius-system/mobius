@@ -3360,7 +3360,7 @@ const TERMINAL_INSTALL_OPTIONS = [
     label: 'Windows',
     sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
     command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v20.ps1 | iex',
-    note: '安装后重新打开 PowerShell 并运行 mobius；同时在文件夹和文件夹空白处添加“在Mobius终端中打开”与“在Mobius终端中打开（管理员权限）”右键菜单。',
+    note: '两种方式效果相同：下载的文件双击即可安装（被 SmartScreen 拦截时点「更多信息 → 仍要运行」）。安装后重新打开 PowerShell 并运行 mobius；同时在文件夹和文件夹空白处添加“在Mobius终端中打开”与“在Mobius终端中打开（管理员权限）”右键菜单。',
   },
 ] as const
 
@@ -3420,18 +3420,19 @@ export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
               {option.id === 'windows' && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <a href={`/installers/${WINDOWS_TUI_INSTALLER_FILE}`} download
-                    className="inline-flex items-center gap-1.5 text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium shrink-0"
-                    style={{ background: '#0a84ff', color: '#fff' }}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="relative mt-2">
+                  <div className="flex items-center gap-2 rounded-lg p-3 pr-20 text-[length:var(--fs-md)]"
+                    style={{ background: theme !== 'light' ? '#0f172a' : '#f1f5f9', color: theme !== 'light' ? '#e2e8f0' : '#1e293b', border: '1px solid var(--border-color)' }}>
+                    <svg className="w-4 h-4 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
                     </svg>
-                    下载双击安装包
+                    <span className="truncate">双击安装包 {WINDOWS_TUI_INSTALLER_FILE}</span>
+                  </div>
+                  <a href={`/installers/${WINDOWS_TUI_INSTALLER_FILE}`} download
+                    className="absolute top-1.5 right-1.5 px-2 h-7 rounded-md text-[length:var(--fs-sm)] border transition-colors flex items-center font-medium"
+                    style={{ background: 'var(--bg-card-hover)', borderColor: 'var(--border-color)', color: '#0a84ff' }}>
+                    下载
                   </a>
-                  <span className="text-[length:var(--fs-sm)]" style={{ color: muted }}>
-                    下载后双击即可安装，不用打开 PowerShell；若被 SmartScreen 拦截，点「更多信息 → 仍要运行」。
-                  </span>
                 </div>
               )}
               <div className="text-[length:var(--fs-sm)] mt-2 leading-relaxed" style={{ color: muted }}>{option.note}</div>

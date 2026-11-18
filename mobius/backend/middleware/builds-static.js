@@ -67,9 +67,16 @@ function sendMissing(res) {
   res.send("404 Not Found\n");
 }
 
-/** 创建挂在 /desktop-builds 或 /mobile-builds 下的路由。rootDir = 磁盘真实目录。 */
-function createBuildsRouter(rootDir) {
+/**
+ * 创建挂在 /desktop-builds 或 /mobile-builds 下的路由。rootDir = 磁盘真实目录。
+ * options.cacheControl 可覆盖默认缓存策略: 文件名固定但内容会更新的目录 (安装包)
+ * 用 no-cache, 修好一个文件后用户重新下载不会拿到浏览器缓存里那份坏的。
+ * cacheControl overrides the default policy for directories whose file name stays
+ * the same while its content changes, so a re-download never hits a stale cache.
+ */
+function createBuildsRouter(rootDir, options = {}) {
   const root = path.resolve(rootDir);
+  const cacheControl = options.cacheControl || null;
   // 用 Router: 挂载点前缀会被 express 剥掉, req.url/req.path 是相对路径。
   const router = require("express").Router();
   router.use((req, res, next) => {
@@ -87,7 +94,10 @@ function createBuildsRouter(rootDir) {
         abs,
         {
           lastModified: true,
-          headers: headersFor(path.basename(abs)),
+          headers: {
+            ...headersFor(path.basename(abs)),
+            ...(cacheControl ? { "Cache-Control": cacheControl } : {}),
+          },
         },
         (sendErr) => {
           if (!sendErr) return;
