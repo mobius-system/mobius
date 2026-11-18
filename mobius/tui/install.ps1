@@ -10,9 +10,9 @@
   文件夹空白处注册两个 Explorer 右键入口：“在Mobius终端中打开”与
   “在Mobius终端中打开（管理员权限）”。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v20.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v21.ps1 | iex
 .EXAMPLE
-  双击 installers/tui-install-v20.cmd (脚本内容由本文件生成, 见 scripts/build-install-cmd.py)
+  双击 installers/tui-install-v21.cmd (脚本内容由本文件生成, 见 scripts/build-install-cmd.py)
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'

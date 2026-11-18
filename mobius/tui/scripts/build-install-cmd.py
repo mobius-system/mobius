@@ -84,7 +84,7 @@ exit /b %MOBIUS_RC%
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the double-clickable Windows installer.")
-    parser.add_argument("--version", default="v20", help="installer version used in the file name")
+    parser.add_argument("--version", default="v21", help="installer version used in the file name")
     args = parser.parse_args()
 
     payload = STUB_PS1.read_text(encoding="utf-8")

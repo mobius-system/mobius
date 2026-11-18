@@ -3338,7 +3338,7 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
 // (未知扩展名 → application/octet-stream, 浏览器直接下载而不是内联显示)。
 // Windows double-click installer: a .cmd wrapper around install.ps1, served from
 // the same origin so the `download` attribute works and the file is never rendered.
-const WINDOWS_TUI_INSTALLER_FILE = 'tui-install-v20.cmd'
+const WINDOWS_TUI_INSTALLER_FILE = 'tui-install-v21.cmd'
 
 const TERMINAL_INSTALL_OPTIONS = [
   {
@@ -3359,7 +3359,7 @@ const TERMINAL_INSTALL_OPTIONS = [
     id: 'windows',
     label: 'Windows',
     sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
-    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v20.ps1 | iex',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v21.ps1 | iex',
     note: '两种方式效果相同：下载的文件双击即可安装（被 SmartScreen 拦截时点「更多信息 → 仍要运行」）。安装后重新打开 PowerShell 并运行 mobius；同时在文件夹和文件夹空白处添加“在Mobius终端中打开”与“在Mobius终端中打开（管理员权限）”右键菜单。',
   },
 ] as const
