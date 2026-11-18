@@ -9,6 +9,9 @@ rem
 rem  The stub is ASCII-only on purpose: cmd.exe decodes batch files with the
 rem  console code page, which would mangle UTF-8 Chinese. Everything the user
 rem  reads comes from the PowerShell payload appended below the marker.
+rem  Payload extraction stays on plain cmdlets on purpose: this machine runs
+rem  PowerShell in ConstrainedLanguage (AppLocker/WDAC), where New-Object and
+rem  other non-core .NET type creation fail. See the CLM notes in install.ps1.
 rem  cmd.exe executes this file line by line and every path here ends with
 rem  "exit /b" before the marker, so the payload is never parsed as batch.
 rem  The stub mentions the marker text itself, so the payload is located with
@@ -23,7 +26,7 @@ echo.
 echo Preparing the Mobius TUI installer...
 echo.
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $text = Get-Content -LiteralPath $env:MOBIUS_SELF -Raw -Encoding UTF8; $marker = '#__MOBIUS_INSTALLER_PAYLOAD__'; $at = $text.LastIndexOf($marker); if ($at -lt 0) { throw 'installer payload marker missing' }; $body = $text.Substring($at + $marker.Length).TrimStart(); [IO.File]::WriteAllText($env:MOBIUS_PAYLOAD, $body, (New-Object System.Text.UTF8Encoding($true))) } catch { Write-Host ('[X] ' + $_.Exception.Message) -ForegroundColor Red; exit 1 }"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $text = Get-Content -LiteralPath $env:MOBIUS_SELF -Raw -Encoding UTF8; $marker = '#__MOBIUS_INSTALLER_PAYLOAD__'; $at = $text.LastIndexOf($marker); if ($at -lt 0) { throw 'installer payload marker missing' }; $body = $text.Substring($at + $marker.Length).TrimStart(); Set-Content -LiteralPath $env:MOBIUS_PAYLOAD -Value $body -Encoding UTF8 } catch { Write-Host ('[X] ' + $_.Exception.Message) -ForegroundColor Red; exit 1 }"
 if errorlevel 1 (
     echo.
     echo [X] Could not unpack the installer. Please download the file again.
