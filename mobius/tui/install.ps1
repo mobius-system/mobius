@@ -10,7 +10,9 @@
   文件夹空白处注册两个 Explorer 右键入口：“在Mobius终端中打开”与
   “在Mobius终端中打开（管理员权限）”。
 .EXAMPLE
-  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v18.ps1 | iex
+  irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v20.ps1 | iex
+.EXAMPLE
+  双击 installers/tui-install-v20.cmd (脚本内容由本文件生成, 见 scripts/build-install-cmd.py)
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -321,13 +323,18 @@ Write-Host "右键文件夹或文件夹空白处，可选择: 在Mobius终端中
 try {
     Invoke-MobiusInstall
 } catch {
-    $errorLog = Join-Path $env:TEMP "mobius-install-v18-error.log"
+    $errorLog = Join-Path $env:TEMP "mobius-install-error.log"
     $errorText = $_ | Format-List * -Force | Out-String
     $errorText | Set-Content -Path $errorLog -Encoding UTF8
     Write-Host ""
     Err "Mobius 安装失败: $($_.Exception.Message)"
     Write-Host "完整错误日志: $errorLog" -ForegroundColor Yellow
     Write-Host $errorText -ForegroundColor DarkYellow
+    # 双击安装器 (tui-install-vNN.cmd) 自己会 pause, 这里只回报非零退出码;
+    # 只有 `irm | iex` 这种交互式调用才需要 Read-Host 把窗口留住.
+    # The double-click launcher pauses on its own, so it only needs a non-zero
+    # exit code here; the interactive `irm | iex` call still needs Read-Host.
+    if ($env:MOBIUS_INSTALL_LAUNCHER) { exit 1 }
     try { Read-Host "按 Enter 返回 PowerShell（窗口不会自动关闭）" | Out-Null } catch { }
     return
 }

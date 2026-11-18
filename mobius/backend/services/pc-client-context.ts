@@ -215,7 +215,7 @@ const MODE_PROMPTS: Record<ClientKind, Record<PcWorkMode, Record<ContextLanguage
       en: (id) =>
         `You are now authorized to use the registered remote_* MCP tools (backed by aimux) to connect to the following remote machine (the machine the current user is on): ${id}. `,
       zh: (id) =>
-        `你现在被授权使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器（当前用户所在机器）： ${id}，`,
+        `你现在被授权使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器（当前用户所在机器）： ${id}。如果没有必要，不要往中枢传输文件，尽量用mcp工具就地工作。`,
     },
   },
   desktop: {
@@ -266,8 +266,8 @@ function guiAuthorizationTail(aimuxId: string, language: ContextLanguage): strin
   return language === 'en'
     ? `This session is authorized to drive the graphical interface of ${aimuxId} with the registered remote_gui_* MCP tools (list windows, screenshot + outline, semantic press/setText, read text, wait, focus, record a window to MP4). ` +
       `GUI actions default to the ax_only policy — they go through the accessibility tree and never inject real mouse/keyboard input. ` +
-      `Prefer remote_gui_* over remote_exec_command whenever the task is a desktop UI operation.`
+      `Prefer remote_gui_* over remote_exec_command whenever the task is a desktop UI operation. Do not transfer file between devices or back to hub unless necessary, use mcp to work in place.`
     : `本会话已授权你使用已注册的 remote_gui_* MCP（GUI/计算机操作）工具操作 ${aimuxId} 的图形界面（枚举窗口、截图+元素大纲、语义点击/输入、读文本、等待、切前台）。` +
       `GUI 操作默认 ax_only 策略——只走无障碍语义路径，不注入真实键鼠输入。` +
-      `凡是桌面界面类操作，优先用 remote_gui_* 而不是 remote_exec_command。`;
+      `凡是桌面界面类操作，优先用 remote_gui_* 而不是 remote_exec_command。如果没有必要，不要往中枢传输文件，尽量用mcp工具就地工作。`;
 }

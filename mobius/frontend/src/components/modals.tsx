@@ -3333,6 +3333,13 @@ export function DesktopDownloadModal({ onClose }: { onClose: () => void }) {
 // 安装 Mobius 命令行终端 — Linux/macOS 走 npm，Windows 使用便携安装脚本。
 // Windows 脚本不要求预装 Node/管理员权限，并自动注册两个 Explorer 右键入口。
 // =====================================================================
+// Windows 双击安装包: mobius/tui/scripts/build-install-cmd.py 把 install.ps1 包进 .cmd,
+// 仓库内产物在 mobius/installers/, 由 server.js 挂在 /installers 下同源分发
+// (未知扩展名 → application/octet-stream, 浏览器直接下载而不是内联显示)。
+// Windows double-click installer: a .cmd wrapper around install.ps1, served from
+// the same origin so the `download` attribute works and the file is never rendered.
+const WINDOWS_TUI_INSTALLER_FILE = 'tui-install-v20.cmd'
+
 const TERMINAL_INSTALL_OPTIONS = [
   {
     id: 'linux',
@@ -3352,7 +3359,7 @@ const TERMINAL_INSTALL_OPTIONS = [
     id: 'windows',
     label: 'Windows',
     sub: 'PowerShell 5.1+ · 无需 Node.js、无需管理员权限',
-    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v19.ps1 | iex',
+    command: 'irm https://serve.nutshellai.cn/publish/auto/mobiustui/install-v20.ps1 | iex',
     note: '安装后重新打开 PowerShell 并运行 mobius；同时在文件夹和文件夹空白处添加“在Mobius终端中打开”与“在Mobius终端中打开（管理员权限）”右键菜单。',
   },
 ] as const
@@ -3412,6 +3419,21 @@ export function TerminalInstallModal({ onClose }: { onClose: () => void }) {
                   {copied === option.id ? '已复制' : '复制'}
                 </button>
               </div>
+              {option.id === 'windows' && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <a href={`/installers/${WINDOWS_TUI_INSTALLER_FILE}`} download
+                    className="inline-flex items-center gap-1.5 text-[length:var(--fs-md)] px-3 py-1 rounded-lg font-medium shrink-0"
+                    style={{ background: '#0a84ff', color: '#fff' }}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    下载双击安装包
+                  </a>
+                  <span className="text-[length:var(--fs-sm)]" style={{ color: muted }}>
+                    下载后双击即可安装，不用打开 PowerShell；若被 SmartScreen 拦截，点「更多信息 → 仍要运行」。
+                  </span>
+                </div>
+              )}
               <div className="text-[length:var(--fs-sm)] mt-2 leading-relaxed" style={{ color: muted }}>{option.note}</div>
             </section>
           ))}

@@ -295,13 +295,22 @@ app.use('/design', createDesignMockupsRouter(DESIGN_MOCKUPS_DIR));
 const { createBuildsRouter: createMobileBuildsRouter } = require('./backend/middleware/builds-static');
 app.use('/mobile-builds', createMobileBuildsRouter(MOBILE_BUILDS_DIR));
 
+// ===== 命令行终端安装包分发 =====
+// mobius/installers/ 下是 TUI 的可双击安装包 (.cmd), 由
+// mobius/tui/scripts/build-install-cmd.py 从 install.ps1 生成后随仓库提交。
+// 走 createBuildsRouter: 未知扩展名 → application/octet-stream, 浏览器直接下载;
+// 不放 public/ 是因为 vite 每次构建会清空该目录。
+const INSTALLERS_DIR = path.join(__dirname, 'installers');
+const { createBuildsRouter: createInstallersRouter } = require('./backend/middleware/builds-static');
+app.use('/installers', createInstallersRouter(INSTALLERS_DIR));
+
 app.get('*', (req, res, next) => {
   const p = req.path || '';
   if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {
     return next();
   }
   // 下载分发前缀: 中间件已对未命中返回 404; 这里再显式排除, 双保险避免 SPA 把它当路由回退到 index.html。
-  if (p.startsWith('/desktop-builds') || p.startsWith('/mobile-builds')) {
+  if (p.startsWith('/desktop-builds') || p.startsWith('/mobile-builds') || p.startsWith('/installers')) {
     res.status(404);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');

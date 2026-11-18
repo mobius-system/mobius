@@ -30,8 +30,12 @@ repos:
       # 符号链接合法性
       - id: check-symlinks
       # 行尾统一 (避免 LF/CRLF 混用)
+      # .cmd/.bat 例外: cmd.exe 按 CRLF 解析批处理, 改成 LF 有隐患
+      # (installers/tui-install-*.cmd 由脚本以 CRLF 生成, 见 mobius/tui/scripts/build-install-cmd.py)。
+      # Windows batch files stay CRLF: cmd.exe parses them line by line with \r\n.
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: \.(cmd|bat)$
       # 配置文件语法
       - id: check-yaml
         args: [--allow-multiple-documents]
