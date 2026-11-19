@@ -9,7 +9,11 @@ import 'katex/dist/katex.min.css'
 import { installStaleChunkHandler } from './services/handle-stale-chunk'
 import { installDebugPanel } from './services/install-debug-panel'
 import { effectiveFontTierValues, applyFontTierValues } from './services/font-tiers'
+import { pruneStorageForQuota } from './services/storage-budget'
 
+// 启动即把可重建缓存压回预算: 同源 code-server 与本前端共享 localStorage 配额,
+// 缓存堆满会让 code-server 打开工作区时抛 QuotaExceededError (profileAssociations).
+pruneStorageForQuota()
 // 字体档位覆写 (外观→字体设置 保存的值) 需在首帧前生效, 避免闪回默认字号
 applyFontTierValues(effectiveFontTierValues())
 installStaleChunkHandler()

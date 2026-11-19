@@ -8,6 +8,7 @@ import { AlertTriangle, Archive, BookOpen, Check, ChevronsLeft, ChevronsRight, C
 import { api, useStore } from '../store'
 import { AssistantPresetModal } from './assistant-preset-modal'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import { prepareStorageForCodeServer } from '../services/storage-budget'
 import {
   hasVoiceCommand,
   formatVoiceSeconds,
@@ -3522,6 +3523,8 @@ export function AssistantChat() {
     const token = (typeof localStorage !== 'undefined' && localStorage.getItem('cc-token')) || ''
     if (!token) return
     const url = `/code-server/${encodeURIComponent(user.id)}__xm-skills/?_jwt=${encodeURIComponent(token)}`
+    // 同源 code-server 也要写 localStorage, 打开前先给缓存腾余量.
+    prepareStorageForCodeServer()
     window.open(url, '_blank', 'noopener,noreferrer')
   }, [user?.id, user?.role])
 

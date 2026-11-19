@@ -72,6 +72,7 @@
     "test:easy-workspace-keepalive": "node frontend/tests/easy-workspace-keepalive.test.mjs",
     "test:easy-toggle-entry": "node frontend/tests/easy-toggle-entry.test.mjs",
     "test:easy-route-state": "npx tsx frontend/tests/easy-route-state.test.mjs",
+    "test:storage-budget": "npx tsx frontend/tests/storage-budget.test.mjs",
     "test:display-dedup-priority": "node frontend/tests/display-dedup-priority.test.mjs",
     "test:codex-mcp-command-card": "node frontend/tests/codex-mcp-command-card.test.mjs",
     "test:session-reminder-hook": "node --require tsx/cjs tests/session-reminder-hook.js",

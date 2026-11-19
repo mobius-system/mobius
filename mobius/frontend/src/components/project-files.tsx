@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { Cable, Copy, ExternalLink, FilePlus2, FolderPlus, Loader2, MonitorPlay, Play, RefreshCw, Upload } from 'lucide-react'
 import { api, HIDDEN_FOLDER_NAME, useStore } from '../store'
 import { UnifiedButton } from './unified-button-group'
+import { prepareStorageForCodeServer } from '../services/storage-budget'
 
 // =====================================================================
 // ProjectFilesCard — 浏览项目 bind_path 下的文件树.
@@ -216,6 +217,8 @@ export function buildVscodeUrl(base: string, bindPath: string, filePath?: string
   if (token && trimmed.startsWith('/code-server/')) {
     url += `&_jwt=${encodeURIComponent(token)}`
   }
+  // 交给浏览器前先给同源 code-server 腾出 localStorage 余量 (profileAssociations 写入无兜底).
+  prepareStorageForCodeServer()
   return url
 }
 
@@ -231,6 +234,7 @@ export function buildCodeServerProxyUrl(base: string, port: number | string): st
   if (token && trimmed.startsWith('/code-server/')) {
     url += `?_jwt=${encodeURIComponent(token)}`
   }
+  prepareStorageForCodeServer()
   return url
 }
 

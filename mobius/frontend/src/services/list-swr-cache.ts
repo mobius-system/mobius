@@ -7,15 +7,19 @@
 // 与 shell.tsx 里 RecentSessionsPanel 的私有缓存同款模式, 抽出来给页面级列表复用:
 //   - 按用户隔离 key (不同账号互不可见);
 //   - 写入失败 (配额满/隐私模式) 静默忽略, 不影响主流程;
+//   - 写入统一走 storage-budget 的 safeSetCacheItem: 配额满时先清理同类缓存再重试,
+//     保证同源 code-server 始终有 localStorage 余量;
 //   - 只缓存数组本体, 损坏/超限时读侧直接判 miss。
 //
 // 两个变体:
 //   - readListCache / writeListCache: 整份列表 (项目列表 / 某项目下的 issues);
 //   - readMapCache / writeMapCache: id -> 记录 的映射, 供「一批卡片各拉一份概览」的场景
 //     (UserPage 项目卡片的研究/任务概览) 复用同一套 key 约定与失败策略。
+import { safeSetCacheItem } from './storage-budget'
 
-// 单列表缓存上限 (字符数): projects 全量 ~600KB, 5MB 配额下留足多列表共存空间。
-const MAX_CACHE_CHARS = 3_000_000
+// 单列表缓存上限 (字符数): projects 全量 ~600KB. 同源 code-server 也要用 localStorage,
+// 单条缓存不再允许吃满大半配额 (见 services/storage-budget.ts)。
+const MAX_CACHE_CHARS = 800_000
 
 // 映射缓存的键数上限: 卡片概览单条约 1.6KB, 96 条约 150KB, 避免长期浏览后无限增长。
 const MAX_MAP_KEYS = 96
@@ -54,7 +58,7 @@ export function writeListCache<T>(scope: string, userId: string | undefined, lis
   try {
     const payload = JSON.stringify({ ts: Date.now(), list })
     if (payload.length > MAX_CACHE_CHARS) return
-    window.localStorage.setItem(key, payload)
+    safeSetCacheItem(key, payload)
   } catch {
     /* 配额满或隐私模式: 忽略 */
   }
@@ -86,7 +90,7 @@ export function writeMapCache<T>(scope: string, userId: string | undefined, fres
     Object.keys(merged).slice(0, MAX_MAP_KEYS).forEach((id) => { map[id] = merged[id] })
     const payload = JSON.stringify({ ts: Date.now(), map })
     if (payload.length > MAX_CACHE_CHARS) return
-    window.localStorage.setItem(key, payload)
+    safeSetCacheItem(key, payload)
   } catch {
     /* 配额满或隐私模式: 忽略 */
   }

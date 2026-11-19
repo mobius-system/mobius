@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { lazyWithRetry } from '../services/handle-stale-chunk'
 import { warmCreateMenuListsOnIdle } from '../services/warm-create-lists'
+import { safeSetCacheItem } from '../services/storage-budget'
 import { useStore, api } from '../store'
 import { GlobalCreateMenu, type CreateKind } from './global-create'
 import { AimuxStatusBadge } from './aimux-status-badge'
@@ -475,11 +476,8 @@ function readRecentCache(userId?: string): { list: RecentSession[]; ts: number }
 function writeRecentCache(userId: string | undefined, list: RecentSession[]) {
   const key = recentSessionsCacheKey(userId)
   if (!key) return
-  try {
-    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), list }))
-  } catch {
-    /* 配额满或隐私模式: 忽略, 不影响主流程 */
-  }
+  // 配额满或隐私模式: 忽略, 不影响主流程 (safeSetCacheItem 内部会先清理可重建缓存).
+  safeSetCacheItem(key, JSON.stringify({ ts: Date.now(), list }))
 }
 
 // 项目筛选 chip 样式: 选中态用 accent-primary 高亮 (主题自适应), 未选态中性描边 + hover。
