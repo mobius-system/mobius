@@ -7247,6 +7247,24 @@ body:has([data-page="easy-mode"]) [data-testid="assistant-bubble"] { display: no
 }
 
 /* =====================================================================
+   文件编辑栏占据右侧时, 自动收起左侧会话栏
+   ---------------------------------------------------------------------
+   右侧文件编辑栏 (简易模式 easyFilesMounted / 常规模式 fileEditorOpen,
+   同为 data-testid="easy-files-sidebar") 一出现, 左侧「任务会话/近期会话」
+   栏就整条让位: 文件栏默认约占视口 44%, 再叠加 288px 会话栏, 对话区会被
+   挤到很窄。文件栏关闭后会话栏自动回来 (纯 CSS 显隐, 栏内滚动位置/范围
+   标签/分页状态都保留)。
+   仅桌面端生效: 移动端两侧都是 portal 抽屉 (带 .mobius-drawer), 由 :not()
+   排除, 否则抽屉会被误藏。收起态的文件栏带 .hidden (display:none), 同样排除。
+   ====================================================================== */
+@media (min-width: 901px) {
+  body:has(aside[data-testid="easy-files-sidebar"]:not(.hidden):not(.mobius-drawer))
+    aside[data-testid="issue-sessions-sidebar"]:not(.mobius-drawer) {
+    display: none !important;
+  }
+}
+
+/* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.
    全面窄屏清查在「移动端适配」任务统一进行, 不影响桌面端.

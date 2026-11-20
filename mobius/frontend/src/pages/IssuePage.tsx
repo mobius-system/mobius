@@ -539,6 +539,7 @@ export default function IssuePage() {
           minWidth={200}
           maxWidth={480}
           side="left"
+          data-testid="issue-sessions-sidebar"
           className="border-r flex flex-col"
           style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           {/* Issue 元数据 (可整体隐藏: 隐藏后靠会话范围栏的「显示任务信息」按钮恢复).
