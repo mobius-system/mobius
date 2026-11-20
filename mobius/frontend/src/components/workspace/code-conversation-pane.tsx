@@ -1274,6 +1274,32 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
   // 是否为可预览的 Markdown 文件 (非二进制/未截断) — 控制右上角预览切换按钮的显示.
   const mdFile = !!selected && /\.(md|markdown)$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
   const htmlFile = !!selected && /\.html?$/i.test(selected.name) && !!fileData && !fileData.binary && !fileData.truncated
+  // 收起文件树后的「显示文件列表」恢复入口: 有打开文件时并进标签栏最左侧 (不再单独占一行),
+  // 没有标签栏时退回原来的独立一行, 保证入口始终在.
+  // Restore button for the collapsed file tree: merged into the left edge of the tab bar when
+  // tabs exist (no dedicated row), falling back to its own row when there are no tabs.
+  function renderShowFileTreeButton(inTabBar: boolean) {
+    return (
+      <button
+        type="button"
+        onClick={() => setFileTreeHidden(false)}
+        title="显示文件列表"
+        aria-label="显示文件列表"
+        aria-expanded={false}
+        autoFocus
+        className={inTabBar
+          ? `inline-flex h-8 flex-shrink-0 items-center gap-1.5 border-r px-2 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`
+          : `inline-flex h-6 items-center gap-1.5 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
+        style={{
+          color: cc.fg,
+          ...(inTabBar ? { borderColor: cc.border } : {}),
+        }}
+      >
+        <PanelLeftOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+        显示文件列表
+      </button>
+    )
+  }
 
   return (
     <div className={blueprint ? 'flex h-full min-h-0 w-full' : `contents${mobileListMode ? (mobileShowTree ? ' cc-mobile-list' : ' cc-mobile-editor') : ''}`}>
@@ -1556,21 +1582,10 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         // Blueprint variant: the preview swallows the width left over by the tree, so no empty strip
         style={{ background: cc.bg, color: cc.fg, ...(blueprint ? { flexGrow: 1, flexBasis: 0, maxWidth: 'none' } : {}) }}
       >
-        {hideFileTree && (
+        {/* 文件树收起且没有任何打开文件 (无标签栏) 时才单独占一行; 有标签栏时按钮并到其最左侧. */}
+        {hideFileTree && tabs.length === 0 && (
           <div className="flex h-8 flex-shrink-0 items-center border-b px-2" style={{ borderColor: cc.border }}>
-            <button
-              type="button"
-              onClick={() => setFileTreeHidden(false)}
-              title="显示文件列表"
-              aria-label="显示文件列表"
-              aria-expanded={false}
-              autoFocus
-              className={`inline-flex h-6 items-center gap-1.5 rounded px-1.5 text-[length:var(--fs-sm)] transition-colors ${cc.hover}`}
-              style={{ color: cc.fg }}
-            >
-              <PanelLeftOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
-              显示文件列表
-            </button>
+            {renderShowFileTreeButton(false)}
           </div>
         )}
         {/* 移动端单列交互: 从编辑器返回文件树 (顶部左侧返回按钮) */}
@@ -1590,47 +1605,53 @@ export function CodeConversationPane({ projectId, bindPath, vscodeWebUrl, sessio
         {/* ★ 多 Tab 标签栏: 每个打开的文件一个 Tab; 点击切换, 中键或 × 关闭, 圆点 = 未保存 */}
         {tabs.length > 0 && (
           <div
-            role="tablist"
-            aria-label="打开的文件"
-            className="flex h-8 flex-shrink-0 items-stretch overflow-x-auto border-b"
+            className="flex h-8 flex-shrink-0 items-stretch border-b"
             style={{ borderColor: cc.border, background: skin === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}
           >
-            {tabs.map(tab => {
-              const isActive = tab.key === activeKey
-              return (
-                <div
-                  key={tab.key}
-                  role="tab"
-                  aria-selected={isActive}
-                  title={tab.entry.abs_path}
-                  onClick={() => setActiveKey(tab.key)}
-                  onAuxClick={e => { if (e.button === 1) { e.preventDefault(); closeTab(tab.key) } }}
-                  className={`group relative flex min-w-0 max-w-[220px] flex-shrink-0 cursor-pointer select-none items-center gap-1.5 border-r pl-2.5 pr-1.5 transition-colors ${cc.hover}`}
-                  style={{
-                    borderColor: cc.border,
-                    background: isActive ? cc.bg : undefined,
-                    color: isActive ? cc.fg : cc.muted,
-                    boxShadow: isActive ? 'inset 0 2px 0 0 #3b82f6' : undefined,
-                  }}
-                >
-                  <FileTypeIcon name={tab.entry.name} className="h-4 w-4" />
-                  <span className="truncate text-[length:var(--fs-md)]">{tab.entry.name}</span>
-                  {tab.dirty && (
-                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full group-hover:opacity-0" style={{ background: cc.accent }} title="已修改未保存" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); closeTab(tab.key) }}
-                    title="关闭标签页"
-                    aria-label={`关闭 ${tab.entry.name}`}
-                    className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-opacity ${cc.hover} ${tab.dirty ? 'opacity-0 group-hover:opacity-100' : 'opacity-60 hover:opacity-100'}`}
-                    style={{ color: isActive ? cc.fg : cc.muted }}
+            {/* 「显示文件列表」固定在标签栏最左侧 (不随 Tab 横向滚动). */}
+            {hideFileTree && renderShowFileTreeButton(true)}
+            <div
+              role="tablist"
+              aria-label="打开的文件"
+              className="flex min-w-0 flex-1 items-stretch overflow-x-auto"
+            >
+              {tabs.map(tab => {
+                const isActive = tab.key === activeKey
+                return (
+                  <div
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={isActive}
+                    title={tab.entry.abs_path}
+                    onClick={() => setActiveKey(tab.key)}
+                    onAuxClick={e => { if (e.button === 1) { e.preventDefault(); closeTab(tab.key) } }}
+                    className={`group relative flex min-w-0 max-w-[220px] flex-shrink-0 cursor-pointer select-none items-center gap-1.5 border-r pl-2.5 pr-1.5 transition-colors ${cc.hover}`}
+                    style={{
+                      borderColor: cc.border,
+                      background: isActive ? cc.bg : undefined,
+                      color: isActive ? cc.fg : cc.muted,
+                      boxShadow: isActive ? 'inset 0 2px 0 0 #3b82f6' : undefined,
+                    }}
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )
-            })}
+                    <FileTypeIcon name={tab.entry.name} className="h-4 w-4" />
+                    <span className="truncate text-[length:var(--fs-md)]">{tab.entry.name}</span>
+                    {tab.dirty && (
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full group-hover:opacity-0" style={{ background: cc.accent }} title="已修改未保存" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); closeTab(tab.key) }}
+                      title="关闭标签页"
+                      aria-label={`关闭 ${tab.entry.name}`}
+                      className={`inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-opacity ${cc.hover} ${tab.dirty ? 'opacity-0 group-hover:opacity-100' : 'opacity-60 hover:opacity-100'}`}
+                      style={{ color: isActive ? cc.fg : cc.muted }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 
