@@ -40,6 +40,31 @@ export function pidAlive(
   try { probe(pid, 0); return true } catch (e: any) { return e?.code === 'EPERM' }
 }
 
+/** A daemon that has not written its heartbeat for this long is gone. */
+export const DAEMON_HEARTBEAT_STALE_MS = 30_000
+
+/*
+ * Whether the recorded daemon is still the process this owner started.
+ *
+ * A live PID is not proof: the OS recycles PIDs (so an unrelated process can
+ * inherit the number), and a defunct/zombie process still answers kill(pid, 0).
+ * The daemon writes `daemon_heartbeat_at` every 5s and nobody else writes it,
+ * so a fresh value is the only trustworthy "alive" signal. Older daemons do
+ * not write the field; for them fall back to the PID check.
+ */
+export function daemonAlive(
+  runtime: { pid?: number; daemon_heartbeat_at?: number } | null | undefined,
+  now = Date.now(),
+  probe: (pid: number) => boolean = pidAlive,
+): boolean {
+  const beat = runtime?.daemon_heartbeat_at
+  if (typeof beat === 'number' && beat > 0) {
+    return now - beat <= DAEMON_HEARTBEAT_STALE_MS
+  }
+  const pid = runtime?.pid
+  return typeof pid === 'number' && Number.isFinite(pid) && pid > 0 && probe(pid)
+}
+
 /*
  * Build the reverse connection arguments shared by both clients.
  */

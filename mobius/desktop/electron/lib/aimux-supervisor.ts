@@ -2,7 +2,7 @@ import { app } from "electron";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { pidAlive, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, reverseConnectArgs, type GuiMode } from "../../../tui/src/lib/aimux-protocol";
+import { daemonAlive, pidAlive, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, reverseConnectArgs, type GuiMode } from "../../../tui/src/lib/aimux-protocol";
 import { windowsElevated } from "../../../tui/src/lib/windows-admin";
 
 export type AimuxState = "stopped" | "starting" | "connected" | "failed" | "disabled";
@@ -29,6 +29,7 @@ interface RuntimeRecord {
   last_feed_watchdog?: number;
   need_external_restart?: boolean;
   realtime_healthy_display?: boolean;
+  daemon_heartbeat_at?: number;
 }
 
 export function aimuxLogPath(): string {
@@ -131,9 +132,15 @@ export class AimuxSupervisor {
   }
 
   private daemonPid(): number | undefined {
-    const recorded = this.readRuntime().pid;
-    if (recorded && pidAlive(recorded)) return recorded;
-    return this.spawnedPid && pidAlive(this.spawnedPid) ? this.spawnedPid : undefined;
+    // A recycled PID (or a zombie) still answers pidAlive. Trust the daemon's
+    // own heartbeat when it is present; older daemons fall back to the PID.
+    const runtime = this.readRuntime();
+    if (daemonAlive(runtime)) return runtime.pid;
+    // The child we just spawned has no runtime evidence yet; trust it only
+    // during the spawn grace, so a later PID reuse cannot keep it "alive".
+    const fresh = this.spawnedPid && this.spawnedAt
+      && Date.now() - this.spawnedAt < (this.opts.spawnGraceMs ?? 90_000);
+    return fresh && pidAlive(this.spawnedPid!) ? this.spawnedPid : undefined;
   }
 
   private ensureDaemon(): void {

@@ -9,6 +9,7 @@ import { render } from 'ink-testing-library'
 import { AimuxStatusLine } from '../src/components/AimuxStatus.js'
 import { AimuxSupervisor, probeAimuxBridgeConnection, BUNDLE_VER, bundleArch, bundleUrl, spawnLauncher, ensureFromBundle, ensureAimux, downloadBundleForTest, reverseConnectArgs, pickSilentFlag, alignTarget, compareAimuxVersions, followCheckIntervalMs, fetchServerAimuxVersion, aimuxLogPath, bundleHealthCheckCode, tuiAimuxIdentifier, AIMUX_VERSION, tuiGuiAuthorized, setTuiGuiAuthorized, pickEnableGuiFlag, pickGuiNoElevateFlag, tuiGuiMode, tuiGuiNoElevate, setTuiGuiMode, readGuiModeForTest, pidAlive, aimuxWorkspaceHash, guiModeAvailability, guiModeOptions, pickGuiArgs, hasGuiSupport, effectiveGuiMode } from '../src/aimux.js'
 import { aimuxVersionLabel } from '../src/components/AimuxStatus.js'
+import { daemonAlive, DAEMON_HEARTBEAT_STALE_MS } from '../src/lib/aimux-protocol.js'
 import { WelcomeCard } from '../src/components/Chat.js'
 import { parseElevatedGroups } from '../src/lib/windows-admin.js'
 
@@ -472,6 +473,27 @@ function testAlignTarget() {
   ok(alignTarget('0.3.71', '0.3.71') === '0.3.71', 'an exact match targets that same version (no swap happens)')
 }
 
+function testDaemonAlive() {
+  console.log('\n[AIMUX 6j] daemon liveness: the heartbeat beats a live PID')
+  const now = 1_000_000
+  const dead = () => false
+  const alive = () => true
+
+  ok(daemonAlive({ pid: 123, daemon_heartbeat_at: now - 1000 }, now, dead) === true,
+    'a fresh heartbeat proves liveness even when kill(0) fails (defunct process)')
+  ok(daemonAlive({ pid: 123, daemon_heartbeat_at: now - DAEMON_HEARTBEAT_STALE_MS - 1 }, now, alive) === false,
+    'a stale heartbeat plus a live PID means the number was recycled')
+  ok(daemonAlive({ pid: 123, daemon_heartbeat_at: now - DAEMON_HEARTBEAT_STALE_MS }, now, dead) === true,
+    'exactly at the threshold still counts as alive')
+  ok(daemonAlive({ pid: 123 }, now, alive) === true,
+    'an older daemon without the field still uses the PID check')
+  ok(daemonAlive({ pid: 123 }, now, dead) === false,
+    'missing field and a dead PID is dead')
+  ok(daemonAlive(null, now, alive) === false, 'no runtime record is not alive')
+  ok(daemonAlive({ daemon_heartbeat_at: now - 5000 }, now, dead) === true,
+    'a fresh heartbeat alone is enough')
+}
+
 function testWelcomeCardAimuxVersion() {
   console.log('\n[AIMUX 6i] the welcome card reports the running aimux version')
   ok(aimuxVersionLabel({ state: 'connected', version: '0.3.83' }) === 'v0.3.83', 'the running version is shown')
@@ -677,6 +699,7 @@ async function main() {
   testAlignTarget()
   testFollowServerVersion()
   testWelcomeCardAimuxVersion()
+  testDaemonAlive()
   await testFetchServerAimuxVersion()
   await testEnsureAimuxVersionSwap()
   testAimuxIdentifierScopesWorkspace()

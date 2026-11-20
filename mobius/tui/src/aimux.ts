@@ -13,7 +13,7 @@ import { Readable } from 'node:stream'
 import extract from 'extract-zip'
 import { mobiusHome } from './config.js'
 import { windowsElevated } from './lib/windows-admin.js'
-import { alignTarget, aimuxWorkspaceHash, pidAlive, reverseConnectArgs, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, currentUsername, AIMUX_TARGET_VERSION, type GuiMode } from './lib/aimux-protocol.js'
+import { alignTarget, aimuxWorkspaceHash, daemonAlive, pidAlive, reverseConnectArgs, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, currentUsername, AIMUX_TARGET_VERSION, type GuiMode } from './lib/aimux-protocol.js'
 export { alignTarget, aimuxWorkspaceHash, pidAlive, reverseConnectArgs, pickSilentFlag, pickEnableGuiFlag, pickGuiNoElevateFlag, pickGuiArgs, type GuiMode } from './lib/aimux-protocol.js'
 
 export type AimuxState = 'starting' | 'connected' | 'failed' | 'stopped' | 'disabled'
@@ -609,7 +609,7 @@ async function ensureRuntimeDir(): Promise<void> {
   await fs.mkdir(aimuxRuntimeDir(), { recursive: true, mode: 0o700 })
 }
 
-interface RuntimeRecord { pid?: number; last_feed_watchdog?: number; need_external_restart?: boolean; realtime_healthy_display?: boolean; identifier?: string; launched_at?: number }
+interface RuntimeRecord { pid?: number; last_feed_watchdog?: number; need_external_restart?: boolean; realtime_healthy_display?: boolean; identifier?: string; launched_at?: number; daemon_heartbeat_at?: number }
 async function readRuntime(hash: string): Promise<RuntimeRecord | null> {
   try {
     return JSON.parse(await fs.readFile(runtimePath(hash), 'utf8')) as RuntimeRecord
@@ -744,8 +744,7 @@ export class AimuxSupervisor {
   private async ensureDaemon(): Promise<void> {
     if (this.stopping) return
     const current = await readRuntime(this.hash)
-    const pid = current?.pid ?? null
-    if (current && pid !== null && pidAlive(pid)) {
+    if (current && daemonAlive(current)) {
       await touchWatchdog(this.hash)
       this.opts.onStatus({ state: 'starting', phase: 'heartbeat', detail: 'AIMUX runtime 已存在，复用中…', identifier: this.opts.identifier })
       return
@@ -757,8 +756,7 @@ export class AimuxSupervisor {
   private async spawnDaemon(): Promise<void> {
     if (this.stopping) return
       const current = await readRuntime(this.hash)
-      const pid = current?.pid ?? null
-      if (pid !== null && pidAlive(pid)) { await touchWatchdog(this.hash); return }
+      if (current && daemonAlive(current)) { await touchWatchdog(this.hash); return }
       const { server, token, identifier, onStatus } = this.opts
       onStatus({ state: 'starting', phase: 'connecting', detail: '正在启动 AIMUX 守护进程…', identifier, attempt: this.reconnectAttempt })
       const gui = resolvedGuiArgs()
@@ -807,7 +805,9 @@ export class AimuxSupervisor {
       await this.updateRuntimeHealth(false)
       const runtime = await readRuntime(this.hash)
       const pid = runtime?.pid ?? null
-      const alive = pid !== null && pidAlive(pid)
+      // A reused PID (or a defunct process) still answers pidAlive; the daemon's
+      // own heartbeat is what distinguishes "still running" from "number taken".
+      const alive = daemonAlive(runtime)
       // Runtime state on disk means the daemon got past its own start — which on
       // Windows may have meant an elevation prompt — so the attempt produced
       // something and the retry budget is not the thing to withhold.
@@ -1168,8 +1168,12 @@ export async function restartAimuxConnectionForGuiChange(): Promise<void> {
  *  不这么做的话，新 supervisor 会按 pid 复用到刚升级前的旧 daemon。 */
 async function stopDaemonFromRuntime(): Promise<void> {
   const hash = aimuxWorkspaceHash()
-  const pid = (await readRuntime(hash))?.pid ?? null
-  if (pid !== null && pidAlive(pid)) {
+  const runtime = await readRuntime(hash)
+  const pid = runtime?.pid ?? null
+  // Only signal the PID when the daemon's own heartbeat (or, for an old daemon,
+  // the PID check) says this is still our process; a recycled PID must not be
+  // killed just because the runtime file still names it.
+  if (pid !== null && daemonAlive(runtime)) {
     // EPERM means the daemon is elevated and not ours to signal; waiting for it
     // to die would just stall the caller, so leave it to its own watchdog.
     let ours = true
