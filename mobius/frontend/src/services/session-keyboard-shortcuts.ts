@@ -18,7 +18,10 @@ export function installSessionKeyboardShortcuts(options: {
       if (!input || input.disabled || !input.getClientRects().length) return
       event.preventDefault()
       event.stopPropagation()
-      input.focus({ preventScroll: true })
+      // One physical press toggles once, even when Insert is held down.
+      if (event.repeat) return
+      if (document.activeElement === input) input.blur()
+      else input.focus({ preventScroll: true })
       return
     }
     if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .cm-editor, .monaco-editor, .xterm')) return
