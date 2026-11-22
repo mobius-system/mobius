@@ -393,6 +393,7 @@ export function EasySessionChatInput(props: EasySessionChatInputProps) {
           </div>
         )}
         <textarea
+          data-session-input
           ref={measureRef}
           value={input}
           onChange={onChange}

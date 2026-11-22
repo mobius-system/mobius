@@ -20,6 +20,7 @@ import { useEditorAvailability } from './workspace/use-editor-availability'
 import { WebTerminalModal, type WebTerminalMode } from './web-terminal-modal'
 import { SessionJsonlPanel } from './session-jsonl-panel'
 import { scrollDebug } from './scroll-debug'
+import { installSessionKeyboardShortcuts } from '../services/session-keyboard-shortcuts'
 import { registerDiagProbe, ms, px, bool } from '../services/scroll-diagnostics'
 import { JsonlCopyButton } from './viewer/JsonlCopyButton'
 import { SessionStatusChip } from './session-status-chip'
@@ -3578,6 +3579,16 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
     if (!nextUserScrolledUp) setHasNewMessages(false)
   }, [])
 
+  useEffect(() => {
+    if (!sessionId) return
+    return installSessionKeyboardShortcuts({
+      getList: () => chatContainerRef.current,
+      getInput: () => expandedInputRef.current
+        ?? chatInputRef.current?.querySelector<HTMLTextAreaElement>('[data-session-input]') ?? null,
+      onListScroll: handleJsonlScrollPositionChange,
+    })
+  }, [sessionId, handleJsonlScrollPositionChange])
+
   const jumpToJsonlBottom = useCallback(() => {
     scrollDebug('jumpToBottom: flag → false, 滚到 scrollHeight')
     userScrolledUpRef.current = false
@@ -4728,7 +4739,7 @@ export function ChatArea({ layout = 'default', onNewSession, onMessageSent }: {
                   <span className="min-w-0 truncate">· @引用文件/智能体</span>
                 </div>
               )}
-              <textarea ref={inputRef} value={input} onChange={handleChatInputChange}
+              <textarea data-session-input ref={inputRef} value={input} onChange={handleChatInputChange}
                 onCompositionStart={() => { composingRef.current = true }}
                 onCompositionEnd={() => { composingRef.current = false }}
                 onKeyDown={e => {
