@@ -105,26 +105,28 @@ function buildMentionTransfer(user: any, sourceSession: any, targetSession: any,
   markdown: string;
   paths: { full?: string | null; user_messages?: string | null; metadata?: string | null } | null;
 } {
+  // 转接内容从会话历史库构建 (不读文件); jsonlPath 仅喂同步, 为 null 也照常尝试,
+  // 库里没记录会抛错 → 落到 buildSessionContext 兜底。
+  // Mention transfers build from the history store (no file reads); jsonlPath only
+  // feeds the sync. An empty store throws → we fall back to buildSessionContext.
   const jsonlPath = resolveSessionJsonlPath(sourceSession, sourceSession.session_id);
-  if (jsonlPath) {
-    try {
-      const targetWorkspace = resolveSessionWorkspace(user, targetSession.session_id);
-      const bindPath = targetWorkspace.projectRoot || targetWorkspace.workDir;
-      if (bindPath) {
-        const bundle = writeSessionTransferBundle({
-          bindPath,
-          sourceSession,
-          targetSessionId: targetSession.session_id,
-          jsonlPath,
-          directoryName: 'agent_mentions',
-        });
-        return { markdown: '', paths: bundle?.paths || null };
-      }
-      const transfer = buildSessionTransferMarkdown({ sourceSession, targetSessionId: targetSession.session_id, jsonlPath, maxTextChars: 4000, maxTotalChars: 12000 });
-      if (transfer?.markdown) return { markdown: String(transfer.markdown || '').trimEnd(), paths: null };
-    } catch (e) {
-      logger?.warn?.(`[mention-context] build mention transfer failed (${sourceSession.session_id}): ${e.message}`);
+  try {
+    const targetWorkspace = resolveSessionWorkspace(user, targetSession.session_id);
+    const bindPath = targetWorkspace.projectRoot || targetWorkspace.workDir;
+    if (bindPath) {
+      const bundle = writeSessionTransferBundle({
+        bindPath,
+        sourceSession,
+        targetSessionId: targetSession.session_id,
+        jsonlPath,
+        directoryName: 'agent_mentions',
+      });
+      return { markdown: '', paths: bundle?.paths || null };
     }
+    const transfer = buildSessionTransferMarkdown({ sourceSession, targetSessionId: targetSession.session_id, jsonlPath, maxTextChars: 4000, maxTotalChars: 12000 });
+    if (transfer?.markdown) return { markdown: String(transfer.markdown || '').trimEnd(), paths: null };
+  } catch (e) {
+    logger?.warn?.(`[mention-context] build mention transfer failed (${sourceSession.session_id}): ${e.message}`);
   }
   try {
     const ctx = buildSessionContext(user, sourceSession.session_id);

@@ -9,6 +9,16 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// 转接文档从会话历史库构建, 服务模块加载时读取该 env — 必须在 require 之前
+// 指向临时库, 否则会连到真实 11GB 生产库。
+// The digest builds from the history store; point the store at a temp dir
+// BEFORE requiring the service modules (STORE_PATH is captured at load).
+process.env.MOBIUS_AGENT_HISTORY_STORE_PATH = path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), 'session-transfer-images-store-')),
+  'agent-history-store.db',
+);
+
 const { writeSessionTransferBundle, buildSessionTransferMarkdown } = require('../backend/services/session-transfer');
 
 function tmpDir() {

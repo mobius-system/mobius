@@ -78,6 +78,11 @@ function openStore(): Database.Database {
   if (_db) return _db;
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
   _db = new Database(STORE_PATH);
+  // 初始化失败必须关连接并清空 _db — 否则毒化单例: _db 在但 _stmts 为 null,
+  // 后续 S() 全部返回 null, 所有查询静默炸掉还查不出原因。
+  // On init failure close and clear _db — a poisoned singleton (handle set,
+  // statements null) makes every later S() return null with no clue why.
+  try {
   _db.pragma('journal_mode = WAL');
   // 多 worker 共用一个库: 写事务必须 BEGIN IMMEDIATE (见本文件所有 tx.immediate()).
   // busy_timeout 只对"取写锁"生效; 若事务先读后写, SQLite 会立刻抛 SQLITE_BUSY_SNAPSHOT,
@@ -126,9 +131,18 @@ function openStore(): Database.Database {
       PRIMARY KEY (session_id, uuid)
     );
     CREATE INDEX IF NOT EXISTS idx_entries_group ON entries (session_id, group_seq, seq_in_group);
+    -- seq 游标分页读 (转接文档等整会话流式消费方) 走这个索引, 否则每页都全扫该会话
+    -- Paged seq-cursor reads (transfer digests etc.) need this index, else every page scans
+    CREATE INDEX IF NOT EXISTS idx_entries_session_seq ON entries (session_id, seq);
   `);
   _stmts = buildStatements(_db);
   initializeSearchIndex(_db);
+  } catch (e) {
+    try { _db.close(); } catch {}
+    _db = null;
+    _stmts = null;
+    throw e;
+  }
   return _db;
 }
 
@@ -1152,6 +1166,59 @@ function getHistorySnapshot(sessionId: string, primaryPath: string | null | unde
     truncated: false,
     sentinel: state ? (state.primary_read_bytes || 0) : 0,
   };
+}
+
+/*
+ * Incremental-sync then stream one session's stored raw entries. This is the single
+ * read path for full-record consumers (session-transfer digest building): sync first
+ * brings the store up to date from the native jsonl (bookmark-based; a missing file
+ * is a no-op, a never-ingested session gets a full initial scan), then rows are
+ * delivered in seq order page by page — the connection is released between pages, so
+ * callers may run other queries inside onEntry (unlike a raw .iterate() cursor).
+ */
+export function syncAndIterateStoredEntries(
+  sessionId: string,
+  primaryPath: string | null | undefined,
+  onEntry: (entry: any, index: number) => void,
+  opts: { maxRowChars?: number } = {},
+): { syncOk: boolean; syncError: string | null; recordCount: number; skippedOversized: number; lastSyncedAt: string | null } {
+  let syncOk = true;
+  let syncError: string | null = null;
+  try {
+    const r = syncSession(sessionId, primaryPath || undefined);
+    if (r && r.ok === false) {
+      syncOk = false;
+      syncError = r.error || 'sync failed';
+    }
+  } catch (e) {
+    syncOk = false;
+    syncError = (e as Error)?.message || String(e);
+  }
+  const maxRowChars = Number.isFinite(opts.maxRowChars) && (opts.maxRowChars as number) > 0
+    ? (opts.maxRowChars as number)
+    : 0;
+  const db = openStore();
+  const PAGE = 1000;
+  let lastSeq = 0;
+  let recordCount = 0;
+  let skippedOversized = 0;
+  for (;;) {
+    const rows = db.prepare('SELECT seq, json FROM entries WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?')
+      .all(sessionId, lastSeq, PAGE) as Array<{ seq: number; json: string }>;
+    if (!rows.length) break;
+    for (const row of rows) {
+      lastSeq = row.seq;
+      // 与旧文件直读同一守卫语义: 单行超长 (整图 base64) 跳过并计数, 不进解析管线
+      // Same guard as the old file reader: skip+count oversized rows, never parse them
+      if (maxRowChars && row.json.length > maxRowChars) { skippedOversized += 1; continue; }
+      const entry = safeParseJson(row.json);
+      if (!entry) continue;
+      onEntry(entry, recordCount);
+      recordCount += 1;
+    }
+  }
+  const state = S().getState.get(sessionId) as any;
+  return { syncOk, syncError, recordCount, skippedOversized, lastSyncedAt: state?.last_synced_at || null };
 }
 
 /** 挂起中的开轮卡 (pending_round_openers): 前端把它们当作「特殊的最后一个组」渲染. */

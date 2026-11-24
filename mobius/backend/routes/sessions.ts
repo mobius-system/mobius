@@ -2196,8 +2196,9 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     const project = Projects.findById(issue.project_id) as any;
     const bindPath = (project?.bind_path || '').trim();
     if (!bindPath) { res.status(400).json({ error: '当前项目未绑定路径, 无法创建 Session 转接文档' }); return; }
+    // 转接文档从会话历史库构建, jsonlPath 仅用于同步喂库 — 拿不到也照常出文档
+    // The digest is built from the history store; jsonlPath only feeds the sync
     const jsonlPath = sessionJsonlPath(sourceSession, continueFromSessionId);
-    if (!jsonlPath) { res.status(400).json({ error: '旧 Session 没有可读取的 JSONL 记录' }); return; }
     try {
       transferResult = writeSessionTransferBundle({
         bindPath,

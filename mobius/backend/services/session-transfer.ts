@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HIDDEN_FOLDER_NAME } from '../config';
 import { db } from '../../db';
-import { getHistorySnapshot } from './mobius-agent-history';
+import { syncAndIterateStoredEntries } from './mobius-agent-history';
 
 const MAX_TEXT_CHARS = 20000;
 const MAX_TOTAL_CHARS = 800000;
@@ -90,13 +90,6 @@ function parseJsonMaybe(value: any): any {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-function mobiusJsonlPathOf(jsonlPath: any): string | null {
-  if (!jsonlPath || typeof jsonlPath !== 'string') return null;
-  return jsonlPath.endsWith('.jsonl')
-    ? jsonlPath.slice(0, -'.jsonl'.length) + '.mobius.jsonl'
-    : `${jsonlPath}.mobius.jsonl`;
-}
-
 function parseTimestampMs(entry: any): number | null {
   const candidates = [
     entry?.timestamp,
@@ -116,57 +109,6 @@ function timestampIso(entry: any): string | null {
   const ms = parseTimestampMs(entry);
   return ms == null ? null : new Date(ms).toISOString();
 }
-
-/*
- * Stream a jsonl file record by record. Never materialises the whole file as
- * one string — readFileSync(utf8) on a >512MB rollout throws V8's
- * "Cannot create a string longer than 0x1fffffe8 characters". Lines are cut on
- * '\n' byte boundaries so multi-byte UTF-8 is never split, and lines longer
- * than MAX_JSONL_LINE_CHARS (observed: whole PNGs inlined as base64) are
- * skipped and counted instead of parsed.
- */
-function forEachJsonlRecord(
-  filePath: any,
-  onRecord: (entry: any, index: number) => void,
-): { recordCount: number; skippedOversized: number } {
-  const result = { recordCount: 0, skippedOversized: 0 };
-  if (!filePath || typeof filePath !== 'string' || !fs.existsSync(filePath)) return result;
-  const fd = fs.openSync(filePath, 'r');
-  const chunk = Buffer.alloc(8 * 1024 * 1024);
-  let pending: Buffer = Buffer.alloc(0);
-  const handleLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    if (trimmed.length > MAX_JSONL_LINE_CHARS) { result.skippedOversized += 1; return; }
-    try {
-      onRecord(JSON.parse(trimmed), result.recordCount);
-      result.recordCount += 1;
-    } catch {}
-  };
-  try {
-    for (;;) {
-      const n = fs.readSync(fd, chunk, 0, chunk.length, null);
-      if (n <= 0) break;
-      const combined = pending.length ? Buffer.concat([pending, chunk.subarray(0, n)]) : chunk.subarray(0, n);
-      const lastNl = combined.lastIndexOf(0x0a);
-      if (lastNl === -1) {
-        // 尚无完整行; 拷贝留存, 下一轮拼接 — 防御性拷贝, subarray 是视图
-        // No complete line yet; copy out (subarray is a view into `combined`)
-        pending = Buffer.from(combined);
-        continue;
-      }
-      pending = Buffer.from(combined.subarray(lastNl + 1));
-      const blockText = combined.toString('utf8', 0, lastNl);
-      const lines = blockText.split('\n');
-      for (let i = 0; i < lines.length; i += 1) handleLine(lines[i]);
-    }
-    if (pending.length) handleLine(pending.toString('utf8'));
-  } finally {
-    fs.closeSync(fd);
-  }
-  return result;
-}
-
 
 function contentText(content: any): string {
   if (typeof content === 'string') return content;
@@ -389,71 +331,43 @@ function userMessageBody(entry: any): string {
 }
 
 /*
- * 流式提取转接数据: 逐行读 primary 与 .mobius.jsonl, 只保留轻量元组 (时间戳 +
- * 已截断/已屏蔽的 section + 用户消息), 排序后再统一编号 — 全程不把整个文件读成
- * 一个字符串, 也不把巨型记录留在堆里。
- * Streaming extraction: both jsonl files are read line by line, only lightweight
- * tuples (timestamp + stripped sections + user message) are kept; merged-order
- * numbering is applied after the sort. The file is never one big string and
- * giant records never linger on the heap.
+ * 从会话历史库提取转接数据 (唯一数据源, 不读任何 jsonl 文件):
+ * syncAndIterateStoredEntries 先把原生轨增量同步进库, 再按 seq 流式回调整条
+ * 会话; 这里只保留轻量元组 (时间戳 + 已截断/已屏蔽的 section + 用户消息),
+ * 排序后统一编号。原生文件不在也能完整出文档 (2026-11-24 事故的场景)。
+ * Extract the digest purely from the session history store — no jsonl file is
+ * ever read here. syncAndIterateStoredEntries first brings the store up to date
+ * from the native track, then streams the whole session by seq; only lightweight
+ * tuples (timestamp + stripped sections + user message) are kept, sorted and
+ * numbered afterwards. A missing native file changes nothing.
  */
-function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS, fallbackSessionId }: any): any {
+function extractSessionTransferData({ sessionId, jsonlPath, maxTextChars = MAX_TEXT_CHARS }: any): any {
   const collected: Array<{
     tsMs: number | null;
-    source: string;
     index: number;
     sections: TransferSection[];
     userMessage: { timestamp: string | null; body: string } | null;
   }> = [];
   let skippedOversized = 0;
-  const ingest = (source: string) => (entry: any, index: number) => {
+  const ingest = (entry: any, index: number) => {
     const sections = entrySections(entry, maxTextChars);
     const body = userMessageBody(entry);
     collected.push({
       tsMs: parseTimestampMs(entry),
-      source,
       index,
       sections,
       userMessage: body ? { timestamp: timestampIso(entry), body } : null,
     });
   };
-  const primary = forEachJsonlRecord(jsonlPath, ingest('primary'));
-  skippedOversized += primary.skippedOversized;
-  const mobius = forEachJsonlRecord(mobiusJsonlPathOf(jsonlPath), ingest('mobius'));
-  skippedOversized += mobius.skippedOversized;
-
-  // 两个文件都读不到记录 (原生 JSONL 被移动/清理, 伴生轨已冻结) → 从
-  // agent-history-store 取已入库的原始记录兜底, 转接文档不再静默为空
-  // (2026-11-24 事故: 旧会话 JSONL 被挪进回收站, 换模型接续拿到零上下文).
-  // Both files yielded nothing (the native JSONL was moved/cleaned up, the
-  // frozen companion is empty) → rebuild from records already ingested into the
-  // agent-history store, so a transfer digest is never silently empty.
-  let historyFallback = false;
-  if (primary.recordCount === 0 && mobius.recordCount === 0 && fallbackSessionId) {
-    try {
-      const snapshot = getHistorySnapshot(String(fallbackSessionId), jsonlPath);
-      const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
-      for (let index = 0; index < entries.length; index += 1) {
-        const entry = entries[index];
-        // 与文件路径同一条数守卫 — 历史行可能整段内嵌 base64, 转接文档不能整吞
-        // Same per-record guard as the file path — history rows may inline whole
-        // base64 images the digest must not swallow.
-        try {
-          if (JSON.stringify(entry).length > MAX_JSONL_LINE_CHARS) { skippedOversized += 1; continue; }
-        } catch {}
-        ingest('history')(entry, index);
-      }
-      historyFallback = collected.length > 0;
-    } catch (e) {
-      console.warn(`[session-transfer] history-store fallback failed (${fallbackSessionId}): ${(e as Error).message}`);
-    }
-  }
+  const stats = syncAndIterateStoredEntries(String(sessionId || ''), jsonlPath || null, ingest, {
+    maxRowChars: MAX_JSONL_LINE_CHARS,
+  });
+  skippedOversized += stats.skippedOversized;
 
   collected.sort((a, b) => {
     if (a.tsMs != null && b.tsMs != null && a.tsMs !== b.tsMs) return a.tsMs - b.tsMs;
     if (a.tsMs == null && b.tsMs != null) return -1;
     if (a.tsMs != null && b.tsMs == null) return 1;
-    if (a.source !== b.source) return a.source === 'primary' ? -1 : 1;
     return a.index - b.index;
   });
 
@@ -476,7 +390,14 @@ function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS, 
       truncated: false,
     });
   }
-  return { records: collected, sections, userMessages, entryCount: collected.length, skippedOversized, historyFallback };
+  return {
+    records: collected,
+    sections,
+    userMessages,
+    entryCount: collected.length,
+    skippedOversized,
+    sync: stats,
+  };
 }
 
 function buildFullTransferMarkdown({
@@ -487,7 +408,7 @@ function buildFullTransferMarkdown({
   entryCount,
   generatedAt,
   maxTotalChars = MAX_TOTAL_CHARS,
-  historyFallback = false,
+  sync = null,
 }: any): any {
   const header = [
     `# Session 转接文档: ${sourceSession.name || sourceSession.session_id}`,
@@ -497,10 +418,11 @@ function buildFullTransferMarkdown({
     `- 原 Session 标题: ${sourceSession.name || ''}`,
     `- 原 Session 目的: ${sourceSession.description || ''}`,
     `- 生成时间: ${generatedAt}`,
-    `- 来源 JSONL: ${jsonlPath}`,
-    ...(historyFallback ? ['- 记录来源: agent-history-store 回退 (原 JSONL 文件已不可读, 内容已从历史库恢复)'] : []),
+    ...(jsonlPath ? [`- 原生 JSONL: ${jsonlPath}`] : []),
+    '- 记录来源: 会话历史数据库 (agent-history-store)',
+    `- 记录同步截至: ${sync?.lastSyncedAt || '未知'} (共 ${entryCount} 条记录)`,
     '',
-    '下面内容由旧 Session 的 JSONL 自动提取，包含前端精简模式和代码模式可展示的关键卡片，用于更换模型后继续上下文。',
+    '下面内容由旧 Session 的历史库记录自动提取，包含前端精简模式和代码模式可展示的关键卡片，用于更换模型后继续上下文。',
   ].join('\n');
 
   let totalChars = header.length;
@@ -510,6 +432,15 @@ function buildFullTransferMarkdown({
   // below still guards the final join against V8's ~536M-char string limit.
   const effectiveTotalLimit = maxTotalChars ?? HARD_TOTAL_CHARS;
   const bodyParts = [];
+  // 同步异常 → 文档最前放警示卡: 内容来自库里已入库的部分, 可能缺最近更新;
+  // 绝不回退去读文件 (无回退是本方案的设计决策)。
+  // Sync failure → a leading warning card: content covers only what was ingested
+  // and may miss the latest turns; we never fall back to reading files.
+  if (sync?.syncError) {
+    const warning = `\n\n## ⚠️ 同步异常\n\n原生会话记录同步到历史库时报错（${sync.syncError}），以下内容可能不含最后一次同步之后的最新进展。`;
+    bodyParts.push(warning);
+    totalChars += warning.length;
+  }
   for (const section of sections as TransferSection[]) {
     const part = `\n\n## ${section.title}\n\n${section.body}`;
     if (totalChars + part.length > effectiveTotalLimit) {
@@ -606,7 +537,7 @@ function buildSessionMetadata({
   sectionCount,
   userMessageCount,
   individualCardsTruncated,
-  historyFallback = false,
+  sync = null,
 }: any): any {
   return {
     format_version: 1,
@@ -614,8 +545,12 @@ function buildSessionMetadata({
     source_session: sourceSessionMetadata(sourceSession),
     target_session: { session_id: targetSessionId },
     source_records: {
-      jsonl_path: path.resolve(jsonlPath),
-      jsonl_fallback_used: historyFallback === true,
+      records_source: 'history_store',
+      native_jsonl_path: jsonlPath ? path.resolve(jsonlPath) : null,
+      sync_ok: sync ? sync.syncOk === true : null,
+      sync_error: sync?.syncError || null,
+      synced_at: sync?.lastSyncedAt || null,
+      skipped_oversized: sync?.skippedOversized || 0,
       entry_count: entryCount,
       section_count: sectionCount,
       user_message_count: userMessageCount,
@@ -651,9 +586,8 @@ function buildSessionTransferMarkdown({
   maxTotalChars = MAX_TOTAL_CHARS,
 }: any): any {
   if (!sourceSession?.session_id) throw new Error('创建 Session 转接文档缺少 sourceSession');
-  if (!jsonlPath) throw new Error('旧 Session 没有可读取的 JSONL 路径');
   const generatedAt = new Date().toISOString();
-  const data = extractSessionTransferData({ jsonlPath, maxTextChars, fallbackSessionId: sourceSession.session_id });
+  const data = extractSessionTransferData({ sessionId: sourceSession.session_id, jsonlPath, maxTextChars });
   return buildFullTransferMarkdown({
     sourceSession,
     targetSessionId,
@@ -662,7 +596,7 @@ function buildSessionTransferMarkdown({
     entryCount: data.records.length,
     generatedAt,
     maxTotalChars,
-    historyFallback: data.historyFallback,
+    sync: data.sync,
   });
 }
 
@@ -684,16 +618,15 @@ function writeSessionTransferBundle({
   if (!/^[A-Za-z0-9_-]+$/.test(String(targetSessionId))) {
     throw new Error('目标 Session ID 非法，无法创建转接文件');
   }
-  if (!jsonlPath) throw new Error('旧 Session 没有可读取的 JSONL 路径');
 
   const generatedAt = new Date().toISOString();
-  const data = extractSessionTransferData({ jsonlPath, maxTextChars: null, fallbackSessionId: sourceSession.session_id });
-  // 文件与历史库都拿不到任何记录 → 显式失败, 绝不生成空转接文档
-  // (2026-11-24 事故: JSONL 已被挪走, 静默空文档让新会话零上下文冷启动).
-  // No records from either the files or the history store → fail loudly rather
-  // than hand the new session a silently empty digest (2026-11-24 incident).
+  const data = extractSessionTransferData({ sessionId: sourceSession.session_id, jsonlPath, maxTextChars: null });
+  // 历史库里一条记录都没有 → 显式失败, 绝不生成空转接文档, 也绝不回退读文件
+  // (2026-11-24 事故: 静默空文档让新会话零上下文冷启动).
+  // Nothing in the history store → fail loudly; no silent empty digest and no
+  // file-reading fallback (fallback-free is a deliberate design decision).
   if (data.records.length === 0) {
-    throw new Error('旧 Session 没有可读取的会话记录 (JSONL 缺失且历史库无记录), 无法生成转接文档, 已取消接续');
+    throw new Error('旧 Session 在历史库中没有可读取的会话记录, 无法生成转接文档, 已取消接续');
   }
   const transferDir = safePathSegment(directoryName, 'change_model');
   // 更换模型继续沿用历史路径；跨 Agent 引用按 source/target 分目录，避免
@@ -721,7 +654,7 @@ function writeSessionTransferBundle({
     entryCount: data.records.length,
     generatedAt,
     maxTotalChars: null,
-    historyFallback: data.historyFallback,
+    sync: data.sync,
   });
   const userMessagesMarkdown = buildUserMessagesMarkdown({
     sourceSession,
@@ -739,7 +672,7 @@ function writeSessionTransferBundle({
     sectionCount: data.sections.length,
     userMessageCount: data.userMessages.length,
     individualCardsTruncated: full.individualCardsTruncated,
-    historyFallback: data.historyFallback,
+    sync: data.sync,
   });
 
   writeFileAtomic(paths.full as string, full.markdown);

@@ -151,53 +151,76 @@ assert.ok(legacyPrompt.includes('LEGACY_CONTEXT'));
 assert.strictEqual(transferReferencePrompt(null, 'BARE_CONTEXT'), 'BARE_CONTEXT');
 assert.strictEqual(transferReferencePrompt({ full: null, user_messages: null, metadata: null }, 'BARE_CONTEXT'), 'BARE_CONTEXT');
 
-// ── 历史库回退: 原生 JSONL 丢失时从 agent-history-store 重建转接文档 ─────
-// ── History-store fallback: rebuild the digest when the native JSONL is gone ──
+// ── 纯数据库构建 (主路径): 原生 JSONL 不存在, 记录直接来自 agent-history-store ──
+// ── DB-only build: no native JSONL on disk, records come straight from the store ──
 const { historyStorePath } = require('../backend/services/mobius-agent-history');
 const Database = require('better-sqlite3');
 const store = new Database(historyStorePath()); // 先触发建表 (openStore)
-store.prepare(`
+const insertEntryStmt = store.prepare(`
   INSERT INTO entries (session_id, uuid, seq, group_seq, seq_in_group, round_opener, origin, ts, json)
   VALUES (?, ?, ?, NULL, NULL, 0, 'primary', ?, ?)
-`).run('historysrc', 'u1', 1, Date.parse('2026-07-22T00:00:00.000Z'), JSON.stringify({
+`);
+insertEntryStmt.run('historysrc', 'u1', 1, Date.parse('2026-07-22T00:00:00.000Z'), JSON.stringify({
   timestamp: '2026-07-22T00:00:00.000Z',
   type: 'user',
   message: { content: [{ type: 'text', text: 'HISTORY_FALLBACK_USER_MESSAGE' }] },
 }));
-store.prepare(`
-  INSERT INTO entries (session_id, uuid, seq, group_seq, seq_in_group, round_opener, origin, ts, json)
-  VALUES (?, ?, ?, NULL, NULL, 0, 'primary', ?, ?)
-`).run('historysrc', 'u2', 2, Date.parse('2026-07-22T00:00:05.000Z'), JSON.stringify({
+insertEntryStmt.run('historysrc', 'u2', 2, Date.parse('2026-07-22T00:00:05.000Z'), JSON.stringify({
   timestamp: '2026-07-22T00:00:05.000Z',
   type: 'assistant',
   message: { content: [{ type: 'text', text: 'HISTORY_FALLBACK_ASSISTANT' }] },
 }));
 
-const fallbackSession = { ...sourceSession, session_id: 'historysrc', name: 'History session' };
-const fallbackBundle = writeSessionTransferBundle({
+const historySession = { ...sourceSession, session_id: 'historysrc', name: 'History session' };
+const historyBundle = writeSessionTransferBundle({
   bindPath: tmp,
-  sourceSession: fallbackSession,
-  targetSessionId: 'targetfallback',
-  jsonlPath: path.join(tmp, 'gone.jsonl'), // 该文件不存在
+  sourceSession: historySession,
+  targetSessionId: 'targethistory',
+  jsonlPath: path.join(tmp, 'gone.jsonl'), // 不存在 → 纯读库
 });
-const fallbackFull = fs.readFileSync(fallbackBundle.paths.full, 'utf8');
-const fallbackUserMessages = fs.readFileSync(fallbackBundle.paths.user_messages, 'utf8');
-const fallbackMetadata = JSON.parse(fs.readFileSync(fallbackBundle.paths.metadata, 'utf8'));
-assert.ok(fallbackFull.includes('HISTORY_FALLBACK_USER_MESSAGE'));
-assert.ok(fallbackFull.includes('HISTORY_FALLBACK_ASSISTANT'));
-assert.ok(fallbackFull.includes('agent-history-store 回退'));
-assert.ok(fallbackUserMessages.includes('HISTORY_FALLBACK_USER_MESSAGE'));
-assert.strictEqual(fallbackMetadata.source_records.jsonl_fallback_used, true);
-assert.strictEqual(fallbackMetadata.source_records.user_message_count, 1);
-assert.strictEqual(fallbackMetadata.source_records.entry_count, 2);
+const historyFull = fs.readFileSync(historyBundle.paths.full, 'utf8');
+const historyUserMessages = fs.readFileSync(historyBundle.paths.user_messages, 'utf8');
+const historyMetadata = JSON.parse(fs.readFileSync(historyBundle.paths.metadata, 'utf8'));
+assert.ok(historyFull.includes('HISTORY_FALLBACK_USER_MESSAGE'));
+assert.ok(historyFull.includes('HISTORY_FALLBACK_ASSISTANT'));
+assert.ok(historyFull.includes('记录来源: 会话历史数据库'));
+assert.ok(historyFull.includes('记录同步截至'));
+assert.ok(historyUserMessages.includes('HISTORY_FALLBACK_USER_MESSAGE'));
+assert.strictEqual(historyMetadata.source_records.records_source, 'history_store');
+assert.strictEqual(historyMetadata.source_records.sync_ok, true);
+assert.strictEqual(historyMetadata.source_records.user_message_count, 1);
+assert.strictEqual(historyMetadata.source_records.entry_count, 2);
 
-// 文件与历史库都无记录 → 显式失败, 不再静默生成空转接文档
-// No records anywhere → fail loudly instead of a silently empty digest
+// 同步报错 (ingest_state.error) → 文档最前出「同步异常」警示卡, 且已入库内容照常进文档
+// A recorded sync error → leading warning card, ingested content still included
+insertEntryStmt.run('errsrc', 'e1', 1, Date.parse('2026-07-23T00:00:00.000Z'), JSON.stringify({
+  timestamp: '2026-07-23T00:00:00.000Z',
+  type: 'user',
+  message: { content: [{ type: 'text', text: 'HISTORY_ERR_SESSION_MESSAGE' }] },
+}));
+store.prepare(`INSERT INTO ingest_state (session_id, primary_path, error) VALUES (?, ?, ?)`)
+  .run('errsrc', '/nonexistent/err-track.jsonl', 'ingest exploded');
+const errBundle = writeSessionTransferBundle({
+  bindPath: tmp,
+  sourceSession: { ...sourceSession, session_id: 'errsrc', name: 'Err session' },
+  targetSessionId: 'targeterr',
+  jsonlPath: path.join(tmp, 'err-gone.jsonl'),
+});
+const errFull = fs.readFileSync(errBundle.paths.full, 'utf8');
+assert.ok(errFull.includes('⚠️ 同步异常'));
+assert.ok(errFull.includes('ingest exploded'));
+assert.ok(errFull.includes('HISTORY_ERR_SESSION_MESSAGE'));
+const errMetadata = JSON.parse(fs.readFileSync(errBundle.paths.metadata, 'utf8'));
+assert.strictEqual(errMetadata.source_records.sync_ok, false);
+assert.strictEqual(errMetadata.source_records.sync_error, 'ingest exploded');
+
+// 库里无记录 → 显式失败, 不生成空转接文档, 也不回退读文件
+// Nothing in the store → fail loudly; no empty digest, no file fallback
 assert.throws(() => writeSessionTransferBundle({
   bindPath: tmp,
   sourceSession: { ...sourceSession, session_id: 'emptysrc' },
   targetSessionId: 'targetempty',
   jsonlPath: path.join(tmp, 'also-gone.jsonl'),
-}), /没有可读取的会话记录/);
+}), /历史库中没有可读取的会话记录/);
 
 console.log('session-transfer ok');
