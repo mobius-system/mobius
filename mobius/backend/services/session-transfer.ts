@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HIDDEN_FOLDER_NAME } from '../config';
 import { db } from '../../db';
+import { getHistorySnapshot } from './mobius-agent-history';
 
 const MAX_TEXT_CHARS = 20000;
 const MAX_TOTAL_CHARS = 800000;
@@ -396,7 +397,7 @@ function userMessageBody(entry: any): string {
  * numbering is applied after the sort. The file is never one big string and
  * giant records never linger on the heap.
  */
-function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS }: any): any {
+function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS, fallbackSessionId }: any): any {
   const collected: Array<{
     tsMs: number | null;
     source: string;
@@ -420,6 +421,33 @@ function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS }
   skippedOversized += primary.skippedOversized;
   const mobius = forEachJsonlRecord(mobiusJsonlPathOf(jsonlPath), ingest('mobius'));
   skippedOversized += mobius.skippedOversized;
+
+  // 两个文件都读不到记录 (原生 JSONL 被移动/清理, 伴生轨已冻结) → 从
+  // agent-history-store 取已入库的原始记录兜底, 转接文档不再静默为空
+  // (2026-11-24 事故: 旧会话 JSONL 被挪进回收站, 换模型接续拿到零上下文).
+  // Both files yielded nothing (the native JSONL was moved/cleaned up, the
+  // frozen companion is empty) → rebuild from records already ingested into the
+  // agent-history store, so a transfer digest is never silently empty.
+  let historyFallback = false;
+  if (primary.recordCount === 0 && mobius.recordCount === 0 && fallbackSessionId) {
+    try {
+      const snapshot = getHistorySnapshot(String(fallbackSessionId), jsonlPath);
+      const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        // 与文件路径同一条数守卫 — 历史行可能整段内嵌 base64, 转接文档不能整吞
+        // Same per-record guard as the file path — history rows may inline whole
+        // base64 images the digest must not swallow.
+        try {
+          if (JSON.stringify(entry).length > MAX_JSONL_LINE_CHARS) { skippedOversized += 1; continue; }
+        } catch {}
+        ingest('history')(entry, index);
+      }
+      historyFallback = collected.length > 0;
+    } catch (e) {
+      console.warn(`[session-transfer] history-store fallback failed (${fallbackSessionId}): ${(e as Error).message}`);
+    }
+  }
 
   collected.sort((a, b) => {
     if (a.tsMs != null && b.tsMs != null && a.tsMs !== b.tsMs) return a.tsMs - b.tsMs;
@@ -448,7 +476,7 @@ function extractSessionTransferData({ jsonlPath, maxTextChars = MAX_TEXT_CHARS }
       truncated: false,
     });
   }
-  return { records: collected, sections, userMessages, entryCount: collected.length, skippedOversized };
+  return { records: collected, sections, userMessages, entryCount: collected.length, skippedOversized, historyFallback };
 }
 
 function buildFullTransferMarkdown({
@@ -459,6 +487,7 @@ function buildFullTransferMarkdown({
   entryCount,
   generatedAt,
   maxTotalChars = MAX_TOTAL_CHARS,
+  historyFallback = false,
 }: any): any {
   const header = [
     `# Session 转接文档: ${sourceSession.name || sourceSession.session_id}`,
@@ -469,6 +498,7 @@ function buildFullTransferMarkdown({
     `- 原 Session 目的: ${sourceSession.description || ''}`,
     `- 生成时间: ${generatedAt}`,
     `- 来源 JSONL: ${jsonlPath}`,
+    ...(historyFallback ? ['- 记录来源: agent-history-store 回退 (原 JSONL 文件已不可读, 内容已从历史库恢复)'] : []),
     '',
     '下面内容由旧 Session 的 JSONL 自动提取，包含前端精简模式和代码模式可展示的关键卡片，用于更换模型后继续上下文。',
   ].join('\n');
@@ -576,6 +606,7 @@ function buildSessionMetadata({
   sectionCount,
   userMessageCount,
   individualCardsTruncated,
+  historyFallback = false,
 }: any): any {
   return {
     format_version: 1,
@@ -584,6 +615,7 @@ function buildSessionMetadata({
     target_session: { session_id: targetSessionId },
     source_records: {
       jsonl_path: path.resolve(jsonlPath),
+      jsonl_fallback_used: historyFallback === true,
       entry_count: entryCount,
       section_count: sectionCount,
       user_message_count: userMessageCount,
@@ -621,7 +653,7 @@ function buildSessionTransferMarkdown({
   if (!sourceSession?.session_id) throw new Error('创建 Session 转接文档缺少 sourceSession');
   if (!jsonlPath) throw new Error('旧 Session 没有可读取的 JSONL 路径');
   const generatedAt = new Date().toISOString();
-  const data = extractSessionTransferData({ jsonlPath, maxTextChars });
+  const data = extractSessionTransferData({ jsonlPath, maxTextChars, fallbackSessionId: sourceSession.session_id });
   return buildFullTransferMarkdown({
     sourceSession,
     targetSessionId,
@@ -630,6 +662,7 @@ function buildSessionTransferMarkdown({
     entryCount: data.records.length,
     generatedAt,
     maxTotalChars,
+    historyFallback: data.historyFallback,
   });
 }
 
@@ -654,7 +687,14 @@ function writeSessionTransferBundle({
   if (!jsonlPath) throw new Error('旧 Session 没有可读取的 JSONL 路径');
 
   const generatedAt = new Date().toISOString();
-  const data = extractSessionTransferData({ jsonlPath, maxTextChars: null });
+  const data = extractSessionTransferData({ jsonlPath, maxTextChars: null, fallbackSessionId: sourceSession.session_id });
+  // 文件与历史库都拿不到任何记录 → 显式失败, 绝不生成空转接文档
+  // (2026-11-24 事故: JSONL 已被挪走, 静默空文档让新会话零上下文冷启动).
+  // No records from either the files or the history store → fail loudly rather
+  // than hand the new session a silently empty digest (2026-11-24 incident).
+  if (data.records.length === 0) {
+    throw new Error('旧 Session 没有可读取的会话记录 (JSONL 缺失且历史库无记录), 无法生成转接文档, 已取消接续');
+  }
   const transferDir = safePathSegment(directoryName, 'change_model');
   // 更换模型继续沿用历史路径；跨 Agent 引用按 source/target 分目录，避免
   // 同一目标 Session 连续 @ 多个来源时相互覆盖转接文件。
@@ -681,6 +721,7 @@ function writeSessionTransferBundle({
     entryCount: data.records.length,
     generatedAt,
     maxTotalChars: null,
+    historyFallback: data.historyFallback,
   });
   const userMessagesMarkdown = buildUserMessagesMarkdown({
     sourceSession,
@@ -698,6 +739,7 @@ function writeSessionTransferBundle({
     sectionCount: data.sections.length,
     userMessageCount: data.userMessages.length,
     individualCardsTruncated: full.individualCardsTruncated,
+    historyFallback: data.historyFallback,
   });
 
   writeFileAtomic(paths.full as string, full.markdown);
