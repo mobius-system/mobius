@@ -25,29 +25,72 @@ function isB64CharCode(code: number): boolean {
     || (code >= 48 && code <= 57) || code === 43 || code === 47;
 }
 
+const DATA_IMAGE_NEEDLE = 'data:image/';
+const BASE64_MARKER = ';base64,';
+
+/*
+ * Strip `data:image/...;base64,<payload>` URIs to a placeholder regardless of
+ * payload size — the 512-char run rule below cannot catch a 1x1-pixel image
+ * (~100 b64 chars), and no image bytes of any size may reach a transfer digest.
+ * Same manual-scan discipline: indexOf for the needle, an index walk over the
+ * base64 alphabet for the payload (a regex on a giant run overflows the stack).
+ */
+function stripImageDataUris(text: string): string {
+  if (!text.includes(DATA_IMAGE_NEEDLE)) return text;
+  let out = '';
+  let copied = 0;
+  let pos = 0;
+  let changed = false;
+  for (;;) {
+    const start = text.indexOf(DATA_IMAGE_NEEDLE, pos);
+    if (start < 0) break;
+    // 头部 256 字符内找 ;base64, — 找不到 (utf8 data URI 等非 base64 图) 则放过
+    // find the base64 marker within the URI header; non-base64 URIs pass through
+    const markerOff = text.slice(start, start + 256).indexOf(BASE64_MARKER);
+    if (markerOff < 0) {
+      pos = start + DATA_IMAGE_NEEDLE.length;
+      continue;
+    }
+    const b64Start = start + markerOff + BASE64_MARKER.length;
+    let end = b64Start;
+    while (end < text.length && isB64CharCode(text.charCodeAt(end))) end += 1;
+    const b64Chars = end - b64Start;
+    const kb = Math.round((b64Chars * 3 / 4) / 1024);
+    out += `${text.slice(copied, start)}[图片已屏蔽${kb ? ` 约${kb}KB` : ''}]`;
+    copied = end;
+    pos = end;
+    changed = true;
+  }
+  if (!changed) return text;
+  return out + text.slice(copied);
+}
+
 function stripBinaryHunks(text: string): string {
-  const n = text.length;
-  if (n < 512) return text;
+  // ✨ 先剥 data URI 图片 (任意大小), 再剥长 base64 run — 图片进转接文档的唯一出口是占位符
+  // ✨ data-URI images first (any size), then long runs — images only ever leave as placeholders
+  const body = stripImageDataUris(text);
+  const n = body.length;
+  if (n < 512) return body;
   let out = '';
   let copied = 0;
   let runStart = -1;
   let changed = false;
   for (let i = 0; i <= n; i += 1) {
-    if (i < n && isB64CharCode(text.charCodeAt(i))) {
+    if (i < n && isB64CharCode(body.charCodeAt(i))) {
       if (runStart < 0) runStart = i;
       continue;
     }
     if (runStart < 0) continue;
     const runLen = i - runStart;
     if (runLen >= 512) {
-      out += `${text.slice(copied, runStart)}[已省略内嵌数据 ${runLen} 字符]`;
+      out += `${body.slice(copied, runStart)}[已省略内嵌数据 ${runLen} 字符]`;
       copied = i;
       changed = true;
     }
     runStart = -1;
   }
-  if (!changed) return text;
-  return out + text.slice(copied);
+  if (!changed) return body;
+  return out + body.slice(copied);
 }
 
 interface TransferSection {

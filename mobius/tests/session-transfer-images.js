@@ -121,8 +121,34 @@ function run() {
   assert.ok(full3.includes('跨界的字'), 'multi-byte char split across the read boundary stays intact');
   assert.ok(full3.includes('第二行完好'), 'line after the boundary survives');
 
+  // 5) 微型 data URI 图片 (<512 b64 字符, 如 1x1 像素) 也必须被屏蔽 —
+  //    长度守卫抓不到它们, 靠 data:image/ 剥离层兜底; 任何大小的图片都不得进转接文档
+  //    Tiny data-URI images (<512 b64 chars, e.g. 1x1 px) must be blocked too —
+  //    the length rule cannot catch them; no image of any size reaches the digest
+  const tinyPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const tinyPath = path.join(bindPath, 'rollout-tiny.jsonl');
+  writeJsonl(tinyPath, [
+    userRecord(`埋点图 data:image/png;base64,${tinyPng} 在这里`),
+    imageToolOutputRecord(3, 1),
+    userRecord('正常收尾'),
+  ]);
+  const bundle4 = writeSessionTransferBundle({
+    bindPath,
+    sourceSession,
+    targetSessionId: 'tgt98768',
+    jsonlPath: tinyPath,
+  });
+  const full4 = fs.readFileSync(bundle4.paths.full, 'utf8');
+  const userMd4 = fs.readFileSync(bundle4.paths.user_messages, 'utf8');
+  assert.ok(!full4.includes('data:image/'), 'no data:image marker may survive in full.md');
+  assert.ok(!full4.includes('iVBORw0KGgo'), 'tiny image bytes must not survive in full.md');
+  assert.ok(full4.includes('[图片已屏蔽'), 'tiny image is replaced with the blocked placeholder');
+  assert.ok(full4.includes('正常收尾'), 'prose around the tiny image survives');
+  assert.ok(!userMd4.includes('data:image/') && !userMd4.includes('iVBORw0KGgo'), 'tiny image blocked in user_messages.md too');
+  assert.ok(!/[A-Za-z0-9+/]{512,}/.test(full4), 'residual long-base64 scan still passes with the tiny-image case');
+
   fs.rmSync(bindPath, { recursive: true, force: true });
-  console.log('session-transfer-images: all 4 checks passed');
+  console.log('session-transfer-images: all 5 checks passed');
 }
 
 run();
